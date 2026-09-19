@@ -1,6 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
 
+import asyncio
 import json
 from copy import deepcopy
 from dataclasses import dataclass
@@ -381,7 +382,8 @@ class OpenAIModelClient(BaseModelClient):
     _MODEL_PARAM_RULES: tuple[ModelParamRule, ...] = _DEFAULT_MODEL_PARAM_RULES
 
     # Process-wide cache of long-lived ``AsyncOpenAI`` clients, bucketed by
-    # tenant/connection config so different api_key/api_base never share a
+    # tenant/connection config (and the event loop currently running -- see
+    # ``_client_cache_key``) so different api_key/api_base/loop never share a
     # client. Each cached client keeps its own httpx keep-alive connection pool
     # alive, so cache hits reuse established connections (no per-request
     # build/close). Shared across subclasses (OpenRouter/DashScope/DeepSeek) on
@@ -462,7 +464,25 @@ class OpenAIModelClient(BaseModelClient):
             params["extra_body"] = extra_body
 
     def _client_cache_key(self) -> Tuple:
-        return self.connection_key(self.model_client_config)
+        """Connection identity plus the currently running event loop.
+
+        ``AsyncOpenAI``/``httpx.AsyncClient`` bind their transport's locks and
+        connection pool to whichever event loop is running when they are
+        built. A batch runner that drives many tasks through separate
+        ``asyncio.run()`` calls hands each task a brand-new loop and closes
+        the previous one; reusing a client cached under a loop-agnostic key
+        against that closed loop raises ``RuntimeError: Event loop is
+        closed`` on the client's very first request. Appending the loop to
+        the key means a new loop always gets a freshly built client, while a
+        long-lived process with a single loop (a server, or one eval task)
+        keeps the original behaviour: same connection identity, same loop,
+        same cached client.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        return (*self.connection_key(self.model_client_config), loop)
 
     def _resolved_api_key(self) -> str:
         return _resolved_api_key_for_config(self.model_client_config)
@@ -1083,6 +1103,7 @@ class OpenAIModelClient(BaseModelClient):
         key = self._client_cache_key()
         client = self._client_cache.get(key)
         if client is None:
+            self._evict_stale_shared_clients()
             client = self._build_async_openai_client()
             self._client_cache[key] = client
             llm_logger.info(
@@ -1092,6 +1113,35 @@ class OpenAIModelClient(BaseModelClient):
                 max_retries=self.model_client_config.max_retries,
             )
         return client
+
+    @classmethod
+    def _evict_stale_shared_clients(cls) -> None:
+        """Drop cached clients whose event loop has already been closed.
+
+        Each cache key embeds the event loop the client's httpx transport was
+        built on (see ``_client_cache_key``). A closed loop can never recur
+        as a cache key (a fresh loop is a fresh object), so once it is gone
+        its entry is dead weight: harmless to correctness, but a batch runner
+        that drives hundreds of tasks through separate ``asyncio.run()``
+        calls would otherwise leak one cached client per task forever. Called
+        on a cache miss, before building the replacement, so the common
+        (cache-hit) hot path pays nothing for this.
+
+        The stale client is dropped, not closed: its transport belongs to an
+        already-closed loop, so awaiting ``close()`` from a different (the
+        current) loop would just raise the same "Event loop is closed" error
+        this eviction exists to avoid.
+        """
+        stale_keys = [
+            key for key in cls._client_cache
+            if hasattr(key[-1], "is_closed") and key[-1].is_closed()
+        ]
+        for key in stale_keys:
+            cls._client_cache.pop(key, None)
+        if stale_keys:
+            logger.debug(
+                f"Dropped {len(stale_keys)} cached AsyncOpenAI client(s) from closed event loops"
+            )
 
     def _build_async_openai_client(self, timeout: Optional[float] = None) -> "openai.AsyncOpenAI":
         """Build a fresh ``AsyncOpenAI`` client with its own httpx connection pool."""
@@ -1171,10 +1221,18 @@ class OpenAIModelClient(BaseModelClient):
         removed should stop consuming tokens at once. An in-flight request on a
         closed client surfaces as a normal model-call failure (not retried by
         LLMRetryRail, which only retries repetition/stream-timeout markers).
+
+        Matches by connection-identity prefix rather than exact key equality:
+        a cache key may carry a trailing event-loop element (see
+        ``_client_cache_key``), so one connection identity can have several
+        entries, one per loop it has ever been used from. All of them belong
+        to the removed/changed credential and must go.
         """
-        keys = {cls.connection_key(cfg) for cfg in configs}
+        connection_keys = [cls.connection_key(cfg) for cfg in configs]
         closed = 0
-        for key in keys:
+        for key in list(cls._client_cache):
+            if not any(key[: len(conn_key)] == conn_key for conn_key in connection_keys):
+                continue
             client = cls._client_cache.pop(key, None)
             if client is None:
                 continue
