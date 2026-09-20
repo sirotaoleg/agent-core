@@ -276,6 +276,7 @@ Per-instance browser identity, used to isolate one browser per agent. All fields
 - **profile_name** (str): Managed profile name. Empty falls back to the key, then `BROWSER_PROFILE_NAME`.
 - **cdp_url** (str): Explicit CDP endpoint for remote mode; wins over the shared environment endpoint.
 - **browser_binary** (str): Optional Chrome binary path override.
+- **launch_args** (str): Playwright MCP launch arguments in the `PLAYWRIGHT_MCP_ARGS` format (a shell-style string or a JSON list). Empty defers to `PLAYWRIGHT_MCP_ARGS`, then the default; a caller that decides headless or isolated mode per run sets this instead of the environment.
 
 ### Driver Modes
 

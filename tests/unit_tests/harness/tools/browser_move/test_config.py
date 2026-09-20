@@ -403,6 +403,20 @@ def test_local_browser_runtime_server_logs_are_written_under_runtime_log_dir() -
 # ---------------------------------------------------------------------------
 
 
+def test_instance_launch_args_replace_the_environment_args() -> None:
+    """A caller that knows its launch flags passes them on the instance; the environment is not consulted."""
+    with patch.dict(os.environ, {"PLAYWRIGHT_MCP_ARGS": "-y @playwright/mcp@0.0.78 --headless"}, clear=True):
+        cfg = build_playwright_mcp_config(BrowserInstanceConfig(launch_args="-y @playwright/mcp@0.0.78 --isolated"))
+    assert cfg.params["args"][:3] == ["-y", "@playwright/mcp@0.0.78", "--isolated"]
+    assert "--headless" not in cfg.params["args"]
+
+
+def test_empty_instance_launch_args_fall_back_to_the_environment() -> None:
+    with patch.dict(os.environ, {"PLAYWRIGHT_MCP_ARGS": "-y @playwright/mcp@0.0.78 --headless"}, clear=True):
+        cfg = build_playwright_mcp_config(BrowserInstanceConfig(key="alpha", launch_args="  "))
+    assert cfg.params["args"][:3] == ["-y", "@playwright/mcp@0.0.78", "--headless"]
+
+
 def test_keyed_instance_suffixes_server_id() -> None:
     """A non-empty key isolates the MCP registration via a suffixed server_id."""
     cfg = build_playwright_mcp_config(BrowserInstanceConfig(key="alpha"))

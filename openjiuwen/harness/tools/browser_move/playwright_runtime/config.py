@@ -76,6 +76,7 @@ class BrowserInstanceConfig:
     profile_name: str = ""  # "" -> key, then env BROWSER_PROFILE_NAME
     cdp_url: str = ""  # remote mode: explicit CDP endpoint
     browser_binary: str = ""  # optional Chrome path override
+    launch_args: str = ""  # Playwright MCP launch args in the PLAYWRIGHT_MCP_ARGS format; "" -> env/default
 
     def sanitized_key(self) -> str:
         """Return the key reduced to id-safe characters (``[A-Za-z0-9_-]``)."""
@@ -171,10 +172,12 @@ def build_playwright_mcp_config(
         *PLAYWRIGHT_MCP_CAPABILITY_NAMES,
         *(required_capability or ()),
     )
-    args = _ensure_capabilities(
-        parse_command_args(os.getenv("PLAYWRIGHT_MCP_ARGS", DEFAULT_PLAYWRIGHT_MCP_ARGS)),
-        capabilities_to_enable,
+    launch_args = (
+        instance.launch_args
+        if instance is not None and instance.launch_args.strip()
+        else os.getenv("PLAYWRIGHT_MCP_ARGS", DEFAULT_PLAYWRIGHT_MCP_ARGS)
     )
+    args = _ensure_capabilities(parse_command_args(launch_args), capabilities_to_enable)
     cwd = resolve_playwright_mcp_cwd()
     driver_mode = (os.getenv("BROWSER_DRIVER") or "").strip().lower()
     extension_mode = driver_mode == "extension" or is_truthy_env(os.getenv("PLAYWRIGHT_MCP_EXTENSION") or "")
