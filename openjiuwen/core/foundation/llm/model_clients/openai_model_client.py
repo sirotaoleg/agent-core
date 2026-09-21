@@ -1133,8 +1133,8 @@ class OpenAIModelClient(BaseModelClient):
         this eviction exists to avoid.
         """
         stale_keys = [
-            key for key in cls._client_cache
-            if hasattr(key[-1], "is_closed") and key[-1].is_closed()
+            key for key in list(cls._client_cache)
+            if isinstance(key[-1], asyncio.AbstractEventLoop) and key[-1].is_closed()
         ]
         for key in stale_keys:
             cls._client_cache.pop(key, None)

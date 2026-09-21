@@ -2,6 +2,7 @@
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 """Tests for AnthropicModelClient shared/cached AsyncAnthropic client lifecycle."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -101,6 +102,52 @@ class TestSharedClientPooling:
         assert AnthropicModelClient._client_cache == {}
 
 
+class TestSharedClientAcrossEventLoops:
+    """Regression tests for a batch runner driving tasks through separate
+    ``asyncio.run()`` calls, each with its own (short-lived) event loop.
+    """
+
+    def test_a_client_cached_from_a_closed_loop_is_rebuilt_not_reused(self):
+        model = _make_model(use_shared=True)
+        client = model._client
+
+        built = []
+
+        def fake_build(timeout=None):
+            mc = _mock_async_client()
+            built.append(mc)
+            return mc
+
+        with patch.object(client, "_build_async_anthropic_client", side_effect=fake_build):
+            asyncio.run(model.invoke(messages=[UserMessage(content="hi")]))
+            # The loop from the first asyncio.run() call is now closed. Reusing
+            # the client built on it would raise "RuntimeError: Event loop is
+            # closed" on the first request of the second run.
+            asyncio.run(model.invoke(messages=[UserMessage(content="hi again")]))
+
+        # A fresh client was built for the second (new) loop, not reused from
+        # the first (closed) one.
+        assert len(built) == 2
+        assert built[0].messages.create.call_count == 1
+        assert built[1].messages.create.call_count == 1
+
+    def test_stale_entries_from_closed_loops_are_evicted_on_the_next_cache_miss(self):
+        model = _make_model(use_shared=True)
+        client = model._client
+
+        with patch.object(
+            client, "_build_async_anthropic_client", side_effect=lambda timeout=None: _mock_async_client()
+        ):
+            asyncio.run(model.invoke(messages=[UserMessage(content="hi")]))
+            assert len(AnthropicModelClient._client_cache) == 1
+
+            asyncio.run(model.invoke(messages=[UserMessage(content="hi again")]))
+
+        # The first loop's entry was dropped (its loop is closed); only the
+        # second, live-loop entry remains -- the cache does not grow forever.
+        assert len(AnthropicModelClient._client_cache) == 1
+
+
 class TestAcloseConnections:
     def _cfg(self, api_base: str) -> ModelClientConfig:
         return ModelClientConfig(
@@ -136,6 +183,28 @@ class TestAcloseConnections:
 
         assert client.close.call_count == 0
         assert AnthropicModelClient.connection_key(cfg) in AnthropicModelClient._client_cache
+
+    @pytest.mark.asyncio
+    async def test_aclose_connections_closes_every_loop_entry_for_a_dropped_connection(self):
+        # A connection identity can have several cache entries, one per event
+        # loop it has ever been used from (see ``_client_cache_key``).
+        # aclose_connections must close all of them, not just one.
+        cfg_keep = self._cfg("https://api.anthropic.com")
+        cfg_drop = self._cfg("https://old.example.com")
+        keep_client = AsyncMock()
+        drop_client_loop_a, drop_client_loop_b = AsyncMock(), AsyncMock()
+        base_drop_key = AnthropicModelClient.connection_key(cfg_drop)
+        AnthropicModelClient._client_cache[AnthropicModelClient.connection_key(cfg_keep)] = keep_client
+        AnthropicModelClient._client_cache[(*base_drop_key, "loop-a")] = drop_client_loop_a
+        AnthropicModelClient._client_cache[(*base_drop_key, "loop-b")] = drop_client_loop_b
+
+        await AnthropicModelClient.aclose_connections([cfg_drop])
+
+        assert drop_client_loop_a.close.call_count == 1
+        assert drop_client_loop_b.close.call_count == 1
+        assert keep_client.close.call_count == 0
+        assert AnthropicModelClient.connection_key(cfg_keep) in AnthropicModelClient._client_cache
+        assert not any(key[: len(base_drop_key)] == base_drop_key for key in AnthropicModelClient._client_cache)
 
     def test_connection_key_includes_auth_mode(self):
         api_key_cfg = self._cfg("https://api.anthropic.com")

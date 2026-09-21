@@ -16,6 +16,7 @@ Promp caching layout:
   3. messages
 """
 
+import asyncio
 import copy
 import importlib
 import json
@@ -642,7 +643,21 @@ class AnthropicModelClient(BaseModelClient):
         )
 
     def _client_cache_key(self) -> Tuple:
-        return self.connection_key(self.model_client_config)
+        """Connection identity plus the currently running event loop.
+
+        Mirrors ``OpenAIModelClient._client_cache_key``: the SDK's httpx
+        transport binds its locks and connection pool to whichever loop is
+        running when the client is built, so reusing a cached client against
+        a closed loop raises ``RuntimeError: Event loop is closed`` on a
+        batch runner that drives tasks through separate ``asyncio.run()``
+        calls. Appending the loop keeps a single-loop process (a server, or
+        one eval task) on its original cache behaviour.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        return (*self.connection_key(self.model_client_config), loop)
 
     @classmethod
     def _build_request_headers(
@@ -691,6 +706,7 @@ class AnthropicModelClient(BaseModelClient):
         key = self._client_cache_key()
         client = self._client_cache.get(key)
         if client is None:
+            self._evict_stale_shared_clients()
             client = self._build_async_anthropic_client()
             self._client_cache[key] = client
             llm_logger.info(
@@ -701,6 +717,28 @@ class AnthropicModelClient(BaseModelClient):
                 metadata={"base_url": self._normalize_base_url(self.model_client_config.api_base)},
             )
         return client
+
+    @classmethod
+    def _evict_stale_shared_clients(cls) -> None:
+        """Drop cached clients whose event loop has already been closed.
+
+        Mirrors ``OpenAIModelClient._evict_stale_shared_clients``. Called on a
+        cache miss, before building the replacement, so the cache-hit hot path
+        pays nothing for this. The stale client is dropped, not closed: its
+        transport belongs to an already-closed loop, so awaiting ``close()``
+        from a different (the current) loop would raise the same error this
+        exists to avoid.
+        """
+        stale_keys = [
+            key for key in list(cls._client_cache)
+            if isinstance(key[-1], asyncio.AbstractEventLoop) and key[-1].is_closed()
+        ]
+        for key in stale_keys:
+            cls._client_cache.pop(key, None)
+        if stale_keys:
+            logger.debug(
+                f"Dropped {len(stale_keys)} cached AsyncAnthropic client(s) from closed event loops"
+            )
 
     def _build_async_anthropic_client(self, timeout: Optional[float] = None) -> "anthropic.AsyncAnthropic":
         """Build a fresh ``AsyncAnthropic`` client with its own httpx connection pool."""
@@ -774,10 +812,18 @@ class AnthropicModelClient(BaseModelClient):
         removed should stop consuming tokens at once. An in-flight request on a
         closed client surfaces as a normal model-call failure (not retried by
         LLMRetryRail, which only retries repetition/stream-timeout markers).
+
+        Matches by connection-identity prefix rather than exact key equality:
+        a cache key may carry a trailing event-loop element (see
+        ``_client_cache_key``), so one connection identity can have several
+        entries, one per loop it has ever been used from. All of them belong
+        to the removed/changed credential and must go.
         """
-        keys = {cls.connection_key(cfg) for cfg in configs}
+        connection_keys = [cls.connection_key(cfg) for cfg in configs]
         closed = 0
-        for key in keys:
+        for key in list(cls._client_cache):
+            if not any(key[: len(conn_key)] == conn_key for conn_key in connection_keys):
+                continue
             client = cls._client_cache.pop(key, None)
             if client is None:
                 continue
