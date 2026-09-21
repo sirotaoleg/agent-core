@@ -69,6 +69,19 @@ from .status_logging import BrowserSubagentStatusLogger, is_browser_subagent_sta
 _BROWSER_PROGRESS_STATE_KEY = "__browser_subagent_progress_state__"
 _BROWSER_PROGRESS_TASK_KEY = "__browser_subagent_last_task__"
 _BROWSER_IMAGE_CAPABILITY_SECTION_NAME = "browser_image_input_capability"
+_BROWSER_DATE_PICKER_SECTION_NAME = "browser_date_picker_guidance"
+_BROWSER_DATE_PICKER_GUIDANCE = {
+    "en": (
+        "For calendar/date-picker widgets, do not type the date into a text field. Click the "
+        "specific day cell instead (look for a data-iso=\"YYYY-MM-DD\" attribute or an aria-label "
+        "naming the full date), then confirm the selection before proceeding."
+    ),
+    "cn": (
+        "对于日历/日期选择器组件，不要向文本框输入日期，而应点击对应的日期单元格"
+        "（查找 data-iso=\"YYYY-MM-DD\" 属性或包含完整日期的 aria-label），"
+        "确认选中后再继续。"
+    ),
+}
 _BROWSER_PHASE_STATE_KEY = BROWSER_TASK_STATE_KEY
 _BROWSER_SCREENSHOT_TOOL_NAMES = frozenset({"browser_take_screenshot"})
 _BROWSER_LOG_CONTEXT_TOKEN_KEY = "__browser_agent_log_context_token__"
@@ -2466,6 +2479,13 @@ class BrowserRuntimeRail(AgentRail):
                 priority=85,
             )
         )
+        builder.add_section(
+            PromptSection(
+                name=_BROWSER_DATE_PICKER_SECTION_NAME,
+                content=_BROWSER_DATE_PICKER_GUIDANCE,
+                priority=85,
+            )
+        )
 
     async def after_model_call(self, ctx: AgentCallbackContext) -> None:
         self._emit_status("after_model_call", ctx)
@@ -4373,8 +4393,13 @@ class BrowserRuntimeRail(AgentRail):
             return normalized_alias in text
         return re.search(rf"(?<![a-z0-9_]){re.escape(normalized_alias)}(?![a-z0-9_])", text) is not None
 
-    @staticmethod
-    def _infer_requested_result_count(task: str) -> int:
+    _NUMBER_WORDS = {
+        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+        "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+    }
+
+    @classmethod
+    def _infer_requested_result_count(cls, task: str) -> int:
         normalized = str(task or "").lower()
         patterns = (
             r"(?:top|first)\s*(\d{1,2})(?:\s*(?:results?|items?|articles?|links?))?",
@@ -4385,6 +4410,15 @@ class BrowserRuntimeRail(AgentRail):
             match = re.search(pattern, normalized, re.IGNORECASE)
             if match is not None:
                 return min(20, max(1, int(match.group(1))))
+        number_words = "|".join(cls._NUMBER_WORDS)
+        verb_match = re.search(
+            rf"\b(?:find|discover|list|show|get|recommend|identify|locate)\s+(\d{{1,2}}|{number_words})\b",
+            normalized,
+        )
+        if verb_match is not None:
+            token = verb_match.group(1)
+            count = int(token) if token.isdigit() else cls._NUMBER_WORDS[token]
+            return min(20, max(1, count))
         return 0
 
     @staticmethod
