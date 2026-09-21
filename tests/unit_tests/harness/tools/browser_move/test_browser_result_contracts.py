@@ -166,6 +166,30 @@ def test_string_error_is_not_promoted_to_page_evidence_when_wrapped():
     runtime.record_tool_reference_state.assert_not_called()
 
 
+def test_card_probe_completes_extraction_for_a_requested_count_but_not_for_one_item():
+    """A card list is completion evidence for "top N" tasks but not for a task that
+    wants one specific item opened -- seeing the list is not reading the item."""
+    cards_result = {"cards": [{"title": "Item 1", "result_index": 1}]}
+
+    one_item_state = BrowserRuntimeRail._build_phase_state("Find a vegetarian lasagna rated 4.5 or higher")
+    assert one_item_state["requested_result_count"] == 0
+    assert (
+        BrowserRuntimeRail._phase_completion_evidence(
+            "extraction", "browser_probe_cards", {}, cards_result, one_item_state
+        )
+        == ""
+    )
+
+    list_state = BrowserRuntimeRail._build_phase_state("Find the top 3 vegetarian lasagna recipes")
+    assert list_state["requested_result_count"] == 3
+    assert (
+        BrowserRuntimeRail._phase_completion_evidence(
+            "extraction", "browser_probe_cards", {}, cards_result, list_state
+        )
+        != ""
+    )
+
+
 def _admission_context(calls):
     runtime = MagicMock(spec=BrowserAgentRuntime)
     runtime.semantic_progress = {}
