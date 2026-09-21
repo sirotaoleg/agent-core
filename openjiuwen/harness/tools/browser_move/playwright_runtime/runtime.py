@@ -4968,13 +4968,16 @@ class BrowserRuntimeRail(AgentRail):
                 "another selector, generation, tool, or phase."
             )
         replan_count = int(state.get("replan_count") or 0)
-        if replan_count >= 2:
+        budget_s = float(state.get("deadline_budget_s") or 0.0)
+        remaining_s = float(state.get("deadline_remaining_s") or 0.0)
+        replan_limit = 4 if budget_s and remaining_s / budget_s > 0.5 else 2
+        if replan_count >= replan_limit:
             state["status"] = "partial" if cls._has_task_evidence(state) else "blocked"
             state["blockers"] = ["semantic_replan_budget_exhausted"]
             state["terminal_reason"] = "semantic_replan_budget_exhausted"
             state["next_action_class"] = "finish"
             raise ValueError(
-                "Semantic progress remained blocked after two replan trials. "
+                f"Semantic progress remained blocked after {replan_limit} replan trials. "
                 "Return blocked or partial with the available structured evidence."
             )
         blocked_strategy = str(
