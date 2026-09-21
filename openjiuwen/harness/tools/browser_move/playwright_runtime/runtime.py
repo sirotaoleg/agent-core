@@ -5072,6 +5072,7 @@ class BrowserRuntimeRail(AgentRail):
                 str(tool_name or "").strip().lower(),
                 args,
                 result,
+                state,
             )
             cls._record_failed_phase_result(state, details, tool_result)
             missing_fields = cls._missing_completion_requirements(state) if phase == "extraction" else []
@@ -5093,6 +5094,7 @@ class BrowserRuntimeRail(AgentRail):
             str(tool_name or "").strip().lower(),
             args,
             result,
+            state,
         )
         missing_fields = cls._missing_completion_requirements(state) if phase == "extraction" else []
         if completion_evidence and not missing_fields:
@@ -5935,6 +5937,7 @@ class BrowserRuntimeRail(AgentRail):
         tool_name: str,
         args: Dict[str, Any],
         result: Dict[str, Any],
+        state: Dict[str, Any],
     ) -> str:
         successful_condition_operations = {
             str(condition.get("op") or "").strip().lower()
@@ -5969,6 +5972,12 @@ class BrowserRuntimeRail(AgentRail):
             if isinstance(extracted, dict) and extracted:
                 return f"structured extraction returned {len(extracted)} field(s)"
             if isinstance(cards, list) and cards:
+                # A card probe reads a results list, not the entity the task is about. A task
+                # asking for one specific item (requested_result_count == 0) needs a real
+                # `extracted` result from opening it; _missing_completion_requirements already
+                # gates list tasks (requested_result_count >= 1) on having enough cards.
+                if int(state.get("requested_result_count") or 0) < 1:
+                    return ""
                 excluded_regions = {"hot_search", "sidebar", "account", "chat"}
                 excluded_kinds = {
                     "hot_search",
