@@ -14,6 +14,13 @@ Element refs cross the wire as plain dicts:
     {"kind": "selector", "css": <str>, "nth": <int>}
     {"kind": "text", "text": <str>, "role": <str | None>}
     {"kind": "node", "backend_node_id": <int>, "frame_id": <str | None>}
+    {"kind": "driver", "handle": <str>, "driver_generation": <int>}
+
+``"driver"`` is the opaque, backend-neutral durable ref (see
+``backends/contract/base.py:DriverRef``). This adapter is a CDP backend, so it
+mints handles of the form ``"bnid:<backend_node_id>"`` and parses that same
+prefix back on the way in; a non-CDP backend would mint and parse whatever
+scheme fits its own identity model instead.
 
 Runs as a flat sibling module inside the sidecar process (``import
 session_adapter``), importing sibling modules the same way.
@@ -118,6 +125,24 @@ def _normalize_upload_paths(paths: list[str]) -> tuple[list[str], str | None]:
     if err_parts:
         return existing, "; ".join(err_parts)
     return existing, None
+
+
+_DRIVER_REF_HANDLE_PREFIX = "bnid:"
+
+
+def _mint_driver_ref(backend_node_id: int, driver_generation: int) -> dict[str, Any]:
+    """Mint this backend's ``DriverRef`` wire dict for a resolved CDP node."""
+    return {"handle": f"{_DRIVER_REF_HANDLE_PREFIX}{int(backend_node_id)}", "driver_generation": int(driver_generation)}
+
+
+def _parse_driver_ref_handle(handle: str) -> int:
+    """Recover the backend node id this adapter minted into ``handle``."""
+    if not handle.startswith(_DRIVER_REF_HANDLE_PREFIX):
+        raise exceptions.ElementNotFound(f"driver ref handle {handle!r} was not minted by this backend")
+    try:
+        return int(handle[len(_DRIVER_REF_HANDLE_PREFIX) :])
+    except ValueError as exc:
+        raise exceptions.ElementNotFound(f"driver ref handle {handle!r} does not encode a backend node id") from exc
 
 
 def browser_use_version() -> str:
@@ -234,6 +259,7 @@ class SessionAdapter:
         tag, attributes, visible = await self._element_facts(backend_node_id)
         return {
             "backend_node_id": backend_node_id,
+            "driver_ref": _mint_driver_ref(backend_node_id, self._driver_generation),
             "frame_id": ref.get("frame_id"),
             "box": box,
             "visible": visible,
@@ -752,6 +778,8 @@ class SessionAdapter:
             return int(backend_node_id)
         if kind == "node":
             return int(ref["backend_node_id"])
+        if kind == "driver":
+            return _parse_driver_ref_handle(str(ref["handle"]))
         if kind == "selector":
             cdp_session = await self._ensure_cdp_session()
             node_id = await cdp.query_selector_node_id(cdp_session.cdp_client, cdp_session.session_id, ref["css"])

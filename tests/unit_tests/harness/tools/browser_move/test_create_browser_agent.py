@@ -24,6 +24,7 @@ from openjiuwen.harness.subagents.browser_agent import (
     create_browser_agent,
 )
 from openjiuwen.harness.tools.browser_move.runtime.config import (
+    BrowserInstanceConfig,
     BrowserRunGuardrails,
     RuntimeSettings,
 )
@@ -45,7 +46,7 @@ def _fake_model() -> MagicMock:
     return MagicMock(spec=Model)
 
 
-def _fake_settings() -> RuntimeSettings:
+def _fake_settings(*, browser_driver_backend: str = "") -> RuntimeSettings:
     mcp_cfg = McpServerConfig(
         server_id="test",
         server_name="test",
@@ -53,6 +54,7 @@ def _fake_settings() -> RuntimeSettings:
         client_type="stdio",
         params={"cwd": "."},
     )
+    instance = BrowserInstanceConfig(browser_driver_backend=browser_driver_backend) if browser_driver_backend else None
     return RuntimeSettings(
         provider="openai",
         api_key="test-key",
@@ -60,6 +62,7 @@ def _fake_settings() -> RuntimeSettings:
         model_name="test-model",
         mcp_cfg=mcp_cfg,
         guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
+        instance=instance,
     )
 
 
@@ -208,7 +211,10 @@ def test_browser_agent_prompt_enforces_convergent_browser_strategy() -> None:
 
 
 def test_selected_capabilities_are_logged_and_forwarded_to_runtime(caplog) -> None:
-    settings = _fake_settings()
+    # Explicitly request browser_use: this test asserts BU-path catalog narrowing,
+    # which is no longer the implicit default (see runtime/config.py:
+    # resolve_browser_driver_backend, Task 1 of the driver-contract hardening).
+    settings = _fake_settings(browser_driver_backend="browser_use")
     calls, fake = _capture_create_deep_agent()
     ctx, mock_runtime_cls, _mock_build, _tools = _patch_all(fake)
     caplog.set_level("INFO")
@@ -287,7 +293,9 @@ def test_factory_does_not_advertise_unregistered_run_code_on_bu(
     with ctx:
         create_browser_agent(
             _fake_model(),
-            settings=_fake_settings(),
+            # Explicitly request browser_use: the test name and assertions below
+            # are BU-specific and must not depend on the implicit default backend.
+            settings=_fake_settings(browser_driver_backend="browser_use"),
             browser_capabilities=[capability],
         )
 
@@ -463,7 +471,9 @@ def test_custom_subagents_are_forwarded() -> None:
 
 
 def test_settings_forwarded_to_runtime_constructor() -> None:
-    settings = _fake_settings()
+    # Explicitly request browser_use: the expected allowlist below is computed via
+    # narrow_allowed_tools_for_browser_driver, which only applies on that backend.
+    settings = _fake_settings(browser_driver_backend="browser_use")
     calls, fake = _capture_create_deep_agent()
     ctx, mock_runtime_cls, _mock_build, _tools = _patch_all(fake)
     with ctx:

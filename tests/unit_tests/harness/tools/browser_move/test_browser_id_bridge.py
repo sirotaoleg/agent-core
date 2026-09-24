@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from unittest.mock import AsyncMock
 
-from openjiuwen.harness.tools.browser_move.backends.contract.base import IndexRef, NodeRef, SelectorRef
+from openjiuwen.harness.tools.browser_move.backends.contract.base import DriverRef, IndexRef, SelectorRef
 from openjiuwen.harness.tools.browser_move.runtime.config import BrowserInstanceConfig
 from openjiuwen.harness.tools.browser_move.runtime.page_state import (
     BrowserPageState,
@@ -21,7 +21,7 @@ from openjiuwen.harness.tools.browser_move.runtime.page_state import (
 )
 from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime
 
-from tests.unit_tests.harness.tools.browser_move.fakes.fake_driver import FakeDriver
+from tests.unit_tests.harness.tools.browser_move.fakes.fake_driver import FakeDriver, _default_observation
 
 
 def _run(coro: Any) -> Any:
@@ -48,6 +48,7 @@ def _bu_target(
     *,
     bu_index: str = "",
     backend_node_id: str = "42",
+    driver_ref: str = "",
     driver_generation: str = "1",
     selector: str = "",
 ) -> BrowserTarget:
@@ -56,6 +57,8 @@ def _bu_target(
         locator["bu_index"] = bu_index
     if backend_node_id:
         locator["backend_node_id"] = backend_node_id
+    if driver_ref:
+        locator["driver_ref"] = driver_ref
     if driver_generation:
         locator["driver_generation"] = driver_generation
     if selector:
@@ -123,8 +126,13 @@ def test_fresh_bu_index_stamps_with_index_ref() -> None:
     _run(exercise())
 
 
-def test_stale_driver_generation_retries_stamp_with_node_ref() -> None:
-    async def exercise() -> None:
+def test_stale_driver_generation_retries_stamp_with_driver_ref() -> None:
+    """Stale IndexRef falls back to the durable DriverRef -- never NodeRef --
+    for both a legacy CDP-shaped locator and a locator with no backend node
+    id at all (the non-CDP-backend case DriverRef exists to support).
+    """
+
+    async def legacy_backend_node_id_locator() -> None:
         driver = FakeDriver(driver_generation=5)
         await driver.connect(cdp_url="http://127.0.0.1:9222")
         runtime = _make_driver_runtime(driver)
@@ -138,10 +146,39 @@ def test_stale_driver_generation_retries_stamp_with_node_ref() -> None:
         stamp_calls = [call for call in driver.act_calls if call.method == "stamp"]
         assert len(stamp_calls) == 2
         assert isinstance(stamp_calls[0].kwargs["ref"], IndexRef)
-        assert isinstance(stamp_calls[1].kwargs["ref"], NodeRef)
-        assert stamp_calls[1].kwargs["ref"].backend_node_id == 42
+        retry_ref = stamp_calls[1].kwargs["ref"]
+        assert isinstance(retry_ref, DriverRef)
+        # Backward-compat: a legacy locator only ever carried a raw
+        # backend_node_id, so the runtime wraps it in the same "bnid:"
+        # handle convention the browser_use driver itself mints.
+        assert retry_ref.handle == "bnid:42"
 
-    _run(exercise())
+    async def observation_sourced_locator_with_no_backend_node_id() -> None:
+        # Stand in for a non-CDP backend: the observation carries no
+        # backend_node_id anywhere, only the driver-minted opaque handle.
+        observation = _default_observation(driver_generation=3, backend_node_id=None)
+        driver = FakeDriver(driver_generation=5)
+        await driver.connect(cdp_url="http://127.0.0.1:9222")
+        runtime = _make_driver_runtime(driver)
+
+        runtime._register_observation_targets(observation)
+        element = observation.elements[0]
+        target = next(
+            t for t in runtime._page_state._targets.values() if t.locator.get("bu_index") == str(element.index)
+        )
+        assert "backend_node_id" not in target.locator
+        assert target.locator["driver_ref"] == element.driver_ref.handle
+
+        await runtime._materialize_ax_target(target)
+        stamp_calls = [call for call in driver.act_calls if call.method == "stamp"]
+        assert len(stamp_calls) == 2
+        assert isinstance(stamp_calls[0].kwargs["ref"], IndexRef)
+        retry_ref = stamp_calls[1].kwargs["ref"]
+        assert isinstance(retry_ref, DriverRef)
+        assert retry_ref.handle == element.driver_ref.handle
+
+    _run(legacy_backend_node_id_locator())
+    _run(observation_sourced_locator_with_no_backend_node_id())
 
 
 def test_vanished_backend_node_surfaces_stale_target_error() -> None:
@@ -225,6 +262,7 @@ def test_snapshot_ref_click_and_type_use_current_browser_driver_identity() -> No
                 SimpleNamespace(
                     index=2,
                     backend_node_id=42,
+                    driver_ref=DriverRef(handle="bnid:42", driver_generation=2),
                     frame_id="frame-1",
                     role="textbox",
                     name="Customer name",
@@ -233,6 +271,7 @@ def test_snapshot_ref_click_and_type_use_current_browser_driver_identity() -> No
                 SimpleNamespace(
                     index=3,
                     backend_node_id=43,
+                    driver_ref=DriverRef(handle="bnid:43", driver_generation=2),
                     frame_id="frame-1",
                     role="button",
                     name="Submit",
@@ -290,6 +329,7 @@ def test_stale_snapshot_ref_reports_current_generation_on_browser_driver_path() 
                     SimpleNamespace(
                         index=2,
                         backend_node_id=42,
+                        driver_ref=DriverRef(handle="bnid:42", driver_generation=4),
                         frame_id="frame-1",
                         role="textbox",
                         name="Customer name",

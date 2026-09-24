@@ -56,14 +56,15 @@ def test_map_browser_state_summary_empty_selector_map() -> None:
 
 def test_map_enhanced_node_missing_absolute_position() -> None:
     _, node = _node(index=1, absolute_position=None)
-    mapped = mapping.map_enhanced_node(1, node)
+    mapped = mapping.map_enhanced_node(1, node, driver_generation=5)
     assert mapped["box"] is None
     assert mapped["backend_node_id"] == 100
+    assert mapped["driver_ref"] == {"handle": "bnid:100", "driver_generation": 5}
 
 
 def test_map_enhanced_node_missing_ax_node() -> None:
     _, node = _node(index=2, ax_node=None)
-    mapped = mapping.map_enhanced_node(2, node)
+    mapped = mapping.map_enhanced_node(2, node, driver_generation=1)
     assert mapped["role"] is None
     assert mapped["name"] is None
 

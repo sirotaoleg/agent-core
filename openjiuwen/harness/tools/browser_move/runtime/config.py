@@ -76,10 +76,11 @@ class BrowserInstanceConfig:
     profile_name: str = ""  # "" -> key, then env BROWSER_PROFILE_NAME
     cdp_url: str = ""  # remote mode: explicit CDP endpoint
     browser_binary: str = ""  # optional Chrome path override
-    # "" -> env BROWSER_DRIVER_BACKEND, then "browser_use". Distinct from
+    # "" -> env BROWSER_DRIVER_BACKEND, then "playwright_mcp" (the safe
+    # default; see resolve_browser_driver_backend). Distinct from
     # ``driver_mode`` above (BROWSER_DRIVER): that selects how Chrome is
     # obtained (managed/remote/extension); this selects which library drives
-    # it (browser_use today). Never merge or cross-read the two.
+    # it. Never merge or cross-read the two.
     browser_driver_backend: str = ""
 
     def sanitized_key(self) -> str:
@@ -276,11 +277,21 @@ def resolve_browser_driver_backend(instance: Optional[BrowserInstanceConfig] = N
     selects which driver library drives it (``browser_use`` is the only
     registered backend today; ``playwright_mcp`` is reserved as a name only,
     see backends/contract/registry.py). Never merge or cross-read the two settings.
+
+    The default is the legacy Playwright-MCP path (``"playwright_mcp"``), not
+    ``"browser_use"``. ``browser_use`` requires a second Python interpreter
+    (see ``discover_sidecar_python`` in backends/browser_use/transport.py); an
+    environment that has not provisioned that sidecar venv would otherwise
+    lose the browser agent on its first call. Making the out-of-band
+    dependency opt-in, rather than the silent default, keeps upgrades safe.
+    Callers that want ``browser_use`` must request it explicitly via
+    ``BrowserInstanceConfig.browser_driver_backend`` or the
+    ``BROWSER_DRIVER_BACKEND`` env var.
     """
     explicit = (instance.browser_driver_backend or "").strip().lower() if instance else ""
     if not explicit:
         explicit = (os.getenv("BROWSER_DRIVER_BACKEND") or "").strip().lower()
-    return explicit or "browser_use"
+    return explicit or "playwright_mcp"
 
 
 def resolve_browser_driver_cdp_url(*, service_cdp_endpoint: str = "") -> str:

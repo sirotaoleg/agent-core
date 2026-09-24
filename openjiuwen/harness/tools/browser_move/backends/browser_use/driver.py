@@ -23,6 +23,7 @@ from openjiuwen.harness.tools.browser_move.backends.contract.base import (
     Box,
     DriverHealth,
     DriverInfo,
+    DriverRef,
     ElementRef,
     IndexRef,
     NavResult,
@@ -47,6 +48,8 @@ def _ref_to_wire(ref: ElementRef) -> dict[str, Any]:
         return {"kind": "text", "text": ref.text, "role": ref.role}
     if isinstance(ref, NodeRef):
         return {"kind": "node", "backend_node_id": ref.backend_node_id, "frame_id": ref.frame_id}
+    if isinstance(ref, DriverRef):
+        return {"kind": "driver", "handle": ref.handle, "driver_generation": ref.driver_generation}
     raise TypeError(f"unsupported ElementRef type: {type(ref)!r}")
 
 
@@ -66,15 +69,25 @@ def _tab_from_wire(data: dict[str, Any]) -> TabRef:
     )
 
 
+def _driver_ref_from_wire(data: dict[str, Any]) -> DriverRef:
+    return DriverRef(handle=str(data["handle"]), driver_generation=int(data.get("driver_generation", 0)))
+
+
+def _optional_backend_node_id_from_wire(data: dict[str, Any]) -> int | None:
+    raw = data.get("backend_node_id")
+    return None if raw is None else int(raw)
+
+
 def _element_from_wire(data: dict[str, Any]) -> ObservedElement:
     return ObservedElement(
         index=int(data["index"]),
-        backend_node_id=int(data["backend_node_id"]),
+        driver_ref=_driver_ref_from_wire(data["driver_ref"]),
         frame_id=data.get("frame_id"),
         tag=str(data["tag"]),
         role=data.get("role"),
         name=data.get("name"),
         value=data.get("value"),
+        backend_node_id=_optional_backend_node_id_from_wire(data),
         attributes=dict(data.get("attributes") or {}),
         box=_box_from_wire(data.get("box")),
         visible=bool(data.get("visible", False)),
@@ -210,11 +223,12 @@ class BrowserUseDriver:
         transport = self._require_transport()
         result = await transport.request("resolve", {"ref": _ref_to_wire(ref)})
         return ResolvedElement(
-            backend_node_id=int(result["backend_node_id"]),
+            driver_ref=_driver_ref_from_wire(result["driver_ref"]),
             frame_id=result.get("frame_id"),
             box=_box_from_wire(result.get("box")),
             visible=bool(result.get("visible", False)),
             tag=str(result.get("tag", "")),
+            backend_node_id=_optional_backend_node_id_from_wire(result),
             attributes=dict(result.get("attributes") or {}),
         )
 

@@ -500,6 +500,39 @@ _BROWSER_ZERO_COMMENT_RE = re.compile(
 )
 
 
+def _durable_element_ref_from_locator(locator: Dict[str, str]) -> Any:
+    """Build the durable ``DriverRef`` a stale ``IndexRef`` falls back to.
+
+    Locators minted after this change carry the driver's own ``driver_ref``
+    handle directly (see ``_register_observation_targets``). Locators
+    persisted before this change -- a session restored mid-flight -- only
+    carry the legacy CDP ``backend_node_id`` integer; that value is wrapped
+    in the same ``"bnid:<id>"`` handle convention the browser_use driver
+    already mints (see ``backends/browser_use/sidecar/session_adapter.py``),
+    so the fallback still resolves. Neither branch constructs a ``NodeRef``
+    -- the runtime only ever hands the driver an opaque handle it minted.
+    """
+    from openjiuwen.harness.tools.browser_move.backends.contract.base import DriverRef
+
+    driver_generation_raw = str(locator.get("driver_generation") or "").strip()
+    try:
+        driver_generation = int(driver_generation_raw) if driver_generation_raw else 0
+    except (TypeError, ValueError):
+        driver_generation = 0
+
+    driver_ref_raw = str(locator.get("driver_ref") or "").strip()
+    if driver_ref_raw:
+        return DriverRef(handle=driver_ref_raw, driver_generation=driver_generation)
+
+    # Backward-compat read path: older locators only ever stored a raw CDP
+    # backend node id, never a driver-minted handle.
+    backend_node_id_raw = str(locator.get("backend_node_id") or "").strip()
+    if backend_node_id_raw:
+        return DriverRef(handle=f"bnid:{backend_node_id_raw}", driver_generation=driver_generation)
+
+    return None
+
+
 class BrowserAgentRuntime:
     """Runtime kernel for browser lifecycle and deterministic helper actions."""
 
@@ -1125,13 +1158,24 @@ class BrowserAgentRuntime:
         if self._code_executor is not None:
             return
 
-        # Legacy MCP path: only reachable when BROWSER_DRIVER_BACKEND is not
-        # browser_use. Unit tests may monkeypatch _call_playwright_run_code_unsafe
-        # on the instance; the class no longer ships an MCP resolver.
+        # Legacy MCP path: only reachable when the resolved backend is not
+        # browser_use (see _uses_browser_driver / resolve_browser_driver_backend
+        # above). ``_call_playwright_run_code_unsafe`` (defined above) resolves
+        # and invokes the registered browser_run_code[_unsafe] Playwright MCP
+        # tool; unit tests replace it on the instance with a stub via
+        # ``runtime._call_playwright_run_code_unsafe = AsyncMock(...)`` instead
+        # of standing up a real MCP transport. The getattr/callable guard below
+        # exists for exactly that substitution: it only fires when whatever is
+        # bound to ``self._call_playwright_run_code_unsafe`` is missing or not
+        # callable, not because this codebase removed MCP support.
         async def _direct_code_executor(js_code: str):
             call = getattr(self, "_call_playwright_run_code_unsafe", None)
             if not callable(call):
-                raise RuntimeError("Playwright MCP hands removed; set BROWSER_DRIVER_BACKEND=browser_use")
+                raise RuntimeError(
+                    "No Playwright MCP code-execution handler is bound to this "
+                    "runtime (_call_playwright_run_code_unsafe is missing or not "
+                    "callable)"
+                )
             return await call(js_code)
 
         self._code_executor = _direct_code_executor
@@ -1363,18 +1407,19 @@ class BrowserAgentRuntime:
         }
 
     def _register_observation_targets(self, observation: Any) -> None:
-        """Mint PageState targets from a driver Observation (bu_index + backend_node_id)."""
+        """Mint PageState targets from a driver Observation (bu_index + DriverRef)."""
         page_state = self._ensure_page_state()
         elements = getattr(observation, "elements", ()) or ()
         driver_generation = int(getattr(observation, "driver_generation", 0) or 0)
         for element in elements:
             index = getattr(element, "index", None)
-            backend_node_id = getattr(element, "backend_node_id", None)
-            if index is None or backend_node_id is None:
+            driver_ref = getattr(element, "driver_ref", None)
+            handle = getattr(driver_ref, "handle", None)
+            if index is None or not handle:
                 continue
             locator = {
                 "bu_index": str(index),
-                "backend_node_id": str(backend_node_id),
+                "driver_ref": str(handle),
                 "driver_generation": str(driver_generation),
             }
             frame_id = getattr(element, "frame_id", None)
@@ -1508,8 +1553,9 @@ class BrowserAgentRuntime:
         """Stamp a temporary DOM marker and store the resulting CSS selector.
 
         Replaces Playwright MCP ``browser_evaluate`` on an AX ref. With the
-        browser_use driver this uses ``driver.stamp`` on an IndexRef / NodeRef
-        (or falls back to a SelectorRef when only a CSS locator exists).
+        browser_use driver this uses ``driver.stamp`` on an IndexRef, falling
+        back to the durable ``DriverRef`` when the index has gone stale (or a
+        SelectorRef when only a CSS locator exists).
         """
         if target.locator.get("selector"):
             return target
@@ -1518,7 +1564,7 @@ class BrowserAgentRuntime:
         marker_value = target.target_id
 
         if self._uses_browser_driver():
-            from openjiuwen.harness.tools.browser_move.backends.contract.base import IndexRef, NodeRef, SelectorRef
+            from openjiuwen.harness.tools.browser_move.backends.contract.base import IndexRef, SelectorRef
             from openjiuwen.harness.tools.browser_move.backends.contract.errors import (
                 StaleIndexError,
                 StaleNodeError,
@@ -1529,8 +1575,7 @@ class BrowserAgentRuntime:
             ref = None
             bu_index = str(locator.get("bu_index") or "").strip()
             driver_generation_raw = str(locator.get("driver_generation") or "").strip()
-            backend_node_id_raw = str(locator.get("backend_node_id") or "").strip()
-            frame_id = locator.get("frame_id")
+            durable_ref = _durable_element_ref_from_locator(locator)
             css = str(locator.get("css") or locator.get("selector") or "").strip()
 
             if bu_index and driver_generation_raw:
@@ -1538,34 +1583,21 @@ class BrowserAgentRuntime:
                     ref = IndexRef(index=int(bu_index), driver_generation=int(driver_generation_raw))
                 except (TypeError, ValueError):
                     ref = None
-            if ref is None and backend_node_id_raw:
-                try:
-                    ref = NodeRef(
-                        backend_node_id=int(backend_node_id_raw),
-                        frame_id=str(frame_id) if frame_id else None,
-                    )
-                except (TypeError, ValueError):
-                    ref = None
+            if ref is None and durable_ref is not None:
+                ref = durable_ref
             if ref is None and css:
                 ref = SelectorRef(css=css)
 
             if ref is None:
-                # Legacy AX refs have no CDP identity; ask for a fresh observation.
+                # Legacy AX refs have no driver identity; ask for a fresh observation.
                 raise ValueError(f"PageState target has no executable locator for driver stamp: {target.target_id}")
 
             try:
                 selector = await driver.stamp(ref, attribute=attribute, value=marker_value)
             except StaleIndexError:
-                if not backend_node_id_raw:
+                if durable_ref is None:
                     raise
-                selector = await driver.stamp(
-                    NodeRef(
-                        backend_node_id=int(backend_node_id_raw),
-                        frame_id=str(frame_id) if frame_id else None,
-                    ),
-                    attribute=attribute,
-                    value=marker_value,
-                )
+                selector = await driver.stamp(durable_ref, attribute=attribute, value=marker_value)
             except StaleNodeError as exc:
                 raise ValueError(str(exc) or f"Stale backend node for {target.target_id}") from exc
 
@@ -1650,7 +1682,11 @@ class BrowserAgentRuntime:
         if target.locator.get("ref") or (
             self._uses_browser_driver()
             and not target.locator.get("selector")
-            and (target.locator.get("bu_index") or target.locator.get("backend_node_id"))
+            and (
+                target.locator.get("bu_index")
+                or target.locator.get("driver_ref")
+                or target.locator.get("backend_node_id")
+            )
         ):
             target = await self._materialize_ax_target(target)
 
@@ -2302,7 +2338,11 @@ class BrowserAgentRuntime:
             js_code = source
         call = getattr(self, "_call_playwright_run_code_unsafe", None)
         if not callable(call):
-            raise RuntimeError("Playwright MCP hands removed; set BROWSER_DRIVER_BACKEND=browser_use")
+            raise RuntimeError(
+                "No Playwright MCP code-execution handler is bound to this "
+                "runtime (_call_playwright_run_code_unsafe is missing or not "
+                "callable)"
+            )
         return await call(js_code)
 
     async def batch_interact(
@@ -2502,7 +2542,6 @@ class BrowserAgentRuntime:
         """Resolve PageState / locator inputs to a driver ``ElementRef``."""
         from openjiuwen.harness.tools.browser_move.backends.contract.base import (
             IndexRef,
-            NodeRef,
             SelectorRef,
             TextRef,
         )
@@ -2539,21 +2578,17 @@ class BrowserAgentRuntime:
         if step.get("role") not in (None, "") and step.get("name") not in (None, ""):
             return TextRef(text=str(step.get("name")), role=str(step.get("role")))
 
-        # Prefer native driver identity when materialize left bu_index / node ids.
+        # Prefer native driver identity when materialize left bu_index / a durable ref.
         resolved_target_id = str(step.get("resolved_target_id") or target_id or "").strip()
         target = page_state.get_target(resolved_target_id) if resolved_target_id else None
         locator = dict(target.locator) if target is not None else {}
         bu_index = str(locator.get("bu_index") or "").strip()
         driver_generation_raw = str(locator.get("driver_generation") or "").strip()
-        backend_node_id_raw = str(locator.get("backend_node_id") or "").strip()
         if bu_index and driver_generation_raw:
             return IndexRef(index=int(bu_index), driver_generation=int(driver_generation_raw))
-        if backend_node_id_raw:
-            frame_id = locator.get("frame_id")
-            return NodeRef(
-                backend_node_id=int(backend_node_id_raw),
-                frame_id=str(frame_id) if frame_id else None,
-            )
+        durable_ref = _durable_element_ref_from_locator(locator)
+        if durable_ref is not None:
+            return durable_ref
         raise ValueError("unable to build ElementRef from resolved PageState target")
 
     async def click(

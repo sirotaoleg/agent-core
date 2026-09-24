@@ -47,13 +47,37 @@ class TextRef:
 
 @dataclass(frozen=True)
 class NodeRef:
-    """Reference an element by CDP backend node id."""
+    """Reference an element by CDP backend node id.
+
+    This remains a legitimate ref for CDP-based backends (browser-use today).
+    A backend with no CDP node id (a screenshot+coordinates CUA backend, a
+    WebDriver backend, an accessibility-ref backend) cannot construct one and
+    must not fabricate one; it addresses the same durable element through
+    ``DriverRef`` instead. Both are valid ``ElementRef`` members.
+    """
 
     backend_node_id: int
     frame_id: str | None = None
 
 
-ElementRef = IndexRef | SelectorRef | TextRef | NodeRef
+@dataclass(frozen=True)
+class DriverRef:
+    """Opaque, driver-minted durable element handle.
+
+    The runtime MUST NOT parse ``handle``, compare it structurally, or derive
+    any meaning from it. It is a receipt: store it, hand it back. This is the
+    backend-neutral counterpart to ``NodeRef`` -- any backend, CDP-based or
+    not, mints one for every observed element, so the runtime always has a
+    durable fallback to retry with when the ephemeral ``IndexRef`` goes stale
+    (see ``StaleIndexError``), regardless of what identity system the backend
+    uses internally.
+    """
+
+    handle: str
+    driver_generation: int
+
+
+ElementRef = IndexRef | SelectorRef | TextRef | NodeRef | DriverRef
 
 
 @dataclass(frozen=True)
@@ -70,9 +94,10 @@ class Box:
 class TabRef:
     """One browser tab as reported by the driver.
 
-    ``target_id`` is a CDP target id and is UNRELATED to PageState
-    ``target_id``; it is named for CDP because that is what browser-use
-    returns.
+    ``target_id`` is an opaque per-backend tab handle and is UNRELATED to
+    PageState ``target_id``. For browser-use it happens to be a literal CDP
+    target id (that is what the sidecar returns); other backends may use any
+    stable string identity for a tab.
     """
 
     target_id: str
@@ -83,15 +108,24 @@ class TabRef:
 
 @dataclass(frozen=True)
 class ObservedElement:
-    """One interactive/observable DOM node from an ``observe()`` call."""
+    """One interactive/observable DOM node from an ``observe()`` call.
+
+    ``driver_ref`` is REQUIRED and minted by the driver for every element --
+    it is the only way the runtime obtains a durable handle at all.
+    ``backend_node_id`` is optional: CDP-based backends (browser-use) populate
+    it because they genuinely have one, but a backend with no DOM (a
+    screenshot+coordinates CUA backend, a WebDriver backend, an
+    accessibility-ref backend) leaves it ``None`` rather than fabricate one.
+    """
 
     index: int
-    backend_node_id: int
+    driver_ref: DriverRef
     frame_id: str | None
     tag: str
     role: str | None
     name: str | None
     value: str | None
+    backend_node_id: int | None = None
     attributes: dict[str, str] = field(default_factory=dict)
     box: Box | None = None
     visible: bool = False
@@ -124,13 +158,18 @@ class Observation:
 
 @dataclass(frozen=True)
 class ResolvedElement:
-    """The concrete DOM node an ``ElementRef`` resolved to."""
+    """The concrete DOM node an ``ElementRef`` resolved to.
 
-    backend_node_id: int
+    See ``ObservedElement`` for why ``driver_ref`` is required and
+    ``backend_node_id`` is optional.
+    """
+
+    driver_ref: DriverRef
     frame_id: str | None
     box: Box | None
     visible: bool
     tag: str
+    backend_node_id: int | None = None
     attributes: dict[str, str] = field(default_factory=dict)
 
 
@@ -184,10 +223,18 @@ class DriverHealth:
 class BrowserDriver(Protocol):
     """Eyes-and-hands browser automation surface.
 
-    Every method is async and maps one-to-one to a wire method name (see
-    ``backends/browser_use/sidecar/wire.py``). Implementations own no
-    PageState/generation concepts; they only know ``driver_generation`` and
-    DOM node identity.
+    This contract is backend-neutral: every method describes browser
+    automation semantics, not the shape of any one backend's wire protocol.
+    ``backends/browser_use/sidecar/wire.py`` is today's ONE registered
+    backend, and its wire method names happen to mirror this Protocol
+    one-to-one -- that mirroring runs from the Protocol to the sidecar, not
+    the other way around. A future backend (a screenshot+coordinates CUA
+    loop, a WebDriver backend, a Playwright-MCP accessibility-ref driver)
+    implements the same async methods without needing to speak that wire
+    format, or any wire format, at all. Implementations own no
+    PageState/generation concepts; they only know their own
+    ``driver_generation`` and element identity (``ElementRef`` --
+    ``IndexRef`` is ephemeral, ``DriverRef``/``NodeRef`` are durable).
     """
 
     async def connect(self, *, cdp_url: str, timeout_s: float = 30.0) -> DriverInfo: ...
@@ -316,6 +363,7 @@ __all__ = [
     "BrowserDriver",
     "DriverHealth",
     "DriverInfo",
+    "DriverRef",
     "ElementRef",
     "IndexRef",
     "NavResult",

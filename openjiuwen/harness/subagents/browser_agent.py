@@ -305,7 +305,9 @@ def create_browser_agent(
     resolved_settings = _resolve_runtime_settings(browser_model, settings, instance)
 
     allowed_tool_names = resolved_capabilities.allowed_tool_names
-    # Default backend is browser_use: only advertise tools that are actually registered.
+    # Default backend is the legacy playwright_mcp path; only narrow the
+    # allowlist when browser_use is explicitly requested and actually
+    # registered as the active backend.
     if resolve_browser_driver_backend(resolved_settings.instance) == "browser_use":
         allowed_tool_names = narrow_allowed_tools_for_browser_driver(
             allowed_tool_names,

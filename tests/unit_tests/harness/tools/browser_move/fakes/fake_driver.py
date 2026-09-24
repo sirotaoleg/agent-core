@@ -15,6 +15,7 @@ from openjiuwen.harness.tools.browser_move.backends.contract.base import (
     BrowserDriver,
     DriverHealth,
     DriverInfo,
+    DriverRef,
     ElementRef,
     IndexRef,
     NavResult,
@@ -41,16 +42,45 @@ class ActCall:
     kwargs: dict[str, Any] = field(default_factory=dict)
 
 
-def _default_observation(*, driver_generation: int = 1) -> Observation:
+_BNID_HANDLE_PREFIX = "bnid:"
+
+
+def _mint_driver_ref(*, index: int, backend_node_id: int | None, driver_generation: int) -> DriverRef:
+    """Mint this fake's ``DriverRef``.
+
+    Mirrors the browser_use sidecar's own "bnid:<id>" convention when a CDP
+    node id exists; falls back to an index-keyed handle when it does not --
+    that is the non-CDP-backend case this fake also has to exercise.
+    """
+    handle = f"{_BNID_HANDLE_PREFIX}{backend_node_id}" if backend_node_id is not None else f"idx:{index}"
+    return DriverRef(handle=handle, driver_generation=driver_generation)
+
+
+def _parse_bnid_handle(handle: str) -> int | None:
+    """Recover the backend node id a "bnid:" handle encodes.
+
+    Returns ``None`` for any other handle shape -- opaque to this fake, as it
+    would be to any real backend that did not mint it itself.
+    """
+    if not handle.startswith(_BNID_HANDLE_PREFIX):
+        return None
+    try:
+        return int(handle[len(_BNID_HANDLE_PREFIX) :])
+    except ValueError:
+        return None
+
+
+def _default_observation(*, driver_generation: int = 1, backend_node_id: int | None = 42) -> Observation:
     tab = TabRef(target_id="tab-1", url="https://example.test/", title="Example", active=True)
     element = ObservedElement(
         index=1,
-        backend_node_id=42,
+        driver_ref=_mint_driver_ref(index=1, backend_node_id=backend_node_id, driver_generation=driver_generation),
         frame_id=None,
         tag="button",
         role="button",
         name="Go",
         value=None,
+        backend_node_id=backend_node_id,
         visible=True,
     )
     return Observation(
@@ -176,38 +206,57 @@ class FakeDriver:
             obs = self._observations[min(self._obs_index, len(self._observations) - 1)]
             element = next((e for e in obs.elements if e.index == ref.index), obs.elements[0])
             return ResolvedElement(
-                backend_node_id=element.backend_node_id,
+                driver_ref=element.driver_ref,
                 frame_id=element.frame_id,
                 box=element.box,
                 visible=element.visible,
                 tag=element.tag,
+                backend_node_id=element.backend_node_id,
                 attributes=dict(element.attributes),
             )
         if isinstance(ref, NodeRef):
             if ref.backend_node_id in self._vanished:
                 raise StaleNodeError(f"backend node {ref.backend_node_id} vanished")
             return ResolvedElement(
-                backend_node_id=ref.backend_node_id,
+                driver_ref=DriverRef(
+                    handle=f"{_BNID_HANDLE_PREFIX}{ref.backend_node_id}",
+                    driver_generation=self._driver_generation,
+                ),
                 frame_id=ref.frame_id,
                 box=None,
                 visible=True,
                 tag="button",
+                backend_node_id=ref.backend_node_id,
+            )
+        if isinstance(ref, DriverRef):
+            backend_node_id = _parse_bnid_handle(ref.handle)
+            if backend_node_id is not None and backend_node_id in self._vanished:
+                raise StaleNodeError(f"backend node {backend_node_id} vanished")
+            return ResolvedElement(
+                driver_ref=ref,
+                frame_id=None,
+                box=None,
+                visible=True,
+                tag="button",
+                backend_node_id=backend_node_id,
             )
         if isinstance(ref, SelectorRef):
             return ResolvedElement(
-                backend_node_id=99,
+                driver_ref=DriverRef(handle=f"{_BNID_HANDLE_PREFIX}99", driver_generation=self._driver_generation),
                 frame_id=None,
                 box=None,
                 visible=True,
                 tag="div",
+                backend_node_id=99,
             )
         if isinstance(ref, TextRef):
             return ResolvedElement(
-                backend_node_id=100,
+                driver_ref=DriverRef(handle=f"{_BNID_HANDLE_PREFIX}100", driver_generation=self._driver_generation),
                 frame_id=None,
                 box=None,
                 visible=True,
                 tag="span",
+                backend_node_id=100,
             )
         raise TypeError(f"unsupported ref type: {type(ref)!r}")
 
@@ -221,6 +270,10 @@ class FakeDriver:
             )
         if isinstance(ref, NodeRef) and ref.backend_node_id in self._vanished:
             raise StaleNodeError(f"backend node {ref.backend_node_id} vanished")
+        if isinstance(ref, DriverRef):
+            backend_node_id = _parse_bnid_handle(ref.handle)
+            if backend_node_id is not None and backend_node_id in self._vanished:
+                raise StaleNodeError(f"backend node {backend_node_id} vanished")
         if isinstance(ref, SelectorRef):
             return ref.css
         return f'[{attribute}="{value}"]'

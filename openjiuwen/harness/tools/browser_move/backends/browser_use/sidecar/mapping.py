@@ -32,15 +32,23 @@ def map_dom_rect(rect: Any) -> dict[str, float] | None:
     }
 
 
-def map_enhanced_node(index: int, node: Any) -> dict[str, Any]:
-    """Map one ``EnhancedDOMTreeNode``-like object to a wire ``ObservedElement`` dict."""
+def map_enhanced_node(index: int, node: Any, *, driver_generation: int) -> dict[str, Any]:
+    """Map one ``EnhancedDOMTreeNode``-like object to a wire ``ObservedElement`` dict.
+
+    ``driver_generation`` is the generation this observation was captured at
+    (see ``map_browser_state_summary``); it is stamped into the minted
+    ``driver_ref`` so the runtime's durable fallback carries the same
+    bookkeeping an ``IndexRef`` would.
+    """
     ax_node = getattr(node, "ax_node", None)
     role = getattr(ax_node, "role", None) if ax_node is not None else None
     name = getattr(ax_node, "name", None) if ax_node is not None else None
     attributes = dict(getattr(node, "attributes", None) or {})
+    backend_node_id = int(getattr(node, "backend_node_id", 0) or 0)
     return {
         "index": int(index),
-        "backend_node_id": int(getattr(node, "backend_node_id", 0) or 0),
+        "backend_node_id": backend_node_id,
+        "driver_ref": {"handle": f"bnid:{backend_node_id}", "driver_generation": int(driver_generation)},
         "frame_id": getattr(node, "frame_id", None),
         "tag": str(getattr(node, "node_name", "") or "").lower(),
         "role": role,
@@ -79,7 +87,10 @@ def map_browser_state_summary(
     """Map a ``BrowserStateSummary``-like object to a wire ``Observation`` dict."""
     dom_state = getattr(summary, "dom_state", None)
     selector_map = dict(getattr(dom_state, "selector_map", None) or {})
-    elements = tuple(map_enhanced_node(index, node) for index, node in sorted(selector_map.items()))
+    elements = tuple(
+        map_enhanced_node(index, node, driver_generation=driver_generation)
+        for index, node in sorted(selector_map.items())
+    )
 
     ax_text: str | None = None
     llm_representation = getattr(dom_state, "llm_representation", None) if dom_state is not None else None
