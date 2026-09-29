@@ -29,6 +29,7 @@ from ..drivers.managed_browser import ManagedBrowserDriver, _default_chrome_user
 from ..utils.parsing import extract_json_object
 from .agents import build_browser_worker_agent
 from .config import BrowserInstanceConfig, BrowserRunGuardrails, parse_command_args, resolve_playwright_mcp_cwd
+from .intercepted_action import InterceptedActionHintRail
 from .profiles import BrowserProfile, BrowserProfileStore
 from .service_registry import BROWSER_SERVICE_REGISTRY, BrowserServiceIdentity
 
@@ -898,6 +899,7 @@ class BrowserService:
             tool_result_observer=self._observe_worker_tool_result,
             allowed_tool_names=self._allowed_tool_names,
         )
+        await self._browser_agent.register_rail(InterceptedActionHintRail())
 
     def _start_heartbeat(self) -> None:
         if self._heartbeat_task is None or self._heartbeat_task.done():
