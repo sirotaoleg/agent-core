@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 from urllib.request import urlopen
 
+from openjiuwen.core.common.logging import logger
 from openjiuwen.core.foundation.store.base_kv_store import BaseKVStore
 from openjiuwen.core.foundation.store.kv.in_memory_kv_store import InMemoryKVStore
 from openjiuwen.core.foundation.tool import McpServerConfig
@@ -29,6 +30,12 @@ from ..drivers.managed_browser import ManagedBrowserDriver, _default_chrome_user
 from ..utils.parsing import extract_json_object
 from .agents import build_browser_worker_agent
 from .config import BrowserInstanceConfig, BrowserRunGuardrails, parse_command_args, resolve_playwright_mcp_cwd
+from .final_answer_recovery import (
+    FinalAnswerRecoveryRail,
+    final_answer_recovery,
+    recovery_message,
+    recovery_reason,
+)
 from .intercepted_action import InterceptedActionHintRail
 from .profiles import BrowserProfile, BrowserProfileStore
 from .repeated_call_guard import RepeatedCallGuardRail
@@ -902,6 +909,7 @@ class BrowserService:
         )
         await self._browser_agent.register_rail(InterceptedActionHintRail())
         await self._browser_agent.register_rail(RepeatedCallGuardRail())
+        await self._browser_agent.register_rail(FinalAnswerRecoveryRail())
 
     def _start_heartbeat(self) -> None:
         if self._heartbeat_task is None or self._heartbeat_task.done():
@@ -1560,7 +1568,28 @@ class BrowserService:
 
         output_str = str(output_text) if output_text is not None else ""
         output_lower = output_str.lower()
-        if MAX_ITERATION_MESSAGE.lower() in output_lower:
+        max_iterations_reached = MAX_ITERATION_MESSAGE.lower() in output_lower
+        reason = recovery_reason(output_str, max_iterations_reached=max_iterations_reached)
+        recovery_text = await self._recover_final_answer(worker_conversation_id, request_id, reason)
+        recovered = extract_json_object(recovery_text)
+        logger.info(
+            "Browser worker final-answer recovery: reason=%s produced_json=%s output_chars=%d",
+            reason,
+            bool(recovered),
+            len(recovery_text),
+        )
+        if recovered:
+            recovered["recovered_from"] = reason
+            self._update_progress_from_worker_result(
+                session_id=session_id,
+                request_id=request_id,
+                parsed=recovered,
+            )
+            return recovered
+        if recovery_text.strip() and (max_iterations_reached or not output_str.strip()):
+            output_str = recovery_text
+
+        if max_iterations_reached:
             parsed = {
                 "ok": False,
                 "final": output_str,
@@ -1590,6 +1619,24 @@ class BrowserService:
             parsed=parsed,
         )
         return parsed
+
+    async def _recover_final_answer(self, worker_conversation_id: str, request_id: str, reason: str) -> str:
+        """Ask the worker once, without tools and in the same conversation, for its final JSON."""
+        try:
+            with final_answer_recovery():
+                result = await Runner.run_agent(
+                    self._browser_agent,
+                    {
+                        "query": recovery_message(reason),
+                        "conversation_id": worker_conversation_id,
+                        "request_id": request_id,
+                    },
+                )
+        except Exception:  # noqa: BLE001 - recovery is best effort
+            logger.warning("Browser worker final-answer recovery failed: reason=%s", reason, exc_info=True)
+            return ""
+        output = result.get("output") if isinstance(result, dict) else result
+        return str(output) if output is not None else ""
 
     async def run_task_once(self, task: str, session_id: str, request_id: str) -> Dict[str, Any]:
         return await self._run_task_once(task=task, session_id=session_id, request_id=request_id)
@@ -1824,6 +1871,8 @@ class BrowserService:
                             "attempt": attempt_idx,
                             "progress_state": None,
                         }
+                        if parsed.get("recovered_from"):
+                            response["recovered_from"] = parsed["recovered_from"]
                         if parsed_ok:
                             self._failure_context_by_session.pop(sid, None)
                             self._progress_by_session.pop(sid, None)
