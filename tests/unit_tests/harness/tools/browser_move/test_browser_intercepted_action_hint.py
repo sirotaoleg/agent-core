@@ -264,5 +264,5 @@ def test_service_registers_the_rail_on_the_worker() -> None:
     ):
         asyncio.run(service.ensure_started())
 
-    ((rail,), _) = worker.register_rail.await_args
-    assert isinstance(rail, InterceptedActionHintRail)
+    rails = [call.args[0] for call in worker.register_rail.await_args_list]
+    assert any(isinstance(rail, InterceptedActionHintRail) for rail in rails)
