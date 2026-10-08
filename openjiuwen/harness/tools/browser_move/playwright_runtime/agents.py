@@ -166,61 +166,130 @@ def _normalize_execute_call(args: tuple[Any, ...], kwargs: dict[str, Any]) -> tu
     return ctx, tool_call, session, tag, extra_kwargs
 
 
+_BROWSER_WORKER_HELPER_TOOL_NAMES = (
+    "browser_probe_interactives",
+    "browser_probe_cards",
+    "browser_batch_interact",
+    "browser_custom_action",
+    "browser_list_custom_actions",
+)
+
+
 def build_browser_worker_system_prompt(
     screenshot_subdir: str = "screenshots",
     artifacts_subdir: str = "artifacts",
+    *,
+    tool_names: Optional[Iterable[str]] = None,
 ) -> str:
+    """Render the worker system prompt; helper guidance only for helpers in ``tool_names`` (``None``: all)."""
+    available = set(_BROWSER_WORKER_HELPER_TOOL_NAMES if tool_names is None else tool_names)
+    interactives = "browser_probe_interactives" in available
+    cards = "browser_probe_cards" in available
+    probes = interactives or cards
+    batch = "browser_batch_interact" in available
+    batch_vs_custom_action = batch and interactives and cards and "browser_custom_action" in available
+    helper_guidance = "".join(
+        text
+        for enabled, text in (
+            (
+                probes,
+                "Before broad page snapshots, full-body scans, or generic DOM scraping, "
+                "choose the smallest compact probe that matches the task. ",
+            ),
+            (
+                interactives,
+                "Use browser_probe_interactives for buttons, links, inputs, forms, navigation controls, "
+                "login controls, pagination controls, menus, and other visible interactive elements. "
+                "When using browser_probe_interactives only for page-level controls, prefer max_items around 20-30 "
+                "unless the task explicitly requires a larger inventory. ",
+            ),
+            (
+                cards,
+                "On product pages, marketplace pages, search-result pages, catalog pages, article-list pages, "
+                "or any page with repeated visible cards/listings, call browser_probe_cards before broad extraction. "
+                "Use browser_probe_cards to identify compact repeated structures such as product cards, result cards, "
+                "book cards, article cards, listing rows, title/author/source/summary, "
+                "title/price/rating/review/availability fields, primary links, "
+                "visible controls, generation-scoped target IDs, and recurring structure signatures. ",
+            ),
+            (
+                cards and interactives,
+                "For product/listing/item-data tasks, prefer browser_probe_cards first; call "
+                "browser_probe_interactives "
+                "only if you also need page-level navigation, filters, forms, or controls outside the cards. ",
+            ),
+            (
+                cards,
+                "If browser_probe_cards returns the fields needed for the task, including article/result-row "
+                "title, link, author/source, or summary fields, use that compact result as the evidence "
+                "for extraction and final reporting instead of taking screenshots, snapshots, or running extra DOM "
+                "scans. "
+                "After a successful card probe, use browser_evaluate, or a browser_run_code tool only when it is "
+                "explicitly present, for a clearly missing required field or a specific target-based action; "
+                "do not repeat broad evaluation "
+                "just to re-read the same cards. ",
+            ),
+            (
+                probes,
+                "Treat page_id/generation_id/url/title/interactives/cards/"
+                "field_coverage/blockers as one PageState contract. ",
+            ),
+            (
+                probes and batch,
+                "Pass the current generation_id with a "
+                "probe target_id directly to browser_batch_interact; never translate it into guessed CSS. "
+                "Explicit selectors are reserved for validated read-only extraction and condition waits. ",
+            ),
+            (
+                cards,
+                "If a card has primary_link or href, navigate to it directly. ",
+            ),
+            (
+                batch_vs_custom_action,
+                "browser_batch_interact is a standalone runtime helper like browser_probe_interactives and "
+                "browser_probe_cards, not a browser_custom_action wrapper. Use it directly. ",
+            ),
+            (
+                batch,
+                "For multi-field forms with several known controls, search flows with autocomplete, "
+                "dropdown/date-picker "
+                "flows, filter panels, or any short sequence where two or more next click/type/wait/extract steps are "
+                "already known, call browser_batch_interact before falling back to repeated "
+                "browser_click/browser_type and separate wait turns. "
+                "Extract multiple fields from the same page in one batch with named extract_text/extract_value "
+                "steps, or use one card probe result that already contains every requested field. "
+                "Do not force browser_batch_interact for a single uncertain click, one simple text field, or a page "
+                "state "
+                "that still needs inspection. Prefer generation-scoped target_id in batch steps. "
+                "Use autocomplete steps for type-then-choose widgets, and condition-based "
+                "wait_for_selector/wait_for_text "
+                "steps instead of fixed sleeps. For dynamic pages use wait_for_url, "
+                "wait_for_first_card_title, wait_for_sort_state, wait_for_result_count, "
+                "wait_for_dom_text_change, wait_for_stable, or wait_for_tab with a short poll interval and total "
+                "timeout. "
+                "When an action opens a new tab, use click plus wait_for_tab in the same batch; wait_for_tab "
+                "activates the matched tab by default. Do not wait for a new URL on the old tab. ",
+            ),
+            (
+                True,
+                "Interpret 'fully loaded' or an 'appropriate pause' as condition stability, not a fixed sleep. ",
+            ),
+            (
+                batch,
+                "Do not split click+type+wait, click+wait+click, "
+                "date open+choose, or search submit+result wait into separate ReAct turns unless "
+                "browser_batch_interact "
+                "failed or the next target is genuinely unknown. ",
+            ),
+        )
+        if enabled
+    )
     return (
         "You are a browser worker agent.\n"
         "Execute browser tasks step-by-step with Playwright MCP tools and approved runtime helper tools only.\n"
         "Before interacting, ensure page or selector readiness.\n"
         "Keep actions targeted and avoid unnecessary page snapshots.\n"
-        "Before broad page snapshots, full-body scans, or generic DOM scraping, "
-        "choose the smallest compact probe that matches the task. "
-        "Use browser_probe_interactives for buttons, links, inputs, forms, navigation controls, "
-        "login controls, pagination controls, menus, and other visible interactive elements. "
-        "When using browser_probe_interactives only for page-level controls, prefer max_items around 20-30 "
-        "unless the task explicitly requires a larger inventory. "
-        "On product pages, marketplace pages, search-result pages, catalog pages, article-list pages, "
-        "or any page with repeated visible cards/listings, call browser_probe_cards before broad extraction. "
-        "Use browser_probe_cards to identify compact repeated structures such as product cards, result cards, "
-        "book cards, article cards, listing rows, title/author/source/summary, "
-        "title/price/rating/review/availability fields, primary links, "
-        "visible controls, generation-scoped target IDs, and recurring structure signatures. "
-        "For product/listing/item-data tasks, prefer browser_probe_cards first; call browser_probe_interactives "
-        "only if you also need page-level navigation, filters, forms, or controls outside the cards. "
-        "If browser_probe_cards returns the fields needed for the task, including article/result-row "
-        "title, link, author/source, or summary fields, use that compact result as the evidence "
-        "for extraction and final reporting instead of taking screenshots, snapshots, or running extra DOM scans. "
-        "After a successful card probe, use browser_evaluate, or a browser_run_code tool only when it is "
-        "explicitly present, for a clearly missing required field or a specific target-based action; "
-        "do not repeat broad evaluation "
-        "just to re-read the same cards. Treat page_id/generation_id/url/title/interactives/cards/"
-        "field_coverage/blockers as one PageState contract. Pass the current generation_id with a "
-        "probe target_id directly to browser_batch_interact; never translate it into guessed CSS. "
-        "Explicit selectors are reserved for validated read-only extraction and condition waits. "
-        "If a card has primary_link "
-        "or href, navigate to it directly. "
-        "browser_batch_interact is a standalone runtime helper like browser_probe_interactives and "
-        "browser_probe_cards, not a browser_custom_action wrapper. Use it directly. "
-        "For multi-field forms with several known controls, search flows with autocomplete, dropdown/date-picker "
-        "flows, filter panels, or any short sequence where two or more next click/type/wait/extract steps are "
-        "already known, call browser_batch_interact before falling back to repeated "
-        "browser_click/browser_type and separate wait turns. "
-        "Extract multiple fields from the same page in one batch with named extract_text/extract_value "
-        "steps, or use one card probe result that already contains every requested field. "
-        "Do not force browser_batch_interact for a single uncertain click, one simple text field, or a page state "
-        "that still needs inspection. Prefer generation-scoped target_id in batch steps. "
-        "Use autocomplete steps for type-then-choose widgets, and condition-based wait_for_selector/wait_for_text "
-        "steps instead of fixed sleeps. For dynamic pages use wait_for_url, "
-        "wait_for_first_card_title, wait_for_sort_state, wait_for_result_count, "
-        "wait_for_dom_text_change, wait_for_stable, or wait_for_tab with a short poll interval and total timeout. "
-        "When an action opens a new tab, use click plus wait_for_tab in the same batch; wait_for_tab "
-        "activates the matched tab by default. Do not wait for a new URL on the old tab. "
-        "Interpret 'fully loaded' or an 'appropriate pause' as condition stability, not a fixed sleep. "
-        "Do not split click+type+wait, click+wait+click, "
-        "date open+choose, or search submit+result wait into separate ReAct turns unless browser_batch_interact "
-        "failed or the next target is genuinely unknown. "
+        f"{helper_guidance}"
         "Keep using browser_fill_form for ordinary visible text fields when that official tool is enough. "
         "Use browser_snapshot only when the compact probes are insufficient, when accessibility structure is needed, "
         "or when you need exact element references required by a Playwright MCP action. "
@@ -325,6 +394,10 @@ def ensure_execute_signature_compat(
     setattr(agent.ability_manager.execute, "_playwright_timeout_wrapped", True)
 
 
+def _normalize_output_subdir(subdir: str, default: str) -> str:
+    return (subdir or default).strip().replace("\\", "/").strip("/") or default
+
+
 # pylint: disable=too-many-arguments
 def build_browser_worker_agent(
     provider: str,
@@ -348,12 +421,8 @@ def build_browser_worker_agent(
         "Playwright worker received tool allowlist: %s",
         resolved_allowed_tool_names,
     )
-    screenshot_subdir = (
-        (screenshot_subdir or "screenshots").strip().replace("\\", "/").strip("/") or "screenshots"
-    )
-    artifacts_subdir = (
-        (artifacts_subdir or "artifacts").strip().replace("\\", "/").strip("/") or "artifacts"
-    )
+    screenshot_subdir = _normalize_output_subdir(screenshot_subdir, "screenshots")
+    artifacts_subdir = _normalize_output_subdir(artifacts_subdir, "artifacts")
     card = AgentCard(
         id="agent.playwright.browser_worker",
         name="playwright_browser_worker",
@@ -395,3 +464,23 @@ def build_browser_worker_agent(
     )
     ensure_execute_signature_compat(agent, tool_result_observer=tool_result_observer)
     return agent
+
+
+async def refresh_browser_worker_system_prompt(
+    agent: ReActAgent,
+    *,
+    screenshot_subdir: str = "screenshots",
+    artifacts_subdir: str = "artifacts",
+) -> None:
+    """Re-render the worker system prompt for the tools its next invoke sends to the model."""
+    tool_names = tuple(tool.name for tool in await agent.ability_manager.list_tool_info())
+    logger.info(
+        "Playwright worker prompt rendered for helper tools: %s",
+        tuple(name for name in _BROWSER_WORKER_HELPER_TOOL_NAMES if name in tool_names),
+    )
+    prompt = build_browser_worker_system_prompt(
+        _normalize_output_subdir(screenshot_subdir, "screenshots"),
+        _normalize_output_subdir(artifacts_subdir, "artifacts"),
+        tool_names=tool_names,
+    )
+    agent.config.configure_prompt_template([{"role": "system", "content": prompt}])

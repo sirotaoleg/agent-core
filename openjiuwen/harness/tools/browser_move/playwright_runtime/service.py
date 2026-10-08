@@ -27,7 +27,7 @@ from openjiuwen.core.single_agent.agents.react_agent import ReActAgent
 
 from ..drivers.managed_browser import ManagedBrowserDriver, _default_chrome_user_data_dir
 from ..utils.parsing import extract_json_object
-from .agents import build_browser_worker_agent
+from .agents import build_browser_worker_agent, refresh_browser_worker_system_prompt
 from .config import BrowserInstanceConfig, BrowserRunGuardrails, parse_command_args, resolve_playwright_mcp_cwd
 from .profiles import BrowserProfile, BrowserProfileStore
 from .service_registry import BROWSER_SERVICE_REGISTRY, BrowserServiceIdentity
@@ -1533,6 +1533,12 @@ class BrowserService:
             f"Task:\n{task}\n\n"
             "Perform the task in the current logical browser session/tab for this session id."
         )
+        if isinstance(self._browser_agent, ReActAgent):
+            await refresh_browser_worker_system_prompt(
+                self._browser_agent,
+                screenshot_subdir=self._screenshot_subdir,
+                artifacts_subdir=self._artifacts_subdir,
+            )
         worker_conversation_id = self._build_worker_conversation_id(session_id, request_id)
         token_session = _ctx_observer_session_id.set(session_id)
         token_request = _ctx_observer_request_id.set(request_id)
