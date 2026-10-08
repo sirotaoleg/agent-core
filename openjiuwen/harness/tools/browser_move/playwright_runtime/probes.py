@@ -1060,6 +1060,15 @@ async (page) => {
       return true;
     };
 
+    // Not viewport-clipped: sort controls are often scrolled out of view.
+    const isRenderedElement = (element) => {
+      if (!element || !element.isConnected) return false;
+      const rect = element.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) return false;
+      const style = window.getComputedStyle(element);
+      return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) !== 0;
+    };
+
     const isEnabled = (el) => {
       return Boolean(
         el &&
@@ -1833,7 +1842,7 @@ async (page) => {
       ];
       const semanticLabel = /(?:sales?|volume|price|latest|newest|relevance|comprehensive|销量|价格|最新|综合|评分)/i;
       for (const candidate of Array.from(document.querySelectorAll(selectors.join(','))).slice(0, 40)) {
-        if (!visible(candidate)) continue;
+        if (!isRenderedElement(candidate)) continue;
         const value = textOf(candidate, 120) || normalize(candidate.getAttribute('aria-label') || '', 120);
         const context = normalize([
           candidate.getAttribute('class') || '',
