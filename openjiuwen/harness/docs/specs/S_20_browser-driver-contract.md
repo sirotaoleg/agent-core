@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/middleware.py`, `openjiuwen/harness/tools/browser_move/surfaces/browser/` (`commands.py` / `context.py` / `scene/`) |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/middleware.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/surfaces/browser/` (`commands.py` / `context.py` / `config.py` / `scene/`) |
 | Last revised | 2026-10-09 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -265,6 +265,57 @@ finally produced, and the re-observe of `RetryOnStale` runs under the READ bound
 
   `ActionResult.value` and observation contents are never traced. Other exceptions (cancellation included) pass
   through without a record.
+
+## Settings (`playwright_runtime/config.py`, `surfaces/browser/config.py`)
+
+Environment variables are parsed into two frozen dataclasses, split by owner. Each has
+`from_env(environ: Mapping[str, str])`, which reads only the mapping it is given, and `from_process_env()`, which
+is `from_env(os.environ)` and the only place that touches the process environment. Besides the mapping, a parser
+reads only the current directory (the default of `BrowserSettings.mcp_cwd`). Which variable feeds which field is
+listed in [[F_07_browser-drivers]] ("Settings", inventory).
+
+- **`CoreSettings`** (core): `driver`, `surface` (`"browser"`, a registry name), `topology` (derived from
+  `driver`: `delegated_worker` for `playwright_mcp`, `direct` for `browser_use`), `provider`, `api_key`,
+  `api_base`, `model_name`, `worker_temperature`, `worker_top_p`, `tool_timeout_s`, `guardrails`
+  (`BrowserRunGuardrails`), `log_file` (`None` = no dedicated file), `log_level`, `log_mirror_common`,
+  `log_audit_raw`, `status_log`. It has no field that only a browser has.
+- **`BrowserSettings`** (browser surface): `provisioning`, `cdp_url`, `cdp_headers`, `cdp_timeout`, `managed_host`,
+  `managed_port`, `managed_kill_existing`, `managed_args`, `user_data_dir`, `profile_name`, `profile_store_path`,
+  `browser_binary`, `launch_args` (Playwright MCP arguments), `mcp_command`, `mcp_timeout_s`, `mcp_cwd`,
+  `mcp_browser`, `mcp_device`, `mcp_extension`, `mcp_extension_token`, `mcp_env` (read-only mapping),
+  `upload_root`, `sidecar_python`, `selector_cache_path` (`None` = the default under the home directory). The module
+  declares `ENV_PREFIXES = ("BROWSER_", "PLAYWRIGHT_")`. Another surface brings its own `surfaces/<name>/config.py`
+  with its own settings class and prefixes; `CoreSettings` does not change.
+
+`BROWSER_DRIVER` keeps its name and now selects the driver:
+
+| `BROWSER_DRIVER` | `CoreSettings.driver` | `BrowserSettings.provisioning` |
+|---|---|---|
+| unset or empty | `playwright_mcp` | `BROWSER_PROVISIONING`, default `remote` |
+| `playwright_mcp`, `browser_use` | that value | `BROWSER_PROVISIONING`, default `remote` |
+| `managed`, `remote`, `extension` (legacy) | `playwright_mcp` | `BROWSER_PROVISIONING` if set, else the legacy value; one `DeprecationWarning` from `BrowserSettings` |
+| anything else | `ValueError` | `BROWSER_PROVISIONING`, default `remote` |
+
+Values are compared after trimming and lower-casing. `BROWSER_DRIVER_BACKEND` is not read.
+
+Errors: `ValueError` for an unknown `BROWSER_DRIVER` or `BROWSER_PROVISIONING`, a `BROWSER_MANAGED_PORT` that is not
+a positive integer, and a `PLAYWRIGHT_MCP_ENV_JSON` that is not JSON. Every other invalid value falls back to the
+next key or the default. `CoreSettings` keeps an unsupported `MODEL_PROVIDER` as given (the harness path takes its
+model from the parent agent and must not fail on it); `build_runtime_settings` rejects it as before.
+
+Public facades; their signatures do not change:
+
+- `RuntimeSettings` keeps its fields; `build_runtime_settings(instance)` builds it from
+  `CoreSettings.from_process_env()` and `BrowserSettings.from_process_env()`. `build_playwright_mcp_config`,
+  `build_browser_guardrails` and `resolve_playwright_mcp_cwd` read the same two objects.
+- `BrowserInstanceConfig` keeps its eight positional fields and appends `provisioning` and `driver` (`""` = from
+  settings). `driver_mode` is an alias of `provisioning`: whichever is given sets both; two different non-empty
+  values raise `ValueError`. `cdp_url` stays: the input for `remote`; for `managed` the endpoint comes from the Chrome that was started. In the
+  Playwright MCP config a non-blank `launch_args` replaces `BrowserSettings.launch_args` and a non-blank `cdp_url`
+  replaces `BrowserSettings.cdp_url`.
+
+Until every caller receives a settings object, modules outside the two config modules still read the environment;
+the env-read architecture test lists them (invariant 9).
 
 ## Drivers
 
