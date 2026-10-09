@@ -17,7 +17,7 @@
 
 The contract is the only thing the agent core and a driver both know. The core sends commands and reads typed
 results and errors; a driver translates commands for one library and declares which commands it handles. As of
-this revision no driver and no agent code uses the contract; only its tests and `FakeDriver` do.
+this revision the browser-use driver implements the contract; no agent code uses it yet.
 
 Out of scope here: middleware (timeouts, retry, tracing), the composition root, provisioning, rendering and the
 model-facing tool schemas. They consume these types and get their own sections.
@@ -238,8 +238,9 @@ native_text, surface}`, `versions` from the sidecar's `connect` reply.
 - `DriverRef.ref` is the handle the sidecar mints in `observe()` (`bnid:<backend node id>`). The sidecar's index
   refs (`IndexRef`) stay internal; no handler accepts them.
 - `observe()` fills `elements`, `native_text` (browser-use's own page text), `screenshot` (a separate full-page
-  capture when `full_page`) and `BrowserContext` (url, title, tabs, PDF viewer, scroll pixels). The focused context is
-  the first tab whose URL is the page URL. `generation` stays empty.
+  capture when `full_page`) and `BrowserContext` (url, title, tabs, PDF viewer, scroll pixels). The title is read
+  from `document.title`, because browser-use's own title lags behind it; the sidecar's title is kept only when the
+  page runs no script. The focused context is the first tab whose URL is the page URL. `generation` stays empty.
 - `context_changed`: `Navigate`, `Back`, `OpenContext` always (a same-URL reload too); `SwitchContext` and
   `CloseContext` always; other commands when the sidecar reports a URL change.
 - Errors: each sidecar error code maps to one typed error. `dispatched=False` only for `StaleIndexError` (→
