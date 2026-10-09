@@ -14,7 +14,7 @@ Folder roles used by the rules (plan section 3/4, Phase 1 item 1):
   Phase 8/9 moves them (``playwright_runtime`` -> ``runtime``, ``controllers`` and
   ``utils`` under ``runtime/``, ``clients`` into ``drivers/playwright_mcp/``).
 - ``surfaces/``: one sub-package per kind of screen (lands in Phase 2).
-- concrete drivers: ``drivers/<name>`` and today's ``backends/browser_use``.
+- concrete drivers: ``drivers/<name>``.
 - ``provisioning/<module>``: provisioners (``managed_browser`` moved there in Phase 2;
   the rest land in Phase 3).
 

@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from openjiuwen.harness.tools.browser_move.backends.contract.base import ActResult, SelectorRef
-from openjiuwen.harness.tools.browser_move.backends.browser_use.driver import BrowserUseDriver
+from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import BrowserUseDriver
 from openjiuwen.harness.tools.browser_move.utils.upload_paths import resolve_upload_file_paths
 
 

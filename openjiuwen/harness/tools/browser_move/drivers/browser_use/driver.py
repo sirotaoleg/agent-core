@@ -35,7 +35,7 @@ from openjiuwen.harness.tools.browser_move.backends.contract.base import (
     TabRef,
     TextRef,
 )
-from openjiuwen.harness.tools.browser_move.backends.browser_use.transport import SidecarTransport
+from openjiuwen.harness.tools.browser_move.drivers.browser_use.transport import SidecarTransport
 from openjiuwen.harness.tools.browser_move.backends.contract.errors import DriverNotConnected
 
 

@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from openjiuwen.harness.tools.browser_move.backends.contract import errors as driver_errors
-from openjiuwen.harness.tools.browser_move.backends.browser_use.sidecar import wire
+from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import wire
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging import get_browser_agent_logger
 
 _logger = get_browser_agent_logger()

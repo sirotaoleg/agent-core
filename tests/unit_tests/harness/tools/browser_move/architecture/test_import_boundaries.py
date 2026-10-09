@@ -57,8 +57,6 @@ def _concrete_kind(parts: tuple[str, ...]) -> str | None:
     head, name = parts[0], parts[1]
     if head == "drivers" and name != "middleware":
         return "driver"
-    if head == "backends" and name == "browser_use":
-        return "driver"
     if head == "surfaces":
         return "surface"
     if head == "provisioning":

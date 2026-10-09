@@ -10,8 +10,8 @@ import inspect
 
 from openjiuwen.harness.tools.browser_move.backends.contract import errors as driver_errors
 from openjiuwen.harness.tools.browser_move.backends.contract.base import BrowserDriver, DriverRef, NodeRef
-from openjiuwen.harness.tools.browser_move.backends.browser_use.driver import _ref_to_wire
-from openjiuwen.harness.tools.browser_move.backends.browser_use.sidecar import wire
+from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import _ref_to_wire
+from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import wire
 
 
 def _browser_driver_public_method_names() -> set[str]:
@@ -39,7 +39,7 @@ def test_driver_method_names_are_subset_of_wire_methods_and_driver_ref_round_tri
     """
     assert set(wire.DRIVER_METHOD_NAMES) <= wire.WIRE_METHOD_NAMES
 
-    from openjiuwen.harness.tools.browser_move.backends.browser_use.sidecar.session_adapter import (
+    from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar.session_adapter import (
         _mint_driver_ref,
         _parse_driver_ref_handle,
     )

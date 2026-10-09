@@ -59,7 +59,7 @@ def registered_backends() -> tuple[str, ...]:
 
 def _register_builtin_drivers() -> None:
     """Register the built-in ``browser_use`` backend as the default."""
-    from ..browser_use.driver import BrowserUseDriver
+    from ...drivers.browser_use.driver import BrowserUseDriver
 
     register_browser_driver("browser_use", BrowserUseDriver)
 

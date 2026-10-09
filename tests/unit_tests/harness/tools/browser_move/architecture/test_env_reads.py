@@ -73,10 +73,10 @@ KEY_TUPLE_ENV_NAMES = frozenset(
 # file relative to the package -> {descriptor: count}.
 KNOWN_ENV_READS: dict[str, dict[str, int]] = {
     # all removed in Phase 3 (reads move into the config modules; settings objects are passed in)
-    "backends/browser_use/sidecar/session_adapter.py": {
+    "drivers/browser_use/sidecar/session_adapter.py": {
         "os.environ.get(BROWSER_UPLOAD_ROOT)": 1,
     },
-    "backends/browser_use/transport.py": {
+    "drivers/browser_use/transport.py": {
         "os.environ.get(?)": 3,
         "os.environ.get(BROWSER_UPLOAD_ROOT)": 1,
         "os.environ.items(?)": 1,

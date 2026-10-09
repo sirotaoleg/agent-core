@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from openjiuwen.harness.tools.browser_move.backends.browser_use.driver import BrowserUseDriver
+from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import BrowserUseDriver
 from openjiuwen.harness.tools.browser_move.backends.contract.base import SelectorRef
 
 _SIDECAR_DIR = (
@@ -26,7 +26,7 @@ _SIDECAR_DIR = (
     / "harness"
     / "tools"
     / "browser_move"
-    / "backends"
+    / "drivers"
     / "browser_use"
     / "sidecar"
 )
