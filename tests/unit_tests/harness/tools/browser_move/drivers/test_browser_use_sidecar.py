@@ -1,6 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""The browser-use sidecar's ``SessionAdapter`` on a fake CDP client: dialogs and popups during actions.
+"""The browser-use sidecar's ``SessionAdapter`` on a fake CDP client: dialogs, popups, navigations during actions.
 
 No Chrome and no ``browser_use``: the fake client answers CDP commands from scripted handlers and, like cdp-use,
 keeps one handler per event. Sidecar modules are flat (``import cdp``), so they are loaded by path.
@@ -119,13 +119,23 @@ class Page:
     """A page with one button at (10, 20, 100, 40).
 
     Clicking it can open a JS dialog or a popup; either blocks the release, as it did live: the dialog until it is
-    handled, the popup until the opener's session is told to run (``Runtime.runIfWaitingForDebugger``).
+    handled, the popup until the opener's session is told to run (``Runtime.runIfWaitingForDebugger``). It can also
+    start a navigation (``Page.frameRequestedNavigation``, before the release is answered, as Chrome does), which
+    commits ``commit_after`` seconds later (``Page.frameNavigated``) or never (``None``).
     """
 
     def __init__(
-        self, client: FakeCdp, *, dialog: dict[str, str] | None = None, popup: dict[str, str] | None = None
+        self,
+        client: FakeCdp,
+        *,
+        dialog: dict[str, str] | None = None,
+        popup: dict[str, str] | None = None,
+        navigation: dict[str, Any] | None = None,
+        commit_after: float | None = None,
     ) -> None:
         self.client = client
+        self.navigation = navigation
+        self.commit_after = commit_after
         self.dialog = dialog
         self.dialog_closed: asyncio.Future | None = None
         self.popup = popup
@@ -146,6 +156,13 @@ class Page:
             self.dialog_closed = asyncio.get_running_loop().create_future()
             self.client.emit("Page.javascriptDialogOpening", self.dialog)
             await self.dialog_closed  # Chrome answers the release only after the dialog closes
+        if params["type"] == "mouseReleased" and self.navigation is not None:
+            self.client.emit("Page.frameRequestedNavigation", self.navigation)
+            if self.commit_after is not None:
+                frame = {"id": self.navigation["frameId"], "loaderId": "L2", "url": self.navigation["url"]}
+                asyncio.get_running_loop().call_later(
+                    self.commit_after, self.client.emit, "Page.frameNavigated", {"frame": frame}
+                )
         if params["type"] == "mouseReleased" and self.popup is not None:
             self.opener_resumed = asyncio.get_running_loop().create_future()
             self.client.emit("Target.targetCreated", {"targetInfo": self.popup}, session_id=None)
@@ -371,5 +388,74 @@ def test_new_target_listener_keeps_the_handler_browser_use_registered():
         await adapter._ensure_listeners()
         client.emit("Target.targetCreated", {"targetInfo": POPUP}, session_id=None)
         assert seen == ["browser-use"]
+
+    asyncio.run(scenario())
+
+
+# -- navigations ---------------------------------------------------------------
+
+LINK = {"frameId": TARGET, "reason": "anchorClick", "url": "http://x/second.html", "disposition": "currentTab"}
+# The fake URL never changes: only the navigation events tell the adapter that the document changed.
+RELOAD = {**LINK, "reason": "formSubmissionGet", "url": "http://x/index.html"}
+
+
+@pytest.mark.parametrize("navigation", [LINK, RELOAD], ids=["link", "same-url-reload"])
+def test_a_navigation_the_action_started_is_waited_for_and_changes_the_document(navigation):
+    async def scenario() -> None:
+        client = FakeCdp()
+        Page(client, navigation=navigation, commit_after=0.05)
+        adapter = _adapter(client)
+        reply = await _quick(adapter.click(BUTTON))
+        assert reply["document_changed"] is True
+        assert reply["driver_generation"] == 1
+
+    asyncio.run(scenario())
+
+
+def test_a_navigation_that_does_not_commit_in_time_is_not_a_document_change(monkeypatch):
+    monkeypatch.setattr(session_adapter, "_NAVIGATION_COMMIT_WAIT_S", 0.05)
+
+    async def scenario() -> None:
+        client = FakeCdp()
+        Page(client, navigation=LINK, commit_after=None)
+        adapter = _adapter(client)
+        reply = await _quick(adapter.click(BUTTON))
+        assert reply["document_changed"] is False
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "navigation",
+    [{**LINK, "disposition": "newForegroundTab"}, {**LINK, "frameId": "T2"}],
+    ids=["new-tab", "other-frame"],
+)
+def test_navigations_outside_the_main_frame_are_not_waited_for(monkeypatch, navigation):
+    monkeypatch.setattr(session_adapter, "_NAVIGATION_COMMIT_WAIT_S", 60.0)
+
+    async def scenario() -> None:
+        client = FakeCdp()
+        Page(client, navigation=navigation, commit_after=None)
+        adapter = _adapter(client)
+        reply = await _quick(adapter.click(BUTTON))
+        assert reply["document_changed"] is False
+
+    asyncio.run(scenario())
+
+
+def test_a_child_frame_document_is_not_a_document_change():
+    async def scenario() -> None:
+        client = FakeCdp()
+        Page(client)
+        adapter = _adapter(client)
+        await adapter._ensure_listeners()
+
+        async def body(act: Any) -> tuple[bool, str]:
+            frame = {"id": TARGET, "parentId": "P", "loaderId": "L2", "url": "http://x/frame.html"}
+            client.emit("Page.frameNavigated", {"frame": frame})
+            return True, "done"
+
+        reply = await _quick(adapter._act(body))
+        assert reply["document_changed"] is False
 
     asyncio.run(scenario())

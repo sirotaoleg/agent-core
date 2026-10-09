@@ -130,6 +130,8 @@ def _normalize_upload_paths(paths: list[str]) -> tuple[list[str], str | None]:
 _DRIVER_REF_HANDLE_PREFIX = "bnid:"
 # How long an action waits for the page it resumed after opening a popup to answer.
 _RESUME_TIMEOUT_S = 1.0
+# How long an action waits for a main-frame navigation it started to commit before it replies.
+_NAVIGATION_COMMIT_WAIT_S = 1.0
 
 
 def _mint_driver_ref(backend_node_id: int, driver_generation: int) -> dict[str, Any]:
@@ -159,7 +161,11 @@ def browser_use_version() -> str:
 class _Act:
     """What happened while one element/keyboard action ran (see ``SessionAdapter._act``)."""
 
-    def __init__(self) -> None:
+    def __init__(self, main_frame_id: str | None) -> None:
+        # Chrome gives a page's main frame the page's target id.
+        self.main_frame_id = main_frame_id
+        self.navigation_requested = False
+        self.navigation_committed = asyncio.Event()
         self.dialog: dict[str, str] | None = None
         # Set when a dialog opened that nothing handles: the action's input now waits for ``handle_dialog``.
         self.dialog_blocking = asyncio.Event()
@@ -725,8 +731,28 @@ class SessionAdapter:
             self._dialog_handler = self._on_dialog
         self._dialog_unregister = cdp.register_javascript_dialog_opening(cdp_session.cdp_client, self._dialog_handler)
         if self._listening_client is not cdp_session.cdp_client:
-            cdp.add_event_listener(cdp_session.cdp_client, "Target.targetCreated", self._on_target_created)
-            self._listening_client = cdp_session.cdp_client
+            client = cdp_session.cdp_client
+            cdp.add_event_listener(client, "Target.targetCreated", self._on_target_created)
+            cdp.add_event_listener(client, "Page.frameRequestedNavigation", self._on_navigation_requested)
+            cdp.add_event_listener(client, "Page.frameStartedNavigating", self._on_navigation_requested)
+            cdp.add_event_listener(client, "Page.frameNavigated", self._on_frame_navigated)
+            self._listening_client = client
+
+    def _on_navigation_requested(self, event: Any, session_id: Any = None) -> None:
+        """A navigation of the action's main frame started (a new tab or window is a popup, not this)."""
+        act = self._current_act
+        event = event or {}
+        if act is None or event.get("frameId") != act.main_frame_id:
+            return
+        if event.get("disposition", "currentTab") == "currentTab":
+            act.navigation_requested = True
+
+    def _on_frame_navigated(self, event: Any, session_id: Any = None) -> None:
+        """A new document committed in a frame; for the action's main frame that is a document change."""
+        act = self._current_act
+        frame = (event or {}).get("frame") or {}
+        if act is not None and not frame.get("parentId") and frame.get("id") == act.main_frame_id:
+            act.navigation_committed.set()
 
     def _on_target_created(self, event: Any, session_id: Any = None) -> None:
         info = (event or {}).get("targetInfo") or {}
@@ -790,13 +816,14 @@ class SessionAdapter:
         its input waiting in the background. While a dialog is open, an action other than ``handle_dialog``
         returns ``ok=False`` without sending anything. A page that opens a popup can wait for the debugger
         until told to run, so when the action opens a page the current page is resumed; the new pages are
-        reported as ``new_targets``.
+        reported as ``new_targets``. A main-frame navigation the action started is given up to
+        ``_NAVIGATION_COMMIT_WAIT_S`` to commit; a committed one is a ``document_changed``, even to the same URL.
         """
         before_url = await self._safe_current_url()
         if self._dialog_pending is not None and not while_dialog:
             return await self._act_result(before_url, ok=False, detail=_dialog_note(self._dialog_pending))
         await self._ensure_listeners()
-        act = _Act()
+        act = _Act(getattr(self._cdp_session, "target_id", None))
         self._current_act = act
         task = asyncio.ensure_future(body(act))
         dialog_waiter = asyncio.ensure_future(act.dialog_blocking.wait())
@@ -810,6 +837,7 @@ class SessionAdapter:
                     await self._resume_current_page()
             if task.done():
                 ok, detail = task.result()
+                await self._await_navigation(act)
             else:
                 self._waiting_inputs.add(task)
                 task.add_done_callback(self._forget_waiting_input)
@@ -821,6 +849,14 @@ class SessionAdapter:
                 task.cancel()
             self._current_act = None
         return await self._act_result(before_url, ok=ok, detail=detail, act=act)
+
+    @staticmethod
+    async def _await_navigation(act: _Act) -> None:
+        if act.navigation_requested and not act.navigation_committed.is_set():
+            try:
+                await asyncio.wait_for(act.navigation_committed.wait(), _NAVIGATION_COMMIT_WAIT_S)
+            except asyncio.TimeoutError:
+                pass  # not committed (yet): the reply reports what the URL says
 
     async def _resume_current_page(self) -> None:
         cdp_session = await self._ensure_cdp_session()
@@ -858,7 +894,7 @@ class SessionAdapter:
 
     async def _act_result(self, before_url: str, *, ok: bool, detail: str, act: _Act | None = None) -> dict[str, Any]:
         url = await self._safe_current_url()
-        changed = url != before_url
+        changed = url != before_url or (act is not None and act.navigation_committed.is_set())
         if changed:
             self._driver_generation += 1
         return {
