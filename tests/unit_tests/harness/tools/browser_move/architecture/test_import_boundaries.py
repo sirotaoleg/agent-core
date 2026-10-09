@@ -3,7 +3,8 @@
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 """Import boundaries of browser_move (plan section 3, invariants 1 and 2).
 
-- ``contract/`` imports only the standard library and itself.
+- ``contract/`` imports only the standard library and itself; ``contract/testing/``
+  (the conformance plugin) may also import ``pytest`` (decision D10).
 - Core folders never import a concrete driver, a concrete surface or a
   provisioning module; only the composition root (``runtime/assembly.py``) may,
   and only lazily, inside a function.
@@ -48,6 +49,7 @@ KNOWN_CORE_TO_HARNESS_IMPORTS: dict[tuple[str, str], int] = {
 }
 
 _STDLIB = frozenset(sys.stdlib_module_names) | {"__future__"}
+_CONTRACT_TESTING_EXTRA = frozenset({"pytest"})
 
 
 def _concrete_kind(parts: tuple[str, ...]) -> str | None:
@@ -106,7 +108,10 @@ def _collect_contract_imports() -> list[str]:
                 target = _scan.resolve_import(relpath, name, 0)
                 if target is not None and target[:1] == (_scan.CONTRACT_FOLDER,):
                     continue
-                if name.split(".")[0] not in _STDLIB or target is not None:
+                allowed = _STDLIB | (
+                    _CONTRACT_TESTING_EXTRA if relpath.startswith("contract/testing/") else frozenset()
+                )
+                if name.split(".")[0] not in allowed or target is not None:
                     bad.append(f"{relpath}:{node.lineno} imports {name}")
     return bad
 
