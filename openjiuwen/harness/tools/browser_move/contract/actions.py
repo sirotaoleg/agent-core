@@ -23,7 +23,7 @@ class Effect(str, Enum):
 
 @dataclass(frozen=True)
 class Action:
-    """Base of every command. Subclasses set ``effect`` as a class attribute."""
+    """Base of every command. Subclasses set ``effect``, and ``__sensitive_fields__`` to mask when ``sensitive``."""
 
     effect: ClassVar[Effect]
 
@@ -51,6 +51,7 @@ class TypeText(Action):
     """Type ``text`` into ``target`` (or the focused element when ``None``)."""
 
     effect: ClassVar[Effect] = Effect.ACT
+    __sensitive_fields__: ClassVar[tuple[str, ...]] = ("text",)
 
     target: Ref | None
     text: str
@@ -135,6 +136,7 @@ class RunScript(Action):
     """Run ``code`` in the focused context, scoped to ``target`` when given. ``sensitive`` masks ``code`` in traces."""
 
     effect: ClassVar[Effect] = Effect.SCRIPT
+    __sensitive_fields__: ClassVar[tuple[str, ...]] = ("code",)
 
     code: str
     args: Any = field(default=None, hash=False)

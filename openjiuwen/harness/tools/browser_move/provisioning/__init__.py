@@ -15,7 +15,7 @@ class ProvisionedDevice:
     kind: str
     endpoint: str
     extras: Mapping[str, Any]
-    cleanup: Optional[Callable]
+    cleanup: Optional[Callable] = None
 
 
 __all__ = ["ProvisionedDevice"]

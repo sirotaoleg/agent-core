@@ -65,6 +65,8 @@ class FieldKind(str, Enum):
 class FormField:
     """One field of ``FillForm``. ``value`` is ``"true"``/``"false"`` for a checkbox, the option text for a combobox."""
 
+    __sensitive_fields__: ClassVar[tuple[str, ...]] = ("value",)
+
     target: Ref
     kind: FieldKind
     value: str

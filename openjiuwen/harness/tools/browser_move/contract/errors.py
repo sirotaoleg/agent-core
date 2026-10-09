@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from .observation import Observation
+
 
 class DriverError(Exception):
     """Base driver error. ``dispatched`` defaults to the class's ``default_dispatched`` (True unless stated)."""
@@ -19,9 +21,15 @@ class DriverError(Exception):
 
 
 class StaleRef(DriverError):
-    """The ref belongs to an older generation. Raised only before anything is sent."""
+    """The ref belongs to an older generation. Raised only before anything is sent; may carry a fresh observation."""
 
     default_dispatched: ClassVar[bool] = False
+
+    def __init__(
+        self, message: str = "", *, dispatched: bool | None = None, observation: Observation | None = None
+    ) -> None:
+        super().__init__(message, dispatched=dispatched)
+        self.observation = observation
 
 
 class ElementNotFound(DriverError):
@@ -33,7 +41,9 @@ class AmbiguousElement(DriverError):
 
 
 class ActionIntercepted(DriverError):
-    """Another element received the input; ``by`` describes it."""
+    """Another element would receive the input; ``by`` describes it."""
+
+    default_dispatched: ClassVar[bool] = False
 
     def __init__(self, message: str = "", *, by: str, dispatched: bool | None = None) -> None:
         super().__init__(message, dispatched=dispatched)
