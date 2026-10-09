@@ -43,9 +43,7 @@
   <p>
     <span id="covered-box">
       <button id="covered" type="button" onclick="report('covered')">Covered button</button>
-      <span id="overlay" aria-label="Overlay banner"></span>
     </span>
-    <button id="disabled" type="button" disabled>Disabled button</button>
     <button id="last" type="button" onclick="report('last')">Last button</button>
   </p>
   <div id="spacer"></div>
@@ -53,6 +51,13 @@
     function report(text) { document.title = text; }
     function formState() {
       report('form:' + document.getElementById('name').value.length + ':' + document.getElementById('gift').checked);
+    }
+    // The intercept case calls cover() after it has observed the button, so every driver can get a ref to it.
+    function cover() {
+      var overlay = document.createElement('span');
+      overlay.id = 'overlay';
+      overlay.setAttribute('aria-label', 'Overlay banner');
+      document.getElementById('covered-box').appendChild(overlay);
     }
     document.addEventListener('keydown', function (e) { report('key:' + e.key); });
     document.addEventListener('scroll', function () { report('scrolled'); }, true);

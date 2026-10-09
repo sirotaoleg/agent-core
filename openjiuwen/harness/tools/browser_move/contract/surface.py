@@ -46,9 +46,10 @@ class SceneCase:
     Each step builds one command from the observations taken so far (oldest first). The last step is the command
     under test; the steps before it set the case up. With ``observe_between`` the suite observes after every setup
     step; without it every step sees only the first observation (for a setup step that leaves the screen modal, such
-    as an open dialog). ``check(before, after, result)`` tells whether the command under test took effect: ``before``
-    is the observation it was built from, ``after`` a fresh one. ``cleanup`` steps run afterwards, best effort; with
-    ``observe_between`` they also see an observation taken after the command under test.
+    as an open dialog, or one that changes the screen after the command under test has taken its refs, such as an
+    overlay added over the target). ``check(before, after, result)`` tells whether the command under test took
+    effect: ``before`` is the observation it was built from, ``after`` a fresh one. ``cleanup`` steps run afterwards,
+    best effort; with ``observe_between`` they also see an observation taken after the command under test.
     """
 
     steps: tuple[SceneStep, ...]
@@ -70,8 +71,10 @@ class Scene:
     kinds the driver accepts) and return a ``SceneCase``, or the reason the scene cannot provide that case as a string:
     the suite skips with that reason. ``happy(command, ref_kind, actions)`` is the happy path of one command with one
     ref kind (``None`` for a command without refs); ``stale`` ends in a command with a stale ref; ``intercepted`` in a
-    click another element receives; ``timeout`` in a command that times out after dispatch; each entry of
-    ``context_changes`` in a command that must report ``context_changed``.
+    click another element receives; ``timeout`` in ``Wait(until_text=..., seconds=...)`` for a text that never
+    appears; each entry of ``context_changes`` in a command that must report ``context_changed``. Each entry of
+    ``sensitive`` gets a secret and ends in a surface command that carries it marked sensitive; the suite checks it,
+    and the ``TypeText`` happy path typing the secret, against traces and logs.
     """
 
     surface: str
@@ -83,6 +86,7 @@ class Scene:
     intercepted: Callable[[HandledActions], SceneCase | str] = _not_provided
     timeout: Callable[[HandledActions], SceneCase | str] = _not_provided
     context_changes: Mapping[str, Callable[[HandledActions], SceneCase | str]] = field(default_factory=dict, hash=False)
+    sensitive: Mapping[str, Callable[[HandledActions, str], SceneCase | str]] = field(default_factory=dict, hash=False)
 
 
 @dataclass(frozen=True)

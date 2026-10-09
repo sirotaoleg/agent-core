@@ -379,7 +379,13 @@ class BrowserUseDriver(HandlerDriver):
                 method, params = "select_option", {"ref": ref, "value": field.value, "label": None}
             else:
                 method = "type_text"
-                params = {"ref": ref, "text": field.value, "clear": True, "press_enter": False, "sensitive": False}
+                params = {
+                    "ref": ref,
+                    "text": field.value,
+                    "clear": True,
+                    "press_enter": False,
+                    "sensitive": field.sensitive,
+                }
             try:
                 data = await self._request(method, params)
             except DriverError as exc:
@@ -402,14 +408,15 @@ class BrowserUseDriver(HandlerDriver):
 
     @handles(Wait)
     async def _wait(self, action: Wait) -> ActionResult:
-        if action.seconds is not None:
+        if action.until_text is None:
             await asyncio.sleep(action.seconds)
             return ActionResult(ok=True)
+        timeout_s = _WAIT_TIMEOUT_S if action.seconds is None else action.seconds
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + _WAIT_TIMEOUT_S
+        deadline = loop.time() + timeout_s
         while not await self._evaluate(_HAS_TEXT_JS, action.until_text):
             if loop.time() >= deadline:
-                raise ActionTimeout(f"text {action.until_text!r} did not appear within {_WAIT_TIMEOUT_S}s")
+                raise ActionTimeout(f"text {action.until_text!r} did not appear within {timeout_s}s")
             await asyncio.sleep(_WAIT_POLL_S)
         return ActionResult(ok=True)
 

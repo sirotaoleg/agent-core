@@ -85,9 +85,14 @@ FILE_DROP = _Target("File drop zone", "file-drop")
 UPLOAD = _Target("Upload file", "upload")
 SCROLL_BOX = _Target("Scroll box", "scroll-box")
 COVERED = _Target("Covered button", "covered")
-DISABLED = _Target("Disabled button", "disabled")
 LAST = _Target("Last button", "last")
 SECOND_LINK = _Target("Go to second", "second-link")
+
+# The intercept case covers the button only after observing it (some drivers do not list occluded elements).
+_COVER_SCRIPT = "() => { cover(); return true; }"
+# The timeout case waits this long for a text that is on no scene page.
+_ABSENT_TEXT = "scene text that never appears"
+_TIMEOUT_S = 2.0
 
 # Ref kinds the scene can build, in order of preference, for setup steps and for element-targeted cases.
 _ANY_KINDS = (DriverRef, Locator, PointRef)
@@ -431,10 +436,37 @@ class _BrowserScene:
         return SceneCase(steps=(lambda seen: Click(target=_ref(seen[-1], target, kind)),), **options)
 
     def intercepted(self, actions: Actions) -> SceneCase | str:
-        return self._click_case(actions, COVERED, _ELEMENT_KINDS)
+        kind = _kind_for(actions, Click, _ELEMENT_KINDS)
+        if isinstance(kind, str):
+            return kind
+        if RunScript not in actions:
+            return "the driver does not handle RunScript, which this case needs to cover the button"
+        # No observation between covering and clicking: the click uses the ref taken while the button was visible.
+        return SceneCase(
+            steps=(lambda seen: RunScript(code=_COVER_SCRIPT), lambda seen: Click(target=_ref(seen[0], COVERED, kind))),
+            observe_between=False,
+        )
 
     def timeout(self, actions: Actions) -> SceneCase | str:
-        return self._click_case(actions, DISABLED, _ELEMENT_KINDS)
+        if Wait not in actions:
+            return "the driver does not handle Wait, which this case needs"
+        return SceneCase(steps=(lambda seen: Wait(until_text=_ABSENT_TEXT, seconds=_TIMEOUT_S),))
+
+    # Sensitive values: the suite also types its secret through the TypeText happy path.
+
+    def sensitive(self) -> dict[str, Callable[[Actions, str], SceneCase | str]]:
+        return {"form-field": self._sensitive_form_field}
+
+    def _sensitive_form_field(self, actions: Actions, secret: str) -> SceneCase | str:
+        kind = _kind_for(actions, FillForm)
+        if isinstance(kind, str):
+            return kind
+
+        def step(seen: Sequence[Observation]) -> Action:
+            field = FormField(target=_ref(seen[-1], NAME, kind), kind=FieldKind.TEXTBOX, value=secret, sensitive=True)
+            return FillForm(fields=(field,))
+
+        return SceneCase(steps=(step,))
 
     # Context changes (plan 8.1): new document (also a same-URL reload), URL change, dialog, tab opened/closed/switched.
 
@@ -478,6 +510,7 @@ def browser_scene() -> Scene:
         intercepted=scene.intercepted,
         timeout=scene.timeout,
         context_changes=scene.context_changes(),
+        sensitive=scene.sensitive(),
     )
 
 

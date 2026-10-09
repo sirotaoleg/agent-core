@@ -220,6 +220,7 @@ openjiuwen = [
     "rsi/**/*.md",
     "rsi/**/*.template",
     "rsi/**/*.yaml",
+    "harness/tools/browser_move/surfaces/browser/scene/pages/*",
 ]
 
 [tool.coverage.run]
@@ -234,6 +235,7 @@ norecursedirs = [".*", "dist", "CVS", "_darcs", "{arch}", "*.egg", "venv", "node
 markers = [
     "level0: smoke / happy-path coverage; PR gate must stay green",
     "level1: feature branches, error paths, and lifecycle edges",
+    "live: runs the conformance suite against a real driver and a live scene",
 ]
 
 # Formatting & Linting

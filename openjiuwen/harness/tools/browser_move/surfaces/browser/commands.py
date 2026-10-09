@@ -66,11 +66,15 @@ class FieldKind(str, Enum):
 
 @dataclass(frozen=True)
 class FormField:
-    """One field of ``FillForm``. ``value`` is ``"true"``/``"false"`` for a checkbox, the option text for a combobox."""
+    """One field of ``FillForm``. ``value`` is ``"true"``/``"false"`` for a checkbox, the option text for a combobox.
+
+    ``sensitive`` masks ``value`` in traces and logs, as ``TypeText.sensitive`` does for its text.
+    """
 
     target: Ref
     kind: FieldKind
     value: str
+    sensitive: bool = False
 
 
 @dataclass(frozen=True)

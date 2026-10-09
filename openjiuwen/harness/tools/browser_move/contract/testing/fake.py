@@ -62,9 +62,10 @@ class FakeDriver(Driver):
     """Records every call and answers ``observe``/``execute`` from scripted queues, in order.
 
     ``execute`` raises ``Unsupported(dispatched=False)`` for a command or ref kind missing from ``info.actions``
-    (default: ``DEFAULT_ACTIONS``). ``fail_next`` raises a scripted error on the next observe/execute call.
-    ``lose_connection_on(n)`` raises ``ConnectionLost`` on the n-th observe/execute call (1-based); the connection
-    stays lost until ``start()``. Running out of scripted answers fails the test with ``AssertionError``.
+    (default: ``DEFAULT_ACTIONS``). ``script`` adds answers after construction. ``fail_next`` raises a scripted error
+    on the next observe/execute call. ``lose_connection_on(n)`` raises ``ConnectionLost`` on the n-th observe/execute
+    call (1-based); the connection stays lost until ``start()``. Running out of scripted answers fails the test with
+    ``AssertionError``.
     """
 
     def __init__(
@@ -88,6 +89,11 @@ class FakeDriver(Driver):
     @property
     def info(self) -> DriverInfo:
         return self._info
+
+    def script(self, *, observations: Iterable[Observation] = (), results: Iterable[ActionResult] = ()) -> None:
+        """Append answers to the end of the ``observe`` and ``execute`` queues."""
+        self._observations.extend(observations)
+        self._results.extend(results)
 
     def fail_next(self, error: BaseException | None = None, *, dispatched: bool = False) -> None:
         """Raise ``error`` (default: ``DriverError(dispatched=...)``) on the next observe/execute call."""

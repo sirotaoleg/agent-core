@@ -63,4 +63,6 @@ class Unsupported(DriverError):
 
 
 class PolicyDenied(DriverError):
-    """Raised by the security rail, not by drivers."""
+    """Raised by the security rail, not by drivers, before anything is sent."""
+
+    default_dispatched: ClassVar[bool] = False

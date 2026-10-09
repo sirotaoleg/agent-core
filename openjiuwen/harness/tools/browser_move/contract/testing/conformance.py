@@ -21,7 +21,8 @@ Use it from a test module::
 The suite is parametrized by driver (one subclass per driver) and by ref kind (``driver_actions``); everything
 surface-specific comes from the ``Scene``. A case the scene cannot provide is skipped with the scene's reason; a case
 that needs a command the driver does not handle is skipped naming it. Every case runs a new driver in its own event
-loop. The plugin registers the ``live`` marker for runs against a real driver.
+loop. The plugin registers the ``live`` marker for runs against a real driver (for test modules collected after
+it; a module that marks itself before loading the plugin needs the marker in its pytest configuration).
 """
 
 from __future__ import annotations
@@ -30,13 +31,13 @@ import asyncio
 import contextlib
 import dataclasses
 import logging
-from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, TypeVar
 
 import pytest
 
-from ..actions import Action, Effect, Observe, TypeText
+from ..actions import Action, Effect, Observe, TypeText, Wait
 from ..driver import Driver, ensure_supported, iter_refs
 from ..errors import ActionIntercepted, ActionTimeout, DriverError, StaleRef, Unsupported
 from ..observation import Observation
@@ -44,6 +45,8 @@ from ..surface import HandledActions, Scene, SceneCase
 
 LIVE_MARKER = "live: runs the conformance suite against a real driver and a live scene"
 SECRET_TEXT = "conformance-secret-5d1c"
+# The sensitive-text case every scene gets: its ``TypeText`` happy path, typing the secret.
+TYPE_TEXT_CASE = "type-text"
 
 _E = TypeVar("_E", bound=DriverError)
 
@@ -230,16 +233,29 @@ async def check_context_change(factory: DriverFactory, scene: Scene, name: str) 
 
 
 async def check_intercepted(factory: DriverFactory, scene: Scene) -> None:
-    """A click another element receives raises ``ActionIntercepted`` naming that element."""
+    """A click another element receives raises ``ActionIntercepted`` naming that element, before dispatch."""
     error = await _expect_error(factory, scene, scene.intercepted, ActionIntercepted)
     assert isinstance(error.by, str) and error.by.strip(), (
         f"ActionIntercepted.by must describe the element: {error.by!r}"
     )
+    assert error.dispatched is False, (
+        f"ActionIntercepted means the input never reached the target, got dispatched={error.dispatched}"
+    )
 
 
 async def check_timeout(factory: DriverFactory, scene: Scene) -> None:
-    """A command that times out raises ``ActionTimeout(dispatched=True)`` and is not retried into success."""
-    error = await _expect_error(factory, scene, scene.timeout, ActionTimeout)
+    """A ``Wait`` for text that never appears raises ``ActionTimeout(dispatched=True)`` and is not retried."""
+    async with _session(factory, scene) as driver:
+        case = _skip_if_reason(scene, scene.timeout(driver.info.actions))
+        prepared = await _prepare(driver, case)
+        action = prepared.action
+        assert isinstance(action, Wait) and action.until_text is not None and action.seconds is not None, (
+            f"the timeout case must end in Wait(until_text=..., seconds=...), the scene built {action!r}"
+        )
+        try:
+            error = await _raised(driver, action, ActionTimeout)
+        finally:
+            await _cleanup(driver, case, prepared.seen)
     assert error.dispatched is True, f"ActionTimeout must count as dispatched, got dispatched={error.dispatched}"
 
 
@@ -261,32 +277,49 @@ async def check_fingerprint(factory: DriverFactory, scene: Scene) -> None:
     )
 
 
-async def _type_sensitive(factory: DriverFactory, scene: Scene, sink: TraceSink) -> None:
-    """Type ``SECRET_TEXT`` sensitively via the scene's ``TypeText`` happy path; observe nothing after it."""
+def _type_text_case(scene: Scene, actions: HandledActions) -> SceneCase:
+    """The scene's ``TypeText`` happy path, typing ``SECRET_TEXT`` with ``sensitive=True``."""
+    accepted = actions.get(TypeText)
+    if accepted is None:
+        pytest.skip("the driver does not handle TypeText")
+    reasons = []
+    for kind in sorted(accepted, key=_name) or [None]:
+        case = scene.happy(TypeText, kind, actions)
+        if isinstance(case, SceneCase):
+            break
+        reasons.append(case)
+    else:
+        pytest.skip(f"scene {scene.surface!r}: {'; '.join(reasons)}")
+    last = case.steps[-1]
+
+    def secret(seen: Sequence[Observation]) -> Action:
+        return dataclasses.replace(last(seen), text=SECRET_TEXT, sensitive=True)
+
+    return dataclasses.replace(case, steps=case.steps[:-1] + (secret,))
+
+
+async def _send_secret(factory: DriverFactory, scene: Scene, sink: TraceSink, name: str) -> None:
+    """Play the sensitive-text case ``name`` (``TYPE_TEXT_CASE`` or an entry of ``scene.sensitive``).
+
+    Nothing is observed after the command that carries ``SECRET_TEXT``.
+    """
     async with _session(factory, scene, sink) as driver:
-        accepted = driver.info.actions.get(TypeText)
-        if accepted is None:
-            pytest.skip("the driver does not handle TypeText")
-        reasons = []
-        for kind in sorted(accepted, key=_name) or [None]:
-            case = scene.happy(TypeText, kind, driver.info.actions)
-            if isinstance(case, SceneCase):
-                break
-            reasons.append(case)
+        if name == TYPE_TEXT_CASE:
+            case = _type_text_case(scene, driver.info.actions)
         else:
-            pytest.skip(f"scene {scene.surface!r}: {'; '.join(reasons)}")
+            case = _skip_if_reason(scene, scene.sensitive[name](driver.info.actions, SECRET_TEXT))
         prepared = await _prepare(driver, case)
-        action = dataclasses.replace(prepared.action, text=SECRET_TEXT, sensitive=True)
+        assert SECRET_TEXT in repr(prepared.action), f"the case {name!r} does not send the secret: {prepared.action!r}"
         try:
-            await driver.execute(action)
+            await driver.execute(prepared.action)
         finally:
             await _cleanup(driver, case, prepared.seen)
 
 
-async def check_sensitive_not_traced(factory: DriverFactory, scene: Scene) -> None:
-    """``TypeText(sensitive=True)`` leaves no text in the trace sink."""
+async def check_sensitive_not_traced(factory: DriverFactory, scene: Scene, name: str = TYPE_TEXT_CASE) -> None:
+    """A sensitive value (``TypeText(sensitive=True)``, or the scene's case ``name``) leaves no text in the trace."""
     sink = TraceSink()
-    await _type_sensitive(factory, scene, sink)
+    await _send_secret(factory, scene, sink, name)
     if not sink.records:
         pytest.skip("the driver factory wrote nothing to the trace sink (no tracing middleware around the driver)")
     assert SECRET_TEXT not in sink.text, "sensitive text reached the trace"
@@ -326,10 +359,10 @@ def _captured_logs() -> Iterator[_ListHandler]:
             logger.setLevel(level)
 
 
-async def check_sensitive_not_logged(factory: DriverFactory, scene: Scene) -> None:
-    """``TypeText(sensitive=True)`` leaves no text in the logs of this process, at any level."""
+async def check_sensitive_not_logged(factory: DriverFactory, scene: Scene, name: str = TYPE_TEXT_CASE) -> None:
+    """A sensitive value (as in ``check_sensitive_not_traced``) leaves no text in the logs of this process."""
     with _captured_logs() as handler:
-        await _type_sensitive(factory, scene, TraceSink())
+        await _send_secret(factory, scene, TraceSink(), name)
     leaked = [message for message in handler.messages if SECRET_TEXT in message]
     assert not leaked, f"sensitive text reached the logs: {leaked!r}"
 
@@ -345,12 +378,17 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
             raise pytest.UsageError(f"{metafunc.cls!r} must set driver_actions to parametrize the conformance suite")
         pairs = _pairs(actions)
         metafunc.parametrize("conformance_pair", pairs, ids=[f"{c.__name__}-{_name(k)}" for c, k in pairs])
-    if "conformance_context_change" in metafunc.fixturenames:
+    for fixture, names_of in (
+        ("conformance_context_change", lambda scene: list(scene.context_changes)),
+        ("conformance_sensitive_case", lambda scene: [TYPE_TEXT_CASE, *scene.sensitive]),
+    ):
+        if fixture not in metafunc.fixturenames:
+            continue
         scene = getattr(metafunc.cls, "scene", None)
         if scene is None:
             raise pytest.UsageError(f"{metafunc.cls!r} must set scene to parametrize the conformance suite")
-        names = list(scene.context_changes)
-        metafunc.parametrize("conformance_context_change", names, ids=names)
+        names = names_of(scene)
+        metafunc.parametrize(fixture, names, ids=names)
 
 
 @pytest.fixture(scope="class")
@@ -402,16 +440,25 @@ class DriverConformance:
     def test_observing_twice_gives_the_same_fingerprint(self, conformance_scene, conformance_driver_factory):
         asyncio.run(check_fingerprint(conformance_driver_factory, conformance_scene))
 
-    def test_sensitive_text_stays_out_of_the_trace(self, conformance_scene, conformance_driver_factory):
-        asyncio.run(check_sensitive_not_traced(conformance_driver_factory, conformance_scene))
+    def test_sensitive_text_stays_out_of_the_trace(
+        self, conformance_scene, conformance_driver_factory, conformance_sensitive_case
+    ):
+        asyncio.run(
+            check_sensitive_not_traced(conformance_driver_factory, conformance_scene, conformance_sensitive_case)
+        )
 
-    def test_sensitive_text_stays_out_of_the_logs(self, conformance_scene, conformance_driver_factory):
-        asyncio.run(check_sensitive_not_logged(conformance_driver_factory, conformance_scene))
+    def test_sensitive_text_stays_out_of_the_logs(
+        self, conformance_scene, conformance_driver_factory, conformance_sensitive_case
+    ):
+        asyncio.run(
+            check_sensitive_not_logged(conformance_driver_factory, conformance_scene, conformance_sensitive_case)
+        )
 
 
 __all__ = [
     "LIVE_MARKER",
     "SECRET_TEXT",
+    "TYPE_TEXT_CASE",
     "DriverConformance",
     "DriverFactory",
     "TraceSink",

@@ -100,7 +100,11 @@ class Drag(Action):
 
 @dataclass(frozen=True)
 class Wait(Action):
-    """Wait a number of seconds, or until ``until_text`` appears. Exactly one of the two is set."""
+    """Sleep ``seconds``, or wait until ``until_text`` appears.
+
+    With ``until_text``, ``seconds`` is the longest wait (``None``: the driver's default); the driver raises
+    ``ActionTimeout`` when the text has not appeared by then. At least one of the two is set.
+    """
 
     effect: ClassVar[Effect] = Effect.READ
 
@@ -108,8 +112,8 @@ class Wait(Action):
     until_text: str | None = None
 
     def __post_init__(self) -> None:
-        if (self.seconds is None) == (self.until_text is None):
-            raise ValueError("Wait needs exactly one of seconds or until_text")
+        if self.seconds is None and self.until_text is None:
+            raise ValueError("Wait needs seconds, until_text or both")
 
 
 @dataclass(frozen=True)
