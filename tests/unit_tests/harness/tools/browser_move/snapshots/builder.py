@@ -22,7 +22,7 @@ Only the I/O boundary is stubbed; the code that builds tools and prompts runs fo
   ``@playwright/mcp@0.0.78`` tool list saved in ``fixtures/``; tool calls answer with a
   blank page. ``BrowserMoveStdioClient`` (which turns the list into tool cards) is real.
 * Chrome: the default ``remote`` driver mode never launches Chrome;
-  ``ManagedBrowserDriver.start`` raises if anything tries.
+  ``ManagedBrowserProvisioner.start`` raises if anything tries.
 
 JSON format, placeholders and conventions (role labels, language ``en``, OpenRouter
 model config, fixed query) are the ones of the browser-use snapshot recorded on
@@ -272,7 +272,7 @@ def io_stubs(
     import mcp.client.stdio
 
     from openjiuwen.core.foundation.llm import model as model_mod
-    from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import ManagedBrowserDriver
+    from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import ManagedBrowserProvisioner
 
     session_cls = type(
         "FakeMcpSession",
@@ -289,7 +289,7 @@ def io_stubs(
         )
         stack.enter_context(patch.object(mcp, "ClientSession", session_cls))
         stack.enter_context(patch.object(mcp.client.stdio, "stdio_client", _fake_stdio_client))
-        stack.enter_context(patch.object(ManagedBrowserDriver, "start", _refuse_chrome_start))
+        stack.enter_context(patch.object(ManagedBrowserProvisioner, "start", _refuse_chrome_start))
         yield
 
 

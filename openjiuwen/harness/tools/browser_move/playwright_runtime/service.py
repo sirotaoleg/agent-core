@@ -26,7 +26,7 @@ from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.runner import Runner
 from openjiuwen.core.single_agent.agents.react_agent import ReActAgent
 
-from ..provisioning.managed_browser import ManagedBrowserDriver, _default_chrome_user_data_dir
+from ..provisioning.managed_browser import ManagedBrowserProvisioner, _default_chrome_user_data_dir
 from ..utils.parsing import extract_json_object
 from .agents import build_browser_worker_agent, refresh_browser_worker_system_prompt
 from .config import BrowserInstanceConfig, BrowserRunGuardrails, parse_command_args, resolve_playwright_mcp_cwd
@@ -256,7 +256,7 @@ class BrowserService:
         self._profile_name = self._resolve_profile_name()
         self._driver_mode = self._resolve_driver_mode()
         self._active_profile: Optional[BrowserProfile] = None
-        self._managed_driver: Optional[ManagedBrowserDriver] = None
+        self._managed_driver: Optional[ManagedBrowserProvisioner] = None
         self._registered_cdp_endpoint: str = ""
         self._failure_context_by_session: Dict[str, str] = {}
         self._progress_by_session: Dict[str, BrowserTaskProgressState] = {}
@@ -615,7 +615,7 @@ class BrowserService:
         kill_existing_raw = (os.getenv("BROWSER_MANAGED_KILL_EXISTING") or "").strip().lower()
         kill_existing = kill_existing_raw in {"1", "true", "yes", "on"}
 
-        driver = ManagedBrowserDriver(profile=profile)
+        driver = ManagedBrowserProvisioner(profile=profile)
         endpoint = await asyncio.to_thread(driver.start, 30.0, kill_existing)
         self._inject_cdp_endpoint(endpoint)
         profile.cdp_url = endpoint
@@ -1057,7 +1057,7 @@ class BrowserService:
         return True
 
     @property
-    def managed_driver(self) -> Optional[ManagedBrowserDriver]:
+    def managed_driver(self) -> Optional[ManagedBrowserProvisioner]:
         """Return the managed driver coordinated by the process registry."""
         return self._managed_driver
 
@@ -1066,7 +1066,7 @@ class BrowserService:
         if self.started:
             self._start_heartbeat()
 
-    async def detach_lifecycle_resources(self) -> Optional[ManagedBrowserDriver]:
+    async def detach_lifecycle_resources(self) -> Optional[ManagedBrowserProvisioner]:
         """Detach this task binding while preserving the driver for reset."""
         driver = self._managed_driver
         await self._stop_heartbeat()

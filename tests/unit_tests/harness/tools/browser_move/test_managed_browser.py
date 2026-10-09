@@ -12,12 +12,12 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.profiles import (
     BrowserProfile,
 )
 from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import (
-    ManagedBrowserDriver,
+    ManagedBrowserProvisioner,
 )
 
 
-def _make_driver() -> ManagedBrowserDriver:
-    return ManagedBrowserDriver(
+def _make_driver() -> ManagedBrowserProvisioner:
+    return ManagedBrowserProvisioner(
         BrowserProfile(
             name="test-profile",
             driver_type="managed",

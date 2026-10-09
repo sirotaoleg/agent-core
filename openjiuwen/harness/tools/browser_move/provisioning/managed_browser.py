@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import time
+import warnings
 from pathlib import Path
 from typing import Optional
 from urllib.request import urlopen
@@ -166,7 +167,7 @@ def _is_chrome_identifier(value: str) -> bool:
     return "chrome" in Path(lowered).name
 
 
-class ManagedBrowserDriver:
+class ManagedBrowserProvisioner:
     """Launch and manage a dedicated local Chrome process."""
 
     def __init__(self, profile: BrowserProfile) -> None:
@@ -319,3 +320,15 @@ class ManagedBrowserDriver:
         from openjiuwen.core.common.logging import logger as _logger
         _logger.info("ManagedBrowser: clear handle process")
         process.poll()
+
+
+def __getattr__(name: str):
+    # ManagedBrowserDriver is the pre-Phase-2 name; kept as a deprecated alias.
+    if name == "ManagedBrowserDriver":
+        warnings.warn(
+            "ManagedBrowserDriver is deprecated; use ManagedBrowserProvisioner",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return ManagedBrowserProvisioner
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

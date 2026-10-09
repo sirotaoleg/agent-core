@@ -512,7 +512,7 @@ def test_ensure_managed_driver_started_reuses_healthy_existing_driver() -> None:
         setattr(service, "_managed_driver", healthy_driver)
 
         with patch(
-            "openjiuwen.harness.tools.browser_move.playwright_runtime.service.ManagedBrowserDriver"
+            "openjiuwen.harness.tools.browser_move.playwright_runtime.service.ManagedBrowserProvisioner"
         ) as mock_cls:
             await getattr(service, "_ensure_managed_driver_started")()
 
@@ -547,7 +547,7 @@ def test_ensure_managed_driver_started_replaces_stale_driver() -> None:
             "upsert_profile",
             side_effect=lambda browser_profile, select=False: browser_profile,
         ), patch(
-            "openjiuwen.harness.tools.browser_move.playwright_runtime.service.ManagedBrowserDriver",
+            "openjiuwen.harness.tools.browser_move.playwright_runtime.service.ManagedBrowserProvisioner",
             return_value=new_driver,
         ):
             await getattr(service, "_ensure_managed_driver_started")()
@@ -588,7 +588,7 @@ def test_ensure_runtime_ready_refreshes_mcp_binding_after_managed_browser_restar
             "upsert_profile",
             side_effect=lambda browser_profile, select=False: browser_profile,
         ), patch(
-            "openjiuwen.harness.tools.browser_move.playwright_runtime.service.ManagedBrowserDriver",
+            "openjiuwen.harness.tools.browser_move.playwright_runtime.service.ManagedBrowserProvisioner",
             return_value=new_driver,
         ), patch.object(service, "_refresh_mcp_server_binding", AsyncMock()) as refresh_binding:
             await service.ensure_runtime_ready()
@@ -754,7 +754,7 @@ def test_existing_profile_browser_binary_is_cleared_for_auto_detection() -> None
             "upsert_profile",
             side_effect=lambda browser_profile, select=False: browser_profile,
         ), patch(
-            "openjiuwen.harness.tools.browser_move.playwright_runtime.service.ManagedBrowserDriver",
+            "openjiuwen.harness.tools.browser_move.playwright_runtime.service.ManagedBrowserProvisioner",
             return_value=new_driver,
         ):
             await service._ensure_managed_driver_started()
