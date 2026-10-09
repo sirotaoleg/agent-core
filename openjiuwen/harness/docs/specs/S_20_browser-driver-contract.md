@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/surfaces/browser/` (`commands.py` / `context.py`) |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/surfaces/browser/` (`commands.py` / `context.py` / `scene/`) |
 | Last revised | 2026-10-09 |
 | Related feature | — (archived when the refactor lands) |
 
@@ -155,8 +155,12 @@ Dataclasses only; their use is specified with the composition root and the tool 
 - `ToolSpec(name, commands, description, prompt_section)`: one model-facing tool; it may cover several commands.
 - `PolicyRule(command_type, check)`: `check(action)` returns the reason to deny, or `None`.
 - `Scene`: what the conformance suite runs a driver in — `surface`, `start` / `stop`, `enter()` (commands into the
-  initial state), `target(observation)` (what to click), `changed(before, after)` (what must change),
-  `context_changes()` (commands that must set `context_changed`).
+  initial state) and the case builders `happy(command, ref_kind, actions)`, `stale(actions)`,
+  `intercepted(actions)`, `timeout(actions)` and `context_changes` (name -> builder). A builder gets the driver's
+  `info.actions` and returns a `SceneCase`, or the reason the scene cannot provide the case as a string; an omitted
+  builder returns a generic reason. See "Conformance suite".
+- `SceneCase(steps, check, observe_between, cleanup)`: each step builds one command from the observations taken so
+  far; the last step is the command under test. `check(before, after, result)` tells whether it took effect.
 
 ### FakeDriver (`contract/testing/fake.py`)
 
@@ -165,6 +169,54 @@ queues in order, raises `Unsupported(dispatched=False)` for commands or ref kind
 (default: every shared command except `Observe`, all ref kinds; default surfaces `{"fake"}`), raises a scripted
 `DriverError(dispatched=...)` or any exception via `fail_next`, and raises `ConnectionLost` from the n-th call
 until the next `start()` via `lose_connection_on(n)`. Running out of script fails with `AssertionError`.
+
+## Conformance suite (`contract/testing/conformance.py`)
+
+A pytest plugin that holds invariants 6 and 7 of the plan: every driver means the same thing by the same command, and
+a dispatched command is never repeated. It is surface-neutral; everything surface-specific comes from the `Scene`,
+so a new driver or surface adds a test module and a scene, never an edit to the suite.
+
+Use: a test module sets `pytest_plugins = ["openjiuwen.harness.tools.browser_move.contract.testing.conformance"]`
+and subclasses `DriverConformance` as `Test...` with `scene` (not started; the plugin starts it once per class),
+`driver_actions` (what the happy paths are parametrized with when tests are collected; for a `HandlerDriver`,
+`handled_actions()`) and a `conformance_driver_factory` fixture returning `factory(sink) -> Driver` (a new driver
+per case; `start()` must need no argument). Every case starts a new driver in its own event loop, runs `enter()`,
+plays its `SceneCase` and stops the driver. The plugin registers the `live` marker for runs against a real driver.
+
+| Case | Passes when | Scene-dependent |
+|---|---|---|
+| surface | `scene.surface in info.surfaces` | no |
+| declared actions | `info.actions` of the running driver equals `driver_actions` | no |
+| happy path, one per `(command, ref kind)` of `info.actions` (`None` when the command takes no ref) | the command returns `ok=True` and `check(before, after, result)` holds | yes (`happy`) |
+| stale ref | `StaleRef` with `dispatched=False` | yes (`stale`) |
+| context change, one per `context_changes` entry | `result.context_changed` | yes |
+| intercepted | `ActionIntercepted` with a non-empty `by` | yes (`intercepted`) |
+| timeout | `ActionTimeout` with `dispatched=True`; a driver that retries into success fails here | yes (`timeout`) |
+| unhandled command | the suite's own `UnhandledCommand` is not in `info.actions` and raises `Unsupported(dispatched=False)` | no |
+| fingerprint | two `observe()` calls on the unchanged scene give the same `fingerprint` | no |
+| sensitive text, trace | `TypeText(sensitive=True)` (built from the `TypeText` happy path) leaves its text out of the trace sink | yes (`happy`) |
+| sensitive text, logs | the same text is in no log record of the process, captured at DEBUG including non-propagating loggers | yes (`happy`) |
+
+A case the scene cannot provide is skipped with the scene's reason; a case needing a command (or ref kind) the driver
+does not handle is skipped naming it. Nothing passes silently. Until the tracing middleware exists, the trace case
+skips when the factory writes nothing to the sink; a factory that wraps the driver in `Tracing(driver, sink)` makes it
+run.
+
+### The browser scene (`surfaces/browser/scene/`)
+
+`browser_scene()` returns a `Scene(surface="browser")`. `start()` serves `scene/pages/` (`index.html`,
+`second.html`, `data.json`) with a stdlib HTTP server on `127.0.0.1:<free port>` and creates a temporary upload
+file; `enter()` is `Navigate(index.html)`. Every element writes what happened to it into `document.title`
+(`clicked`, `form:3:true`, `key:Enter`, ...), so checks read `BrowserContext.title`, `url` and `tabs`. Elements are
+found by accessible name; a `Locator` uses the element's CSS id; a `PointRef` is the centre of `Element.bounds`
+scaled to the screenshot. An `IndexRef` cannot be built (skipped).
+
+- Happy paths: every shared command and every browser command (`Navigate`, `Back`, `OpenContext`, `SelectOption`,
+  `UploadFile`, `FillForm`, `Drop`, `GetPdf`, `GetConsole`, `GetNetwork`) with `DriverRef`, `Locator` or `PointRef`.
+- Stale ref: a `DriverRef` from the start document clicked after `Navigate(second.html)`.
+- Intercepted: a button covered by an overlay. Timeout: a disabled button. Both only with `DriverRef` or `Locator`.
+- Context changes: `navigate`, `same-url-reload` (`Navigate` to the current address), `link-click`, `open-tab`,
+  `popup-click` (`window.open`), `switch-tab`, `close-tab`, `dialog` (a `confirm()`).
 
 ## Drivers
 
