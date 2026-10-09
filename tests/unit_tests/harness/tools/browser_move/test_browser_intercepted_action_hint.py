@@ -266,3 +266,66 @@ def test_service_registers_the_rail_on_the_worker() -> None:
 
     rails = [call.args[0] for call in worker.register_rail.await_args_list]
     assert any(isinstance(rail, InterceptedActionHintRail) for rail in rails)
+
+
+class TestInterceptedActionHintRailInputs:
+    def test_rewrites_a_plain_text_error_without_envelope(self) -> None:
+        plain = _call_log('button:has-text("Filter & Sort")', ONETRUST_TARGET, ONETRUST_BLOCKER)
+        inputs = ToolCallInputs(
+            tool_name="browser_click",
+            tool_result={"ok": False},
+            tool_msg=ToolMessage(content=plain, tool_call_id="call-4"),
+        )
+
+        asyncio.run(InterceptedActionHintRail().after_tool_call(SimpleNamespace(inputs=inputs)))
+
+        assert inputs.tool_msg.content == explain_intercepted_action(plain)
+        assert inputs.tool_msg.content.startswith("### Error\nClick not delivered: ")
+        assert CONSENT_HINT in inputs.tool_msg.content
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            _envelope("### Error\nSomething intercepts pointer events, but not in a call log."),
+            "### Error\nSomething intercepts pointer events, but not in a call log.",
+        ],
+        ids=["envelope", "plain-text"],
+    )
+    def test_unparseable_call_log_is_left_unchanged(self, content: str) -> None:
+        original = ToolMessage(content=content, tool_call_id="call-5")
+        inputs = ToolCallInputs(tool_name="browser_click", tool_result={"ok": False}, tool_msg=original)
+
+        asyncio.run(InterceptedActionHintRail().after_tool_call(SimpleNamespace(inputs=inputs)))
+
+        assert inputs.tool_msg is original
+        assert inputs.tool_msg.content == content
+
+
+@pytest.mark.parametrize("with_rail", [False, True], ids=["without-hint", "with-hint"])
+def test_hint_adds_no_model_round_trip(with_rail: bool) -> None:
+    """F_06 (plan 8.1): the hint replaces the tool message; the model is called once per turn either way."""
+
+    async def scenario() -> list[dict[str, Any]]:
+        worker = build_browser_worker_agent(
+            provider="openai",
+            api_key="mock-api-key",
+            api_base="https://example.invalid/v1",
+            model_name="mock-model",
+            mcp_cfg=McpServerConfig(server_id="pw-test", server_name="pw-test", server_path="stdio://pw"),
+            max_steps=3,
+            allowed_tool_names=(),
+        )
+        llm = _ScriptedLLM()
+        worker.set_llm(llm)
+        card = McpToolCard(id="intercepted-hint-f06.browser_click", name="browser_click", server_name="pw-test")
+        worker.ability_manager.add_ability(card, MCPTool(_FakePlaywrightClient(), card))
+        if with_rail:
+            await worker.register_rail(InterceptedActionHintRail())
+        await Runner.run_agent(worker, {"query": "Open the filters", "conversation_id": f"f06-hint-{with_rail}"})
+        return llm.requests
+
+    requests = asyncio.run(scenario())
+
+    assert len(requests) == 2
+    (tool_message,) = [message for message in requests[1]["messages"] if getattr(message, "role", "") == "tool"]
+    assert ("Click not delivered" in tool_message.content) is with_rail

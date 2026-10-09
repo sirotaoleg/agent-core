@@ -351,3 +351,26 @@ def test_service_registers_the_recovery_rail(other_rails: int) -> None:
 
     rails = [call.args[0] for call in worker.register_rail.await_args_list]
     assert any(isinstance(rail, FinalAnswerRecoveryRail) for rail in rails)
+
+
+class TestRecoveryCallFails:
+    def test_model_error_during_recovery_keeps_todays_result(self) -> None:
+        async def respond(index: int, request: dict[str, Any]) -> AssistantMessage:
+            if request["tools"]:
+                return _answer(PROSE)
+            raise RuntimeError("model endpoint unavailable")
+
+        service, llm, client = _service(respond)
+
+        result = _run(service)
+
+        assert result == {
+            "ok": False,
+            "final": PROSE,
+            "page": {"url": "", "title": ""},
+            "screenshot": None,
+            "error": "Browser worker did not return valid JSON output",
+            "status": "failed",
+        }
+        assert [bool(request["tools"]) for request in llm.requests] == [True, False], "one recovery call, no retry"
+        assert client.calls == 0

@@ -484,3 +484,97 @@ def test_service_registers_the_guard_on_the_worker() -> None:
 
     rails = [call.args[0] for call in worker.register_rail.await_args_list]
     assert any(isinstance(rail, RepeatedCallGuardRail) for rail in rails)
+
+
+class _SameTurnLLM:
+    """First turn: `count` identical browser_press_key calls in one message; then the final JSON."""
+
+    def __init__(self, count: int) -> None:
+        self.requests: list[dict[str, Any]] = []
+        self.count = count
+
+    async def invoke(self, *args: Any, **kwargs: Any) -> AssistantMessage:
+        del args
+        self.requests.append(kwargs)
+        if len(self.requests) > 1:
+            return AssistantMessage(content=json.dumps(FINAL_JSON))
+        calls = [
+            ToolCall(
+                id=f"call-{index}",
+                type="function",
+                name="browser_press_key",
+                arguments=json.dumps({"key": "PageDown"}),
+            )
+            for index in range(self.count)
+        ]
+        return AssistantMessage(content="", tool_calls=calls)
+
+
+def test_identical_calls_issued_in_one_model_turn_withhold_tools() -> None:
+    # F1: known false positive, deferred to benchmark phase (D6)
+    async def scenario() -> tuple[dict[str, Any], list[dict[str, Any]], int]:
+        llm = _SameTurnLLM(8)
+        worker = _build_worker(llm, max_steps=20)
+        client = _FakePlaywrightClient()
+        card = McpToolCard(
+            id="repeated-guard.browser_press_key",
+            name="browser_press_key",
+            server_name="pw-test",
+            input_params={"type": "object", "properties": {"key": {"type": "string"}}},
+        )
+        worker.ability_manager.add_ability(card, MCPTool(client, card))
+        await worker.register_rail(RepeatedCallGuardRail())
+        result = await Runner.run_agent(worker, {"query": "Move the price slider", "conversation_id": "f1"})
+        return result, list(llm.requests), client.calls
+
+    result, requests, executed = asyncio.run(scenario())
+
+    assert json.loads(result["output"]) == FINAL_JSON
+    assert executed == 8
+    assert len(requests) == 2
+    assert requests[0]["tools"]
+    assert not requests[1]["tools"], "the 8 same-turn calls count as a loop and tools are withheld"
+    tool_messages = [message.content for message in requests[1]["messages"] if message.role == "tool"]
+    assert [NOTE in message for message in tool_messages] == [False, False] + [True] * 6
+
+
+class _RepeatThenAnswerLLM:
+    """Sends the same browser_evaluate `repeats` times, then the final JSON."""
+
+    def __init__(self, repeats: int) -> None:
+        self.requests: list[dict[str, Any]] = []
+        self.repeats = repeats
+
+    async def invoke(self, *args: Any, **kwargs: Any) -> AssistantMessage:
+        del args
+        self.requests.append(kwargs)
+        if len(self.requests) > self.repeats:
+            return AssistantMessage(content=json.dumps(FINAL_JSON))
+        call = ToolCall(
+            id=f"call-{len(self.requests)}",
+            type="function",
+            name="browser_evaluate",
+            arguments=json.dumps({"function": "() => 'ok'"}),
+        )
+        return AssistantMessage(content="", tool_calls=[call])
+
+
+@pytest.mark.parametrize("with_rail", [False, True], ids=["without-guard", "with-guard"])
+def test_guard_adds_no_model_round_trip(with_rail: bool) -> None:
+    """F_06 (plan 8.1): the note rides on the tool message; the model is called once per turn either way."""
+
+    async def scenario() -> list[dict[str, Any]]:
+        llm = _RepeatThenAnswerLLM(4)
+        worker = _build_worker(llm, max_steps=20)
+        if with_rail:
+            await worker.register_rail(RepeatedCallGuardRail())
+        await Runner.run_agent(
+            worker, {"query": "Find a vegetarian lasagna", "conversation_id": f"f06-guard-{with_rail}"}
+        )
+        return list(llm.requests)
+
+    requests = asyncio.run(scenario())
+
+    assert len(requests) == 5
+    tool_messages = [message.content for message in requests[-1]["messages"] if message.role == "tool"]
+    assert [NOTE in message for message in tool_messages] == ([False, False, True, True] if with_rail else [False] * 4)
