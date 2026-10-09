@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="data:,">
+  <title>Scene start</title>
+  <style>
+    #covered-box { position: relative; display: inline-block; }
+    #overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.3); z-index: 10; }
+    #scroll-box { width: 240px; height: 60px; overflow: auto; border: 1px solid #888; }
+    #scroll-box p { height: 400px; margin: 0; }
+    #file-drop, #drop-target { display: inline-block; padding: 8px; border: 1px dashed #888; }
+    #spacer { height: 2000px; }
+  </style>
+</head>
+<body>
+  <!-- Every interaction writes a short report into document.title, which every driver observes. -->
+  <h1>Conformance scene</h1>
+  <nav><a id="second-link" href="second.html">Go to second</a></nav>
+  <form onsubmit="return false">
+    <input id="name" type="text" aria-label="Full name" placeholder="Full name" oninput="formState()">
+    <label><input id="gift" type="checkbox" aria-label="Gift wrap" onchange="formState()">Gift wrap</label>
+    <select id="size" aria-label="Size" onchange="report('size:' + this.value)">
+      <option value="s">Small</option>
+      <option value="m">Medium</option>
+      <option value="l">Large</option>
+    </select>
+    <button id="save" type="button" onclick="report('clicked')">Save order</button>
+  </form>
+  <p>
+    <input id="keys" type="text" aria-label="Key field" placeholder="Key field">
+    <button id="hover" type="button" onmouseover="report('hovered')">Hover target</button>
+    <button id="confirm" type="button" onclick="report('confirm:' + confirm('Proceed?'))">Show confirm</button>
+    <button id="popup" type="button" onclick="window.open('second.html')">Open popup</button>
+  </p>
+  <p>
+    <button id="drag-source" type="button" draggable="true">Drag source</button>
+    <button id="drop-target" type="button">Drop target</button>
+    <span id="file-drop" role="button" tabindex="0" aria-label="File drop zone">File drop zone</span>
+    <input id="upload" type="file" aria-label="Upload file" onchange="report('upload:' + this.files[0].name)">
+  </p>
+  <div id="scroll-box" tabindex="0" aria-label="Scroll box" role="region"><p>Scroll box content</p></div>
+  <p>
+    <span id="covered-box">
+      <button id="covered" type="button" onclick="report('covered')">Covered button</button>
+      <span id="overlay" aria-label="Overlay banner"></span>
+    </span>
+    <button id="disabled" type="button" disabled>Disabled button</button>
+    <button id="last" type="button" onclick="report('last')">Last button</button>
+  </p>
+  <div id="spacer"></div>
+  <script>
+    function report(text) { document.title = text; }
+    function formState() {
+      report('form:' + document.getElementById('name').value.length + ':' + document.getElementById('gift').checked);
+    }
+    document.addEventListener('keydown', function (e) { report('key:' + e.key); });
+    document.addEventListener('scroll', function () { report('scrolled'); }, true);
+
+    var dragging = false;
+    var source = document.getElementById('drag-source');
+    var target = document.getElementById('drop-target');
+    source.addEventListener('mousedown', function () { dragging = true; });
+    source.addEventListener('dragstart', function (e) { e.dataTransfer.setData('text/plain', 'drag'); });
+    document.addEventListener('mouseup', function (e) {
+      if (dragging && target.contains(e.target)) { report('dragged'); }
+      dragging = false;
+    });
+    target.addEventListener('dragover', function (e) { e.preventDefault(); });
+    target.addEventListener('drop', function (e) { e.preventDefault(); dragging = false; report('dragged'); });
+
+    var fileDrop = document.getElementById('file-drop');
+    fileDrop.addEventListener('dragover', function (e) { e.preventDefault(); });
+    fileDrop.addEventListener('drop', function (e) {
+      e.preventDefault();
+      report('dropped:' + e.dataTransfer.files.length);
+    });
+
+    console.log('scene console message');
+    fetch('data.json').catch(function () {});
+  </script>
+</body>
+</html>

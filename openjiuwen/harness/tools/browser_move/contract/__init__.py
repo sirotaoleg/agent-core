@@ -47,7 +47,7 @@ from .registry import (
     register_surface,
 )
 from .results import ActionResult
-from .surface import PolicyRule, Scene, SurfaceProfile, ToolSpec
+from .surface import PolicyRule, Scene, SceneCase, SurfaceProfile, ToolSpec
 
 __all__ = [
     "DRIVERS",
@@ -88,6 +88,7 @@ __all__ = [
     "Registry",
     "RunScript",
     "Scene",
+    "SceneCase",
     "Screenshot",
     "Scroll",
     "StaleRef",
