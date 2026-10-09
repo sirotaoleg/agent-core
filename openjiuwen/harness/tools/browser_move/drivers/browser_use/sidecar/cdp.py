@@ -574,6 +574,29 @@ def register_javascript_dialog_opening(cdp_client: Any, callback: Any) -> Any:
     raise exceptions.DriverUnsupported("CDP client cannot register Page.javascriptDialogOpening handlers")
 
 
+def add_event_listener(cdp_client: Any, method: str, callback: Any) -> None:
+    """Call ``callback(event, session_id)`` on ``method`` events, keeping any handler already registered.
+
+    cdp-use keeps one handler per event, and browser-use registers its own for some events: the previous
+    handler is called after ``callback`` (with its return value, which may be awaitable).
+    """
+    registry = getattr(cdp_client, "_event_registry", None)
+    if registry is None or not hasattr(registry, "register"):
+        raise exceptions.DriverUnsupported(f"CDP client cannot register {method} handlers")
+    previous = (getattr(registry, "_handlers", None) or {}).get(method)
+
+    def chained(event: Any, session_id: Any = None) -> Any:
+        callback(event, session_id)
+        return None if previous is None else previous(event, session_id)
+
+    registry.register(method, chained)
+
+
+async def run_if_waiting_for_debugger(cdp_client: Any, session_id: str) -> None:
+    """Let a page that waits for the debugger run (a page opening a popup can wait so)."""
+    await cdp_client.send.Runtime.runIfWaitingForDebugger(params={}, session_id=session_id)
+
+
 def _unwrap_js_result(result: dict[str, Any]) -> Any:
     """Raise ``exceptions.EvaluateError`` on a JS exception, else return the value."""
     exception_details = result.get("exceptionDetails")
@@ -587,6 +610,7 @@ def _unwrap_js_result(result: dict[str, Any]) -> Any:
 
 __all__ = [
     "SUPPORTED_DROP_MIME_TYPES",
+    "add_event_listener",
     "build_external_drag_data",
     "call_function_on_backend_node",
     "describe_node_backend_id",
@@ -607,6 +631,7 @@ __all__ = [
     "register_javascript_dialog_opening",
     "request_node_id_from_object",
     "resolve_object_id_by_backend_node",
+    "run_if_waiting_for_debugger",
     "set_file_input_files",
     "set_intercept_drags",
 ]

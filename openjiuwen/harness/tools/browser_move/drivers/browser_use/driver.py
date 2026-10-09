@@ -485,17 +485,21 @@ class BrowserUseDriver(HandlerDriver):
         return _ref_to_wire(ref, self._driver_generation)
 
     def _act_result(self, data: dict[str, Any], *, context_changed: bool = False, **fields: Any) -> ActionResult:
-        """An act reply as a result: a new document or a dialog that opened during the command changes the context."""
+        """An act reply as a result: a new document, a dialog or a page the command opened changes the context."""
         self._driver_generation = int(data.get("driver_generation", self._driver_generation))
         detail = data.get("detail") or None
         dialog = data.get("dialog_opened")
         if dialog is not None:
             note = f"{dialog.get('type') or 'dialog'} dialog opened: {dialog.get('message', '')!r}"
             detail = f"{detail}; {note}" if detail else note
+        opened = tuple(_context_from_wire(target) for target in data.get("new_targets") or ())
         return ActionResult(
             ok=bool(data["ok"]),
             detail=detail,
-            context_changed=context_changed or bool(data.get("document_changed", False)) or dialog is not None,
+            context_changed=(
+                context_changed or bool(data.get("document_changed", False)) or dialog is not None or bool(opened)
+            ),
+            opened_contexts=opened,
             **fields,
         )
 

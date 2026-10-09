@@ -435,6 +435,14 @@ def test_no_dialog_leaves_the_detail_alone():
     assert (result.context_changed, result.detail) == (False, "done")
 
 
+def test_pages_opened_by_the_command_are_opened_contexts():
+    popup = {"target_id": "T9", "url": "", "title": "", "active": False}
+    driver, _request = _driver({**ACT_OK, "new_targets": [popup]})
+    result = asyncio.run(driver.execute(Click(E1)))
+    assert result.opened_contexts == (ContextRef(id="T9", kind="tab", title=""),)
+    assert result.context_changed is True
+
+
 def test_switch_context_always_changes_context():
     driver, _request = _driver(dict(ACT_OK))
     assert asyncio.run(driver.execute(SwitchContext(TAB_2))).context_changed is True

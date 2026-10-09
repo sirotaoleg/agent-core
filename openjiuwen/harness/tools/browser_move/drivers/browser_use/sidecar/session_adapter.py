@@ -128,6 +128,8 @@ def _normalize_upload_paths(paths: list[str]) -> tuple[list[str], str | None]:
 
 
 _DRIVER_REF_HANDLE_PREFIX = "bnid:"
+# How long an action waits for the page it resumed after opening a popup to answer.
+_RESUME_TIMEOUT_S = 1.0
 
 
 def _mint_driver_ref(backend_node_id: int, driver_generation: int) -> dict[str, Any]:
@@ -161,6 +163,9 @@ class _Act:
         self.dialog: dict[str, str] | None = None
         # Set when a dialog opened that nothing handles: the action's input now waits for ``handle_dialog``.
         self.dialog_blocking = asyncio.Event()
+        # Pages (tabs, popups) the action opened, as wire TabRefs.
+        self.new_targets: list[dict[str, Any]] = []
+        self.target_created = asyncio.Event()
 
 
 def _dialog_note(dialog: dict[str, Any]) -> str:
@@ -185,6 +190,7 @@ class SessionAdapter:
         # The action running now, and inputs left waiting on a dialog after their action returned.
         self._current_act: _Act | None = None
         self._waiting_inputs: set[asyncio.Task] = set()
+        self._listening_client: Any = None
 
     # -- lifecycle ---------------------------------------------------
 
@@ -196,7 +202,7 @@ class SessionAdapter:
         self._session = BrowserSession(cdp_url=cdp_url, is_local=False, browser_profile=profile)
         await self._session.start()
         self._cdp_session = await self._session.get_or_create_cdp_session()
-        await self._ensure_dialog_listener()
+        await self._ensure_listeners()
 
         version_info: dict[str, Any] = {}
         try:
@@ -246,7 +252,7 @@ class SessionAdapter:
         self, *, include_dom: bool = True, include_screenshot: bool = False, cached: bool = False
     ) -> dict[str, Any]:
         self._refuse_while_dialog_open("observe", exceptions.ObserveError)
-        await self._ensure_dialog_listener()
+        await self._ensure_listeners()
         summary = await self._session.get_browser_state_summary(
             include_screenshot=include_screenshot, cached=cached
         )
@@ -704,12 +710,12 @@ class SessionAdapter:
             self._cdp_session = await self._session.get_or_create_cdp_session()
         return self._cdp_session
 
-    async def _ensure_dialog_listener(self) -> None:
-        """Enable Page events on the current session and (re)claim javascriptDialogOpening routing.
+    async def _ensure_listeners(self) -> None:
+        """Enable Page events on the current session, (re)claim javascriptDialogOpening, listen for new pages.
 
         The CDP client keeps one handler per event, and browser-use's popups watchdog registers its own
         auto-accepting dialog handler whenever a tab is created; re-registering ours on every call keeps
-        dialogs for ``handle_dialog``.
+        dialogs for ``handle_dialog``. The other listeners are added once per client, next to browser-use's.
         """
         cdp_session = await self._ensure_cdp_session()
         if not self._dialog_listener_registered:
@@ -718,6 +724,20 @@ class SessionAdapter:
         if self._dialog_handler is None:
             self._dialog_handler = self._on_dialog
         self._dialog_unregister = cdp.register_javascript_dialog_opening(cdp_session.cdp_client, self._dialog_handler)
+        if self._listening_client is not cdp_session.cdp_client:
+            cdp.add_event_listener(cdp_session.cdp_client, "Target.targetCreated", self._on_target_created)
+            self._listening_client = cdp_session.cdp_client
+
+    def _on_target_created(self, event: Any, session_id: Any = None) -> None:
+        info = (event or {}).get("targetInfo") or {}
+        act = self._current_act
+        if act is None or info.get("type") != "page":
+            return
+        target_id = str(info.get("targetId") or "")
+        if all(target["target_id"] != target_id for target in act.new_targets):
+            url, title = str(info.get("url") or ""), str(info.get("title") or "")
+            act.new_targets.append({"target_id": target_id, "url": url, "title": title, "active": False})
+        act.target_created.set()
 
     def _on_dialog(self, event: Any, session_id: Any = None) -> None:
         payload = event if isinstance(event, dict) else getattr(event, "__dict__", {}) or {}
@@ -768,18 +788,26 @@ class SessionAdapter:
         The input runs as a task. When a dialog opens that nothing handles, the page stops answering input
         events until the dialog is handled, so the action returns at once with ``dialog_opened`` and leaves
         its input waiting in the background. While a dialog is open, an action other than ``handle_dialog``
-        returns ``ok=False`` without sending anything.
+        returns ``ok=False`` without sending anything. A page that opens a popup can wait for the debugger
+        until told to run, so when the action opens a page the current page is resumed; the new pages are
+        reported as ``new_targets``.
         """
         before_url = await self._safe_current_url()
         if self._dialog_pending is not None and not while_dialog:
             return await self._act_result(before_url, ok=False, detail=_dialog_note(self._dialog_pending))
-        await self._ensure_dialog_listener()
+        await self._ensure_listeners()
         act = _Act()
         self._current_act = act
         task = asyncio.ensure_future(body(act))
         dialog_waiter = asyncio.ensure_future(act.dialog_blocking.wait())
+        target_waiter = asyncio.ensure_future(act.target_created.wait())
         try:
-            await asyncio.wait({task, dialog_waiter}, return_when=asyncio.FIRST_COMPLETED)
+            waiters = {dialog_waiter, target_waiter}
+            while not task.done() and not dialog_waiter.done():
+                done, _pending = await asyncio.wait({task, *waiters}, return_when=asyncio.FIRST_COMPLETED)
+                if target_waiter in done and target_waiter in waiters:
+                    waiters.discard(target_waiter)
+                    await self._resume_current_page()
             if task.done():
                 ok, detail = task.result()
             else:
@@ -788,10 +816,20 @@ class SessionAdapter:
                 ok, detail = True, "the input waits until the dialog is handled"
         finally:
             dialog_waiter.cancel()
+            target_waiter.cancel()
             if not task.done() and task not in self._waiting_inputs:
                 task.cancel()
             self._current_act = None
         return await self._act_result(before_url, ok=ok, detail=detail, act=act)
+
+    async def _resume_current_page(self) -> None:
+        cdp_session = await self._ensure_cdp_session()
+        try:
+            await asyncio.wait_for(
+                cdp.run_if_waiting_for_debugger(cdp_session.cdp_client, cdp_session.session_id), _RESUME_TIMEOUT_S
+            )
+        except Exception:  # noqa: BLE001 - a page that does not wait for the debugger is fine
+            pass
 
     def _forget_waiting_input(self, task: asyncio.Task) -> None:
         self._waiting_inputs.discard(task)
@@ -829,6 +867,7 @@ class SessionAdapter:
             "document_changed": changed,
             "driver_generation": self._driver_generation,
             "dialog_opened": None if act is None else act.dialog,
+            "new_targets": [] if act is None else list(act.new_targets),
         }
 
     def _node_from_index(self, index: int, driver_generation: int) -> Any:

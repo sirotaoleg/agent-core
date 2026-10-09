@@ -1,6 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""The browser-use sidecar's ``SessionAdapter`` on a fake CDP client: dialogs during actions.
+"""The browser-use sidecar's ``SessionAdapter`` on a fake CDP client: dialogs and popups during actions.
 
 No Chrome and no ``browser_use``: the fake client answers CDP commands from scripted handlers and, like cdp-use,
 keeps one handler per event. Sidecar modules are flat (``import cdp``), so they are loaded by path.
@@ -116,16 +116,25 @@ class _Send:
 
 
 class Page:
-    """A page with one button at (10, 20, 100, 40); clicking it can open a JS dialog that blocks the release."""
+    """A page with one button at (10, 20, 100, 40).
 
-    def __init__(self, client: FakeCdp, *, dialog: dict[str, str] | None = None) -> None:
+    Clicking it can open a JS dialog or a popup; either blocks the release, as it did live: the dialog until it is
+    handled, the popup until the opener's session is told to run (``Runtime.runIfWaitingForDebugger``).
+    """
+
+    def __init__(
+        self, client: FakeCdp, *, dialog: dict[str, str] | None = None, popup: dict[str, str] | None = None
+    ) -> None:
         self.client = client
         self.dialog = dialog
         self.dialog_closed: asyncio.Future | None = None
+        self.popup = popup
+        self.opener_resumed: asyncio.Future | None = None
         client.replies["DOM.resolveNode"] = lambda params, sid: {"object": {"objectId": "obj-7"}}
         client.replies["Runtime.callFunctionOn"] = self._call_function
         client.replies["Input.dispatchMouseEvent"] = self._mouse
         client.replies["Page.handleJavaScriptDialog"] = self._handle_dialog
+        client.replies["Runtime.runIfWaitingForDebugger"] = self._run_if_waiting
 
     def _call_function(self, params: dict[str, Any], sid: str | None) -> dict[str, Any]:
         if "getBoundingClientRect" in params["functionDeclaration"]:
@@ -137,6 +146,15 @@ class Page:
             self.dialog_closed = asyncio.get_running_loop().create_future()
             self.client.emit("Page.javascriptDialogOpening", self.dialog)
             await self.dialog_closed  # Chrome answers the release only after the dialog closes
+        if params["type"] == "mouseReleased" and self.popup is not None:
+            self.opener_resumed = asyncio.get_running_loop().create_future()
+            self.client.emit("Target.targetCreated", {"targetInfo": self.popup}, session_id=None)
+            await self.opener_resumed
+        return {}
+
+    def _run_if_waiting(self, params: dict[str, Any], sid: str | None) -> dict[str, Any]:
+        if sid == SESSION and self.opener_resumed is not None and not self.opener_resumed.done():
+            self.opener_resumed.set_result(True)
         return {}
 
     def _handle_dialog(self, params: dict[str, Any], sid: str | None) -> dict[str, Any]:
@@ -200,7 +218,7 @@ def test_the_dialog_is_handled_on_the_session_that_reported_it():
         client = FakeCdp()
         Page(client)
         adapter = _adapter(client)
-        await adapter._ensure_dialog_listener()
+        await adapter._ensure_listeners()
         client.emit("Page.javascriptDialogOpening", {"type": "alert", "message": "Hi"}, session_id=POPUP_SESSION)
         await _quick(adapter.handle_dialog(accept=True))
         assert [sid for name, _params, sid in client.calls if name == "Page.handleJavaScriptDialog"] == [POPUP_SESSION]
@@ -271,7 +289,7 @@ def test_every_action_reclaims_the_dialog_event_from_browser_use():
         client = FakeCdp()
         Page(client, dialog={"type": "alert", "message": "Hi"})
         adapter = _adapter(client)
-        await adapter._ensure_dialog_listener()
+        await adapter._ensure_listeners()
         # browser-use's popups watchdog registers its own auto-accepting handler when a tab is created.
         client._event_registry.register("Page.javascriptDialogOpening", lambda event, sid: None)
         reply = await _quick(adapter.click(BUTTON))
@@ -289,5 +307,69 @@ def test_page_events_are_enabled_once_per_session():
         await _quick(adapter.click(BUTTON))
         await _quick(adapter.click(BUTTON))
         assert len(client.sent("Page.enable")) == 1
+
+    asyncio.run(scenario())
+
+
+# -- popups --------------------------------------------------------------------
+
+POPUP = {"targetId": "T2", "type": "page", "title": "", "url": "", "openerId": TARGET}
+
+
+def test_a_click_that_opens_a_popup_resumes_the_page_and_reports_the_new_target():
+    async def scenario() -> None:
+        client = FakeCdp()
+        Page(client, popup=POPUP)
+        adapter = _adapter(client)
+        reply = await _quick(adapter.click(BUTTON))
+        assert reply["ok"] is True
+        assert reply["new_targets"] == [{"target_id": "T2", "url": "", "title": "", "active": False}]
+        assert [sid for name, _params, sid in client.calls if name == "Runtime.runIfWaitingForDebugger"] == [SESSION]
+
+    asyncio.run(scenario())
+
+
+def test_targets_that_are_not_pages_are_not_new_contexts():
+    async def scenario() -> None:
+        client = FakeCdp()
+        Page(client)
+        adapter = _adapter(client)
+        await adapter._ensure_listeners()
+
+        async def body(act: Any) -> tuple[bool, str]:
+            client.emit("Target.targetCreated", {"targetInfo": {**POPUP, "type": "service_worker"}}, session_id=None)
+            return True, "done"
+
+        reply = await _quick(adapter._act(body))
+        assert reply["new_targets"] == []
+
+    asyncio.run(scenario())
+
+
+def test_a_page_opened_between_actions_is_not_reported_by_the_next_one():
+    async def scenario() -> None:
+        client = FakeCdp()
+        Page(client)
+        adapter = _adapter(client)
+        await adapter._ensure_listeners()
+        client.emit("Target.targetCreated", {"targetInfo": POPUP}, session_id=None)
+        reply = await _quick(adapter.click(BUTTON))
+        assert reply["new_targets"] == []
+        assert client.sent("Runtime.runIfWaitingForDebugger") == []
+
+    asyncio.run(scenario())
+
+
+def test_new_target_listener_keeps_the_handler_browser_use_registered():
+    async def scenario() -> None:
+        client = FakeCdp()
+        Page(client)
+        seen: list[str] = []
+        client._event_registry.register("Target.targetCreated", lambda event, sid: seen.append("browser-use"))
+        adapter = _adapter(client)
+        await adapter._ensure_listeners()
+        await adapter._ensure_listeners()
+        client.emit("Target.targetCreated", {"targetInfo": POPUP}, session_id=None)
+        assert seen == ["browser-use"]
 
     asyncio.run(scenario())

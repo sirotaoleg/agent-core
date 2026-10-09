@@ -134,7 +134,7 @@ def test_session_adapter_upload_files_calls_set_file_input_files_and_verifies() 
     adapter._session = SimpleNamespace(get_current_page_url=AsyncMock(return_value="https://example.test/upload"))
     adapter._resolve_ref_to_backend_node_id = AsyncMock(return_value=99)
     adapter._ensure_cdp_session = AsyncMock(return_value=adapter._cdp_session)
-    adapter._ensure_dialog_listener = AsyncMock()  # connect() arms it in a real session
+    adapter._ensure_listeners = AsyncMock()  # connect() arms it in a real session
 
     with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as handle:
         handle.write(b"payload")
@@ -159,7 +159,7 @@ def test_session_adapter_upload_files_fails_closed_when_attach_leaves_empty_file
     adapter._session = SimpleNamespace(get_current_page_url=AsyncMock(return_value="https://example.test/upload"))
     adapter._resolve_ref_to_backend_node_id = AsyncMock(return_value=7)
     adapter._ensure_cdp_session = AsyncMock(return_value=adapter._cdp_session)
-    adapter._ensure_dialog_listener = AsyncMock()  # connect() arms it in a real session
+    adapter._ensure_listeners = AsyncMock()  # connect() arms it in a real session
 
     with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as handle:
         handle.write(b"payload")
@@ -181,7 +181,7 @@ def test_session_adapter_upload_files_rejects_multi_on_non_multiple_input() -> N
     adapter._session = SimpleNamespace(get_current_page_url=AsyncMock(return_value="https://example.test/upload"))
     adapter._resolve_ref_to_backend_node_id = AsyncMock(return_value=7)
     adapter._ensure_cdp_session = AsyncMock(return_value=adapter._cdp_session)
-    adapter._ensure_dialog_listener = AsyncMock()  # connect() arms it in a real session
+    adapter._ensure_listeners = AsyncMock()  # connect() arms it in a real session
 
     paths: list[str] = []
     try:
@@ -207,7 +207,7 @@ def test_session_adapter_upload_files_missing_path_skips_cdp() -> None:
     adapter._session = SimpleNamespace(get_current_page_url=AsyncMock(return_value="https://example.test/upload"))
     adapter._resolve_ref_to_backend_node_id = AsyncMock(return_value=7)
     adapter._ensure_cdp_session = AsyncMock(return_value=adapter._cdp_session)
-    adapter._ensure_dialog_listener = AsyncMock()  # connect() arms it in a real session
+    adapter._ensure_listeners = AsyncMock()  # connect() arms it in a real session
     missing = str(Path(tempfile.gettempdir()) / "openjiuwen_sidecar_missing_upload.txt")
 
     result = _run(adapter.upload_files({"kind": "node", "backend_node_id": 7}, [missing]))
@@ -226,7 +226,7 @@ def test_session_adapter_upload_files_strips_quotes_and_resolves_absolute() -> N
     adapter._session = SimpleNamespace(get_current_page_url=AsyncMock(return_value="https://example.test/upload"))
     adapter._resolve_ref_to_backend_node_id = AsyncMock(return_value=11)
     adapter._ensure_cdp_session = AsyncMock(return_value=adapter._cdp_session)
-    adapter._ensure_dialog_listener = AsyncMock()  # connect() arms it in a real session
+    adapter._ensure_listeners = AsyncMock()  # connect() arms it in a real session
 
     with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as handle:
         handle.write(b"payload")
