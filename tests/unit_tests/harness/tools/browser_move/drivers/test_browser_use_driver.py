@@ -416,6 +416,12 @@ def test_close_context_changes_context_and_names_the_closed_one():
 # -- observe -------------------------------------------------------------------
 
 
+TITLE_CALL = (
+    "evaluate",
+    {"source": "() => document.title", "args": None, "await_promise": True, "return_by_value": True},
+)
+
+
 def _wire_observation(**overrides: Any) -> dict[str, Any]:
     data = {
         "url": "http://x/",
@@ -455,10 +461,13 @@ def _wire_observation(**overrides: Any) -> dict[str, Any]:
 
 def test_observe_maps_the_sidecar_observation():
     png = _png(800, 600)
-    driver, request = _driver(_wire_observation(screenshot_b64=base64.b64encode(png).decode("ascii")))
+    driver, request = _driver(_wire_observation(screenshot_b64=base64.b64encode(png).decode("ascii")), "X")
     observation = asyncio.run(driver.observe(Observe(include_screenshot=True)))
 
-    assert _calls(request) == [("observe", {"include_dom": True, "include_screenshot": True, "cached": False})]
+    assert _calls(request) == [
+        ("observe", {"include_dom": True, "include_screenshot": True, "cached": False}),
+        TITLE_CALL,
+    ]
     assert observation.generation == ""
     assert observation.context == ContextRef(id="T1", kind="tab", title="X")
     (element,) = observation.elements
@@ -485,31 +494,45 @@ def test_observe_maps_the_sidecar_observation():
 
 def test_observe_full_page_takes_a_separate_screenshot():
     png = _png(800, 4000)
-    driver, request = _driver(_wire_observation(), base64.b64encode(png).decode("ascii"))
+    driver, request = _driver(_wire_observation(), "X", base64.b64encode(png).decode("ascii"))
     observation = asyncio.run(driver.observe(Observe(include_screenshot=True, full_page=True)))
     assert _calls(request) == [
         ("observe", {"include_dom": True, "include_screenshot": False, "cached": False}),
+        TITLE_CALL,
         ("screenshot", {"full_page": True, "clip": None}),
     ]
     assert observation.screenshot.height == 4000
 
 
 def test_observe_without_screenshot_has_none():
-    driver, _request = _driver(_wire_observation())
+    driver, _request = _driver(_wire_observation(), "X")
     assert asyncio.run(driver.observe(Observe())).screenshot is None
 
 
 def test_observe_without_an_active_tab_falls_back_to_the_page():
     tabs = [{"target_id": "T1", "url": "http://other/", "title": "O", "active": False}]
-    driver, _request = _driver(_wire_observation(tabs=tabs))
+    driver, _request = _driver(_wire_observation(tabs=tabs), "X")
     assert asyncio.run(driver.observe(Observe())).context == ContextRef(id="", kind="tab", title="X")
 
 
 def test_observe_twice_on_an_unchanged_page_gives_the_same_fingerprint():
-    driver, _request = _driver(_wire_observation(driver_generation=1), _wire_observation(driver_generation=2))
+    driver, _request = _driver(_wire_observation(driver_generation=1), "X", _wire_observation(driver_generation=2), "X")
     first = asyncio.run(driver.observe(Observe()))
     second = asyncio.run(driver.observe(Observe()))
     assert first.fingerprint == second.fingerprint
+
+
+def test_observe_reports_the_document_title_not_the_sidecar_title():
+    """browser-use's summary title lags behind ``document.title`` (seen live: the URL instead of the title)."""
+    driver, request = _driver(_wire_observation(title="x/index.html"), "clicked")
+    observation = asyncio.run(driver.observe(Observe()))
+    assert _calls(request)[1] == TITLE_CALL
+    assert observation.surface.title == "clicked"
+
+
+def test_observe_keeps_the_sidecar_title_when_the_page_runs_no_script():
+    driver, _request = _driver(_wire_observation(title="Viewer"), _sidecar_error("EvaluateError"))
+    assert asyncio.run(driver.observe(Observe())).surface.title == "Viewer"
 
 
 # -- errors --------------------------------------------------------------------

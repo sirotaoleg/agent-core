@@ -86,6 +86,8 @@ _HAS_TEXT_JS = """(text) => {
   const body = (document.body && document.body.innerText) ? document.body.innerText : '';
   return body.includes(String(text || ''));
 }"""
+# browser-use's state summary takes the title from its cached target info, which lags behind ``document.title``.
+_DOCUMENT_TITLE_JS = "() => document.title"
 _WAIT_TIMEOUT_S = 10.0
 _WAIT_POLL_S = 0.1
 _CHECKED_VALUES = frozenset({"1", "true", "yes", "on", "checked"})
@@ -264,6 +266,10 @@ class BrowserUseDriver(HandlerDriver):
             "observe", {"include_dom": True, "include_screenshot": viewport_screenshot, "cached": False}
         )
         self._driver_generation = int(data.get("driver_generation", self._driver_generation))
+        try:
+            data = {**data, "title": str(await self._evaluate(_DOCUMENT_TITLE_JS, None))}
+        except DriverError:
+            pass  # no script context (e.g. the PDF viewer): keep the sidecar's title
         screenshot_b64 = data.get("screenshot_b64")
         if command.include_screenshot and command.full_page:
             screenshot_b64 = await self._request("screenshot", {"full_page": True, "clip": None})
