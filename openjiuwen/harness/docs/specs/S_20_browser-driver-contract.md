@@ -80,20 +80,22 @@ screen:
 | `Scroll` | `target: Ref \| None = None`, `dx=0`, `dy=0` | ACT |
 | `Hover` | `target: Ref` | ACT |
 | `Drag` | `source: Ref`, `destination: Ref` | ACT |
-| `Wait` | exactly one of `seconds`, `until_text` | READ |
+| `Wait` | `seconds=None`, `until_text=None`, at least one set: `seconds` alone sleeps; `until_text` waits until the text appears, at most `seconds` (`None`: the driver's default), then raises `ActionTimeout` | READ |
 | `SwitchContext` / `CloseContext` | `context: ContextRef` | NAVIGATE |
 | `HandleDialog` | `accept`, `prompt_text=None` | ACT |
 | `RunScript` | `code`, `args=None`, `sensitive=False`, `target: Ref \| None = None` | SCRIPT |
 
 A surface defines its own commands as `Action` subclasses in `surfaces/<name>/commands.py`. The browser surface
 has `Navigate(url)`, `Back`, `OpenContext(url=None)` (NAVIGATE); `SelectOption(target, values)`,
-`UploadFile(target: Ref | None, paths=())`, `FillForm(fields: tuple[FormField, ...])`,
+`UploadFile(target: Ref | None, paths=())`, `FillForm(fields: tuple[FormField, ...])` with
+`FormField(target, kind, value, sensitive=False)`,
 `Drop(target, paths=(), data=())` (ACT); `GetPdf(filename=None)`, `GetConsole(level="info", all=False)`,
 `GetNetwork(static=False, filter=None)` (READ). Drivers handle both kinds the same way; the core does not care
 where a command class is defined, and a new surface adds its commands (`Tap`, `Swipe`) without editing
 `contract/`. A command is added only when a driver handles a tool the model uses today.
 
-`sensitive=True` on `TypeText` and `RunScript` means the text or code must never reach traces or logs.
+`sensitive=True` on `TypeText`, `RunScript` and a `FormField` means its text, code or value must never reach traces
+or logs.
 
 ### ActionResult (`results.py`)
 
@@ -112,10 +114,13 @@ Every error is a `DriverError` with `dispatched: bool`: whether the command may 
 - **Unknown means dispatched.** When the driver cannot tell, `dispatched` is `True`; an unrecognized library error
   becomes `DriverError(dispatched=True)`.
 - `StaleRef` (the ref's generation is old) is raised only before dispatch and defaults to `dispatched=False`.
-  `Unsupported` (no handler, or a ref kind the handler does not accept) also defaults to `False`.
-- All others default to `True`: `ElementNotFound`, `AmbiguousElement`, `ActionIntercepted(by=...)` (`by` names
-  the element that received the input), `ActionTimeout`, `NavigationError`, `ConnectionLost`, `PolicyDenied`
-  (raised by the security rail, never by a driver).
+  `Unsupported` (no handler, or a ref kind the handler does not accept) and `PolicyDenied` (raised by the security
+  rail before anything is sent, never by a driver) also default to `False`.
+- All others default to `True`: `ElementNotFound`, `AmbiguousElement`, `ActionIntercepted(by=...)`, `ActionTimeout`,
+  `NavigationError`, `ConnectionLost`.
+- `ActionIntercepted` (`by` names the element that would receive the input) is raised by every driver with
+  `dispatched=False`: the input never reached the target, so it is not a `StaleRef` and is not retried either. The
+  conformance suite asserts it.
 
 Every constructor accepts an explicit `dispatched=` to override the default.
 
@@ -156,16 +161,21 @@ Dataclasses only; their use is specified with the composition root and the tool 
 - `PolicyRule(command_type, check)`: `check(action)` returns the reason to deny, or `None`.
 - `Scene`: what the conformance suite runs a driver in — `surface`, `start` / `stop`, `enter()` (commands into the
   initial state) and the case builders `happy(command, ref_kind, actions)`, `stale(actions)`,
-  `intercepted(actions)`, `timeout(actions)` and `context_changes` (name -> builder). A builder gets the driver's
-  `info.actions` and returns a `SceneCase`, or the reason the scene cannot provide the case as a string; an omitted
-  builder returns a generic reason. See "Conformance suite".
-- `SceneCase(steps, check, observe_between, cleanup)`: each step builds one command from the observations taken so
-  far; the last step is the command under test. `check(before, after, result)` tells whether it took effect.
+  `intercepted(actions)`, `timeout(actions)`, `context_changes` (name -> builder) and `sensitive` (name ->
+  `builder(actions, secret)`, a surface command that carries the secret marked sensitive). A builder gets the
+  driver's `info.actions` and returns a `SceneCase`, or the reason the scene cannot provide the case as a string; an
+  omitted builder returns a generic reason. See "Conformance suite".
+- `SceneCase(steps, check, observe_between, cleanup)`: the suite observes once, then each step builds one command
+  from the observations taken so far; the last step is the command under test, the ones before it are setup steps.
+  With `observe_between=False` no observation is taken between the steps, so every step sees the first one (for a
+  setup step that opens a dialog, or one that changes the screen after the command under test has taken its refs).
+  `check(before, after, result)` tells whether the command under test took effect.
 
 ### FakeDriver (`contract/testing/fake.py`)
 
 A scripted `Driver` for tests: records every call as `Call(kind, payload)`, answers `observe` / `execute` from
-queues in order, raises `Unsupported(dispatched=False)` for commands or ref kinds missing from its `info.actions`
+queues in order (filled by the constructor and by `script(observations=..., results=...)`, which appends), raises
+`Unsupported(dispatched=False)` for commands or ref kinds missing from its `info.actions`
 (default: every shared command except `Observe`, all ref kinds; default surfaces `{"fake"}`), raises a scripted
 `DriverError(dispatched=...)` or any exception via `fail_next`, and raises `ConnectionLost` from the n-th call
 until the next `start()` via `lose_connection_on(n)`. Running out of script fails with `AssertionError`.
@@ -181,7 +191,9 @@ and subclasses `DriverConformance` as `Test...` with `scene` (not started; the p
 `driver_actions` (what the happy paths are parametrized with when tests are collected; for a `HandlerDriver`,
 `handled_actions()`) and a `conformance_driver_factory` fixture returning `factory(sink) -> Driver` (a new driver
 per case; `start()` must need no argument). Every case starts a new driver in its own event loop, runs `enter()`,
-plays its `SceneCase` and stops the driver. The plugin registers the `live` marker for runs against a real driver.
+plays its `SceneCase` and stops the driver. The plugin registers the `live` marker for runs against a real driver;
+`pyproject.toml` registers it too, because a test module that marks itself `live` before loading the plugin would
+otherwise get `PytestUnknownMarkWarning`.
 
 | Case | Passes when | Scene-dependent |
 |---|---|---|
@@ -190,12 +202,12 @@ plays its `SceneCase` and stops the driver. The plugin registers the `live` mark
 | happy path, one per `(command, ref kind)` of `info.actions` (`None` when the command takes no ref) | the command returns `ok=True` and `check(before, after, result)` holds | yes (`happy`) |
 | stale ref | `StaleRef` with `dispatched=False` | yes (`stale`) |
 | context change, one per `context_changes` entry | `result.context_changed` | yes |
-| intercepted | `ActionIntercepted` with a non-empty `by` | yes (`intercepted`) |
-| timeout | `ActionTimeout` with `dispatched=True`; a driver that retries into success fails here | yes (`timeout`) |
+| intercepted | `ActionIntercepted` with a non-empty `by` and `dispatched=False` | yes (`intercepted`) |
+| timeout | the scene's case ends in `Wait(until_text=..., seconds=...)` for a text that never appears; it raises `ActionTimeout` with `dispatched=True`; a driver that retries into success fails here | yes (`timeout`) |
 | unhandled command | the suite's own `UnhandledCommand` is not in `info.actions` and raises `Unsupported(dispatched=False)` | no |
 | fingerprint | two `observe()` calls on the unchanged scene give the same `fingerprint` | no |
-| sensitive text, trace | `TypeText(sensitive=True)` (built from the `TypeText` happy path) leaves its text out of the trace sink | yes (`happy`) |
-| sensitive text, logs | the same text is in no log record of the process, captured at DEBUG including non-propagating loggers | yes (`happy`) |
+| sensitive text, trace, one per sensitive case: `type-text` and each `sensitive` entry | the secret leaves no text in the trace sink; `type-text` is `TypeText(sensitive=True)` built from the `TypeText` happy path; a case whose command does not carry the secret fails | yes (`happy`, `sensitive`) |
+| sensitive text, logs, one per sensitive case | the same secret is in no log record of the process, captured at DEBUG including non-propagating loggers | yes (`happy`, `sensitive`) |
 
 A case the scene cannot provide is skipped with the scene's reason; a case needing a command (or ref kind) the driver
 does not handle is skipped naming it. Nothing passes silently. Until the tracing middleware exists, the trace case
@@ -205,7 +217,7 @@ run.
 ### The browser scene (`surfaces/browser/scene/`)
 
 `browser_scene()` returns a `Scene(surface="browser")`. `start()` serves `scene/pages/` (`index.html`,
-`second.html`, `data.json`) with a stdlib HTTP server on `127.0.0.1:<free port>` and creates a temporary upload
+`second.html`, `data.json`; shipped as package data) with a stdlib HTTP server on `127.0.0.1:<free port>` and creates a temporary upload
 file; `enter()` is `Navigate(index.html)`. Every element writes what happened to it into `document.title`
 (`clicked`, `form:3:true`, `key:Enter`, ...), so checks read `BrowserContext.title`, `url` and `tabs`. Elements are
 found by accessible name; a `Locator` uses the element's CSS id; a `PointRef` is the centre of `Element.bounds`
@@ -214,7 +226,12 @@ scaled to the screenshot. An `IndexRef` cannot be built (skipped).
 - Happy paths: every shared command and every browser command (`Navigate`, `Back`, `OpenContext`, `SelectOption`,
   `UploadFile`, `FillForm`, `Drop`, `GetPdf`, `GetConsole`, `GetNetwork`) with `DriverRef`, `Locator` or `PointRef`.
 - Stale ref: a `DriverRef` from the start document clicked after `Navigate(second.html)`.
-- Intercepted: a button covered by an overlay. Timeout: a disabled button. Both only with `DriverRef` or `Locator`.
+- Intercepted: the "Covered button" is visible when the suite observes the page, so a driver whose observation drops
+  occluded elements still gets a ref. A setup `RunScript` then calls the page's `cover()`, which puts an overlay over
+  it, and the click uses the ref from that first observation (`observe_between=False`). Only with `DriverRef` or
+  `Locator`; needs `RunScript`.
+- Timeout: `Wait(until_text=<a text on no scene page>, seconds=2.0)`; needs `Wait`.
+- Sensitive: `form-field`, a `FillForm` that fills the "Full name" textbox with the secret, `sensitive=True`.
 - Context changes: `navigate`, `same-url-reload` (`Navigate` to the current address), `link-click`, `open-tab`,
   `popup-click` (`window.open`), `switch-tab`, `close-tab`, `dialog` (a `confirm()`).
 
@@ -231,8 +248,9 @@ native_text, surface}`, `versions` from the sidecar's `connect` reply.
   `start(config=None)` spawns the sidecar and attaches to that CDP endpoint (an explicit config overrides).
 - Handlers, all with `refs={DriverRef}` where the command has a target: `Click`, `TypeText` (target required, no
   `slowly`), `Scroll` (one axis per command), `Hover`, `Drag`, `SelectOption` (exactly one value), `UploadFile`
-  (target required), `Drop`, `FillForm`, `RunScript` (page JS; with a target the element is stamped and passed as
-  the first argument). Without refs: `PressKey`, `HandleDialog`, `Wait` (sleep, or polling page text for 10 s),
+  (target required), `Drop`, `FillForm` (each field's `sensitive` goes to the sidecar's `type_text`), `RunScript`
+  (page JS; with a target the element is stamped and passed as the first argument). Without refs: `PressKey`,
+  `HandleDialog`, `Wait` (sleep `seconds`, or poll page text for `until_text` up to `seconds`, default 10 s),
   `Navigate`, `Back`, `OpenContext`, `SwitchContext`, `CloseContext`. Any other form raises
   `Unsupported(dispatched=False)` before anything is sent.
 - `DriverRef.ref` is the handle the sidecar mints in `observe()` (`bnid:<backend node id>`). The sidecar's index
