@@ -1,11 +1,5 @@
 # coding: utf-8
-"""Rewrite the Playwright MCP golden files from the current code.
-
-    uv run python -m tests.unit_tests.harness.tools.browser_move.snapshots.regenerate
-
-Never run automatically. A PR that changes a golden file must list and justify each
-difference. The browser-use golden files are recorded on 857239db and are not touched.
-"""
+"""Rewrite the Playwright MCP golden files from the current code; run by hand, never automatically."""
 
 from __future__ import annotations
 

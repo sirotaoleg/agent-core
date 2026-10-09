@@ -1,33 +1,5 @@
 # coding: utf-8
-"""Build the tool/prompt snapshot of the Playwright MCP path.
-
-A view records exactly what the model receives on its first call: the tool list
-(name, description, argument schema) and the system prompt, for every agent the
-model talks to on that path. Views:
-
-* one per entry of ``DEFAULT_BROWSER_CAPABILITIES``: ``create_browser_agent`` with
-  ``browser_capabilities=[name]``; the model talks to that agent (role ``main``);
-* ``runner``: ``BrowserAgentRuntime`` built and used exactly as ``run_one_task`` in
-  agent-eval's ``bench/webvoyager/run.py`` does, including its helper removal; the
-  model talks to the Playwright worker (role ``worker``).
-
-Only the I/O boundary is stubbed; the code that builds tools and prompts runs for real:
-
-* LLM client: ``create_model_client`` returns ``CapturingClient``, which records each
-  request and answers with fixed text. Image-modality probe calls are refused, so the
-  probe stays inconclusive and the image-capability prompt section is always the
-  "unverified" variant (decision T4b-Q3).
-* MCP transport: ``mcp.client.stdio.stdio_client`` and ``mcp.ClientSession`` are
-  replaced by ``FakeMcpSession``. ``tools/list`` answers with the real
-  ``@playwright/mcp@0.0.78`` tool list saved in ``fixtures/``; tool calls answer with a
-  blank page. ``BrowserMoveStdioClient`` (which turns the list into tool cards) is real.
-* Chrome: the default ``remote`` driver mode never launches Chrome;
-  ``ManagedBrowserProvisioner.start`` raises if anything tries.
-
-JSON format, placeholders and conventions (role labels, language ``en``, OpenRouter
-model config, fixed query) are the ones of the browser-use snapshot recorded on
-857239db (``golden/browser_use``), so the two can be compared from Phase 4 on.
-"""
+"""Tool/prompt snapshot of the Playwright MCP path; only the LLM client, MCP transport and Chrome are stubbed."""
 
 from __future__ import annotations
 
@@ -50,7 +22,7 @@ REGENERATE_COMMAND = "uv run python -m tests.unit_tests.harness.tools.browser_mo
 DRIVER = "playwright_mcp"
 RUNNER_VIEW = "runner"
 
-# Baseline model config (plan 1.2). Values are only carried in configs; nothing is sent.
+# Baseline model config. Values are only carried in configs; nothing is sent.
 MODEL_NAME = "anthropic/claude-sonnet-5.5"
 API_BASE = "https://openrouter.ai/api/v1"
 STUB_API_KEY = "stub-key-not-used"
@@ -96,11 +68,6 @@ _BLANK_SNAPSHOT = "### Page\n- Page URL: about:blank\n- Page Title: \n### Snapsh
 _BLANK_TABS = "### Open tabs\n- 0: (current) [] (about:blank)"
 
 
-# ---------------------------------------------------------------------------
-# environment
-# ---------------------------------------------------------------------------
-
-
 def view_env(workdir: Path) -> dict[str, str]:
     """Variables set for every view (the runner view reads them through build_runtime_settings)."""
     return {
@@ -134,11 +101,6 @@ def isolated_env(workdir: Path, extra: dict[str, str] | None = None) -> Iterator
         os.chdir(saved_cwd)
         os.environ.clear()
         os.environ.update(saved_env)
-
-
-# ---------------------------------------------------------------------------
-# stubs at the I/O boundary
-# ---------------------------------------------------------------------------
 
 
 def load_mcp_tools() -> list[dict[str, Any]]:
@@ -221,6 +183,7 @@ def _make_capturing_client_factory(captured: list[dict[str, Any]], answer: str):
         __client_name__ = "snapshot-capture"
 
         def _record(self, messages: Any, tools: Any) -> AssistantMessage:
+            # A refused probe keeps the image-capability prompt section at its "unverified" variant.
             if _is_probe(messages):
                 raise RuntimeError("snapshot stub: image probe refused (no network)")
             if len(captured) >= MAX_STUB_CALLS:
@@ -295,11 +258,7 @@ def io_stubs(
 
 @contextlib.contextmanager
 def fresh_checkpointer() -> Iterator[None]:
-    """Give the build its own in-memory checkpointer.
-
-    Agent sessions are checkpointed per conversation and AgentCard id; a second build
-    in the same process would otherwise restore the first build's finished task.
-    """
+    """A fresh checkpointer, so a second build does not restore the first build's finished task."""
     from openjiuwen.core.session.checkpointer import checkpointer as checkpointer_mod
     from openjiuwen.core.session.checkpointer.inmemory import InMemoryCheckpointer
 
@@ -324,11 +283,6 @@ async def reset_process_state() -> None:
         await Runner.stop()
 
 
-# ---------------------------------------------------------------------------
-# snapshot document
-# ---------------------------------------------------------------------------
-
-
 def _role(message: dict[str, Any]) -> str:
     return str(message.get("role") or "")
 
@@ -350,7 +304,7 @@ def agent_entry(role: str, call: dict[str, Any]) -> dict[str, Any]:
 
 
 def stabilize(doc: Any, workdir: Path) -> Any:
-    """Replace run-dependent values with the placeholders used by the 857239db snapshot."""
+    """Replace run-dependent values with the placeholders of the browser-use snapshot."""
     home = Path.home()
     literal = [
         (str(workdir), "<WORKDIR>"),
@@ -394,11 +348,6 @@ def list_views() -> list[str]:
     )
 
     return [c.name for c in DEFAULT_BROWSER_CAPABILITIES] + [RUNNER_VIEW]
-
-
-# ---------------------------------------------------------------------------
-# views
-# ---------------------------------------------------------------------------
 
 
 async def _capability_view(view: str, captured: list[dict[str, Any]]) -> list[dict[str, Any]]:

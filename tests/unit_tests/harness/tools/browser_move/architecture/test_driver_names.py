@@ -1,22 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""No driver names and no Playwright MCP tool names in the core (plan section 3, invariant 3).
-
-Driver names: ``playwright_mcp``, ``browser_use`` and ``browser-use`` anywhere in the
-text (case-insensitive), and ``mcp`` as a whole word (regex ``\\b``, so ``mcp_cfg``
-or ``McpClient`` do not count). Scope: core folders and ``surfaces/``, except the
-settings parsing modules (``*/config.py``). Code, strings and comments all count.
-
-MCP tool names: the 70 tools of ``@playwright/mcp@0.0.78`` (69 in the capability
-catalog plus ``browser_wait_for``) as whole identifiers. Scope: core folders and
-``surfaces/`` except ``surfaces/browser/``, where model-facing ``browser_*`` names
-are profile data.
-
-Core folders are ``runtime/`` plus today's ``playwright_runtime/``,
-``controllers/``, ``utils/`` and ``clients/`` until Phase 8/9 moves them (see
-``_scan.py``). Counts are per file: a file whose count grows, or a new file, fails.
-"""
+"""No driver names and no Playwright MCP tool names in the core; ``surfaces/browser/`` may name tools."""
 
 from __future__ import annotations
 
@@ -27,7 +12,7 @@ from . import _scan
 
 DRIVER_NAME_RE = re.compile(r"playwright_mcp|browser_use|browser-use|\bmcp\b", re.IGNORECASE)
 
-# Copied from .hq/mapping/command-mapping.md section 1 (P0-T6): 69 catalog names + browser_wait_for.
+# The 70 tools of @playwright/mcp@0.0.78: the 69 catalog names plus browser_wait_for.
 MCP_TOOL_NAMES = frozenset(
     {
         "browser_annotate",
@@ -108,7 +93,7 @@ MCP_TOOL_NAME_RE = re.compile(
 
 # file relative to the package -> number of driver-name matches.
 KNOWN_DRIVER_NAMES: dict[str, int] = {
-    # all removed in Phase 7
+    # legacy code, removed with the old paths
     "clients/logging_utils.py": 2,
     "clients/stdio_client.py": 5,
     "clients/streamable_http_client.py": 5,
@@ -133,7 +118,7 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
 
 # file relative to the package -> number of MCP tool-name matches.
 KNOWN_MCP_TOOL_NAMES: dict[str, int] = {
-    # all removed in Phase 7
+    # legacy code, removed with the old paths
     "controllers/action.py": 14,
     "playwright_runtime/agents.py": 11,
     "playwright_runtime/browser_capabilities.py": 69,

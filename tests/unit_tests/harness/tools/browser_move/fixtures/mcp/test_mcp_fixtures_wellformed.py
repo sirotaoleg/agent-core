@@ -1,6 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""The recorded @playwright/mcp fixtures are complete and carry the markers later phases parse."""
+"""The recorded @playwright/mcp fixtures are complete and carry the markers the MCP driver parses."""
 
 from __future__ import annotations
 

@@ -1,14 +1,5 @@
 # coding: utf-8
-"""What the external WebVoyager runner relies on (plan section 1.2, decision D3).
-
-agent-eval's ``bench/webvoyager/run.py`` (``run_one_task``) imports package internals,
-removes five helper tools through a private path and swallows any failure there,
-and its launcher and analysis scripts parse agent-core log lines. Everything here
-must keep working in every phase until agent-eval changes.
-
-The runner's flow runs for real on the stubs of ``builder.py`` (fake MCP session with
-the real ``@playwright/mcp@0.0.78`` tool list, capturing LLM client, no Chrome).
-"""
+"""What agent-eval's WebVoyager runner relies on: package internals, helper removal and parsed log lines."""
 
 from __future__ import annotations
 
@@ -87,11 +78,6 @@ def clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> pytest.MonkeyP
     return monkeypatch
 
 
-# ---------------------------------------------------------------------------
-# imports and signatures
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     "module, name",
     [
@@ -145,11 +131,6 @@ def test_runtime_settings_fields() -> None:
 
     fields = set(RuntimeSettings.__dataclass_fields__)
     assert {"provider", "api_key", "api_base", "model_name", "mcp_cfg", "guardrails"} <= fields
-
-
-# ---------------------------------------------------------------------------
-# run_one_task on a fake MCP client
-# ---------------------------------------------------------------------------
 
 
 async def _run_one_task(result: dict[str, Any]) -> None:
@@ -250,7 +231,7 @@ def test_runner_env_vars_keep_their_meaning(runner_run: dict[str, Any]) -> None:
     assert worker.config.model_config_obj.temperature == pytest.approx(0.7)
     assert worker.config.model_config_obj.top_p == pytest.approx(0.9)
     # BROWSER_INSTRUCTION and BROWSER_LOGS_DIR are set by the runner and not read by
-    # agent-core (decision D3); the run above had them set and completed.
+    # agent-core; the run above had them set and completed.
     assert runner_run["answer"]["ok"] is True
 
 
@@ -291,10 +272,6 @@ def test_playwright_mcp_args_keep_their_meaning(clean_env: pytest.MonkeyPatch) -
     args = build_runtime_settings().mcp_cfg.params["args"]
     assert args == LAUNCHER_MCP_ARGS.split() + ["--caps=pdf,vision,devtools,config,network,storage,testing"]
 
-
-# ---------------------------------------------------------------------------
-# log lines parsed by budget.py, run.py and analyze.py
-# ---------------------------------------------------------------------------
 
 _OPENROUTER_RESPONSE = {
     "id": "gen-1",

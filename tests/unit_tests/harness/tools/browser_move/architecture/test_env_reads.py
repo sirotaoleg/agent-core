@@ -1,27 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Environment variables are read only in the config modules (plan section 3, invariant 9).
-
-Allowed: ``playwright_runtime/config.py`` (``runtime/config.py`` after Phase 8) and
-``surfaces/<name>/config.py``. Every other module of the package is scanned with
-``ast`` for three kinds of read (decision D2):
-
-1. direct: ``os.getenv`` and any use of ``os.environ``;
-2. helpers: every call to a function defined in ``utils/env.py``, also when it is
-   reached through a re-export (``utils/__init__.py``, ``playwright_runtime/config.py``);
-3. key tuples: any other call whose arguments (or a tuple/list/set literal among
-   them) contain a known environment variable name as a string literal, such as
-   ``_resolve_sampling_params(temperature_keys=("BROWSER_WORKER_TEMPERATURE", ...))``.
-
-Each detected read is recorded as a descriptor (``os.getenv(BROWSER_DRIVER)``,
-``utils.env.resolve_upload_root()``, ``_env_first(A,B)``; ``?`` marks a key that is
-not a literal) and counted per file.
-
-The rule spans the whole package, not only the core folders (``runtime/`` plus
-today's ``playwright_runtime/``, ``controllers/``, ``utils/`` and ``clients/``, see
-``_scan.py``): drivers and provisioners receive settings objects from Phase 3 on.
-"""
+"""Environment variables are read only in the config modules: directly, via ``utils/env.py`` or as key tuples."""
 
 from __future__ import annotations
 
@@ -72,7 +52,7 @@ KEY_TUPLE_ENV_NAMES = frozenset(
 
 # file relative to the package -> {descriptor: count}.
 KNOWN_ENV_READS: dict[str, dict[str, int]] = {
-    # all removed in Phase 3 (reads move into the config modules; settings objects are passed in)
+    # reads that move into the config modules; settings objects are passed in instead
     "drivers/browser_use/sidecar/session_adapter.py": {
         "os.environ.get(BROWSER_UPLOAD_ROOT)": 1,
     },
@@ -292,7 +272,7 @@ def _parents(tree: ast.AST) -> dict[ast.AST, ast.AST]:
 
 @lru_cache(maxsize=None)
 def _direct_and_helper_reads(relpath: str) -> tuple[Counter, set[int], set[str]]:
-    """Kinds 1 and 2. Returns descriptors, ids of the calls they cover, literal keys."""
+    """Direct and helper reads: descriptors, ids of the calls they cover, literal keys."""
     tree = _scan.parse(relpath)
     parents = _parents(tree)
     found: Counter = Counter()

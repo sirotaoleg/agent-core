@@ -1,9 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""``BrowserUseDriver`` as a ``HandlerDriver``: wire requests, observation mapping, error mapping, factory.
-
-The sidecar transport is mocked; no Chrome and no sidecar process are started.
-"""
+"""``BrowserUseDriver`` on a mocked sidecar transport: wire requests, observation and error mapping, factory."""
 
 from __future__ import annotations
 
@@ -85,7 +82,6 @@ NAV_SAME_URL = {"url": "http://x/", "title": "X", "changed_document": False, "dr
 
 
 def _driver(*replies: Any) -> tuple[BrowserUseDriver, AsyncMock]:
-    """A driver wired to a mocked transport that answers ``replies`` in order (an exception is raised)."""
     transport = MagicMock()
     transport.request = AsyncMock(side_effect=list(replies))
     driver = BrowserUseDriver()
@@ -102,15 +98,12 @@ def _png(width: int, height: int) -> bytes:
 
 
 def _sidecar_error(code: str, message: str = "boom", data: dict[str, Any] | None = None) -> Exception:
-    """The exception the real transport raises for a sidecar error reply with ``code``."""
     try:
         SidecarTransport._unwrap_reply({"id": 1, "error": {"code": code, "message": message, "data": data or {}}})
     except Exception as exc:  # noqa: BLE001 - we want exactly what the transport raises
         return exc
     raise AssertionError("transport did not raise")
 
-
-# -- info ------------------------------------------------------------------
 
 EXPECTED_ACTIONS = {
     Click: {DriverRef, Locator},
@@ -174,8 +167,6 @@ def test_a_locator_by_text_is_unsupported_before_dispatch(locator):
     assert info.value.dispatched is False
     request.assert_not_called()
 
-
-# -- wire requests -----------------------------------------------------------
 
 WIRE_CASES = [
     (
@@ -463,9 +454,6 @@ def test_unsupported_forms_raise_before_dispatch(action):
     request.assert_not_called()
 
 
-# -- context_changed -----------------------------------------------------------
-
-
 @pytest.mark.parametrize("action", [Navigate("http://x/"), Back()])
 def test_same_url_reload_sets_context_changed(action):
     driver, _request = _driver(dict(NAV_SAME_URL))
@@ -513,9 +501,6 @@ def test_close_context_changes_context_and_names_the_closed_one():
     result = asyncio.run(driver.execute(CloseContext(TAB_2)))
     assert result.context_changed is True
     assert result.source_context == TAB_2
-
-
-# -- observe -------------------------------------------------------------------
 
 
 TITLE_CALL = (
@@ -637,8 +622,6 @@ def test_observe_keeps_the_sidecar_title_when_the_page_runs_no_script():
     assert asyncio.run(driver.observe(Observe())).surface.title == "Viewer"
 
 
-# -- errors --------------------------------------------------------------------
-
 ERROR_TABLE = {
     "StaleIndexError": (StaleRef, False),
     "ElementNotFound": (ElementNotFound, False),
@@ -716,9 +699,6 @@ def test_command_before_start_is_connection_lost_and_not_dispatched():
     with pytest.raises(ConnectionLost) as info:
         asyncio.run(driver.execute(Hover(E1)))
     assert info.value.dispatched is False
-
-
-# -- lifecycle and factory ----------------------------------------------------
 
 
 def _patched_transport(monkeypatch, *, connect_reply: Any) -> MagicMock:

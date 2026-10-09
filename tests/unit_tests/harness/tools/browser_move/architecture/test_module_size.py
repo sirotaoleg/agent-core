@@ -1,13 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""No module in the core or in ``surfaces/`` longer than 1,500 lines (plan section 3, invariant 10).
-
-Core folders are ``runtime/`` plus today's ``playwright_runtime/``,
-``controllers/``, ``utils/`` and ``clients/`` until Phase 8/9 moves them (see
-``_scan.py``). An allowlisted module fails when it grows; its entry is stale once
-it is at or under the limit.
-"""
+"""No module in the core or in ``surfaces/`` longer than 1,500 lines; allowlisted ones may only shrink."""
 
 from __future__ import annotations
 
@@ -19,7 +13,7 @@ MAX_LINES = 1500
 
 # file relative to the package -> line count.
 KNOWN_OVERSIZED_MODULES: dict[str, int] = {
-    # all removed in Phase 9 (runtime split)
+    # shrink with the runtime split
     "controllers/action.py": 2539,
     "playwright_runtime/probes.py": 3010,
     "playwright_runtime/runtime.py": 6383,

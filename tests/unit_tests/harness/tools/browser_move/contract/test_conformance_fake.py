@@ -1,13 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Self-test of the conformance suite on ``FakeDriver``.
-
-``FakeWorld`` is a scripted fake surface: two documents (``home``, ``next``), contexts opened by a popup, a dialog,
-a covered element and a text that appears only after a first wait for it has timed out. ``WorldDriver`` is a
-``FakeDriver`` that answers from it. The whole suite runs on the correct driver (``TestConformanceOnFakeDriver``);
-each deliberately wrong driver below makes its case fail.
-"""
+"""Self-test of the conformance suite on ``FakeDriver``; each deliberately wrong driver makes its case fail."""
 
 from __future__ import annotations
 
@@ -224,9 +218,6 @@ class WorldDriver(FakeDriver):
         self.sink(action)
 
 
-# The fake scene: what the suite plays in a FakeWorld.
-
-
 def _element(observation: Observation, name: str) -> Element:
     for element in observation.elements:
         if element.name == name:
@@ -337,9 +328,6 @@ class TestConformanceOnFakeDriver(DriverConformance):
     @pytest.fixture
     def conformance_driver_factory(self):
         return WorldDriver
-
-
-# Deliberately wrong drivers: each breaks one rule, and the case for that rule must fail.
 
 
 class RetriesDispatchedAction(WorldDriver):

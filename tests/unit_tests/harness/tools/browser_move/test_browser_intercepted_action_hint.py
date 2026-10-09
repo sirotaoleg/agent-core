@@ -303,7 +303,7 @@ class TestInterceptedActionHintRailInputs:
 
 @pytest.mark.parametrize("with_rail", [False, True], ids=["without-hint", "with-hint"])
 def test_hint_adds_no_model_round_trip(with_rail: bool) -> None:
-    """F_06 (plan 8.1): the hint replaces the tool message; the model is called once per turn either way."""
+    """The hint replaces the tool message; the model is called once per turn either way."""
 
     async def scenario() -> list[dict[str, Any]]:
         worker = build_browser_worker_agent(

@@ -1,11 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""The driver conformance suite, live on ``BrowserUseDriver``: the browser-use sidecar drives a local headless Chrome.
-
-Skipped unless ``BROWSER_USE_SIDECAR_PYTHON`` names an existing interpreter and a Chrome binary is found. Chrome runs
-with a fresh temporary profile and a free ``--remote-debugging-port``; the fixture kills only the process it started.
-The real provisioner comes in Phase 3, so the test builds the ``ProvisionedDevice`` itself.
-"""
+"""The driver conformance suite, live on ``BrowserUseDriver`` with the sidecar and a local headless Chrome."""
 
 from __future__ import annotations
 

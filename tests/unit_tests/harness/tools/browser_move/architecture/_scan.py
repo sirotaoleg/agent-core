@@ -1,26 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Static-analysis helpers shared by the browser_move architecture tests.
-
-Nothing here imports the package under test: files are read as text and parsed
-with ``ast``.
-
-Folder roles used by the rules (plan section 3/4, Phase 1 item 1):
-
-- ``contract/``: the driver contract (lands in Phase 2).
-- core: ``runtime/`` (the plan's name) plus today's ``playwright_runtime/``,
-  ``controllers/``, ``utils/`` and ``clients/``. The last four count as core until
-  Phase 8/9 moves them (``playwright_runtime`` -> ``runtime``, ``controllers`` and
-  ``utils`` under ``runtime/``, ``clients`` into ``drivers/playwright_mcp/``).
-- ``surfaces/``: one sub-package per kind of screen (lands in Phase 2).
-- concrete drivers: ``drivers/<name>``.
-- ``provisioning/<module>``: provisioners (``managed_browser`` moved there in Phase 2;
-  the rest land in Phase 3).
-
-Folders that do not exist yet simply contribute no files, so every rule over them
-passes vacuously until they appear.
-"""
+"""Static-analysis helpers for the architecture tests: files are parsed with ``ast``, never imported."""
 
 from __future__ import annotations
 
@@ -41,7 +22,7 @@ CONTRACT_FOLDER = "contract"
 SURFACES_FOLDER = "surfaces"
 # Modules allowed to parse settings (and, for the driver-name rule, name drivers).
 CONFIG_MODULE_RE = re.compile(r"^(?:runtime/config\.py|playwright_runtime/config\.py|surfaces/[^/]+/config\.py)$")
-# The composition root; until Phase 8 it lives under playwright_runtime/.
+# The composition root, under its current and its future folder.
 ASSEMBLY_MODULES = frozenset({"runtime/assembly.py", "playwright_runtime/assembly.py"})
 
 
@@ -51,7 +32,6 @@ def rel(path: Path) -> str:
 
 @lru_cache(maxsize=None)
 def pkg_files() -> tuple[str, ...]:
-    """All ``.py`` files of the package, as posix paths relative to it."""
     return tuple(sorted(rel(p) for p in PKG_DIR.rglob("*.py")))
 
 
@@ -97,7 +77,6 @@ def parse(relpath: str) -> ast.Module:
 
 
 def module_parts(relpath: str) -> tuple[str, ...]:
-    """Dotted module path of a package file, relative to the package root."""
     parts = relpath[: -len(".py")].split("/")
     if parts[-1] == "__init__":
         parts = parts[:-1]
@@ -110,14 +89,7 @@ def _top_level_names() -> frozenset[str]:
 
 
 def resolve_import(relpath: str, module: str | None, level: int) -> tuple[str, ...] | None:
-    """Resolve an import to a module path relative to the package root.
-
-    Returns ``None`` for modules outside the package. Absolute imports whose first
-    component is a top-level entry of the package are resolved too: the stand-alone
-    MCP server puts the package directory on ``sys.path`` and imports
-    ``playwright_runtime.config`` and the like, and some modules fall back to
-    ``from utils.env import ...``.
-    """
+    """Package-relative module path of an import, or ``None`` for a module outside the package."""
     if level:
         base = module_parts(relpath)
         if not relpath.endswith("__init__.py"):
@@ -130,6 +102,7 @@ def resolve_import(relpath: str, module: str | None, level: int) -> tuple[str, .
         return None
     if module == PKG_DOTTED or module.startswith(PKG_DOTTED + "."):
         return tuple(module[len(PKG_DOTTED) + 1 :].split(".")) if module != PKG_DOTTED else ()
+    # The stand-alone MCP server puts the package directory on sys.path (``from utils.env import ...``).
     first = module.split(".")[0]
     if first in _top_level_names():
         return tuple(module.split("."))
@@ -157,11 +130,7 @@ def iter_imports(tree: ast.AST) -> Iterable[tuple[ast.stmt, bool]]:
 
 
 def compare_with_allowlist(actual: Mapping, known: Mapping, label: str) -> list[str]:
-    """Ratchet check: new keys and growth fail, and so do entries that no longer occur.
-
-    ``actual`` and ``known`` map a key to a count. A count that dropped but is still
-    above zero passes (the entry may be lowered later); zero means the entry is stale.
-    """
+    """Ratchet: new keys, growth and entries down to zero fail; a count that dropped above zero passes."""
     problems: list[str] = []
     for key in sorted(set(actual) | set(known), key=repr):
         have = actual.get(key, 0)

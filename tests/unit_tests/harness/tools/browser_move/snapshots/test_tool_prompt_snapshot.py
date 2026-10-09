@@ -1,11 +1,5 @@
 # coding: utf-8
-"""Golden snapshots of the tools and system prompt the model receives.
-
-Playwright MCP views are rebuilt from the code on every run and compared byte for byte
-with ``golden/playwright_mcp``. Browser-use views (``golden/browser_use``) were recorded
-on 857239db; this branch cannot build them until Phase 4, so for now they are only
-checked for shape. See ``builder.py`` for what is stubbed and why.
-"""
+"""Golden snapshots of the tools and system prompt the model receives."""
 
 from __future__ import annotations
 
@@ -82,7 +76,5 @@ def test_browser_use_golden_is_well_formed(view: str) -> None:
         assert names == sorted(names)
         for tool in agent["tools"]:
             assert set(tool) == {"name", "description", "parameters"}
-    # The checks above guard the recorded files. Comparing them with a browser-use build
-    # needs the driver on the contract, which lands in Phase 4; until then this test
-    # reports SKIPPED (not XFAIL) so a malformed golden file still fails loudly.
-    pytest.skip("browser-use reaches the contract in Phase 4")
+    # SKIPPED rather than XFAIL, so a malformed golden file still fails loudly.
+    pytest.skip("the agent does not build browser-use views on the driver contract yet")

@@ -487,8 +487,6 @@ def test_service_registers_the_guard_on_the_worker() -> None:
 
 
 class _SameTurnLLM:
-    """First turn: `count` identical browser_press_key calls in one message; then the final JSON."""
-
     def __init__(self, count: int) -> None:
         self.requests: list[dict[str, Any]] = []
         self.count = count
@@ -511,7 +509,7 @@ class _SameTurnLLM:
 
 
 def test_identical_calls_issued_in_one_model_turn_withhold_tools() -> None:
-    # F1: known false positive, deferred to benchmark phase (D6)
+    # A known false positive, pinned as it behaves today.
     async def scenario() -> tuple[dict[str, Any], list[dict[str, Any]], int]:
         llm = _SameTurnLLM(8)
         worker = _build_worker(llm, max_steps=20)
@@ -539,8 +537,6 @@ def test_identical_calls_issued_in_one_model_turn_withhold_tools() -> None:
 
 
 class _RepeatThenAnswerLLM:
-    """Sends the same browser_evaluate `repeats` times, then the final JSON."""
-
     def __init__(self, repeats: int) -> None:
         self.requests: list[dict[str, Any]] = []
         self.repeats = repeats
@@ -561,7 +557,7 @@ class _RepeatThenAnswerLLM:
 
 @pytest.mark.parametrize("with_rail", [False, True], ids=["without-guard", "with-guard"])
 def test_guard_adds_no_model_round_trip(with_rail: bool) -> None:
-    """F_06 (plan 8.1): the note rides on the tool message; the model is called once per turn either way."""
+    """The note rides on the tool message; the model is called once per turn either way."""
 
     async def scenario() -> list[dict[str, Any]]:
         llm = _RepeatThenAnswerLLM(4)

@@ -1,11 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""The browser-use sidecar's ``SessionAdapter`` on a fake CDP client: dialogs, popups, navigations, stale refs and
-intercepted input during actions.
-
-No Chrome and no ``browser_use``: the fake client answers CDP commands from scripted handlers and, like cdp-use,
-keeps one handler per event. Sidecar modules are flat (``import cdp``), so they are loaded by path.
-"""
+"""The sidecar's ``SessionAdapter`` on a fake CDP client; flat sidecar modules (``import cdp``) load by path."""
 
 from __future__ import annotations
 
@@ -34,7 +29,6 @@ _SIDECAR_DIR = (
 
 
 def _load_sidecar_module(name: str) -> Any:
-    """Load a flat sidecar module (``import exceptions`` / ``import cdp``) under its own name."""
     if name in sys.modules and getattr(sys.modules[name], "__file__", "").startswith(str(_SIDECAR_DIR)):
         return sys.modules[name]
     if str(_SIDECAR_DIR) not in sys.path:
@@ -117,13 +111,7 @@ class _Send:
 
 
 class Page:
-    """A page with one button at (10, 20, 100, 40).
-
-    Clicking it can open a JS dialog or a popup; either blocks the release, as it did live: the dialog until it is
-    handled, the popup until the opener's session is told to run (``Runtime.runIfWaitingForDebugger``). It can also
-    start a navigation (``Page.frameRequestedNavigation``, before the release is answered, as Chrome does), which
-    commits ``commit_after`` seconds later (``Page.frameNavigated``) or never (``None``).
-    """
+    """A page with one button at (10, 20, 100, 40); a dialog or popup it opens blocks the release, as in Chrome."""
 
     def __init__(
         self,
@@ -199,9 +187,6 @@ def _adapter(client: FakeCdp) -> Any:
 def _quick(awaitable: Any) -> Any:
     """Fails the test when the call blocks, as the click on a dialog used to (30 s live)."""
     return asyncio.wait_for(awaitable, QUICK_S)
-
-
-# -- dialogs -----------------------------------------------------------------
 
 
 def test_a_click_that_opens_a_dialog_returns_with_the_dialog():
@@ -333,8 +318,6 @@ def test_page_events_are_enabled_once_per_session():
     asyncio.run(scenario())
 
 
-# -- popups --------------------------------------------------------------------
-
 POPUP = {"targetId": "T2", "type": "page", "title": "", "url": "", "openerId": TARGET}
 
 
@@ -396,8 +379,6 @@ def test_new_target_listener_keeps_the_handler_browser_use_registered():
 
     asyncio.run(scenario())
 
-
-# -- navigations ---------------------------------------------------------------
 
 LINK = {"frameId": TARGET, "reason": "anchorClick", "url": "http://x/second.html", "disposition": "currentTab"}
 # The fake URL never changes: only the navigation events tell the adapter that the document changed.
@@ -466,15 +447,12 @@ def test_a_child_frame_document_is_not_a_document_change():
     asyncio.run(scenario())
 
 
-# -- stale refs ----------------------------------------------------------------
-
 cdp = session_adapter.cdp
 NOT_IN_DOCUMENT = RuntimeError({"code": -32000, "message": "Node with given id does not belong to the document"})
 NO_SUCH_NODE = RuntimeError({"code": -32000, "message": "No node with given id found"})
 
 
 def _resolve_fails_from(client: FakeCdp, call: int, error: Exception) -> None:
-    """``DOM.resolveNode`` answers until its ``call``-th request (1-based), which raises ``error``."""
     calls = []
 
     def resolve(params: dict[str, Any], sid: str | None) -> dict[str, Any]:
@@ -545,8 +523,6 @@ def test_a_cached_node_of_an_old_document_is_stale():
 
     asyncio.run(scenario())
 
-
-# -- intercepted input ---------------------------------------------------------
 
 OVERLAY = 'span#overlay "Overlay banner"'
 OTHER = {"kind": "driver", "handle": "bnid:8", "driver_generation": 0}

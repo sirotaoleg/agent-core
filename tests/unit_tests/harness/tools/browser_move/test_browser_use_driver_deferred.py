@@ -2,7 +2,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Browser-use driver and sidecar CDP cases for browser_hover / handle_dialog / drop (ported from 857239db)."""
+"""Browser-use driver and sidecar CDP cases for browser_hover / handle_dialog / drop."""
 
 from __future__ import annotations
 

@@ -1,19 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Import boundaries of browser_move (plan section 3, invariants 1 and 2).
-
-- ``contract/`` imports only the standard library and itself; ``contract/testing/``
-  (the conformance plugin) may also import ``pytest`` (decision D10).
-- Core folders never import a concrete driver, a concrete surface or a
-  provisioning module; only the composition root (``runtime/assembly.py``) may,
-  and only lazily, inside a function.
-- ``openjiuwen/core`` never imports ``openjiuwen.harness``.
-
-Core folders are ``runtime/`` plus today's ``playwright_runtime/``,
-``controllers/``, ``utils/`` and ``clients/`` until Phase 8/9 moves them (see
-``_scan.py``). Imports are found with ``ast``; nothing is executed.
-"""
+"""Import boundaries of browser_move, and ``openjiuwen/core`` never importing ``openjiuwen.harness``."""
 
 from __future__ import annotations
 
@@ -25,18 +13,18 @@ from . import _scan
 
 # (file relative to the package, imported module relative to the package) -> count.
 KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {
-    # removed in Phase 7 (service.py stops starting Chrome itself in Phase 3)
+    # legacy: service.py still starts Chrome itself until provisioners take over
     ("playwright_runtime/service.py", "provisioning.managed_browser"): 2,
 }
 
 # (file relative to openjiuwen/core, imported module) -> count.
 KNOWN_CORE_TO_HARNESS_IMPORTS: dict[tuple[str, str], int] = {
-    # removed in Phase 7
+    # legacy code, removed with the old paths
     (
         "single_agent/agents/react_agent.py",
         "openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging",
     ): 1,
-    # Outside browser_move: no phase of the driver plan removes these (open question in the P1-T1 report).
+    # Outside browser_move; the driver refactor does not remove these.
     ("context_engine/context/session_memory_manager.py", "openjiuwen.harness.tools.filesystem"): 2,
     ("context_engine/processor/forked/compressor/session_memory_agent.py", "openjiuwen.harness.tools.filesystem"): 1,
     ("memory/lite/coding_memory_tool_ops.py", "openjiuwen.harness.workspace.workspace"): 1,

@@ -1,17 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""No browser words in the contract or the core (plan section 4.3, "Browser words").
-
-The words ``browser``, ``page``, ``tab`` and ``url`` must not appear as whole words
-(regex ``\\b``, case-insensitive) in ``contract/`` or in core folders: code, strings
-and comments all count. ``\\b`` treats ``_`` as part of a word, so ``page_state``,
-``browser_tools`` or ``PageState`` do not match, and neither do plurals (``tabs``).
-
-Core folders are ``runtime/`` plus today's ``playwright_runtime/``,
-``controllers/``, ``utils/`` and ``clients/`` until Phase 8/9 moves them (see
-``_scan.py``). Counts are per file: a file whose count grows, or a new file, fails.
-"""
+"""No whole-word browser, page, tab or url in the contract or the core, comments and strings included."""
 
 from __future__ import annotations
 
@@ -24,7 +14,7 @@ BROWSER_WORD_RE = re.compile(r"\b(?:browser|page|tab|url)\b", re.IGNORECASE)
 
 # file relative to the package -> number of browser-word matches.
 KNOWN_BROWSER_WORDS: dict[str, int] = {
-    # all removed in Phase 9 (browser code moves to surfaces/browser/)
+    # browser code that moves to surfaces/browser/
     "clients/logging_utils.py": 5,
     "controllers/action.py": 129,
     "controllers/base.py": 1,

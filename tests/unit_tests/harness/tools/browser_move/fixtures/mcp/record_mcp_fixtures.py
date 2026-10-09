@@ -1,20 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Record real @playwright/mcp answers as JSON fixtures (a script, not a test).
-
-Run from the repository root::
-
-    uv run python tests/unit_tests/harness/tools/browser_move/fixtures/mcp/record_mcp_fixtures.py
-
-It serves ``pages/`` on a free local port, launches the MCP server the way the
-runtime does (``build_playwright_mcp_config`` + ``BrowserMoveStdioClient``,
-the WebVoyager baseline flags plus ``--headless``: Chrome with an in-memory
-``--isolated`` profile), runs every case and writes ``<case>.json`` next to
-this file. Each fixture keeps the raw MCP result and the model-facing text
-today's path produces from it (``MCPTool.invoke`` -> ``MCPTool.render_for_llm``).
-The local port, the temporary server cwd and the timestamps in the server's
-output-file names are replaced by ``<PORT>``, ``<TMP>`` and ``<TS>``.
-"""
+"""Record real @playwright/mcp answers as JSON fixtures; a script run from the repository root, not a test."""
 
 from __future__ import annotations
 
@@ -85,7 +71,7 @@ def _start_page_server() -> ThreadingHTTPServer:
 
 
 def _configure_env(work_dir: Path) -> None:
-    """Launch args of the WebVoyager baseline (plan 1.2), headless, with work_dir as the server cwd."""
+    """Launch args of the WebVoyager baseline, headless, with work_dir as the server cwd."""
     for key in _CLEARED_ENV:
         os.environ.pop(key, None)
     config_path = work_dir / "playwright-mcp.config.json"
@@ -102,8 +88,6 @@ _OUTPUT_FILE_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z
 
 
 class _Placeholders:
-    """Replace the run-specific port, temp paths and output-file timestamps in every recorded string."""
-
     def __init__(self, port: int, tmp_dir: Path) -> None:
         tmp = str(tmp_dir)
         resolved = str(tmp_dir.resolve())
@@ -141,7 +125,6 @@ class _Recorder:
         client._session.call_tool = capturing_call_tool
 
     async def call(self, tool: str, arguments: dict[str, Any]) -> tuple[Any, str]:
-        """Call one tool through today's MCPTool path; return the raw result and the model text."""
         self._raw.clear()
         mcp_tool = self._tools[tool]
         output = await mcp_tool.invoke(arguments)
