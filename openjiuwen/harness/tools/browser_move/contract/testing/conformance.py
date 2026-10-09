@@ -1,29 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Driver conformance suite: a pytest plugin that proves a driver means what every other driver means by a command.
-
-PYTEST_DONT_REWRITE (the module is imported by test modules before pytest registers it as a plugin).
-
-Use it from a test module::
-
-    pytest_plugins = ["openjiuwen.harness.tools.browser_move.contract.testing.conformance"]
-
-
-    class TestMyDriverConformance(DriverConformance):
-        scene = my_surface_scene()  # not started; the suite starts it once per class
-        driver_actions = MyDriver.handled_actions()  # parametrizes the happy paths when tests are collected
-
-        @pytest.fixture
-        def conformance_driver_factory(self):
-            return lambda sink: MyDriver(...)  # a new driver per call; ``start()`` must need no argument
-
-The suite is parametrized by driver (one subclass per driver) and by ref kind (``driver_actions``); everything
-surface-specific comes from the ``Scene``. A case the scene cannot provide is skipped with the scene's reason; a case
-that needs a command the driver does not handle is skipped naming it. Every case runs a new driver in its own event
-loop. The plugin registers the ``live`` marker for runs against a real driver (for test modules collected after
-it; a module that marks itself before loading the plugin needs the marker in its pytest configuration).
-"""
+"""Driver conformance suite (pytest plugin). PYTEST_DONT_REWRITE: test modules import it before pytest does."""
 
 from __future__ import annotations
 
@@ -45,7 +23,6 @@ from ..surface import HandledActions, Scene, SceneCase
 
 LIVE_MARKER = "live: runs the conformance suite against a real driver and a live scene"
 SECRET_TEXT = "conformance-secret-5d1c"
-# The sensitive-text case every scene gets: its ``TypeText`` happy path, typing the secret.
 TYPE_TEXT_CASE = "type-text"
 
 _E = TypeVar("_E", bound=DriverError)
@@ -87,7 +64,6 @@ def _name(kind: type | None) -> str:
 
 
 def _pairs(actions: HandledActions) -> list[tuple[type[Action], type | None]]:
-    """Every (command, ref kind) a driver declares; a command without ref kinds gives one pair with ``None``."""
     pairs: list[tuple[type[Action], type | None]] = []
     for command in sorted(actions, key=lambda c: (c.__module__, c.__qualname__)):
         kinds = sorted(actions[command], key=_name)
@@ -125,7 +101,6 @@ async def _session(factory: DriverFactory, scene: Scene, sink: TraceSink | None 
 
 
 async def _prepare(driver: Driver, case: SceneCase, *, skip_unhandled_last: bool = True) -> _Prepared:
-    """Run the setup steps of ``case`` and build (without sending) the command under test."""
     if not case.steps:
         raise AssertionError("a scene case needs at least one step")
     seen = [await driver.observe(Observe())]
@@ -142,9 +117,9 @@ async def _prepare(driver: Driver, case: SceneCase, *, skip_unhandled_last: bool
 
 
 async def _cleanup(driver: Driver, case: SceneCase, seen: tuple[Observation, ...]) -> None:
-    """Best effort: a cleanup failure must not hide the outcome of the case."""
     if not case.cleanup:
         return
+    # A cleanup failure must not hide the outcome of the case.
     with contextlib.suppress(DriverError, LookupError):
         if case.observe_between:
             seen = seen + (await driver.observe(Observe()),)
@@ -185,7 +160,6 @@ async def check_surface(factory: DriverFactory, scene: Scene) -> None:
 
 
 async def check_declared_actions(factory: DriverFactory, scene: Scene, declared: HandledActions) -> None:
-    """``info.actions`` of a running driver equals what the suite was parametrized with."""
     async with _session(factory, scene) as driver:
         actual = dict(driver.info.actions)
     assert actual == dict(declared), f"info.actions {actual!r} differs from driver_actions {dict(declared)!r}"
@@ -278,7 +252,6 @@ async def check_fingerprint(factory: DriverFactory, scene: Scene) -> None:
 
 
 def _type_text_case(scene: Scene, actions: HandledActions) -> SceneCase:
-    """The scene's ``TypeText`` happy path, typing ``SECRET_TEXT`` with ``sensitive=True``."""
     accepted = actions.get(TypeText)
     if accepted is None:
         pytest.skip("the driver does not handle TypeText")
@@ -299,10 +272,6 @@ def _type_text_case(scene: Scene, actions: HandledActions) -> SceneCase:
 
 
 async def _send_secret(factory: DriverFactory, scene: Scene, sink: TraceSink, name: str) -> None:
-    """Play the sensitive-text case ``name`` (``TYPE_TEXT_CASE`` or an entry of ``scene.sensitive``).
-
-    Nothing is observed after the command that carries ``SECRET_TEXT``.
-    """
     async with _session(factory, scene, sink) as driver:
         if name == TYPE_TEXT_CASE:
             case = _type_text_case(scene, driver.info.actions)
@@ -339,7 +308,7 @@ class _ListHandler(logging.Handler):
 
 @contextlib.contextmanager
 def _captured_logs() -> Iterator[_ListHandler]:
-    """Capture every log record at DEBUG, including loggers that do not propagate to the root logger."""
+    # Loggers that do not propagate to the root get the handler too.
     root = logging.getLogger()
     loggers = [root] + [lg for lg in logging.Logger.manager.loggerDict.values() if isinstance(lg, logging.Logger)]
     handler = _ListHandler()
@@ -405,7 +374,7 @@ def conformance_scene(request: pytest.FixtureRequest) -> Iterator[Scene]:
 
 
 class DriverConformance:
-    """The conformance cases. Subclass it as ``Test...``; see the module docstring for what a subclass sets."""
+    """Subclass as ``Test...`` and set ``scene``, ``driver_actions`` and a ``conformance_driver_factory`` fixture."""
 
     scene: ClassVar[Scene]
     driver_actions: ClassVar[Mapping[type[Action], frozenset[type]]]

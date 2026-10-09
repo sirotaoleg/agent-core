@@ -128,9 +128,7 @@ def _normalize_upload_paths(paths: list[str]) -> tuple[list[str], str | None]:
 
 
 _DRIVER_REF_HANDLE_PREFIX = "bnid:"
-# How long an action waits for the page it resumed after opening a popup to answer.
 _RESUME_TIMEOUT_S = 1.0
-# How long an action waits for a main-frame navigation it started to commit before it replies.
 _NAVIGATION_COMMIT_WAIT_S = 1.0
 
 
@@ -159,8 +157,6 @@ def browser_use_version() -> str:
 
 
 class _Act:
-    """What happened while one element/keyboard action ran (see ``SessionAdapter._act``)."""
-
     def __init__(self, main_frame_id: str | None) -> None:
         # Set by the action right before its first input event: errors after it count as dispatched.
         self.dispatched = False
@@ -171,7 +167,6 @@ class _Act:
         self.dialog: dict[str, str] | None = None
         # Set when a dialog opened that nothing handles: the action's input now waits for ``handle_dialog``.
         self.dialog_blocking = asyncio.Event()
-        # Pages (tabs, popups) the action opened, as wire TabRefs.
         self.new_targets: list[dict[str, Any]] = []
         self.target_created = asyncio.Event()
 
@@ -385,7 +380,6 @@ class SessionAdapter:
         return await self._nav_result(before_url)
 
     # -- hands: element actions -------------------------------------------
-    # Each action is a ``body(act)`` run by ``_act``, which returns early when a dialog blocks the input.
 
     async def click(
         self,
@@ -752,12 +746,8 @@ class SessionAdapter:
         return self._cdp_session
 
     async def _ensure_listeners(self) -> None:
-        """Enable Page events on the current session, (re)claim javascriptDialogOpening, listen for new pages.
-
-        The CDP client keeps one handler per event, and browser-use's popups watchdog registers its own
-        auto-accepting dialog handler whenever a tab is created; re-registering ours on every call keeps
-        dialogs for ``handle_dialog``. The other listeners are added once per client, next to browser-use's.
-        """
+        # The CDP client keeps one handler per event, and browser-use's popups watchdog registers an auto-accepting
+        # dialog handler for every new tab: reclaiming ours on every call keeps dialogs for ``handle_dialog``.
         cdp_session = await self._ensure_cdp_session()
         if not self._dialog_listener_registered:
             await cdp.enable_page_domain(cdp_session.cdp_client, cdp_session.session_id)
@@ -774,16 +764,15 @@ class SessionAdapter:
             self._listening_client = client
 
     def _on_navigation_requested(self, event: Any, session_id: Any = None) -> None:
-        """A navigation of the action's main frame started (a new tab or window is a popup, not this)."""
         act = self._current_act
         event = event or {}
         if act is None or event.get("frameId") != act.main_frame_id:
             return
+        # A new tab or window is a popup, not a navigation of this page.
         if event.get("disposition", "currentTab") == "currentTab":
             act.navigation_requested = True
 
     def _on_frame_navigated(self, event: Any, session_id: Any = None) -> None:
-        """A new document committed in a frame; for the action's main frame that is a document change."""
         act = self._current_act
         frame = (event or {}).get("frame") or {}
         if act is not None and not frame.get("parentId") and frame.get("id") == act.main_frame_id:
@@ -839,25 +828,13 @@ class SessionAdapter:
             pass
 
     def _refuse_while_dialog_open(self, method: str, error: type[exceptions.DriverError]) -> None:
-        """Page scripts and captures block while a JS dialog is open: fail at once instead of timing out."""
+        # Page scripts and captures block while a JS dialog is open: fail at once instead of timing out.
         if self._dialog_pending is not None:
             raise error(f"{method}: {_dialog_note(self._dialog_pending)}")
 
     async def _act(self, body: Any, *, while_dialog: bool = False) -> dict[str, Any]:
-        """Run ``body(act)`` (one element or keyboard action) and report what it changed.
-
-        The input runs as a task. When a dialog opens that nothing handles, the page stops answering input
-        events until the dialog is handled, so the action returns at once with ``dialog_opened`` and leaves
-        its input waiting in the background. While a dialog is open, an action other than ``handle_dialog``
-        returns ``ok=False`` without sending anything. A page that opens a popup can wait for the debugger
-        until told to run, so when the action opens a page the current page is resumed; the new pages are
-        reported as ``new_targets``. A main-frame navigation the action started is given up to
-        ``_NAVIGATION_COMMIT_WAIT_S`` to commit; a committed one is a ``document_changed``, even to the same URL.
-
-        A ref that does not resolve before the input (``StaleNodeError``, ``StaleIndexError``,
-        ``ElementNotFound``) means nothing was sent; after ``act.dispatching()`` the same failures are
-        re-raised as a plain ``DriverError``, since input may already have reached the page.
-        """
+        # A dialog nothing handles stops the page answering input, so the action returns with ``dialog_opened`` and
+        # its input waits in the background. A page that opens a popup can wait for the debugger until resumed.
         before_url = await self._safe_current_url()
         if self._dialog_pending is not None and not while_dialog:
             return await self._act_result(before_url, ok=False, detail=_dialog_note(self._dialog_pending))
@@ -1061,7 +1038,6 @@ class SessionAdapter:
         return {k: float(rect.get(k, 0.0) or 0.0) for k in ("x", "y", "width", "height")}
 
     async def _ensure_not_intercepted(self, method: str, backend_node_id: int, x: float, y: float) -> None:
-        """Hit-test the point the mouse is about to use: raise ``ActionIntercepted`` if another element is on top."""
         cdp_session = await self._ensure_cdp_session()
         by = await cdp.call_function_on_backend_node(
             cdp_session.cdp_client,

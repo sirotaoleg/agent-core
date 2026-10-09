@@ -1,10 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""The driver contract: commands, observations, results, errors, the driver base and the registries.
-
-Imports only the standard library and itself.
-"""
+"""The driver contract: commands, observations, results, errors, the driver base and the registries."""
 
 from .actions import (
     Action,

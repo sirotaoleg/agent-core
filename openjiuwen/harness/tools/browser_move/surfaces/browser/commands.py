@@ -45,10 +45,7 @@ class SelectOption(Action):
 
 @dataclass(frozen=True)
 class UploadFile(Action):
-    """Set files on ``target``, or answer an open file chooser when ``target`` is ``None``.
-
-    Empty ``paths`` cancels the file chooser.
-    """
+    """Set files on ``target``, or answer an open file chooser (``target`` ``None``); empty ``paths`` cancels."""
 
     effect: ClassVar[Effect] = Effect.ACT
 
@@ -66,10 +63,7 @@ class FieldKind(str, Enum):
 
 @dataclass(frozen=True)
 class FormField:
-    """One field of ``FillForm``. ``value`` is ``"true"``/``"false"`` for a checkbox, the option text for a combobox.
-
-    ``sensitive`` masks ``value`` in traces and logs, as ``TypeText.sensitive`` does for its text.
-    """
+    """One field of ``FillForm``. ``value`` is ``"true"``/``"false"`` for a checkbox, the option text for a combobox."""
 
     target: Ref
     kind: FieldKind

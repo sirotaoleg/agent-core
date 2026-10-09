@@ -13,9 +13,7 @@ what lets a unit test catch sidecar drift without spawning a sidecar.
 
 from __future__ import annotations
 
-# 2: act replies carry ``dialog_opened`` ({"type", "message"} or None) and ``new_targets`` (TabRefs of pages the
-#    action opened); ``document_changed`` also covers a committed main-frame navigation to the same URL. New error
-#    code ``ActionIntercepted`` with ``data.by``.
+# 2: act replies add ``dialog_opened`` and ``new_targets``; new error code ``ActionIntercepted`` with ``data.by``.
 WIRE_VERSION = 2
 
 # SessionAdapter method names (main.py dispatches requests to them by name), then the two control methods.

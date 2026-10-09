@@ -27,12 +27,7 @@ class Health:
 
 @dataclass(frozen=True)
 class DriverInfo:
-    """What a driver is and what it can do.
-
-    ``actions`` maps each handled command type to the element ref kinds it accepts (empty for commands without
-    refs). ``observes`` names the ``Observation`` fields the driver fills (for example ``elements``, ``screenshot``).
-    ``tool_hints`` are optional per-command descriptions; the surface profile's own texts take priority.
-    """
+    """``actions`` maps each handled command type to the element ref kinds it accepts (empty: no refs)."""
 
     name: str
     surfaces: frozenset[str]
@@ -70,10 +65,7 @@ _F = TypeVar("_F", bound=Callable[..., Any])
 
 
 def handles(command: type[Action], *, refs: Iterable[type] = ()) -> Callable[[_F], _F]:
-    """Mark a ``HandlerDriver`` method as the handler of ``command`` for the given element ref kinds.
-
-    Marks stack, so one method may handle several commands.
-    """
+    """Mark a ``HandlerDriver`` method as the handler of ``command``; marks stack."""
     accepted = frozenset(refs)
     unknown = accepted - set(REF_KINDS)
     if unknown:
@@ -112,11 +104,7 @@ def ensure_supported(driver_name: str, actions: Mapping[type[Action], frozenset[
 
 
 class HandlerDriver(Driver):
-    """A driver whose ``execute`` dispatches by ``type(action)`` to methods marked with ``@handles``.
-
-    Subclasses describe themselves in ``describe()``; ``info.actions`` is always computed from the marks, so the
-    supported commands cannot drift from the code. Command classes may come from any package.
-    """
+    """Dispatches ``execute`` by ``type(action)`` to ``@handles`` methods; ``info.actions`` comes from the marks."""
 
     _handlers: ClassVar[Mapping[type[Action], tuple[str, frozenset[type]]]] = MappingProxyType({})
 

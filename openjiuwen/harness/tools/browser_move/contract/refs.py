@@ -1,11 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Ways a command points at an element or at a context.
-
-Every element ref carries the ``generation`` of the observation it came from, so a driver can tell a stale ref
-before it sends anything (``StaleRef`` is raised only before dispatch).
-"""
+"""Ways a command points at an element or a context; element refs carry their observation's ``generation``."""
 
 from __future__ import annotations
 
@@ -56,6 +52,6 @@ class ContextRef:
     title: str | None = None
 
 
-# The element ref kinds a handler may accept (``@handles(..., refs={...})``). ``ContextRef`` is not one of them.
+# ``ContextRef`` is not an element ref kind: no handler accepts it.
 Ref = Union[DriverRef, PointRef, IndexRef, Locator]
 REF_KINDS: tuple[type, ...] = (DriverRef, PointRef, IndexRef, Locator)

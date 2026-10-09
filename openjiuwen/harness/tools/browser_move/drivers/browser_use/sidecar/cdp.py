@@ -585,11 +585,7 @@ def register_javascript_dialog_opening(cdp_client: Any, callback: Any) -> Any:
 
 
 def add_event_listener(cdp_client: Any, method: str, callback: Any) -> None:
-    """Call ``callback(event, session_id)`` on ``method`` events, keeping any handler already registered.
-
-    cdp-use keeps one handler per event, and browser-use registers its own for some events: the previous
-    handler is called after ``callback`` (with its return value, which may be awaitable).
-    """
+    """Call ``callback`` on ``method`` events, then the handler already there (cdp-use keeps one per event)."""
     registry = getattr(cdp_client, "_event_registry", None)
     if registry is None or not hasattr(registry, "register"):
         raise exceptions.DriverUnsupported(f"CDP client cannot register {method} handlers")

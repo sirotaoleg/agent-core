@@ -323,7 +323,7 @@ class ManagedBrowserProvisioner:
 
 
 def __getattr__(name: str):
-    # ManagedBrowserDriver is the pre-Phase-2 name; kept as a deprecated alias.
+    # ManagedBrowserDriver is the old name; kept as a deprecated alias.
     if name == "ManagedBrowserDriver":
         warnings.warn(
             "ManagedBrowserDriver is deprecated; use ManagedBrowserProvisioner",

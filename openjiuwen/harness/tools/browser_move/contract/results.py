@@ -14,14 +14,7 @@ from .refs import ContextRef
 
 @dataclass(frozen=True, kw_only=True)
 class ActionResult:
-    """The typed outcome of one command.
-
-    ``context_changed`` comes from the driver's own signal: a new document loaded (including a reload of the same
-    address), the address changed, a dialog opened, or a context was opened, closed or switched.
-    ``generation`` is filled by the runtime's state tracker after the call; drivers leave it empty.
-    ``observation`` is a fresh observation when the driver got one for free, so the runtime can skip ``observe()``.
-    ``surface`` is the surface context after the command.
-    """
+    """The typed outcome of one command; drivers leave ``generation`` empty for the runtime to fill."""
 
     ok: bool
     value: Any = field(default=None, hash=False)

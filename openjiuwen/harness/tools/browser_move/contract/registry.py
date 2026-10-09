@@ -1,11 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Name -> factory registries for drivers, surfaces and provisioners.
-
-A factory is a callable or a lazy import string ``"pkg.module:attr"``, imported on the first ``create``. Nothing is
-registered here: the built-in names are registered by the packages that own them.
-"""
+"""Name -> factory registries; a factory is a callable or a lazy ``"pkg.module:attr"`` import string."""
 
 from __future__ import annotations
 
@@ -56,8 +52,7 @@ class Registry(Generic[T]):
         return factory
 
 
-# The only module-level state of the package (plan section 3): the three default registries. Everything else is
-# passed in by the composition root.
+# The only module-level state of the package; everything else is passed in by the composition root.
 DRIVERS: Registry[Driver] = Registry("driver")
 SURFACES: Registry[SurfaceProfile] = Registry("surface")
 PROVISIONERS: Registry[Any] = Registry("provisioner")

@@ -1,20 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""``BrowserUseDriver``: the driver contract on top of the browser-use sidecar.
-
-This module imports NO ``browser_use``. All browser-use usage lives in
-``sidecar/session_adapter.py``, running in a separate process with its own
-dependency closure. Each ``@handles`` method turns one contract command into
-wire requests sent through ``SidecarTransport`` and turns the reply into an
-``ActionResult``; sidecar errors become the contract's typed errors.
-
-Element refs: the model-facing ref is ``DriverRef``; ``ref`` carries the handle
-the sidecar minted in ``observe()`` (``bnid:<backend node id>``). The commands
-browser-use's tools also address by CSS selector accept ``Locator(css=...)``
-(sent as the wire selector ref); ``Locator.text`` is not supported. The
-sidecar's index API (``IndexRef``) stays internal: no handler accepts it.
-"""
+"""``BrowserUseDriver``: the driver contract on top of the browser-use sidecar; imports no ``browser_use``."""
 
 from __future__ import annotations
 
@@ -85,7 +72,6 @@ _SCOPED_SCRIPT = (
     "if (!element) {{ throw new Error('target element not found: ' + input.selector); }} "
     "return ({code})(element, input.args); }}"
 )
-# Wait(until_text) polling, as the batch executor's wait_for_text did (857239db batch_executor.py).
 _HAS_TEXT_JS = """(text) => {
   const body = (document.body && document.body.innerText) ? document.body.innerText : '';
   return body.includes(String(text || ''));
@@ -97,14 +83,8 @@ _WAIT_POLL_S = 0.1
 _CHECKED_VALUES = frozenset({"1", "true", "yes", "on", "checked"})
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
-# Sidecar error (wire error code; the transport raises classes of the same name) -> (typed error, dispatched).
 # dispatched=False only where the sidecar provably raises before any input reaches the page: refs are resolved
-# (index, handle, bounding box) before the first input event, and unsupported features are rejected up front.
-# StaleNodeError is a node that is not in the current document (CDP "does not belong to the document" / "No node
-# with given id"); the sidecar sends StaleNodeError, StaleIndexError and ElementNotFound only before an action's
-# input and turns them into a plain DriverError after it. ActionIntercepted comes from the hit test before the
-# mouse moves (click, hover, drag source) and carries ``by``.
-# Codes not listed here (DriverError, EvaluateError, ObserveError) and any other exception are unclassified.
+# before the first input event and unsupported features are rejected up front. Unlisted codes are unclassified.
 _SIDECAR_ERRORS: dict[str, tuple[type[DriverError], bool]] = {
     "StaleIndexError": (StaleRef, False),
     "ElementNotFound": (ElementNotFound, False),
@@ -233,8 +213,6 @@ class BrowserUseDriver(HandlerDriver):
             observes=frozenset({"elements", "screenshot", "native_text", "surface"}),
         )
 
-    # -- lifecycle ---------------------------------------------------
-
     async def start(self, config: BrowserUseConfig | None = None) -> None:
         config = config or self._config
         if config is None:
@@ -272,8 +250,6 @@ class BrowserUseDriver(HandlerDriver):
             return Health(ok=False, detail=str(exc))
         return Health(ok=bool(result.get("connected", False)), detail=result.get("error"))
 
-    # -- eyes ----------------------------------------------------------
-
     async def observe(self, command: Observe) -> Observation:
         viewport_screenshot = command.include_screenshot and not command.full_page
         data = await self._request(
@@ -288,8 +264,6 @@ class BrowserUseDriver(HandlerDriver):
         if command.include_screenshot and command.full_page:
             screenshot_b64 = await self._request("screenshot", {"full_page": True, "clip": None})
         return _observation_from_wire(data, screenshot_b64)
-
-    # -- hands: elements ---------------------------------------------
 
     @handles(Click, refs={DriverRef, Locator})
     async def _click(self, action: Click) -> ActionResult:
@@ -382,7 +356,6 @@ class BrowserUseDriver(HandlerDriver):
 
     @handles(FillForm, refs={DriverRef, Locator})
     async def _fill_form(self, action: FillForm) -> ActionResult:
-        """Fill the fields in order with type_text / select_option / set_checked; stop at the first failure."""
         context_changed = False
         refs = [self._ref(field.target) for field in action.fields]  # an unsupported ref fails before any field
         for index, (field, ref) in enumerate(zip(action.fields, refs)):
@@ -446,8 +419,6 @@ class BrowserUseDriver(HandlerDriver):
         )
         return ActionResult(ok=True, value=value)
 
-    # -- hands: navigation and contexts --------------------------------
-
     @handles(Navigate)
     async def _navigate(self, action: Navigate) -> ActionResult:
         return self._nav_result(await self._navigate_wire(action.url, new_tab=False))
@@ -475,8 +446,6 @@ class BrowserUseDriver(HandlerDriver):
         data = await self._request("close_tab", {"tab": _context_to_wire(action.context)})
         return self._act_result(data, context_changed=True, source_context=action.context)
 
-    # -- wire helpers --------------------------------------------------
-
     async def _request(self, method: str, params: dict[str, Any]) -> Any:
         if self._transport is None:
             raise ConnectionLost("BrowserUseDriver is not started", dispatched=False)
@@ -499,7 +468,6 @@ class BrowserUseDriver(HandlerDriver):
         return _ref_to_wire(ref, self._driver_generation)
 
     def _act_result(self, data: dict[str, Any], *, context_changed: bool = False, **fields: Any) -> ActionResult:
-        """An act reply as a result: a new document, a dialog or a page the command opened changes the context."""
         self._driver_generation = int(data.get("driver_generation", self._driver_generation))
         detail = data.get("detail") or None
         dialog = data.get("dialog_opened")
@@ -518,21 +486,17 @@ class BrowserUseDriver(HandlerDriver):
         )
 
     def _nav_result(self, data: dict[str, Any], **fields: Any) -> ActionResult:
-        """A navigation always loads a document, so the context changed even when the URL did not."""
         self._driver_generation = int(data.get("driver_generation", self._driver_generation))
         return ActionResult(
             ok=True,
-            context_changed=True,
+            context_changed=True,  # a navigation always loads a document, even at the same URL
             surface=BrowserContext(url=str(data["url"]), title=str(data.get("title", ""))),
             **fields,
         )
 
 
 def create_browser_use_driver(device: ProvisionedDevice, surface_settings: Any) -> BrowserUseDriver:
-    """Driver factory (registry signature): the driver connects to ``device.endpoint`` on ``start()``.
-
-    ``surface_settings`` is part of the factory signature; the browser-use driver reads nothing from it yet.
-    """
+    """Driver factory (registry signature): the driver connects to ``device.endpoint`` on ``start()``."""
     del surface_settings
     return BrowserUseDriver(BrowserUseConfig(cdp_url=device.endpoint))
 

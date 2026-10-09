@@ -1,11 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Typed driver errors. Each one says whether the command may have reached the screen (``dispatched``).
-
-An error with ``dispatched=True`` is never retried automatically. When the outcome is unknown the error counts as
-dispatched: an unrecognized library error becomes ``DriverError(dispatched=True)``.
-"""
+"""Typed driver errors; ``dispatched`` (also when the outcome is unknown) means never retried automatically."""
 
 from __future__ import annotations
 

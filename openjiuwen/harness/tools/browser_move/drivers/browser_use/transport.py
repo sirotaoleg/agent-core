@@ -1,14 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""NDJSON-over-stdio transport to the browser-use sidecar process.
-
-Owns interpreter discovery, process spawn, the hello handshake, one
-in-flight request at a time, cancellation/timeout, and wire error-code to
-exception mapping. ``drivers/browser_use/driver.py`` is the only caller;
-this module never imports ``browser_use`` itself, keeping the agent-core
-process free of the sidecar's dependency closure.
-"""
+"""NDJSON-over-stdio transport to the browser-use sidecar process; never imports ``browser_use``."""
 
 from __future__ import annotations
 
@@ -201,16 +194,7 @@ class SidecarTransport:
             return self._unwrap_reply(reply)
 
     async def _readline_stdout(self) -> bytes:
-        """Read one stdout line, mapping StreamReader oversize to DriverConnectionLost.
-
-        ``asyncio.StreamReader.readline`` fails when a separator is found but the
-        chunk exceeds the reader limit (classic message: ``"Separator is found,
-        but chunk is longer than limit"``). On Python 3.11+ that surfaces as
-        ``ValueError`` wrapping ``LimitOverrunError``; older paths may raise
-        ``LimitOverrunError`` directly. Map both to the wire max-line contract
-        so large base64 screenshot NDJSON replies become a clear driver error
-        instead of a raw asyncio failure.
-        """
+        # An over-limit line raises ValueError on Python 3.11+, LimitOverrunError on older paths.
         assert self._process is not None and self._process.stdout is not None
         try:
             raw_line = await self._process.stdout.readline()
@@ -229,7 +213,6 @@ class SidecarTransport:
         return raw_line
 
     async def _read_reply(self, request_id: int) -> dict[str, Any]:
-        """Read lines until the reply for ``request_id`` arrives, forwarding log lines as we go."""
         assert self._process is not None and self._process.stdout is not None
         while True:
             raw_line = await self._readline_stdout()

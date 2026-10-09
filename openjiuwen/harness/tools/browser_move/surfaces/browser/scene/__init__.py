@@ -1,12 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""The browser's conformance scene: local pages served on ``127.0.0.1`` and the cases the suite plays there.
-
-Every element on the pages reports what happened to it in ``document.title`` (``clicked``, ``form:3:true``, ...), so a
-case checks its effect through ``BrowserContext.title``, which every browser driver observes. Elements are found by
-their accessible name; a ``Locator`` uses their CSS id.
-"""
+"""The browser's conformance scene; every page element reports what happened to it in ``document.title``."""
 
 from __future__ import annotations
 
@@ -90,11 +85,10 @@ SECOND_LINK = _Target("Go to second", "second-link")
 
 # The intercept case covers the button only after observing it (some drivers do not list occluded elements).
 _COVER_SCRIPT = "() => { cover(); return true; }"
-# The timeout case waits this long for a text that is on no scene page.
 _ABSENT_TEXT = "scene text that never appears"
 _TIMEOUT_S = 2.0
 
-# Ref kinds the scene can build, in order of preference, for setup steps and for element-targeted cases.
+# In order of preference.
 _ANY_KINDS = (DriverRef, Locator, PointRef)
 _ELEMENT_KINDS = (DriverRef, Locator)
 
@@ -131,7 +125,6 @@ def _ref(observation: Observation, target: _Target, kind: type) -> Ref:
 
 
 def _kind_for(actions: Actions, command: type[Action], kinds: Sequence[type] = _ANY_KINDS) -> type | str:
-    """The ref kind a case uses for ``command``, or the reason the scene cannot provide the case."""
     accepted = actions.get(command)
     if accepted is None:
         return f"the driver does not handle {command.__name__}, which this case needs"
@@ -228,7 +221,6 @@ class _BrowserScene:
     def _with_target(
         self, kind: type | None, actions: Actions, target: _Target, make: Callable, check: Check
     ) -> SceneCase | str:
-        """``make(ref)`` targets ``target`` directly, or (``kind`` is ``None``) acts on it after a click focused it."""
         if kind is not None:
             return SceneCase(steps=(lambda seen: make(_ref(seen[-1], target, kind)),), check=check)
         click_kind = _kind_for(actions, Click)
@@ -239,8 +231,6 @@ class _BrowserScene:
             return Click(target=_ref(seen[-1], target, click_kind))
 
         return SceneCase(steps=(focus, lambda seen: make(None)), check=check)
-
-    # Happy paths, one per command; ``kind`` is the ref kind under test (``None`` for a command without refs).
 
     def happy(self, command: type[Action], kind: type | None, actions: Actions) -> SceneCase | str:
         if kind is IndexRef:
@@ -417,8 +407,6 @@ class _BrowserScene:
             steps=(lambda seen: GetNetwork(),), check=lambda before, after, result: "data.json" in str(result.value)
         )
 
-    # Error cases.
-
     def stale(self, actions: Actions) -> SceneCase | str:
         if DriverRef not in actions.get(Click, frozenset()):
             return "the scene makes a stale ref only as a DriverRef, and the driver does not click DriverRefs"
@@ -452,8 +440,6 @@ class _BrowserScene:
             return "the driver does not handle Wait, which this case needs"
         return SceneCase(steps=(lambda seen: Wait(until_text=_ABSENT_TEXT, seconds=_TIMEOUT_S),))
 
-    # Sensitive values: the suite also types its secret through the TypeText happy path.
-
     def sensitive(self) -> dict[str, Callable[[Actions, str], SceneCase | str]]:
         return {"form-field": self._sensitive_form_field}
 
@@ -467,8 +453,6 @@ class _BrowserScene:
             return FillForm(fields=(field,))
 
         return SceneCase(steps=(step,))
-
-    # Context changes (plan 8.1): new document (also a same-URL reload), URL change, dialog, tab opened/closed/switched.
 
     def context_changes(self) -> dict[str, Callable[[Actions], SceneCase | str]]:
         def second(seen: Sequence[Observation]) -> Action:

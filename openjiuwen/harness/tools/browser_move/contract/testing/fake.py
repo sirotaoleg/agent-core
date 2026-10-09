@@ -31,7 +31,6 @@ from ..observation import Observation
 from ..refs import REF_KINDS
 from ..results import ActionResult
 
-# Every shared command except ``Observe`` (which goes through ``observe()``), with every element ref kind.
 DEFAULT_ACTIONS: dict[type[Action], frozenset[type]] = {
     command: frozenset(REF_KINDS)
     for command in (
@@ -59,14 +58,7 @@ class Call:
 
 
 class FakeDriver(Driver):
-    """Records every call and answers ``observe``/``execute`` from scripted queues, in order.
-
-    ``execute`` raises ``Unsupported(dispatched=False)`` for a command or ref kind missing from ``info.actions``
-    (default: ``DEFAULT_ACTIONS``). ``script`` adds answers after construction. ``fail_next`` raises a scripted error
-    on the next observe/execute call. ``lose_connection_on(n)`` raises ``ConnectionLost`` on the n-th observe/execute
-    call (1-based); the connection stays lost until ``start()``. Running out of scripted answers fails the test with
-    ``AssertionError``.
-    """
+    """Records every call and answers ``observe``/``execute`` from scripted queues, in order."""
 
     def __init__(
         self,
@@ -100,7 +92,7 @@ class FakeDriver(Driver):
         self._errors.append(error if error is not None else DriverError("scripted", dispatched=dispatched))
 
     def lose_connection_on(self, call: int, *, dispatched: bool = True) -> None:
-        """``dispatched`` defaults to True: an unknown outcome counts as dispatched."""
+        """``call`` is 1-based; the connection stays lost until ``start()``."""
         self._lose_on = call
         self._lose_dispatched = dispatched
 

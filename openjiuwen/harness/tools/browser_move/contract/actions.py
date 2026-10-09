@@ -1,11 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Commands: frozen dataclasses with a class-level ``effect``.
-
-This module holds the ``Action`` base, ``Effect`` and the commands that make sense on any screen. A surface defines
-its own commands as ``Action`` subclasses in its own package; drivers handle both kinds the same way.
-"""
+"""Commands that make sense on any screen; a surface adds its own ``Action`` subclasses in its package."""
 
 from __future__ import annotations
 
@@ -100,11 +96,7 @@ class Drag(Action):
 
 @dataclass(frozen=True)
 class Wait(Action):
-    """Sleep ``seconds``, or wait until ``until_text`` appears.
-
-    With ``until_text``, ``seconds`` is the longest wait (``None``: the driver's default); the driver raises
-    ``ActionTimeout`` when the text has not appeared by then. At least one of the two is set.
-    """
+    """Sleep ``seconds``, or wait at most ``seconds`` (``None``: driver default) for ``until_text``."""
 
     effect: ClassVar[Effect] = Effect.READ
 

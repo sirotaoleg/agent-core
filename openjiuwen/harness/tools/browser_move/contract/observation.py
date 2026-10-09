@@ -16,11 +16,7 @@ from .refs import ContextRef, DriverRef
 
 @dataclass(frozen=True)
 class SurfaceContext:
-    """Empty base for the typed per-surface context; each surface subclasses it in its own package.
-
-    Nothing in ``contract/`` or the core reads a field of a subclass: it is passed through to the surface's renderer
-    and rails.
-    """
+    """Empty base for the per-surface context; only the surface's own renderer and rails read its fields."""
 
 
 @dataclass(frozen=True)
@@ -57,11 +53,7 @@ class Element:
 
 @dataclass(frozen=True, kw_only=True)
 class Observation:
-    """A snapshot of the focused context.
-
-    ``generation`` is stamped by the runtime's state tracker, not by the driver, so drivers leave it empty.
-    ``native_text`` is the driver's own textual snapshot, if it has one; the renderer decides whether to show it.
-    """
+    """A snapshot of the focused context; ``generation`` is stamped by the runtime, so drivers leave it empty."""
 
     context: ContextRef
     generation: str = ""
@@ -73,11 +65,7 @@ class Observation:
 
     @property
     def fingerprint(self) -> str:
-        """Stable hash over element refs, roles and names plus the context id.
-
-        A backstop for change detection only: the driver's ``ActionResult.context_changed`` is the primary signal.
-        Generations, screenshots and values are left out, so two observations of an unchanged scene match.
-        """
+        """Backstop for change detection; ``ActionResult.context_changed`` is the primary signal."""
         payload = [self.context.id, [[e.ref.ref, e.role, e.name] for e in self.elements]]
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()[:16]
