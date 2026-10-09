@@ -74,6 +74,10 @@ E1 = DriverRef("bnid:42", "g3")
 E2 = DriverRef("bnid:43", "g3")
 WIRE_E1 = {"kind": "driver", "handle": "bnid:42", "driver_generation": 0}
 WIRE_E2 = {"kind": "driver", "handle": "bnid:43", "driver_generation": 0}
+CSS = Locator("#save", None, "g3")
+CSS_2 = Locator("form .size", None, "g3")
+WIRE_CSS = {"kind": "selector", "css": "#save", "nth": 0}
+WIRE_CSS_2 = {"kind": "selector", "css": "form .size", "nth": 0}
 TAB_2 = ContextRef(id="T2", kind="tab", title="Second")
 WIRE_TAB_2 = {"target_id": "T2", "url": "", "title": "Second", "active": False}
 ACT_OK = {"ok": True, "detail": "done", "document_changed": False, "driver_generation": 0}
@@ -109,12 +113,12 @@ def _sidecar_error(code: str, message: str = "boom", data: dict[str, Any] | None
 # -- info ------------------------------------------------------------------
 
 EXPECTED_ACTIONS = {
-    Click: {DriverRef},
-    TypeText: {DriverRef},
+    Click: {DriverRef, Locator},
+    TypeText: {DriverRef, Locator},
     PressKey: set(),
     Scroll: {DriverRef},
-    Hover: {DriverRef},
-    Drag: {DriverRef},
+    Hover: {DriverRef, Locator},
+    Drag: {DriverRef, Locator},
     Wait: set(),
     SwitchContext: set(),
     CloseContext: set(),
@@ -123,10 +127,10 @@ EXPECTED_ACTIONS = {
     Navigate: set(),
     Back: set(),
     OpenContext: set(),
-    SelectOption: {DriverRef},
-    UploadFile: {DriverRef},
-    FillForm: {DriverRef},
-    Drop: {DriverRef},
+    SelectOption: {DriverRef, Locator},
+    UploadFile: {DriverRef, Locator},
+    FillForm: {DriverRef, Locator},
+    Drop: {DriverRef, Locator},
 }
 
 
@@ -147,11 +151,26 @@ def test_info_describes_the_browser_surface():
     assert info.observes == frozenset({"elements", "screenshot", "native_text", "surface"})
 
 
-@pytest.mark.parametrize("ref", [IndexRef(1, "g3"), Locator("#a", None, "g3"), PointRef(1, 2, "g3")])
-def test_other_ref_kinds_are_unsupported_before_dispatch(ref):
+@pytest.mark.parametrize(
+    "action",
+    [Click(IndexRef(1, "g3")), Click(PointRef(1, 2, "g3")), Scroll(CSS, dy=10), RunScript("() => 1", target=CSS)],
+    ids=["index-ref", "point-ref", "scroll-locator", "run-script-locator"],
+)
+def test_other_ref_kinds_are_unsupported_before_dispatch(action):
     driver, request = _driver()
     with pytest.raises(Unsupported) as info:
-        asyncio.run(driver.execute(Click(ref)))
+        asyncio.run(driver.execute(action))
+    assert info.value.dispatched is False
+    request.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "locator", [Locator(None, "Save", "g3"), Locator("#save", "Save", "g3")], ids=["text", "css-and-text"]
+)
+def test_a_locator_by_text_is_unsupported_before_dispatch(locator):
+    driver, request = _driver()
+    with pytest.raises(Unsupported, match="by css only") as info:
+        asyncio.run(driver.execute(Click(locator)))
     assert info.value.dispatched is False
     request.assert_not_called()
 
@@ -210,6 +229,46 @@ def test_navigation_handler_sends_one_wire_request(action, method, params):
     assert _calls(request) == [(method, params)]
     assert result.ok is True
     assert result.surface == BrowserContext(url="http://x/", title="X")
+
+
+@pytest.mark.parametrize(
+    ("action", "method", "params"),
+    [
+        (Click(CSS), "click", {"ref": WIRE_CSS, "button": "left", "click_count": 1, "modifiers": []}),
+        (
+            TypeText(CSS, "hi"),
+            "type_text",
+            {"ref": WIRE_CSS, "text": "hi", "clear": True, "press_enter": False, "sensitive": False},
+        ),
+        (Hover(CSS), "hover", {"ref": WIRE_CSS}),
+        (Drag(CSS, CSS_2), "drag", {"source": WIRE_CSS, "target": WIRE_CSS_2, "steps": 10, "delay_ms": 0}),
+        (SelectOption(CSS_2, ("m",)), "select_option", {"ref": WIRE_CSS_2, "value": "m", "label": None}),
+    ],
+    ids=["click", "type-text", "hover", "drag", "select-option"],
+)
+def test_a_css_locator_is_sent_as_the_wire_selector_ref(action, method, params):
+    driver, request = _driver(dict(ACT_OK))
+    assert asyncio.run(driver.execute(action)).ok is True
+    assert _calls(request) == [(method, params)]
+
+
+def test_upload_drop_and_form_fields_accept_a_css_locator(tmp_path):
+    upload = tmp_path / "a.txt"
+    upload.write_text("x", encoding="utf-8")
+    driver, request = _driver(dict(ACT_OK), dict(ACT_OK), dict(ACT_OK))
+    asyncio.run(driver.execute(UploadFile(CSS, (str(upload),))))
+    asyncio.run(driver.execute(Drop(CSS, data=(("text/plain", "x"),))))
+    asyncio.run(driver.execute(FillForm((FormField(CSS, FieldKind.TEXTBOX, "Ada"),))))
+    assert [params["ref"] for _method, params in _calls(request)] == [WIRE_CSS, WIRE_CSS, WIRE_CSS]
+
+
+def test_a_form_with_a_text_locator_fills_no_field():
+    driver, request = _driver(dict(ACT_OK))
+    fields = (FormField(CSS, FieldKind.TEXTBOX, "Ada"), FormField(Locator(None, "Gift", "g3"), FieldKind.CHECKBOX, "1"))
+    with pytest.raises(Unsupported) as info:
+        asyncio.run(driver.execute(FillForm(fields)))
+    assert info.value.dispatched is False
+    request.assert_not_called()
 
 
 def test_wire_refs_carry_the_last_driver_generation():

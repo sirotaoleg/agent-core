@@ -10,8 +10,10 @@ wire requests sent through ``SidecarTransport`` and turns the reply into an
 ``ActionResult``; sidecar errors become the contract's typed errors.
 
 Element refs: the model-facing ref is ``DriverRef``; ``ref`` carries the handle
-the sidecar minted in ``observe()`` (``bnid:<backend node id>``). The sidecar's
-index API (``IndexRef``) stays internal: no handler accepts it.
+the sidecar minted in ``observe()`` (``bnid:<backend node id>``). The commands
+browser-use's tools also address by CSS selector accept ``Locator(css=...)``
+(sent as the wire selector ref); ``Locator.text`` is not supported. The
+sidecar's index API (``IndexRef``) stays internal: no handler accepts it.
 """
 
 from __future__ import annotations
@@ -42,6 +44,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     HandlerDriver,
     Health,
     Hover,
+    Locator,
     NavigationError,
     Observation,
     Observe,
@@ -137,7 +140,11 @@ def _translate_error(method: str, exc: Exception) -> DriverError:
     return error_type(str(exc), dispatched=dispatched)
 
 
-def _ref_to_wire(ref: DriverRef, driver_generation: int) -> dict[str, Any]:
+def _ref_to_wire(ref: DriverRef | Locator, driver_generation: int) -> dict[str, Any]:
+    if isinstance(ref, Locator):
+        if ref.text is not None or not ref.css:
+            raise Unsupported("BrowserUseDriver addresses a Locator by css only", dispatched=False)
+        return {"kind": "selector", "css": ref.css, "nth": 0}
     return {"kind": "driver", "handle": ref.ref, "driver_generation": driver_generation}
 
 
@@ -284,7 +291,7 @@ class BrowserUseDriver(HandlerDriver):
 
     # -- hands: elements ---------------------------------------------
 
-    @handles(Click, refs={DriverRef})
+    @handles(Click, refs={DriverRef, Locator})
     async def _click(self, action: Click) -> ActionResult:
         data = await self._request(
             "click",
@@ -297,7 +304,7 @@ class BrowserUseDriver(HandlerDriver):
         )
         return self._act_result(data)
 
-    @handles(TypeText, refs={DriverRef})
+    @handles(TypeText, refs={DriverRef, Locator})
     async def _type_text(self, action: TypeText) -> ActionResult:
         if action.target is None:
             raise Unsupported("BrowserUseDriver types only into a target element", dispatched=False)
@@ -325,11 +332,11 @@ class BrowserUseDriver(HandlerDriver):
         ref = None if action.target is None else self._ref(action.target)
         return self._act_result(await self._request("scroll", {"direction": direction, "amount": amount, "ref": ref}))
 
-    @handles(Hover, refs={DriverRef})
+    @handles(Hover, refs={DriverRef, Locator})
     async def _hover(self, action: Hover) -> ActionResult:
         return self._act_result(await self._request("hover", {"ref": self._ref(action.target)}))
 
-    @handles(Drag, refs={DriverRef})
+    @handles(Drag, refs={DriverRef, Locator})
     async def _drag(self, action: Drag) -> ActionResult:
         data = await self._request(
             "drag",
@@ -337,7 +344,7 @@ class BrowserUseDriver(HandlerDriver):
         )
         return self._act_result(data)
 
-    @handles(SelectOption, refs={DriverRef})
+    @handles(SelectOption, refs={DriverRef, Locator})
     async def _select_option(self, action: SelectOption) -> ActionResult:
         if len(action.values) != 1:
             raise Unsupported("BrowserUseDriver selects exactly one option per command", dispatched=False)
@@ -346,7 +353,7 @@ class BrowserUseDriver(HandlerDriver):
         )
         return self._act_result(data)
 
-    @handles(UploadFile, refs={DriverRef})
+    @handles(UploadFile, refs={DriverRef, Locator})
     async def _upload_file(self, action: UploadFile) -> ActionResult:
         if action.target is None:
             raise Unsupported("BrowserUseDriver needs the file input as target", dispatched=False)
@@ -356,7 +363,7 @@ class BrowserUseDriver(HandlerDriver):
         data = await self._request("upload_files", {"ref": self._ref(action.target), "paths": existing})
         return self._act_result(data)
 
-    @handles(Drop, refs={DriverRef})
+    @handles(Drop, refs={DriverRef, Locator})
     async def _drop(self, action: Drop) -> ActionResult:
         existing: list[str] = []
         if action.paths:
@@ -373,12 +380,12 @@ class BrowserUseDriver(HandlerDriver):
         )
         return self._act_result(data)
 
-    @handles(FillForm, refs={DriverRef})
+    @handles(FillForm, refs={DriverRef, Locator})
     async def _fill_form(self, action: FillForm) -> ActionResult:
         """Fill the fields in order with type_text / select_option / set_checked; stop at the first failure."""
         context_changed = False
-        for index, field in enumerate(action.fields):
-            ref = self._ref(field.target)
+        refs = [self._ref(field.target) for field in action.fields]  # an unsupported ref fails before any field
+        for index, (field, ref) in enumerate(zip(action.fields, refs)):
             if field.kind in (FieldKind.CHECKBOX, FieldKind.RADIO):
                 method = "set_checked"
                 params = {"ref": ref, "checked": field.value.strip().lower() in _CHECKED_VALUES}
@@ -488,7 +495,7 @@ class BrowserUseDriver(HandlerDriver):
             "navigate", {"url": url, "wait_until": "load", "timeout_ms": None, "new_tab": new_tab}
         )
 
-    def _ref(self, ref: DriverRef) -> dict[str, Any]:
+    def _ref(self, ref: DriverRef | Locator) -> dict[str, Any]:
         return _ref_to_wire(ref, self._driver_generation)
 
     def _act_result(self, data: dict[str, Any], *, context_changed: bool = False, **fields: Any) -> ActionResult:
