@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from openjiuwen.harness.tools.browser_move.contract import (
+    ActionIntercepted,
     ActionResult,
     ActionTimeout,
     AmbiguousElement,
@@ -96,10 +97,10 @@ def _png(width: int, height: int) -> bytes:
     return b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + struct.pack(">II", width, height) + b"\x08\x06\x00\x00\x00"
 
 
-def _sidecar_error(code: str, message: str = "boom") -> Exception:
+def _sidecar_error(code: str, message: str = "boom", data: dict[str, Any] | None = None) -> Exception:
     """The exception the real transport raises for a sidecar error reply with ``code``."""
     try:
-        SidecarTransport._unwrap_reply({"id": 1, "error": {"code": code, "message": message}})
+        SidecarTransport._unwrap_reply({"id": 1, "error": {"code": code, "message": message, "data": data or {}}})
     except Exception as exc:  # noqa: BLE001 - we want exactly what the transport raises
         return exc
     raise AssertionError("transport did not raise")
@@ -590,6 +591,7 @@ ERROR_TABLE = {
     "DriverConnectionError": (ConnectionLost, True),
     "DriverConnectionLost": (ConnectionLost, True),
     "DriverUnsupported": (Unsupported, False),
+    "ActionIntercepted": (ActionIntercepted, False),
     "DriverError": (DriverError, True),
     "ObserveError": (DriverError, True),
     "EvaluateError": (DriverError, True),
@@ -622,6 +624,14 @@ def test_unclassified_error_is_dispatched_and_logged(monkeypatch, raised):
     assert info.value.dispatched is True
     logger.warning.assert_called_once()
     assert str(raised) in [str(arg) for arg in logger.warning.call_args.args]
+
+
+def test_intercepted_input_names_the_element_that_would_receive_it():
+    driver, _request = _driver(_sidecar_error("ActionIntercepted", "click would reach it", {"by": "span#overlay"}))
+    with pytest.raises(ActionIntercepted) as info:
+        asyncio.run(driver.execute(Click(E1)))
+    assert info.value.by == "span#overlay"
+    assert info.value.dispatched is False
 
 
 def test_classified_error_is_not_logged(monkeypatch):

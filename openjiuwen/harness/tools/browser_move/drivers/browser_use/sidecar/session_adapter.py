@@ -179,6 +179,23 @@ class _Act:
         self.dispatched = True
 
 
+# Which element a click at (x, y) would reach, when it is not ``this`` or inside it: "tag#id.class "name"".
+# A label whose control is ``this`` forwards the click, so it is not in the way.
+_HIT_TEST_JS = (
+    "function(x, y) {"
+    "  const root = this.getRootNode ? this.getRootNode() : this.ownerDocument;"
+    "  const hit = (root.elementFromPoint ? root : this.ownerDocument).elementFromPoint(x, y);"
+    "  if (!hit || hit === this || this.contains(hit)) { return null; }"
+    "  if (hit.tagName === 'LABEL' && hit.control === this) { return null; }"
+    "  const name = (hit.getAttribute('aria-label') || hit.getAttribute('title') || hit.innerText || '')"
+    "    .trim().replace(/\\s+/g, ' ').slice(0, 40);"
+    "  const classes = typeof hit.className === 'string' ? hit.className.trim().split(/\\s+/).filter(Boolean) : [];"
+    "  return hit.tagName.toLowerCase() + (hit.id ? '#' + hit.id : '')"
+    "    + classes.slice(0, 2).map(c => '.' + c).join('') + (name ? ' \"' + name + '\"' : '');"
+    "}"
+)
+
+
 def _dialog_note(dialog: dict[str, Any]) -> str:
     return f"a {dialog.get('type') or 'dialog'} dialog is open ({dialog.get('message', '')!r}); handle it first"
 
@@ -384,6 +401,7 @@ class SessionAdapter:
             if box is None:
                 raise exceptions.ElementNotFound(f"element (backend_node_id={backend_node_id}) has no bounding box")
             cx, cy = box["x"] + box["width"] / 2.0, box["y"] + box["height"] / 2.0
+            await self._ensure_not_intercepted("click", backend_node_id, cx, cy)
             cdp_session = await self._ensure_cdp_session()
             act.dispatching()
             for _ in range(max(1, click_count)):
@@ -549,6 +567,7 @@ class SessionAdapter:
                 raise exceptions.ElementNotFound("drag source or target has no bounding box")
             sx, sy = source_box["x"] + source_box["width"] / 2.0, source_box["y"] + source_box["height"] / 2.0
             tx, ty = target_box["x"] + target_box["width"] / 2.0, target_box["y"] + target_box["height"] / 2.0
+            await self._ensure_not_intercepted("drag", source_id, sx, sy)
             source_is_html5 = await self._element_is_html5_draggable(source_id)
             cdp_session = await self._ensure_cdp_session()
             act.dispatching()
@@ -576,6 +595,7 @@ class SessionAdapter:
             if box is None:
                 raise exceptions.ElementNotFound(f"element (backend_node_id={backend_node_id}) has no bounding box")
             cx, cy = box["x"] + box["width"] / 2.0, box["y"] + box["height"] / 2.0
+            await self._ensure_not_intercepted("hover", backend_node_id, cx, cy)
             cdp_session = await self._ensure_cdp_session()
             act.dispatching()
             # Approach stream then settle on center (tooltip / :hover menus).
@@ -1039,6 +1059,21 @@ class SessionAdapter:
         if not isinstance(rect, dict):
             return None
         return {k: float(rect.get(k, 0.0) or 0.0) for k in ("x", "y", "width", "height")}
+
+    async def _ensure_not_intercepted(self, method: str, backend_node_id: int, x: float, y: float) -> None:
+        """Hit-test the point the mouse is about to use: raise ``ActionIntercepted`` if another element is on top."""
+        cdp_session = await self._ensure_cdp_session()
+        by = await cdp.call_function_on_backend_node(
+            cdp_session.cdp_client,
+            cdp_session.session_id,
+            backend_node_id,
+            _HIT_TEST_JS,
+            arguments=[{"value": x}, {"value": y}],
+        )
+        if by:
+            raise exceptions.ActionIntercepted(
+                f"{method} at ({x:.0f}, {y:.0f}) would reach {by}, not the target; nothing was sent", by=str(by)
+            )
 
     async def _element_is_html5_draggable(self, backend_node_id: int) -> bool:
         """True when the node opts into HTML5 DnD (mouse-only drag would be a no-op)."""

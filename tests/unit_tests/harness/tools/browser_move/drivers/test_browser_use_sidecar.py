@@ -1,6 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""The browser-use sidecar's ``SessionAdapter`` on a fake CDP client: dialogs, popups, navigations during actions.
+"""The browser-use sidecar's ``SessionAdapter`` on a fake CDP client: dialogs, popups, navigations, stale refs and
+intercepted input during actions.
 
 No Chrome and no ``browser_use``: the fake client answers CDP commands from scripted handlers and, like cdp-use,
 keeps one handler per event. Sidecar modules are flat (``import cdp``), so they are loaded by path.
@@ -132,8 +133,10 @@ class Page:
         popup: dict[str, str] | None = None,
         navigation: dict[str, Any] | None = None,
         commit_after: float | None = None,
+        covered_by: str | None = None,
     ) -> None:
         self.client = client
+        self.covered_by = covered_by
         self.navigation = navigation
         self.commit_after = commit_after
         self.dialog = dialog
@@ -147,6 +150,8 @@ class Page:
         client.replies["Runtime.runIfWaitingForDebugger"] = self._run_if_waiting
 
     def _call_function(self, params: dict[str, Any], sid: str | None) -> dict[str, Any]:
+        if "elementFromPoint" in params["functionDeclaration"]:
+            return {"result": {"value": self.covered_by}}
         if "getBoundingClientRect" in params["functionDeclaration"]:
             return {"result": {"value": {"x": 10, "y": 20, "width": 100, "height": 40}}}
         return {"result": {"value": None}}
@@ -539,3 +544,53 @@ def test_a_cached_node_of_an_old_document_is_stale():
             await adapter._node_for_event(BUTTON)
 
     asyncio.run(scenario())
+
+
+# -- intercepted input ---------------------------------------------------------
+
+OVERLAY = 'span#overlay "Overlay banner"'
+OTHER = {"kind": "driver", "handle": "bnid:8", "driver_generation": 0}
+
+
+@pytest.mark.parametrize(
+    ("method", "act"),
+    [
+        ("click", lambda adapter: adapter.click(BUTTON)),
+        ("hover", lambda adapter: adapter.hover(BUTTON)),
+        ("drag", lambda adapter: adapter.drag(BUTTON, OTHER)),
+    ],
+    ids=["click", "hover", "drag-source"],
+)
+def test_input_another_element_would_receive_is_intercepted_before_it_is_sent(method, act):
+    async def scenario() -> None:
+        client = FakeCdp()
+        Page(client, covered_by=OVERLAY)
+        adapter = _adapter(client)
+        with pytest.raises(errors.ActionIntercepted, match=f"{method} at \\(60, 40\\) would reach") as info:
+            await _quick(act(adapter))
+        assert info.value.by == OVERLAY
+        assert client.sent("Input.dispatchMouseEvent") == []
+
+    asyncio.run(scenario())
+
+
+def test_the_hit_test_uses_the_point_the_mouse_will_use():
+    async def scenario() -> None:
+        client = FakeCdp()
+        Page(client)
+        adapter = _adapter(client)
+        reply = await _quick(adapter.click(BUTTON))
+        assert reply["ok"] is True
+        hit_tests = [p for p in client.sent("Runtime.callFunctionOn") if "elementFromPoint" in p["functionDeclaration"]]
+        assert [p["arguments"] for p in hit_tests] == [[{"value": 60.0}, {"value": 40.0}]]
+        presses = [p for p in client.sent("Input.dispatchMouseEvent") if p["type"] == "mousePressed"]
+        assert [(p["x"], p["y"]) for p in presses] == [(60.0, 40.0)]
+
+    asyncio.run(scenario())
+
+
+def test_the_wire_error_carries_the_receiver():
+    main = _load_sidecar_module("main")
+    exc = errors.ActionIntercepted("click would reach it", by=OVERLAY)
+    assert main._error_code_for(exc) == "ActionIntercepted"
+    assert main._error_data_for(exc) == {"by": OVERLAY}

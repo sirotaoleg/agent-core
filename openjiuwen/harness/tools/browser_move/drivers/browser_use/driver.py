@@ -24,6 +24,7 @@ from types import MappingProxyType
 from typing import Any
 
 from openjiuwen.harness.tools.browser_move.contract import (
+    ActionIntercepted,
     ActionResult,
     ActionTimeout,
     AmbiguousElement,
@@ -98,7 +99,8 @@ _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 # (index, handle, bounding box) before the first input event, and unsupported features are rejected up front.
 # StaleNodeError is a node that is not in the current document (CDP "does not belong to the document" / "No node
 # with given id"); the sidecar sends StaleNodeError, StaleIndexError and ElementNotFound only before an action's
-# input and turns them into a plain DriverError after it.
+# input and turns them into a plain DriverError after it. ActionIntercepted comes from the hit test before the
+# mouse moves (click, hover, drag source) and carries ``by``.
 # Codes not listed here (DriverError, EvaluateError, ObserveError) and any other exception are unclassified.
 _SIDECAR_ERRORS: dict[str, tuple[type[DriverError], bool]] = {
     "StaleIndexError": (StaleRef, False),
@@ -111,6 +113,7 @@ _SIDECAR_ERRORS: dict[str, tuple[type[DriverError], bool]] = {
     "DriverConnectionError": (ConnectionLost, True),
     "DriverConnectionLost": (ConnectionLost, True),
     "DriverUnsupported": (Unsupported, False),
+    "ActionIntercepted": (ActionIntercepted, False),
 }
 
 
@@ -129,6 +132,8 @@ def _translate_error(method: str, exc: Exception) -> DriverError:
         _logger.warning("browser-use sidecar error on %s not classified: %s: %s", method, code, exc)
         return DriverError(f"{method}: {exc}", dispatched=True)
     error_type, dispatched = known
+    if error_type is ActionIntercepted:
+        return ActionIntercepted(str(exc), by=str(getattr(exc, "by", "")), dispatched=dispatched)
     return error_type(str(exc), dispatched=dispatched)
 
 

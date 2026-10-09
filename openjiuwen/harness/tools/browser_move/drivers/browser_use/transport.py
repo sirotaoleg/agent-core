@@ -44,6 +44,7 @@ _ERROR_CODE_TO_EXCEPTION: dict[str, type[driver_errors.DriverError]] = {
     "ObserveError": driver_errors.ObserveError,
     "EvaluateError": driver_errors.EvaluateError,
     "DriverUnsupported": driver_errors.DriverUnsupported,
+    "ActionIntercepted": driver_errors.ActionIntercepted,
 }
 
 
@@ -272,6 +273,8 @@ class SidecarTransport:
             raise driver_errors.EvaluateError(
                 message_text, js_message=str(data.get("js_message", "")), js_stack=str(data.get("js_stack", ""))
             )
+        if exc_class is driver_errors.ActionIntercepted:
+            raise driver_errors.ActionIntercepted(message_text, by=str(data.get("by", "")))
         raise exc_class(message_text)
 
     def _forward_log(self, message: dict[str, Any]) -> None:

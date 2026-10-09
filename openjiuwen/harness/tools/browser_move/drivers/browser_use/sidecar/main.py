@@ -69,6 +69,8 @@ def _error_code_for(exc: Exception) -> str:
 def _error_data_for(exc: Exception) -> dict[str, Any] | None:
     if isinstance(exc, exceptions.EvaluateError):
         return {"js_message": exc.js_message, "js_stack": exc.js_stack}
+    if isinstance(exc, exceptions.ActionIntercepted):
+        return {"by": exc.by}
     return None
 
 

@@ -76,7 +76,16 @@ class DriverUnsupported(DriverError):
     """The requested capability is not available."""
 
 
+class ActionIntercepted(DriverError):
+    """Another element would receive the input; ``by`` describes it. Raised before any input is sent."""
+
+    def __init__(self, message: str, *, by: str = "") -> None:
+        super().__init__(message)
+        self.by = by
+
+
 __all__ = [
+    "ActionIntercepted",
     "ActionTimeout",
     "AmbiguousElement",
     "DriverConnectionError",
