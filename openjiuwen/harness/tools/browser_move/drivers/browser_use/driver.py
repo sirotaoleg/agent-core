@@ -1,451 +1,503 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""``BrowserDriver`` implementation backed by the browser-use sidecar.
+"""``BrowserUseDriver``: the driver contract on top of the browser-use sidecar.
 
 This module imports NO ``browser_use``. All browser-use usage lives in
-``backends/browser_use/sidecar/session_adapter.py``, running in a separate
-process with its own dependency closure (see ``backends/browser_use/AGENTS``
-notes / STAGE A handoff D1). Every method here serializes a
-``backends.contract.base`` dataclass to a wire-safe dict, sends it to the sidecar via
-``SidecarTransport``, and deserializes the reply back into the matching
-``backends.contract.base`` dataclass.
+``sidecar/session_adapter.py``, running in a separate process with its own
+dependency closure. Each ``@handles`` method turns one contract command into
+wire requests sent through ``SidecarTransport`` and turns the reply into an
+``ActionResult``; sidecar errors become the contract's typed errors.
+
+Element refs: the model-facing ref is ``DriverRef``; ``ref`` carries the handle
+the sidecar minted in ``observe()`` (``bnid:<backend node id>``). The sidecar's
+index API (``IndexRef``) stays internal: no handler accepts it.
 """
 
 from __future__ import annotations
 
 import asyncio
-import time
-from typing import Any, Sequence
+import base64
+import struct
+from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Any
 
-from openjiuwen.harness.tools.browser_move.backends.contract.base import (
-    ActResult,
-    Box,
-    DriverHealth,
+from openjiuwen.harness.tools.browser_move.contract import (
+    ActionResult,
+    ActionTimeout,
+    AmbiguousElement,
+    Click,
+    CloseContext,
+    ConnectionLost,
+    ContextRef,
+    Drag,
+    DriverError,
     DriverInfo,
     DriverRef,
-    ElementRef,
-    IndexRef,
-    NavResult,
-    NodeRef,
+    Element,
+    ElementNotFound,
+    HandleDialog,
+    HandlerDriver,
+    Health,
+    Hover,
+    NavigationError,
     Observation,
-    ObservedElement,
-    ResolvedElement,
-    SelectorRef,
-    TabRef,
-    TextRef,
+    Observe,
+    PressKey,
+    RunScript,
+    Screenshot,
+    Scroll,
+    StaleRef,
+    SwitchContext,
+    TypeText,
+    Unsupported,
+    Wait,
+    handles,
 )
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.transport import SidecarTransport
-from openjiuwen.harness.tools.browser_move.backends.contract.errors import DriverNotConnected
+from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging import get_browser_agent_logger
+from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
+    Back,
+    Drop,
+    FieldKind,
+    FillForm,
+    Navigate,
+    OpenContext,
+    SelectOption,
+    UploadFile,
+)
+from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
+from openjiuwen.harness.tools.browser_move.utils.upload_paths import resolve_upload_file_paths
+
+_logger = get_browser_agent_logger()
+
+_CONTEXT_KIND = "tab"
+# Element-scoped scripts: the target is stamped with this attribute, then found by the returned selector.
+_TARGET_ATTRIBUTE = "data-openjiuwen-target-id"
+_SCOPED_SCRIPT = (
+    "(input) => {{ const element = document.querySelector(input.selector); "
+    "if (!element) {{ throw new Error('target element not found: ' + input.selector); }} "
+    "return ({code})(element, input.args); }}"
+)
+# Wait(until_text) polling, as the batch executor's wait_for_text did (857239db batch_executor.py).
+_HAS_TEXT_JS = """(text) => {
+  const body = (document.body && document.body.innerText) ? document.body.innerText : '';
+  return body.includes(String(text || ''));
+}"""
+_WAIT_TIMEOUT_S = 10.0
+_WAIT_POLL_S = 0.1
+_CHECKED_VALUES = frozenset({"1", "true", "yes", "on", "checked"})
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+# Sidecar error (wire error code; the transport raises classes of the same name) -> (typed error, dispatched).
+# dispatched=False only where the sidecar provably raises before any input reaches the page: refs are resolved
+# (index, handle, bounding box) before the first input event, and unsupported features are rejected up front.
+# StaleNodeError can come after a click (type_text clears the field after clicking it), so it counts as dispatched.
+# Codes not listed here (DriverError, EvaluateError, ObserveError) and any other exception are unclassified.
+_SIDECAR_ERRORS: dict[str, tuple[type[DriverError], bool]] = {
+    "StaleIndexError": (StaleRef, False),
+    "ElementNotFound": (ElementNotFound, False),
+    "StaleNodeError": (ElementNotFound, True),
+    "AmbiguousElement": (AmbiguousElement, True),
+    "ActionTimeout": (ActionTimeout, True),
+    "NavigationError": (NavigationError, True),
+    "DriverNotConnected": (ConnectionLost, False),
+    "DriverConnectionError": (ConnectionLost, True),
+    "DriverConnectionLost": (ConnectionLost, True),
+    "DriverUnsupported": (Unsupported, False),
+}
 
 
-def _ref_to_wire(ref: ElementRef) -> dict[str, Any]:
-    if isinstance(ref, IndexRef):
-        return {"kind": "index", "index": ref.index, "driver_generation": ref.driver_generation}
-    if isinstance(ref, SelectorRef):
-        return {"kind": "selector", "css": ref.css, "nth": ref.nth}
-    if isinstance(ref, TextRef):
-        return {"kind": "text", "text": ref.text, "role": ref.role}
-    if isinstance(ref, NodeRef):
-        return {"kind": "node", "backend_node_id": ref.backend_node_id, "frame_id": ref.frame_id}
-    if isinstance(ref, DriverRef):
-        return {"kind": "driver", "handle": ref.handle, "driver_generation": ref.driver_generation}
-    raise TypeError(f"unsupported ElementRef type: {type(ref)!r}")
+@dataclass(frozen=True)
+class BrowserUseConfig:
+    """What ``start()`` needs: the CDP endpoint of the browser and the connect timeout."""
+
+    cdp_url: str
+    timeout_s: float = 30.0
 
 
-def _tab_to_wire(tab: TabRef) -> dict[str, Any]:
-    return {"target_id": tab.target_id, "url": tab.url, "title": tab.title, "active": tab.active}
+def _translate_error(method: str, exc: Exception) -> DriverError:
+    code = type(exc).__name__
+    known = _SIDECAR_ERRORS.get(code)
+    if known is None:
+        _logger.warning("browser-use sidecar error on %s not classified: %s: %s", method, code, exc)
+        return DriverError(f"{method}: {exc}", dispatched=True)
+    error_type, dispatched = known
+    return error_type(str(exc), dispatched=dispatched)
 
 
-def _box_from_wire(data: dict[str, Any] | None) -> Box | None:
-    if data is None:
-        return None
-    return Box(x=float(data["x"]), y=float(data["y"]), width=float(data["width"]), height=float(data["height"]))
+def _ref_to_wire(ref: DriverRef, driver_generation: int) -> dict[str, Any]:
+    return {"kind": "driver", "handle": ref.ref, "driver_generation": driver_generation}
 
 
-def _tab_from_wire(data: dict[str, Any]) -> TabRef:
-    return TabRef(
-        target_id=str(data["target_id"]), url=str(data["url"]), title=str(data["title"]), active=bool(data["active"])
+def _context_to_wire(context: ContextRef) -> dict[str, Any]:
+    return {"target_id": context.id, "url": "", "title": context.title or "", "active": False}
+
+
+def _context_from_wire(data: dict[str, Any]) -> ContextRef:
+    return ContextRef(id=str(data["target_id"]), kind=_CONTEXT_KIND, title=str(data.get("title", "")))
+
+
+def _element_from_wire(data: dict[str, Any]) -> Element:
+    box = data.get("box")
+    value = data.get("value")
+    return Element(
+        ref=DriverRef(ref=str(data["driver_ref"]["handle"]), generation=""),
+        role=str(data.get("role") or ""),
+        name=str(data.get("name") or ""),
+        value=None if value is None else str(value),
+        bounds=None if box is None else (float(box["x"]), float(box["y"]), float(box["width"]), float(box["height"])),
+        extra={
+            "index": int(data["index"]),
+            "tag": str(data.get("tag", "")),
+            "backend_node_id": data.get("backend_node_id"),
+            "frame_id": data.get("frame_id"),
+            "attributes": dict(data.get("attributes") or {}),
+            "visible": bool(data.get("visible", False)),
+            "scrollable": bool(data.get("scrollable", False)),
+        },
     )
 
 
-def _driver_ref_from_wire(data: dict[str, Any]) -> DriverRef:
-    return DriverRef(handle=str(data["handle"]), driver_generation=int(data.get("driver_generation", 0)))
+def _screenshot_from_b64(data: str) -> Screenshot:
+    png = base64.b64decode(data)
+    width, height = struct.unpack(">II", png[16:24]) if png[:8] == _PNG_SIGNATURE and len(png) >= 24 else (0, 0)
+    return Screenshot(png=png, width=width, height=height)
 
 
-def _optional_backend_node_id_from_wire(data: dict[str, Any]) -> int | None:
-    raw = data.get("backend_node_id")
-    return None if raw is None else int(raw)
-
-
-def _element_from_wire(data: dict[str, Any]) -> ObservedElement:
-    return ObservedElement(
-        index=int(data["index"]),
-        driver_ref=_driver_ref_from_wire(data["driver_ref"]),
-        frame_id=data.get("frame_id"),
-        tag=str(data["tag"]),
-        role=data.get("role"),
-        name=data.get("name"),
-        value=data.get("value"),
-        backend_node_id=_optional_backend_node_id_from_wire(data),
-        attributes=dict(data.get("attributes") or {}),
-        box=_box_from_wire(data.get("box")),
-        visible=bool(data.get("visible", False)),
-        scrollable=bool(data.get("scrollable", False)),
+def _observation_from_wire(data: dict[str, Any], screenshot_b64: str | None) -> Observation:
+    raw_tabs = list(data.get("tabs") or ())
+    tabs = tuple(_context_from_wire(tab) for tab in raw_tabs)
+    title = str(data.get("title", ""))
+    # The sidecar marks a tab active when its URL equals the page URL; the first such tab is the focused one.
+    focused = next(
+        (context for context, raw in zip(tabs, raw_tabs) if raw.get("active")),
+        ContextRef(id="", kind=_CONTEXT_KIND, title=title),
     )
-
-
-def _observation_from_wire(data: dict[str, Any]) -> Observation:
     return Observation(
-        url=str(data["url"]),
-        title=str(data["title"]),
-        tabs=tuple(_tab_from_wire(t) for t in data.get("tabs") or ()),
-        elements=tuple(_element_from_wire(e) for e in data.get("elements") or ()),
-        ax_text=data.get("ax_text"),
-        screenshot_b64=data.get("screenshot_b64"),
-        pixels_above=int(data.get("pixels_above", 0)),
-        pixels_below=int(data.get("pixels_below", 0)),
-        errors=tuple(data.get("errors") or ()),
-        is_pdf_viewer=bool(data.get("is_pdf_viewer", False)),
-        captured_at=float(data.get("captured_at", time.time())),
-        driver_generation=int(data.get("driver_generation", 0)),
+        context=focused,
+        elements=tuple(_element_from_wire(element) for element in data.get("elements") or ()),
+        screenshot=None if not screenshot_b64 else _screenshot_from_b64(screenshot_b64),
+        native_text=data.get("ax_text"),
+        surface=BrowserContext(
+            url=str(data["url"]),
+            title=title,
+            tabs=tabs,
+            is_pdf_viewer=bool(data.get("is_pdf_viewer", False)),
+            pixels_above=int(data.get("pixels_above", 0)),
+            pixels_below=int(data.get("pixels_below", 0)),
+        ),
     )
 
 
-def _act_result_from_wire(data: dict[str, Any]) -> ActResult:
-    return ActResult(
-        ok=bool(data["ok"]),
-        detail=str(data.get("detail", "")),
-        document_changed=bool(data.get("document_changed", False)),
-        driver_generation=int(data.get("driver_generation", 0)),
-    )
+def _scroll_to_wire(dx: int, dy: int) -> tuple[str, int]:
+    if bool(dx) == bool(dy):
+        raise Unsupported("BrowserUseDriver scrolls along exactly one axis per command", dispatched=False)
+    if dy:
+        return ("down", dy) if dy > 0 else ("up", -dy)
+    return ("right", dx) if dx > 0 else ("left", -dx)
 
 
-def _nav_result_from_wire(data: dict[str, Any]) -> NavResult:
-    return NavResult(
-        url=str(data["url"]),
-        title=str(data.get("title", "")),
-        changed_document=bool(data.get("changed_document", False)),
-        driver_generation=int(data.get("driver_generation", 0)),
-    )
+class BrowserUseDriver(HandlerDriver):
+    """Runs contract commands on a Chrome through the browser-use sidecar process."""
 
-
-class BrowserUseDriver:
-    """``BrowserDriver`` that delegates every call to the browser-use sidecar process."""
-
-    def __init__(self, **_cfg: Any) -> None:
+    def __init__(self, config: BrowserUseConfig | None = None) -> None:
+        self._config = config
         self._transport: SidecarTransport | None = None
         self._driver_generation = 0
-        self._last_observation: Observation | None = None
-        self._cdp_url: str | None = None
-        self._connected_at: float | None = None
-        self._info: DriverInfo | None = None
-        self._lock = asyncio.Lock()
+        self._versions: dict[str, str] = {}
 
-    def _require_transport(self) -> SidecarTransport:
-        if self._transport is None:
-            raise DriverNotConnected("BrowserUseDriver.connect() has not been called")
-        return self._transport
+    def describe(self) -> DriverInfo:
+        return DriverInfo(
+            name="browser_use",
+            surfaces=frozenset({"browser"}),
+            versions=MappingProxyType(dict(self._versions)),
+            observes=frozenset({"elements", "screenshot", "native_text", "surface"}),
+        )
 
     # -- lifecycle ---------------------------------------------------
 
-    async def connect(self, *, cdp_url: str, timeout_s: float = 30.0) -> DriverInfo:
-        async with self._lock:
-            transport = SidecarTransport()
-            await transport.start(timeout_s=timeout_s)
+    async def start(self, config: BrowserUseConfig | None = None) -> None:
+        config = config or self._config
+        if config is None:
+            raise DriverError("BrowserUseDriver.start() needs a BrowserUseConfig", dispatched=False)
+        if self._transport is not None:
+            await self.stop()
+        transport = SidecarTransport()
+        try:
+            await transport.start(timeout_s=config.timeout_s)
             result = await transport.request(
-                "connect", {"cdp_url": cdp_url, "timeout_s": timeout_s}, timeout_s=timeout_s
+                "connect", {"cdp_url": config.cdp_url, "timeout_s": config.timeout_s}, timeout_s=config.timeout_s
             )
-            self._transport = transport
-            self._cdp_url = cdp_url
-            self._connected_at = time.time()
-            self._info = DriverInfo(
-                backend=str(result["backend"]),
-                browser_version=str(result.get("browser_version", "")),
-                protocol_version=str(result.get("protocol_version", "")),
-                backend_version=str(result.get("backend_version", "")),
-                initial_url=str(result.get("initial_url", "")),
-            )
-            return self._info
+        except Exception as exc:
+            await transport.close()
+            raise _translate_error("connect", exc) from exc
+        self._config = config
+        self._transport = transport
+        self._versions = {
+            "browser": str(result.get("browser_version", "")),
+            "protocol": str(result.get("protocol_version", "")),
+            "browser_use": str(result.get("backend_version", "")),
+        }
 
-    async def health(self) -> DriverHealth:
+    async def stop(self) -> None:
+        transport, self._transport = self._transport, None
+        if transport is not None:
+            await transport.close()
+
+    async def health(self) -> Health:
         if self._transport is None:
-            return DriverHealth(connected=False, url="", tab_count=0, latency_ms=0.0, error="not connected")
+            return Health(ok=False, detail="not started")
         try:
             result = await self._transport.request("health", {})
-        except Exception as exc:  # noqa: BLE001 - health() contract: never raises
-            return DriverHealth(connected=False, url="", tab_count=0, latency_ms=0.0, error=str(exc))
-        return DriverHealth(
-            connected=bool(result.get("connected", False)),
-            url=str(result.get("url", "")),
-            tab_count=int(result.get("tab_count", 0)),
-            latency_ms=float(result.get("latency_ms", 0.0)),
-            error=result.get("error"),
-        )
-
-    async def close(self) -> None:
-        if self._transport is not None:
-            await self._transport.close()
-        self._transport = None
-        self._last_observation = None
+        except Exception as exc:  # noqa: BLE001 - health() never raises
+            return Health(ok=False, detail=str(exc))
+        return Health(ok=bool(result.get("connected", False)), detail=result.get("error"))
 
     # -- eyes ----------------------------------------------------------
 
-    async def observe(
-        self, *, include_dom: bool = True, include_screenshot: bool = False, cached: bool = False
-    ) -> Observation:
-        if cached and self._last_observation is not None:
-            return self._last_observation
-        async with self._lock:
-            transport = self._require_transport()
-            result = await transport.request(
-                "observe",
-                {"include_dom": include_dom, "include_screenshot": include_screenshot, "cached": False},
-            )
-            observation = _observation_from_wire(result)
-            self._driver_generation = observation.driver_generation
-            self._last_observation = observation
-            return observation
-
-    async def screenshot(self, *, full_page: bool = False, clip: Box | None = None) -> str:
-        transport = self._require_transport()
-        clip_data = None if clip is None else {"x": clip.x, "y": clip.y, "width": clip.width, "height": clip.height}
-        return await transport.request("screenshot", {"full_page": full_page, "clip": clip_data})
-
-    async def list_tabs(self) -> tuple[TabRef, ...]:
-        transport = self._require_transport()
-        result = await transport.request("list_tabs", {})
-        return tuple(_tab_from_wire(t) for t in result)
-
-    # -- id bridge -------------------------------------------------------
-
-    async def resolve(self, ref: ElementRef) -> ResolvedElement:
-        transport = self._require_transport()
-        result = await transport.request("resolve", {"ref": _ref_to_wire(ref)})
-        return ResolvedElement(
-            driver_ref=_driver_ref_from_wire(result["driver_ref"]),
-            frame_id=result.get("frame_id"),
-            box=_box_from_wire(result.get("box")),
-            visible=bool(result.get("visible", False)),
-            tag=str(result.get("tag", "")),
-            backend_node_id=_optional_backend_node_id_from_wire(result),
-            attributes=dict(result.get("attributes") or {}),
+    async def observe(self, command: Observe) -> Observation:
+        viewport_screenshot = command.include_screenshot and not command.full_page
+        data = await self._request(
+            "observe", {"include_dom": True, "include_screenshot": viewport_screenshot, "cached": False}
         )
+        self._driver_generation = int(data.get("driver_generation", self._driver_generation))
+        screenshot_b64 = data.get("screenshot_b64")
+        if command.include_screenshot and command.full_page:
+            screenshot_b64 = await self._request("screenshot", {"full_page": True, "clip": None})
+        return _observation_from_wire(data, screenshot_b64)
 
-    async def stamp(self, ref: ElementRef, *, attribute: str, value: str) -> str:
-        transport = self._require_transport()
-        result = await transport.request("stamp", {"ref": _ref_to_wire(ref), "attribute": attribute, "value": value})
-        return str(result)
+    # -- hands: elements ---------------------------------------------
 
-    # -- hands: navigation ------------------------------------------------
-
-    async def navigate(
-        self, url: str, *, wait_until: str = "load", timeout_ms: int | None = None, new_tab: bool = False
-    ) -> NavResult:
-        transport = self._require_transport()
-        result = await transport.request(
-            "navigate", {"url": url, "wait_until": wait_until, "timeout_ms": timeout_ms, "new_tab": new_tab}
-        )
-        nav_result = _nav_result_from_wire(result)
-        self._driver_generation = nav_result.driver_generation
-        return nav_result
-
-    async def go_back(self) -> NavResult:
-        transport = self._require_transport()
-        result = await transport.request("go_back", {})
-        nav_result = _nav_result_from_wire(result)
-        self._driver_generation = nav_result.driver_generation
-        return nav_result
-
-    async def go_forward(self) -> NavResult:
-        transport = self._require_transport()
-        result = await transport.request("go_forward", {})
-        nav_result = _nav_result_from_wire(result)
-        self._driver_generation = nav_result.driver_generation
-        return nav_result
-
-    async def reload(self) -> NavResult:
-        transport = self._require_transport()
-        result = await transport.request("reload", {})
-        nav_result = _nav_result_from_wire(result)
-        self._driver_generation = nav_result.driver_generation
-        return nav_result
-
-    # -- hands: element actions -------------------------------------------
-
-    async def click(
-        self, ref: ElementRef, *, button: str = "left", click_count: int = 1, modifiers: Sequence[str] = ()
-    ) -> ActResult:
-        transport = self._require_transport()
-        result = await transport.request(
+    @handles(Click, refs={DriverRef})
+    async def _click(self, action: Click) -> ActionResult:
+        data = await self._request(
             "click",
-            {"ref": _ref_to_wire(ref), "button": button, "click_count": click_count, "modifiers": list(modifiers)},
+            {
+                "ref": self._ref(action.target),
+                "button": action.button,
+                "click_count": action.count,
+                "modifiers": list(action.modifiers),
+            },
         )
-        act_result = _act_result_from_wire(result)
-        self._driver_generation = act_result.driver_generation
-        return act_result
+        return self._act_result(data)
 
-    async def type_text(
-        self, ref: ElementRef, text: str, *, clear: bool = True, press_enter: bool = False, sensitive: bool = False
-    ) -> ActResult:
-        transport = self._require_transport()
-        result = await transport.request(
+    @handles(TypeText, refs={DriverRef})
+    async def _type_text(self, action: TypeText) -> ActionResult:
+        if action.target is None:
+            raise Unsupported("BrowserUseDriver types only into a target element", dispatched=False)
+        if action.slowly:
+            raise Unsupported("BrowserUseDriver cannot type slowly", dispatched=False)
+        data = await self._request(
             "type_text",
-            {"ref": _ref_to_wire(ref), "text": text, "clear": clear, "press_enter": press_enter, "sensitive": sensitive},
+            {
+                "ref": self._ref(action.target),
+                "text": action.text,
+                "clear": action.clear,
+                "press_enter": action.submit,
+                "sensitive": action.sensitive,
+            },
         )
-        act_result = _act_result_from_wire(result)
-        self._driver_generation = act_result.driver_generation
-        return act_result
+        return self._act_result(data)
 
-    async def press_key(self, keys: str) -> ActResult:
-        transport = self._require_transport()
-        result = await transport.request("press_key", {"keys": keys})
-        act_result = _act_result_from_wire(result)
-        self._driver_generation = act_result.driver_generation
-        return act_result
+    @handles(PressKey)
+    async def _press_key(self, action: PressKey) -> ActionResult:
+        return self._act_result(await self._request("press_key", {"keys": action.key}))
 
-    async def select_option(
-        self, ref: ElementRef, *, value: str | None = None, label: str | None = None
-    ) -> ActResult:
-        transport = self._require_transport()
-        result = await transport.request(
-            "select_option", {"ref": _ref_to_wire(ref), "value": value, "label": label}
-        )
-        act_result = _act_result_from_wire(result)
-        self._driver_generation = act_result.driver_generation
-        return act_result
+    @handles(Scroll, refs={DriverRef})
+    async def _scroll(self, action: Scroll) -> ActionResult:
+        direction, amount = _scroll_to_wire(action.dx, action.dy)
+        ref = None if action.target is None else self._ref(action.target)
+        return self._act_result(await self._request("scroll", {"direction": direction, "amount": amount, "ref": ref}))
 
-    async def set_checked(self, ref: ElementRef, checked: bool) -> ActResult:
-        transport = self._require_transport()
-        result = await transport.request("set_checked", {"ref": _ref_to_wire(ref), "checked": checked})
-        act_result = _act_result_from_wire(result)
-        self._driver_generation = act_result.driver_generation
-        return act_result
+    @handles(Hover, refs={DriverRef})
+    async def _hover(self, action: Hover) -> ActionResult:
+        return self._act_result(await self._request("hover", {"ref": self._ref(action.target)}))
 
-    async def scroll(self, *, direction: str, amount: float, ref: ElementRef | None = None) -> ActResult:
-        transport = self._require_transport()
-        result = await transport.request(
-            "scroll", {"direction": direction, "amount": amount, "ref": None if ref is None else _ref_to_wire(ref)}
-        )
-        act_result = _act_result_from_wire(result)
-        self._driver_generation = act_result.driver_generation
-        return act_result
-
-    async def upload_files(self, ref: ElementRef, paths: Sequence[str]) -> ActResult:
-        from openjiuwen.harness.tools.browser_move.utils.upload_paths import resolve_upload_file_paths
-
-        existing, path_error = resolve_upload_file_paths(paths)
-        if path_error:
-            return ActResult(
-                ok=False,
-                detail=path_error,
-                document_changed=False,
-                driver_generation=self._driver_generation,
-            )
-        transport = self._require_transport()
-        result = await transport.request("upload_files", {"ref": _ref_to_wire(ref), "paths": existing})
-        act_result = _act_result_from_wire(result)
-        self._driver_generation = act_result.driver_generation
-        return act_result
-
-    async def drag(
-        self, source: ElementRef, target: ElementRef, *, steps: int = 10, delay_ms: int = 0
-    ) -> ActResult:
-        transport = self._require_transport()
-        result = await transport.request(
+    @handles(Drag, refs={DriverRef})
+    async def _drag(self, action: Drag) -> ActionResult:
+        data = await self._request(
             "drag",
-            {"source": _ref_to_wire(source), "target": _ref_to_wire(target), "steps": steps, "delay_ms": delay_ms},
+            {"source": self._ref(action.source), "target": self._ref(action.destination), "steps": 10, "delay_ms": 0},
         )
-        act_result = _act_result_from_wire(result)
-        self._driver_generation = act_result.driver_generation
-        return act_result
+        return self._act_result(data)
 
-    async def hover(self, ref: ElementRef) -> ActResult:
-        transport = self._require_transport()
-        result = await transport.request("hover", {"ref": _ref_to_wire(ref)})
-        act_result = _act_result_from_wire(result)
-        self._driver_generation = act_result.driver_generation
-        return act_result
-
-    async def handle_dialog(self, *, accept: bool, prompt_text: str | None = None) -> ActResult:
-        transport = self._require_transport()
-        result = await transport.request(
-            "handle_dialog", {"accept": bool(accept), "prompt_text": prompt_text}
+    @handles(SelectOption, refs={DriverRef})
+    async def _select_option(self, action: SelectOption) -> ActionResult:
+        if len(action.values) != 1:
+            raise Unsupported("BrowserUseDriver selects exactly one option per command", dispatched=False)
+        data = await self._request(
+            "select_option", {"ref": self._ref(action.target), "value": action.values[0], "label": None}
         )
-        act_result = _act_result_from_wire(result)
-        self._driver_generation = act_result.driver_generation
-        return act_result
+        return self._act_result(data)
 
-    async def drop(
-        self,
-        ref: ElementRef,
-        *,
-        paths: Sequence[str] = (),
-        data: Sequence[dict[str, str]] = (),
-    ) -> ActResult:
-        from openjiuwen.harness.tools.browser_move.utils.upload_paths import resolve_upload_file_paths
+    @handles(UploadFile, refs={DriverRef})
+    async def _upload_file(self, action: UploadFile) -> ActionResult:
+        if action.target is None:
+            raise Unsupported("BrowserUseDriver needs the file input as target", dispatched=False)
+        existing, path_error = resolve_upload_file_paths(action.paths)
+        if path_error:
+            return ActionResult(ok=False, detail=path_error)
+        data = await self._request("upload_files", {"ref": self._ref(action.target), "paths": existing})
+        return self._act_result(data)
 
-        path_list = [str(path) for path in (paths or []) if str(path or "").strip()]
-        data_list = [dict(item) for item in (data or []) if isinstance(item, dict)]
-        if not path_list and not data_list:
-            return ActResult(
-                ok=False,
-                detail="drop requires at least one of paths or data",
-                document_changed=False,
-                driver_generation=self._driver_generation,
-            )
+    @handles(Drop, refs={DriverRef})
+    async def _drop(self, action: Drop) -> ActionResult:
         existing: list[str] = []
-        if path_list:
-            existing, path_error = resolve_upload_file_paths(path_list)
+        if action.paths:
+            existing, path_error = resolve_upload_file_paths(action.paths)
             if path_error:
-                return ActResult(
-                    ok=False,
-                    detail=path_error,
-                    document_changed=False,
-                    driver_generation=self._driver_generation,
-                )
-        transport = self._require_transport()
-        result = await transport.request(
+                return ActionResult(ok=False, detail=path_error)
+        data = await self._request(
             "drop",
-            {"ref": _ref_to_wire(ref), "paths": existing, "data": data_list},
+            {
+                "ref": self._ref(action.target),
+                "paths": existing,
+                "data": [{"mimeType": mime, "data": value} for mime, value in action.data],
+            },
         )
-        act_result = _act_result_from_wire(result)
-        self._driver_generation = act_result.driver_generation
-        return act_result
+        return self._act_result(data)
 
-    async def switch_tab(self, tab: TabRef) -> ActResult:
-        transport = self._require_transport()
-        result = await transport.request("switch_tab", {"tab": _tab_to_wire(tab)})
-        act_result = _act_result_from_wire(result)
-        self._driver_generation = act_result.driver_generation
-        return act_result
+    @handles(FillForm, refs={DriverRef})
+    async def _fill_form(self, action: FillForm) -> ActionResult:
+        """Fill the fields in order with type_text / select_option / set_checked; stop at the first failure."""
+        context_changed = False
+        for index, field in enumerate(action.fields):
+            ref = self._ref(field.target)
+            if field.kind in (FieldKind.CHECKBOX, FieldKind.RADIO):
+                method = "set_checked"
+                params = {"ref": ref, "checked": field.value.strip().lower() in _CHECKED_VALUES}
+            elif field.kind is FieldKind.COMBOBOX:
+                method, params = "select_option", {"ref": ref, "value": field.value, "label": None}
+            else:
+                method = "type_text"
+                params = {"ref": ref, "text": field.value, "clear": True, "press_enter": False, "sensitive": False}
+            try:
+                data = await self._request(method, params)
+            except DriverError as exc:
+                # Earlier fields already reached the page.
+                if index:
+                    exc.dispatched = True
+                raise
+            step = self._act_result(data)
+            context_changed = context_changed or step.context_changed
+            if not step.ok:
+                return ActionResult(
+                    ok=False, detail=f"fields[{index}] failed: {step.detail}", context_changed=context_changed
+                )
+        return ActionResult(ok=True, context_changed=context_changed)
 
-    async def close_tab(self, tab: TabRef) -> ActResult:
-        transport = self._require_transport()
-        result = await transport.request("close_tab", {"tab": _tab_to_wire(tab)})
-        act_result = _act_result_from_wire(result)
-        self._driver_generation = act_result.driver_generation
-        return act_result
+    @handles(HandleDialog)
+    async def _handle_dialog(self, action: HandleDialog) -> ActionResult:
+        data = await self._request("handle_dialog", {"accept": action.accept, "prompt_text": action.prompt_text})
+        return self._act_result(data)
 
-    # -- evaluate and wait ------------------------------------------------
+    @handles(Wait)
+    async def _wait(self, action: Wait) -> ActionResult:
+        if action.seconds is not None:
+            await asyncio.sleep(action.seconds)
+            return ActionResult(ok=True)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _WAIT_TIMEOUT_S
+        while not await self._evaluate(_HAS_TEXT_JS, action.until_text):
+            if loop.time() >= deadline:
+                raise ActionTimeout(f"text {action.until_text!r} did not appear within {_WAIT_TIMEOUT_S}s")
+            await asyncio.sleep(_WAIT_POLL_S)
+        return ActionResult(ok=True)
 
-    async def evaluate(
-        self, source: str, *, args: Any = None, await_promise: bool = True, return_by_value: bool = True
-    ) -> Any:
-        transport = self._require_transport()
-        return await transport.request(
-            "evaluate",
-            {"source": source, "args": args, "await_promise": await_promise, "return_by_value": return_by_value},
+    @handles(RunScript, refs={DriverRef})
+    async def _run_script(self, action: RunScript) -> ActionResult:
+        if action.target is None:
+            return ActionResult(ok=True, value=await self._evaluate(action.code, action.args))
+        selector = await self._request(
+            "stamp", {"ref": self._ref(action.target), "attribute": _TARGET_ATTRIBUTE, "value": action.target.ref}
+        )
+        value = await self._evaluate(
+            _SCOPED_SCRIPT.format(code=action.code), {"selector": str(selector), "args": action.args}
+        )
+        return ActionResult(ok=True, value=value)
+
+    # -- hands: navigation and contexts --------------------------------
+
+    @handles(Navigate)
+    async def _navigate(self, action: Navigate) -> ActionResult:
+        return self._nav_result(await self._navigate_wire(action.url, new_tab=False))
+
+    @handles(Back)
+    async def _back(self, action: Back) -> ActionResult:
+        del action
+        return self._nav_result(await self._request("go_back", {}))
+
+    @handles(OpenContext)
+    async def _open_context(self, action: OpenContext) -> ActionResult:
+        before = {str(tab["target_id"]) for tab in await self._request("list_tabs", {})}
+        data = await self._navigate_wire(action.url or "about:blank", new_tab=True)
+        after = await self._request("list_tabs", {})
+        opened = tuple(_context_from_wire(tab) for tab in after if str(tab["target_id"]) not in before)
+        return self._nav_result(data, value=opened[0] if opened else None, opened_contexts=opened)
+
+    @handles(SwitchContext)
+    async def _switch_context(self, action: SwitchContext) -> ActionResult:
+        data = await self._request("switch_tab", {"tab": _context_to_wire(action.context)})
+        return self._act_result(data, context_changed=True)
+
+    @handles(CloseContext)
+    async def _close_context(self, action: CloseContext) -> ActionResult:
+        data = await self._request("close_tab", {"tab": _context_to_wire(action.context)})
+        return self._act_result(data, context_changed=True, source_context=action.context)
+
+    # -- wire helpers --------------------------------------------------
+
+    async def _request(self, method: str, params: dict[str, Any]) -> Any:
+        if self._transport is None:
+            raise ConnectionLost("BrowserUseDriver is not started", dispatched=False)
+        try:
+            return await self._transport.request(method, params)
+        except Exception as exc:
+            raise _translate_error(method, exc) from exc
+
+    async def _evaluate(self, source: str, args: Any) -> Any:
+        return await self._request(
+            "evaluate", {"source": source, "args": args, "await_promise": True, "return_by_value": True}
         )
 
-    async def wait_load_state(self, state: str = "load", *, timeout_ms: int) -> ActResult:
-        transport = self._require_transport()
-        result = await transport.request(
-            "wait_load_state", {"state": state, "timeout_ms": timeout_ms}, timeout_s=(timeout_ms / 1000.0) + 5.0
+    async def _navigate_wire(self, url: str, *, new_tab: bool) -> dict[str, Any]:
+        return await self._request(
+            "navigate", {"url": url, "wait_until": "load", "timeout_ms": None, "new_tab": new_tab}
         )
-        act_result = _act_result_from_wire(result)
-        self._driver_generation = act_result.driver_generation
-        return act_result
+
+    def _ref(self, ref: DriverRef) -> dict[str, Any]:
+        return _ref_to_wire(ref, self._driver_generation)
+
+    def _act_result(self, data: dict[str, Any], *, context_changed: bool = False, **fields: Any) -> ActionResult:
+        self._driver_generation = int(data.get("driver_generation", self._driver_generation))
+        return ActionResult(
+            ok=bool(data["ok"]),
+            detail=data.get("detail") or None,
+            context_changed=context_changed or bool(data.get("document_changed", False)),
+            **fields,
+        )
+
+    def _nav_result(self, data: dict[str, Any], **fields: Any) -> ActionResult:
+        """A navigation always loads a document, so the context changed even when the URL did not."""
+        self._driver_generation = int(data.get("driver_generation", self._driver_generation))
+        return ActionResult(
+            ok=True,
+            context_changed=True,
+            surface=BrowserContext(url=str(data["url"]), title=str(data.get("title", ""))),
+            **fields,
+        )
 
 
-__all__ = ["BrowserUseDriver"]
+def create_browser_use_driver(device: ProvisionedDevice, surface_settings: Any) -> BrowserUseDriver:
+    """Driver factory (registry signature): the driver connects to ``device.endpoint`` on ``start()``.
+
+    ``surface_settings`` is part of the factory signature; the browser-use driver reads nothing from it yet.
+    """
+    del surface_settings
+    return BrowserUseDriver(BrowserUseConfig(cdp_url=device.endpoint))
+
+
+__all__ = ["BrowserUseConfig", "BrowserUseDriver", "create_browser_use_driver"]
