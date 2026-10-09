@@ -11,9 +11,11 @@ from openjiuwen.harness.tools.browser_move.contract import (
     ActionTimeout,
     AmbiguousElement,
     ConnectionLost,
+    ContextRef,
     DriverError,
     ElementNotFound,
     NavigationError,
+    Observation,
     PolicyDenied,
     StaleRef,
     Unsupported,
@@ -51,5 +53,12 @@ def test_action_intercepted_names_the_blocker() -> None:
     error = ActionIntercepted("click not delivered", by="<div class=overlay>")
 
     assert error.by == "<div class=overlay>"
-    assert error.dispatched is True
-    assert ActionIntercepted(by="x", dispatched=False).dispatched is False
+    assert error.dispatched is False
+    assert ActionIntercepted(by="x", dispatched=True).dispatched is True
+
+
+def test_stale_ref_carries_an_optional_fresh_observation() -> None:
+    fresh = Observation(context=ContextRef("c1", "screen"))
+
+    assert StaleRef("old").observation is None
+    assert StaleRef("old", observation=fresh).observation is fresh

@@ -23,6 +23,7 @@ from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import (
     BrowserUseDriver,
     create_browser_use_driver,
 )
+from openjiuwen.harness.tools.browser_move.drivers.middleware import Tracing
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import _candidate_chrome_binaries
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene import browser_scene
@@ -112,4 +113,4 @@ class TestBrowserUseConformance(DriverConformance):
 
     @pytest.fixture
     def conformance_driver_factory(self, chrome_device: ProvisionedDevice):
-        return lambda sink: create_browser_use_driver(chrome_device, None)
+        return lambda sink: Tracing(create_browser_use_driver(chrome_device, None), sink)

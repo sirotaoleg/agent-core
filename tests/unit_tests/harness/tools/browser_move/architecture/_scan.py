@@ -18,6 +18,8 @@ PKG_DIR = REPO_ROOT.joinpath(*PKG_DOTTED.split("."))
 CORE_DIR = REPO_ROOT / "openjiuwen" / "core"
 
 CORE_FOLDERS = ("runtime", "playwright_runtime", "controllers", "utils", "clients")
+# Wraps every driver, so it obeys the core rules although it lives under drivers/.
+CORE_MODULES = frozenset({"drivers/middleware.py"})
 CONTRACT_FOLDER = "contract"
 SURFACES_FOLDER = "surfaces"
 # Modules allowed to parse settings (and, for the driver-name rule, name drivers).
@@ -40,7 +42,7 @@ def in_folder(relpath: str, folder: str) -> bool:
 
 
 def is_core(relpath: str) -> bool:
-    return any(in_folder(relpath, folder) for folder in CORE_FOLDERS)
+    return relpath in CORE_MODULES or any(in_folder(relpath, folder) for folder in CORE_FOLDERS)
 
 
 def is_contract(relpath: str) -> bool:

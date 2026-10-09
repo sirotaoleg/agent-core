@@ -59,7 +59,7 @@ def test_provisioned_device_holds_fields_and_is_frozen() -> None:
         device.endpoint = "http://127.0.0.1:9333"  # type: ignore[misc]
 
 
-def test_provisioned_device_cleanup_may_be_none() -> None:
-    device = ProvisionedDevice(kind="chrome", endpoint="http://127.0.0.1:9222", extras={}, cleanup=None)
+def test_provisioned_device_cleanup_defaults_to_none() -> None:
+    device = ProvisionedDevice(kind="chrome", endpoint="http://127.0.0.1:9222", extras={})
 
     assert device.cleanup is None
