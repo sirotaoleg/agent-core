@@ -316,6 +316,13 @@ def test_fill_form_fills_fields_in_order():
     assert result.context_changed is False
 
 
+def test_fill_form_passes_each_field_sensitivity_to_the_wire():
+    driver, request = _driver(dict(ACT_OK), dict(ACT_OK))
+    form = FillForm((FormField(E1, FieldKind.TEXTBOX, "Ann"), FormField(E2, FieldKind.TEXTBOX, "pw", sensitive=True)))
+    asyncio.run(driver.execute(form))
+    assert [params["sensitive"] for _method, params in _calls(request)] == [False, True]
+
+
 def test_fill_form_stops_at_the_first_failed_field():
     failed = {"ok": False, "detail": "option not found", "document_changed": False, "driver_generation": 0}
     driver, request = _driver(dict(ACT_OK), failed)
@@ -365,6 +372,14 @@ def test_wait_until_text_times_out(monkeypatch):
     with pytest.raises(ActionTimeout) as info:
         asyncio.run(driver.execute(Wait(until_text="Never")))
     assert info.value.dispatched is True
+
+
+def test_wait_until_text_uses_seconds_as_its_deadline(monkeypatch):
+    monkeypatch.setattr(driver_module, "_WAIT_TIMEOUT_S", 3600.0)
+    driver, request = _driver(False)
+    with pytest.raises(ActionTimeout, match=r"within 0\.0s"):
+        asyncio.run(driver.execute(Wait(until_text="Never", seconds=0.0)))
+    assert request.call_count == 1
 
 
 @pytest.mark.parametrize(

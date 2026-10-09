@@ -25,7 +25,8 @@ from openjiuwen.harness.tools.browser_move.contract import (
     SceneCase,
     iter_refs,
 )
-from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate
+from openjiuwen.harness.tools.browser_move.contract.testing.conformance import SECRET_TEXT
+from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import FieldKind, FillForm, Navigate
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene import browser_scene
 
@@ -127,8 +128,45 @@ def test_same_url_reload_navigates_to_the_entry_address(scene):
     assert _built(case, _observation(scene)) == [Navigate(url=scene.enter()[0].url)]
 
 
+def _without(*commands) -> dict:
+    return {command: kinds for command, kinds in ALL_ACTIONS.items() if command not in commands}
+
+
 def test_cases_explain_what_the_driver_lacks(scene):
-    no_click = {command: kinds for command, kinds in ALL_ACTIONS.items() if command is not scene_module.Click}
-    assert "Click" in scene.timeout(no_click)
+    assert "Wait" in scene.timeout(_without(scene_module.Wait))
     assert "DriverRef" in scene.stale({scene_module.Click: frozenset({PointRef})})
     assert isinstance(scene.intercepted({scene_module.Click: frozenset({PointRef})}), str)
+    assert "RunScript" in scene.intercepted(_without(scene_module.RunScript))
+    assert "FillForm" in scene.sensitive["form-field"](_without(scene_module.FillForm), SECRET_TEXT)
+
+
+def test_the_covered_button_is_uncovered_until_the_case_covers_it(scene):
+    html = (scene_module.PAGES / "index.html").read_text(encoding="utf-8")
+    assert 'id="overlay"' not in html and "function cover()" in html
+
+
+@pytest.mark.parametrize("kind", [DriverRef, Locator])
+def test_intercept_case_covers_the_button_after_observing_it_then_clicks_it(scene, kind):
+    observation = _observation(scene)
+    case = scene.intercepted({scene_module.Click: frozenset({kind}), scene_module.RunScript: frozenset()})
+    assert case.observe_between is False
+    cover, click = _built(case, observation)
+    assert cover == scene_module.RunScript(code="() => { cover(); return true; }")
+    assert click == scene_module.Click(target=scene_module._ref(observation, scene_module.COVERED, kind))
+
+
+def test_timeout_case_waits_briefly_for_a_text_no_page_contains(scene):
+    (action,) = _built(scene.timeout(ALL_ACTIONS), _observation(scene))
+    assert isinstance(action, scene_module.Wait)
+    assert action.seconds is not None and 0 < action.seconds <= 5
+    for page in scene_module.PAGES.iterdir():
+        assert action.until_text not in page.read_text(encoding="utf-8"), page.name
+
+
+def test_sensitive_form_field_case_fills_the_secret_marked_sensitive(scene):
+    observation = _observation(scene)
+    (action,) = _built(scene.sensitive["form-field"](ALL_ACTIONS, SECRET_TEXT), observation)
+    assert isinstance(action, FillForm)
+    (field,) = action.fields
+    assert (field.kind, field.value, field.sensitive) == (FieldKind.TEXTBOX, SECRET_TEXT, True)
+    assert field.target == scene_module._ref(observation, scene_module.NAME, DriverRef)

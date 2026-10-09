@@ -4,8 +4,9 @@
 """Self-test of the conformance suite on ``FakeDriver``.
 
 ``FakeWorld`` is a scripted fake surface: two documents (``home``, ``next``), contexts opened by a popup, a dialog,
-a covered element and a slow one. ``WorldDriver`` is a ``FakeDriver`` that answers from it. The whole suite runs on
-the correct driver (``TestConformanceOnFakeDriver``); each deliberately wrong driver below makes its case fail.
+a covered element and a text that appears only after a first wait for it has timed out. ``WorldDriver`` is a
+``FakeDriver`` that answers from it. The whole suite runs on the correct driver (``TestConformanceOnFakeDriver``);
+each deliberately wrong driver below makes its case fail.
 """
 
 from __future__ import annotations
@@ -69,7 +70,7 @@ from openjiuwen.harness.tools.browser_move.contract.testing.conformance import (
 
 pytest_plugins = ["openjiuwen.harness.tools.browser_move.contract.testing.conformance"]
 
-HOME = ("Save", "Name", "Covered", "Slow", "Next", "Alert", "Popup", "Box", "Target")
+HOME = ("Save", "Name", "Covered", "Next", "Alert", "Popup", "Box", "Target")
 NEXT = ("Home",)
 ROW = 10.0
 
@@ -82,7 +83,7 @@ class FakeWorld:
         self.loads = {"c1": 1}
         self.current = "c1"
         self.title = ""
-        self.slow_presses = 0
+        self.late_waits = 0
         self._opened = 1
 
     def generation(self) -> str:
@@ -120,10 +121,6 @@ class FakeWorld:
     def click(self, name: str) -> ActionResult:
         if name == "Covered":
             raise ActionIntercepted("another element would receive the click", by="overlay", dispatched=False)
-        if name == "Slow":
-            self.slow_presses += 1
-            if self.slow_presses == 1:
-                raise ActionTimeout("no reaction in time", dispatched=True)
         if name == "Next":
             return self._load("next")
         if name == "Home":
@@ -141,7 +138,17 @@ class FakeWorld:
         self.title = "clicked" if name == "Save" else f"clicked:{name}"
         return ActionResult(ok=True)
 
+    def wait(self, action: Wait) -> ActionResult:
+        """A text that is not on the screen appears late: the first wait for it times out, a second one finds it."""
+        if action.until_text is not None and action.until_text not in self.names():
+            self.late_waits += 1
+            if self.late_waits == 1:
+                raise ActionTimeout(f"{action.until_text!r} did not appear in {action.seconds}s", dispatched=True)
+        return ActionResult(ok=True)
+
     def apply(self, action: Action) -> ActionResult:
+        if isinstance(action, Wait):
+            return self.wait(action)
         if isinstance(action, Click):
             return self.click(self.resolve(action.target))
         if isinstance(action, Drag):
@@ -197,14 +204,14 @@ class WorldDriver(FakeDriver):
         self.sink = sink
 
     async def observe(self, command: Observe) -> Observation:
-        self._observations.append(self.world.observe())
+        self.script(observations=(self.world.observe(),))
         return await super().observe(command)
 
     async def execute(self, action: Action) -> ActionResult:
         ensure_supported(self.info.name, self.info.actions, action)
         self.trace(action)
         try:
-            self._results.append(self.world.apply(action))
+            self.script(results=(self.world.apply(action),))
         except DriverError as error:
             self.fail_next(error)
         return await super().execute(action)
@@ -212,6 +219,8 @@ class WorldDriver(FakeDriver):
     def trace(self, action: Action) -> None:
         if isinstance(action, TypeText) and action.sensitive:
             action = dataclasses.replace(action, text="***")
+        elif isinstance(action, RunScript) and action.sensitive:
+            action = dataclasses.replace(action, code="***")
         self.sink(action)
 
 
@@ -296,7 +305,7 @@ def _scene(**overrides) -> Scene:
             steps=(_click("Next"), lambda seen: Click(target=_element(seen[0], "Save").ref))
         ),
         intercepted=lambda actions: SceneCase(steps=(_click("Covered"),)),
-        timeout=lambda actions: SceneCase(steps=(_click("Slow"),)),
+        timeout=lambda actions: SceneCase(steps=(lambda seen: Wait(until_text="Late", seconds=0.1),)),
         context_changes={
             "new-document": lambda actions: SceneCase(steps=(_click("Next"),)),
             "dialog": lambda actions: SceneCase(
@@ -309,6 +318,9 @@ def _scene(**overrides) -> Scene:
             "closed": lambda actions: SceneCase(
                 steps=(_click("Popup"), lambda seen: CloseContext(context=seen[-1].context))
             ),
+        },
+        sensitive={
+            "script": lambda actions, secret: SceneCase(steps=(lambda seen: RunScript(code=secret, sensitive=True),)),
         },
     )
     fields.update(overrides)
@@ -351,6 +363,14 @@ class NoContextSignal(WorldDriver):
         return dataclasses.replace(await super().execute(action), context_changed=False)
 
 
+class InterceptedAfterDispatch(WorldDriver):
+    async def execute(self, action: Action) -> ActionResult:
+        try:
+            return await super().execute(action)
+        except ActionIntercepted as error:
+            raise ActionIntercepted(str(error), by=error.by, dispatched=True) from error
+
+
 class AnonymousIntercept(WorldDriver):
     async def execute(self, action: Action) -> ActionResult:
         try:
@@ -388,6 +408,8 @@ class LeakyLog(WorldDriver):
     async def execute(self, action: Action) -> ActionResult:
         if isinstance(action, TypeText):
             _LEAKY_LOGGER.debug("typing %s", action.text)
+        elif isinstance(action, RunScript):
+            _LEAKY_LOGGER.debug("running %s", action.code)
         return await super().execute(action)
 
 
@@ -416,10 +438,15 @@ def _run(check, factory, *args) -> None:
             check_context_change, NoContextSignal, ("new-document",), "did not report context_changed", id="no-signal"
         ),
         pytest.param(check_intercepted, AnonymousIntercept, (), "must describe the element", id="intercept-no-by"),
+        pytest.param(
+            check_intercepted, InterceptedAfterDispatch, (), "never reached the target", id="intercept-dispatched"
+        ),
         pytest.param(check_unhandled, UnsupportedAsGenericError, (), "expected Unsupported", id="unhandled-generic"),
         pytest.param(check_fingerprint, UnstableFingerprint, (), "fingerprint changed", id="unstable-fingerprint"),
         pytest.param(check_sensitive_not_traced, LeakyTrace, (), "reached the trace", id="leaky-trace"),
+        pytest.param(check_sensitive_not_traced, LeakyTrace, ("script",), "reached the trace", id="leaky-trace-script"),
         pytest.param(check_sensitive_not_logged, LeakyLog, (), "reached the logs", id="leaky-log"),
+        pytest.param(check_sensitive_not_logged, LeakyLog, ("script",), "reached the logs", id="leaky-log-script"),
         pytest.param(check_happy_path, ClickWithoutEffect, (Click, DriverRef), "did not take effect", id="no-effect"),
         pytest.param(
             check_surface,
@@ -449,9 +476,21 @@ def test_retrying_driver_really_repeats_the_dispatched_action():
         drivers.append(RetriesDispatchedAction(sink))
         return drivers[-1]
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(AssertionError, match="expected ActionTimeout"):
         _run(check_timeout, factory)
-    assert drivers[0].world.slow_presses == 2
+    assert drivers[0].world.late_waits == 2
+
+
+def test_a_timeout_case_that_is_not_a_bounded_wait_for_text_fails():
+    scene = _scene(timeout=lambda actions: SceneCase(steps=(lambda seen: Wait(until_text="Late"),)))
+    with pytest.raises(AssertionError, match=r"must end in Wait\(until_text=..., seconds=...\)"):
+        asyncio.run(check_timeout(WorldDriver, scene))
+
+
+def test_a_sensitive_case_that_does_not_send_the_secret_fails():
+    scene = _scene(sensitive={"script": lambda actions, secret: SceneCase(steps=(lambda seen: RunScript(code="x"),))})
+    with pytest.raises(AssertionError, match="does not send the secret"):
+        asyncio.run(check_sensitive_not_logged(WorldDriver, scene, "script"))
 
 
 def test_the_correct_driver_keeps_the_secret_out_of_a_non_empty_trace():

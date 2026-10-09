@@ -28,7 +28,7 @@ DEFAULT_DISPATCHED = {
     NavigationError: True,
     ConnectionLost: True,
     Unsupported: False,
-    PolicyDenied: True,
+    PolicyDenied: False,
 }
 
 

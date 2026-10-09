@@ -76,6 +76,23 @@ def test_returns_scripted_observations_and_results_in_order() -> None:
     assert asyncio.run(scenario()) == [OBS_1, RES_1, RES_2, OBS_2]
 
 
+def test_script_appends_answers_after_the_constructor_ones() -> None:
+    driver = FakeDriver(observations=[OBS_1], results=[RES_1])
+    driver.script(observations=[OBS_2], results=[RES_2])
+    driver.script(results=[RES_1])
+
+    async def scenario() -> list[object]:
+        return [
+            await driver.observe(Observe()),
+            await driver.observe(Observe()),
+            await driver.execute(Click(E1)),
+            await driver.execute(Click(E1)),
+            await driver.execute(Click(E1)),
+        ]
+
+    assert asyncio.run(scenario()) == [OBS_1, OBS_2, RES_1, RES_2, RES_1]
+
+
 def test_running_out_of_script_fails_loudly() -> None:
     driver = FakeDriver()
 

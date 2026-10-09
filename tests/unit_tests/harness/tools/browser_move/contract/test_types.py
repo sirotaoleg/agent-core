@@ -163,15 +163,16 @@ def test_command_defaults() -> None:
     assert GetNetwork() == GetNetwork(static=False, filter=None)
 
 
-@pytest.mark.parametrize("kwargs", [{}, {"seconds": 1.0, "until_text": "done"}])
-def test_wait_needs_exactly_one_condition(kwargs) -> None:
-    with pytest.raises(ValueError, match="exactly one"):
-        Wait(**kwargs)
+def test_wait_needs_seconds_or_text() -> None:
+    with pytest.raises(ValueError, match="seconds, until_text or both"):
+        Wait()
 
 
-def test_wait_accepts_seconds_or_text() -> None:
+def test_wait_accepts_seconds_text_or_text_with_a_deadline() -> None:
     assert Wait(seconds=0.5).until_text is None
     assert Wait(until_text="done").seconds is None
+    bounded = Wait(until_text="done", seconds=2.0)
+    assert (bounded.until_text, bounded.seconds) == ("done", 2.0)
 
 
 def test_drop_needs_paths_or_data() -> None:
@@ -186,6 +187,11 @@ def test_fill_form_fields_use_todays_field_kinds() -> None:
 
     assert {kind.value for kind in FieldKind} == {"textbox", "checkbox", "radio", "combobox", "slider"}
     assert form.fields[0].kind == "checkbox"
+
+
+def test_form_field_is_not_sensitive_unless_marked() -> None:
+    assert FormField(E1, FieldKind.TEXTBOX, "Ann").sensitive is False
+    assert FormField(E1, FieldKind.TEXTBOX, "pw", sensitive=True).sensitive is True
 
 
 def test_observation_and_result_defaults() -> None:
