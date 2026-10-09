@@ -582,7 +582,7 @@ def test_observe_keeps_the_sidecar_title_when_the_page_runs_no_script():
 ERROR_TABLE = {
     "StaleIndexError": (StaleRef, False),
     "ElementNotFound": (ElementNotFound, False),
-    "StaleNodeError": (ElementNotFound, True),
+    "StaleNodeError": (StaleRef, False),
     "AmbiguousElement": (AmbiguousElement, True),
     "ActionTimeout": (ActionTimeout, True),
     "NavigationError": (NavigationError, True),

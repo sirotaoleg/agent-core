@@ -459,3 +459,83 @@ def test_a_child_frame_document_is_not_a_document_change():
         assert reply["document_changed"] is False
 
     asyncio.run(scenario())
+
+
+# -- stale refs ----------------------------------------------------------------
+
+cdp = session_adapter.cdp
+NOT_IN_DOCUMENT = RuntimeError({"code": -32000, "message": "Node with given id does not belong to the document"})
+NO_SUCH_NODE = RuntimeError({"code": -32000, "message": "No node with given id found"})
+
+
+def _resolve_fails_from(client: FakeCdp, call: int, error: Exception) -> None:
+    """``DOM.resolveNode`` answers until its ``call``-th request (1-based), which raises ``error``."""
+    calls = []
+
+    def resolve(params: dict[str, Any], sid: str | None) -> dict[str, Any]:
+        calls.append(params)
+        if len(calls) >= call:
+            raise error
+        return {"object": {"objectId": "obj-7"}}
+
+    client.replies["DOM.resolveNode"] = resolve
+
+
+@pytest.mark.parametrize("error", [NOT_IN_DOCUMENT, NO_SUCH_NODE], ids=["not-in-document", "no-such-node"])
+def test_a_node_that_is_not_in_the_document_is_stale(error):
+    client = FakeCdp()
+    _resolve_fails_from(client, 1, error)
+    with pytest.raises(errors.StaleNodeError, match="backend node 7 is not in the current document"):
+        asyncio.run(cdp.resolve_object_id_by_backend_node(client, SESSION, 7))
+
+
+def test_other_resolve_failures_are_not_stale():
+    client = FakeCdp()
+    _resolve_fails_from(client, 1, RuntimeError({"code": -32000, "message": "Target closed"}))
+    with pytest.raises(RuntimeError, match="Target closed"):
+        asyncio.run(cdp.resolve_object_id_by_backend_node(client, SESSION, 7))
+
+
+@pytest.mark.parametrize(
+    "act",
+    [lambda adapter: adapter.click(BUTTON), lambda adapter: adapter.hover(BUTTON)],
+    ids=["click", "hover"],
+)
+def test_an_action_on_a_node_of_an_old_document_is_stale_and_sends_nothing(act):
+    async def scenario() -> None:
+        client = FakeCdp()
+        Page(client)
+        _resolve_fails_from(client, 1, NOT_IN_DOCUMENT)
+        adapter = _adapter(client)
+        with pytest.raises(errors.StaleNodeError):
+            await _quick(act(adapter))
+        assert client.sent("Input.dispatchMouseEvent") == []
+
+    asyncio.run(scenario())
+
+
+def test_a_node_lost_after_the_input_is_not_stale():
+    async def scenario() -> None:
+        client = FakeCdp()
+        Page(client)
+        # type_text: the box (1st resolve) is found and clicked; the node is gone when the field is cleared.
+        _resolve_fails_from(client, 2, NOT_IN_DOCUMENT)
+        adapter = _adapter(client)
+        with pytest.raises(errors.DriverError, match="after input reached the page") as info:
+            await _quick(adapter.type_text(BUTTON, "Ada"))
+        assert type(info.value) is errors.DriverError
+        assert client.sent("Input.dispatchMouseEvent"), "the click reached the page"
+
+    asyncio.run(scenario())
+
+
+def test_a_cached_node_of_an_old_document_is_stale():
+    async def scenario() -> None:
+        client = FakeCdp()
+        _resolve_fails_from(client, 1, NOT_IN_DOCUMENT)
+        adapter = _adapter(client)
+        adapter._index_cache = {1: SimpleNamespace(backend_node_id=7)}
+        with pytest.raises(errors.StaleNodeError):
+            await adapter._node_for_event(BUTTON)
+
+    asyncio.run(scenario())

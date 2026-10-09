@@ -96,12 +96,14 @@ _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 # Sidecar error (wire error code; the transport raises classes of the same name) -> (typed error, dispatched).
 # dispatched=False only where the sidecar provably raises before any input reaches the page: refs are resolved
 # (index, handle, bounding box) before the first input event, and unsupported features are rejected up front.
-# StaleNodeError can come after a click (type_text clears the field after clicking it), so it counts as dispatched.
+# StaleNodeError is a node that is not in the current document (CDP "does not belong to the document" / "No node
+# with given id"); the sidecar sends StaleNodeError, StaleIndexError and ElementNotFound only before an action's
+# input and turns them into a plain DriverError after it.
 # Codes not listed here (DriverError, EvaluateError, ObserveError) and any other exception are unclassified.
 _SIDECAR_ERRORS: dict[str, tuple[type[DriverError], bool]] = {
     "StaleIndexError": (StaleRef, False),
     "ElementNotFound": (ElementNotFound, False),
-    "StaleNodeError": (ElementNotFound, True),
+    "StaleNodeError": (StaleRef, False),
     "AmbiguousElement": (AmbiguousElement, True),
     "ActionTimeout": (ActionTimeout, True),
     "NavigationError": (NavigationError, True),

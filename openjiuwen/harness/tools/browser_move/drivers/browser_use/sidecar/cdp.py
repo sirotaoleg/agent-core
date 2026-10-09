@@ -51,13 +51,23 @@ async def describe_node_backend_id(cdp_client: Any, session_id: str, node_id: in
     return int(result["node"]["backendNodeId"])
 
 
+# CDP errors of DOM.resolveNode for a backend node id that is not in the current document (any more).
+_STALE_NODE_MESSAGES = ("does not belong to the document", "No node with given id")
+
+
 async def resolve_object_id_by_backend_node(cdp_client: Any, session_id: str, backend_node_id: int) -> str:
     """Resolve a backendNodeId to a Runtime remote objectId.
 
     Raises ``exceptions.StaleNodeError`` when the backend node no longer
     resolves (page navigated, node detached, etc.).
     """
-    result = await cdp_client.send.DOM.resolveNode(params={"backendNodeId": backend_node_id}, session_id=session_id)
+    try:
+        result = await cdp_client.send.DOM.resolveNode(params={"backendNodeId": backend_node_id}, session_id=session_id)
+    except Exception as exc:
+        if any(text in str(exc) for text in _STALE_NODE_MESSAGES):
+            message = f"backend node {backend_node_id} is not in the current document: {exc}"
+            raise exceptions.StaleNodeError(message) from exc
+        raise
     object_id = (result.get("object") or {}).get("objectId")
     if not object_id:
         raise exceptions.StaleNodeError(f"backend node {backend_node_id} no longer resolves")

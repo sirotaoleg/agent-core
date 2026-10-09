@@ -162,6 +162,8 @@ class _Act:
     """What happened while one element/keyboard action ran (see ``SessionAdapter._act``)."""
 
     def __init__(self, main_frame_id: str | None) -> None:
+        # Set by the action right before its first input event: errors after it count as dispatched.
+        self.dispatched = False
         # Chrome gives a page's main frame the page's target id.
         self.main_frame_id = main_frame_id
         self.navigation_requested = False
@@ -172,6 +174,9 @@ class _Act:
         # Pages (tabs, popups) the action opened, as wire TabRefs.
         self.new_targets: list[dict[str, Any]] = []
         self.target_created = asyncio.Event()
+
+    def dispatching(self) -> None:
+        self.dispatched = True
 
 
 def _dialog_note(dialog: dict[str, Any]) -> str:
@@ -380,6 +385,7 @@ class SessionAdapter:
                 raise exceptions.ElementNotFound(f"element (backend_node_id={backend_node_id}) has no bounding box")
             cx, cy = box["x"] + box["width"] / 2.0, box["y"] + box["height"] / 2.0
             cdp_session = await self._ensure_cdp_session()
+            act.dispatching()
             for _ in range(max(1, click_count)):
                 await cdp.dispatch_mouse_click(
                     cdp_session.cdp_client, cdp_session.session_id, x=cx, y=cy, button=button, click_count=click_count
@@ -401,6 +407,7 @@ class SessionAdapter:
             backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
             cdp_session = await self._ensure_cdp_session()
             box = await self._element_box(backend_node_id)
+            act.dispatching()
             if box is not None:
                 cx, cy = box["x"] + box["width"] / 2.0, box["y"] + box["height"] / 2.0
                 await cdp.dispatch_mouse_click(cdp_session.cdp_client, cdp_session.session_id, x=cx, y=cy)
@@ -423,6 +430,7 @@ class SessionAdapter:
         async def body(act: _Act) -> tuple[bool, str]:
             from browser_use.browser.events import SendKeysEvent
 
+            act.dispatching()
             event = self._session.event_bus.dispatch(SendKeysEvent(keys=key_utils.normalize_key_combo(keys)))
             await event
             await event.event_result(raise_if_any=True, raise_if_none=False)
@@ -438,6 +446,7 @@ class SessionAdapter:
 
             node = await self._node_for_event(ref)
             text = label if label is not None else (value or "")
+            act.dispatching()
             event = self._session.event_bus.dispatch(SelectDropdownOptionEvent(node=node, text=text))
             await event
             await event.event_result(raise_if_any=True, raise_if_none=False)
@@ -449,6 +458,7 @@ class SessionAdapter:
         async def body(act: _Act) -> tuple[bool, str]:
             backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
             cdp_session = await self._ensure_cdp_session()
+            # One call: the node is resolved before the function runs, so a stale node fails before any input.
             await cdp.call_function_on_backend_node(
                 cdp_session.cdp_client,
                 cdp_session.session_id,
@@ -469,6 +479,7 @@ class SessionAdapter:
             from browser_use.browser.events import ScrollEvent
 
             node = await self._node_for_event(ref) if ref is not None else None
+            act.dispatching()
             event = self._session.event_bus.dispatch(ScrollEvent(node=node, direction=direction, amount=amount))
             await event
             await event.event_result(raise_if_any=True, raise_if_none=False)
@@ -501,6 +512,7 @@ class SessionAdapter:
                     f"upload target does not accept multiple files "
                     f"(got {len(normalized)} paths); pass a single path or a multiple= file input"
                 )
+            act.dispatching()
             await cdp.set_file_input_files(
                 cdp_session.cdp_client,
                 cdp_session.session_id,
@@ -539,6 +551,7 @@ class SessionAdapter:
             tx, ty = target_box["x"] + target_box["width"] / 2.0, target_box["y"] + target_box["height"] / 2.0
             source_is_html5 = await self._element_is_html5_draggable(source_id)
             cdp_session = await self._ensure_cdp_session()
+            act.dispatching()
             result = await cdp.perform_drag(
                 cdp_session.cdp_client,
                 cdp_session.session_id,
@@ -564,6 +577,7 @@ class SessionAdapter:
                 raise exceptions.ElementNotFound(f"element (backend_node_id={backend_node_id}) has no bounding box")
             cx, cy = box["x"] + box["width"] / 2.0, box["y"] + box["height"] / 2.0
             cdp_session = await self._ensure_cdp_session()
+            act.dispatching()
             # Approach stream then settle on center (tooltip / :hover menus).
             await cdp.dispatch_mouse_move(
                 cdp_session.cdp_client,
@@ -628,6 +642,7 @@ class SessionAdapter:
                 raise exceptions.ElementNotFound(f"drop target (backend_node_id={backend_node_id}) has no bounding box")
             cx, cy = box["x"] + box["width"] / 2.0, box["y"] + box["height"] / 2.0
             cdp_session = await self._ensure_cdp_session()
+            act.dispatching()
             try:
                 result = await cdp.perform_external_drop(
                     cdp_session.cdp_client,
@@ -818,6 +833,10 @@ class SessionAdapter:
         until told to run, so when the action opens a page the current page is resumed; the new pages are
         reported as ``new_targets``. A main-frame navigation the action started is given up to
         ``_NAVIGATION_COMMIT_WAIT_S`` to commit; a committed one is a ``document_changed``, even to the same URL.
+
+        A ref that does not resolve before the input (``StaleNodeError``, ``StaleIndexError``,
+        ``ElementNotFound``) means nothing was sent; after ``act.dispatching()`` the same failures are
+        re-raised as a plain ``DriverError``, since input may already have reached the page.
         """
         before_url = await self._safe_current_url()
         if self._dialog_pending is not None and not while_dialog:
@@ -836,7 +855,7 @@ class SessionAdapter:
                     waiters.discard(target_waiter)
                     await self._resume_current_page()
             if task.done():
-                ok, detail = task.result()
+                ok, detail = self._body_result(task, act)
                 await self._await_navigation(act)
             else:
                 self._waiting_inputs.add(task)
@@ -849,6 +868,15 @@ class SessionAdapter:
                 task.cancel()
             self._current_act = None
         return await self._act_result(before_url, ok=ok, detail=detail, act=act)
+
+    @staticmethod
+    def _body_result(task: asyncio.Task, act: _Act) -> tuple[bool, str]:
+        try:
+            return task.result()
+        except (exceptions.StaleNodeError, exceptions.StaleIndexError, exceptions.ElementNotFound) as exc:
+            if not act.dispatched:
+                raise
+            raise exceptions.DriverError(f"{exc} (after input reached the page)") from exc
 
     @staticmethod
     async def _await_navigation(act: _Act) -> None:
@@ -983,6 +1011,9 @@ class SessionAdapter:
         if ref.get("kind") == "index":
             return self._node_from_index(int(ref["index"]), int(ref["driver_generation"]))
         backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
+        cdp_session = await self._ensure_cdp_session()
+        # The cache keeps nodes of the last observed document; a node from an older one is stale.
+        await cdp.resolve_object_id_by_backend_node(cdp_session.cdp_client, cdp_session.session_id, backend_node_id)
         for node in self._index_cache.values():
             if getattr(node, "backend_node_id", None) == backend_node_id:
                 return node
@@ -1001,6 +1032,8 @@ class SessionAdapter:
                 "function(){ const r = this.getBoundingClientRect(); "
                 "return {x: r.x, y: r.y, width: r.width, height: r.height}; }",
             )
+        except exceptions.StaleNodeError:
+            raise
         except exceptions.DriverError:
             return None
         if not isinstance(rect, dict):
