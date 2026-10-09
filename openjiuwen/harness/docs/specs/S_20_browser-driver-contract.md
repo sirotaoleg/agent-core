@@ -9,18 +9,19 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/surfaces/browser/` (`commands.py` / `context.py` / `scene/`) |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/middleware.py`, `openjiuwen/harness/tools/browser_move/surfaces/browser/` (`commands.py` / `context.py` / `scene/`) |
 | Last revised | 2026-10-09 |
-| Related feature | — (archived when the refactor lands) |
+| Related feature | [[F_07_browser-drivers]] |
 
 ## Scope
 
 The contract is the only thing the agent core and a driver both know. The core sends commands and reads typed
 results and errors; a driver translates commands for one library and declares which commands it handles. As of
-this revision the browser-use driver implements the contract; no agent code uses it yet.
+this revision the browser-use driver implements the contract and the middleware wraps any driver; no agent code
+uses them yet.
 
-Out of scope here: middleware (timeouts, retry, tracing), the composition root, provisioning, rendering and the
-model-facing tool schemas. They consume these types and get their own sections.
+Out of scope here: the composition root, provisioning, rendering and the model-facing tool schemas. They consume
+these types and get their own sections.
 
 ## Contract types
 
@@ -95,7 +96,9 @@ where a command class is defined, and a new surface adds its commands (`Tap`, `S
 `contract/`. A command is added only when a driver handles a tool the model uses today.
 
 `sensitive=True` on `TypeText`, `RunScript` and a `FormField` means its text, code or value must never reach traces
-or logs.
+or logs. Each of the three names that field in a class-level `__sensitive_fields__` (`("text",)`, `("code",)`,
+`("value",)`); `Tracing` masks the listed fields of any dataclass whose `sensitive` is true, so a new surface
+command opts in by declaring the attribute and a `sensitive` field.
 
 ### ActionResult (`results.py`)
 
@@ -114,13 +117,14 @@ Every error is a `DriverError` with `dispatched: bool`: whether the command may 
 - **Unknown means dispatched.** When the driver cannot tell, `dispatched` is `True`; an unrecognized library error
   becomes `DriverError(dispatched=True)`.
 - `StaleRef` (the ref's generation is old) is raised only before dispatch and defaults to `dispatched=False`.
-  `Unsupported` (no handler, or a ref kind the handler does not accept) and `PolicyDenied` (raised by the security
-  rail before anything is sent, never by a driver) also default to `False`.
-- All others default to `True`: `ElementNotFound`, `AmbiguousElement`, `ActionIntercepted(by=...)`, `ActionTimeout`,
-  `NavigationError`, `ConnectionLost`.
-- `ActionIntercepted` (`by` names the element that would receive the input) is raised by every driver with
-  `dispatched=False`: the input never reached the target, so it is not a `StaleRef` and is not retried either. The
-  conformance suite asserts it.
+  Its optional `observation` is a fresh observation taken after the error (`RetryOnStale` attaches it; drivers
+  leave it `None`). `Unsupported` (no handler, or a ref kind the handler does not accept) and `PolicyDenied`
+  (raised by the security rail before anything is sent, never by a driver) also default to `False`.
+- `ActionIntercepted(by=...)` (`by` names the element that would receive the input) defaults to `False`: every
+  driver raises it before the input is sent, so it is not a `StaleRef` and is not retried either. The conformance
+  suite asserts it.
+- All others default to `True`: `ElementNotFound`, `AmbiguousElement`, `ActionTimeout`, `NavigationError`,
+  `ConnectionLost`.
 
 Every constructor accepts an explicit `dispatched=` to override the default.
 
@@ -210,9 +214,8 @@ otherwise get `PytestUnknownMarkWarning`.
 | sensitive text, logs, one per sensitive case | the same secret is in no log record of the process, captured at DEBUG including non-propagating loggers | yes (`happy`, `sensitive`) |
 
 A case the scene cannot provide is skipped with the scene's reason; a case needing a command (or ref kind) the driver
-does not handle is skipped naming it. Nothing passes silently. Until the tracing middleware exists, the trace case
-skips when the factory writes nothing to the sink; a factory that wraps the driver in `Tracing(driver, sink)` makes it
-run.
+does not handle is skipped naming it. Nothing passes silently. The trace case skips when the factory writes nothing
+to the sink; the test modules build their driver as `Tracing(driver, sink)`, so it runs.
 
 ### The browser scene (`surfaces/browser/scene/`)
 
@@ -234,6 +237,34 @@ scaled to the screenshot. An `IndexRef` cannot be built (skipped).
 - Sensitive: `form-field`, a `FillForm` that fills the "Full name" textbox with the secret, `sensitive=True`.
 - Context changes: `navigate`, `same-url-reload` (`Navigate` to the current address), `link-click`, `open-tab`,
   `popup-click` (`window.open`), `switch-tab`, `close-tab`, `dialog` (a `confirm()`).
+
+## Middleware (`drivers/middleware.py`)
+
+Three wrappers, each a `Driver` around an inner `Driver`. They know only `contract/` types, so they work for any
+driver and any surface; the architecture tests scan the module like the core (no browser words, no driver names, no
+concrete imports). `info`, `start`, `stop` and `health` pass through to the inner driver unchanged. The stack order
+is `Tracing(RetryOnStale(Timeouts(driver, per_effect)), sink)`: the trace sees the error a timeout or a stale ref
+finally produced, and the re-observe of `RetryOnStale` runs under the READ bound.
+
+- **`Timeouts(inner, per_effect: Mapping[Effect, float])`** bounds each `execute(action)` by `action.effect` and
+  each `observe()` by `READ`. An effect missing from the map is not bounded. On expiry the inner call is cancelled
+  and `ActionTimeout(dispatched=True)` is raised: the command may already have taken effect. A `Wait` longer than
+  the READ bound is cut by it.
+- **`RetryOnStale(inner)`** catches `StaleRef` with `dispatched=False`, observes once (`Observe()`) and raises a new
+  `StaleRef` carrying that observation, chained to the original. It never resends the command: neither built driver
+  can remap a stale ref through another ref kind it declares, so there is nothing to retry with. An error with
+  `dispatched=True`, a `StaleRef` included, passes through untouched, without an observation (invariant 7).
+- **`Tracing(inner, sink)`** writes one dict per `observe` / `execute` call to `sink` (`TraceSink`: any callable
+  taking that dict), after the call returns or raises a `DriverError`:
+  - `call` (`"observe"` / `"execute"`), `command` (class name), `args` (the command's fields, nested dataclasses as
+    dicts and sequences as lists, with `MASK` = `"***"` in place of each `__sensitive_fields__` field of a dataclass
+    whose `sensitive` is true);
+  - then `ok`, `detail`, `context_changed` for a result; `context` (id) and `elements` (count) for an observation,
+    whose element values and native text may show what a sensitive command typed; or `error` (class name),
+    `message`, `dispatched` for a `DriverError`, which is raised again.
+
+  `ActionResult.value` and observation contents are never traced. Other exceptions (cancellation included) pass
+  through without a record.
 
 ## Drivers
 
@@ -291,6 +322,9 @@ native_text, surface}`, `versions` from the sidecar's `connect` reply.
   `Unsupported`). Each action marks where its input starts; a stale or missing node after that point reaches the
   driver as a plain `DriverError(dispatched=True)`. Codes it cannot classify become `DriverError(dispatched=True)`
   and are logged raw.
+- Cancellation. One request is in flight at a time; after 30 s without a reply the transport sends the sidecar a
+  `cancel` for it and raises `ActionTimeout`. When the caller cancels instead (`Timeouts`), no `cancel` is sent: the
+  sidecar task runs on, the next request can run alongside it, and its late reply is dropped by id.
 
 ## Relation to other specs
 
