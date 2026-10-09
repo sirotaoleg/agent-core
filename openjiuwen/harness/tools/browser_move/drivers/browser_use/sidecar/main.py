@@ -3,7 +3,7 @@
 
 """Sidecar entrypoint: NDJSON read/dispatch/write loop over stdin/stdout.
 
-Spawned by ``backends/browser_use/transport.py`` as ``python <this file>``
+Spawned by ``drivers/browser_use/transport.py`` as ``python <this file>``
 (by path, not ``-m``, because ``openjiuwen`` is deliberately not installed
 in the sidecar venv). Imports only stdlib plus the flat sibling modules in
 this directory; ``session_adapter`` is the only one of those that reaches

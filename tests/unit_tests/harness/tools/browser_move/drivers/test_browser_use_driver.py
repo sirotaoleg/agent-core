@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import importlib
 import struct
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -685,3 +687,11 @@ def test_health_never_raises():
 def test_result_types_are_contract_results():
     driver, _request = _driver(dict(ACT_OK))
     assert isinstance(asyncio.run(driver.execute(Hover(E1))), ActionResult)
+
+
+def test_importing_browser_use_driver_does_not_load_browser_use_package() -> None:
+    snapshot = set(sys.modules)
+    importlib.reload(importlib.import_module("openjiuwen.harness.tools.browser_move.drivers.browser_use.driver"))
+    added = set(sys.modules) - snapshot
+    browser_use_modules = [name for name in added if name == "browser_use" or name.startswith("browser_use.")]
+    assert not browser_use_modules, f"unexpected browser_use imports: {browser_use_modules}"

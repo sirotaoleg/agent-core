@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from openjiuwen.harness.tools.browser_move.backends.contract import errors as driver_errors
+from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import exceptions as driver_errors
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import wire
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.transport import SidecarTransport
 

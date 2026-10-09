@@ -4,7 +4,7 @@
 """Wire protocol v1 constants, shared verbatim by both sides of the sidecar boundary.
 
 This module is STDLIB ONLY. It is imported by the agent-core process as
-``openjiuwen.harness.tools.browser_move.backends.browser_use.sidecar.wire``
+``openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar.wire``
 and by the sidecar process as a flat sibling module ``wire`` (the sidecar
 runs outside the ``openjiuwen`` package and must not import it). Keeping the
 method-name and error-code constants in one file that both sides load is
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 WIRE_VERSION = 1
 
-# BrowserDriver protocol method names, verbatim, plus the two control methods.
+# SessionAdapter method names (main.py dispatches requests to them by name), then the two control methods.
 DRIVER_METHOD_NAMES: tuple[str, ...] = (
     "connect",
     "health",
@@ -51,8 +51,8 @@ CONTROL_METHOD_NAMES: tuple[str, ...] = ("cancel", "shutdown")
 WIRE_METHOD_NAMES: frozenset[str] = frozenset(DRIVER_METHOD_NAMES) | frozenset(CONTROL_METHOD_NAMES)
 
 # Error codes accepted on the wire, mapped by transport.py to exception
-# classes in backends/contract/errors.py. Kept as plain strings here (not importing
-# backends.contract.errors) so this file stays free of any openjiuwen import.
+# classes of the same name in sidecar/exceptions.py. Kept as plain strings here
+# so this file stays free of any import.
 ERROR_CODES: tuple[str, ...] = (
     "DriverError",
     "DriverNotConnected",

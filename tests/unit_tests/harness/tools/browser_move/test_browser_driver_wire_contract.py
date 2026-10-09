@@ -2,22 +2,23 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""B1 wire contract tests for BrowserDriver sidecar protocol."""
+"""Wire contract tests for the browser-use sidecar protocol."""
 
 from __future__ import annotations
 
 import inspect
 
-from openjiuwen.harness.tools.browser_move.backends.contract import errors as driver_errors
-from openjiuwen.harness.tools.browser_move.backends.contract.base import BrowserDriver
 from openjiuwen.harness.tools.browser_move.contract import DriverRef
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import _ref_to_wire
+from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import exceptions as driver_errors
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import wire
 
 
-def _browser_driver_public_method_names() -> set[str]:
+def _adapter_public_method_names() -> set[str]:
+    from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar.session_adapter import SessionAdapter
+
     names: set[str] = set()
-    for name, member in inspect.getmembers(BrowserDriver):
+    for name, member in inspect.getmembers(SessionAdapter):
         if name.startswith("_"):
             continue
         if callable(member):
@@ -25,8 +26,8 @@ def _browser_driver_public_method_names() -> set[str]:
     return names
 
 
-def test_wire_method_names_match_protocol_plus_control() -> None:
-    expected = _browser_driver_public_method_names() | set(wire.CONTROL_METHOD_NAMES)
+def test_wire_method_names_match_the_sidecar_adapter_plus_control() -> None:
+    expected = _adapter_public_method_names() | set(wire.CONTROL_METHOD_NAMES)
     assert wire.WIRE_METHOD_NAMES == frozenset(expected)
 
 

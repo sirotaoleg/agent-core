@@ -5,7 +5,7 @@
 
 Owns interpreter discovery, process spawn, the hello handshake, one
 in-flight request at a time, cancellation/timeout, and wire error-code to
-exception mapping. ``backends/browser_use/driver.py`` is the only caller;
+exception mapping. ``drivers/browser_use/driver.py`` is the only caller;
 this module never imports ``browser_use`` itself, keeping the agent-core
 process free of the sidecar's dependency closure.
 """
@@ -20,7 +20,7 @@ import platform
 from pathlib import Path
 from typing import Any
 
-from openjiuwen.harness.tools.browser_move.backends.contract import errors as driver_errors
+from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import exceptions as driver_errors
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import wire
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging import get_browser_agent_logger
 

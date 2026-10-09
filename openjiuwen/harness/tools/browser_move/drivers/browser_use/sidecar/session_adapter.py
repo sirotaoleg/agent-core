@@ -6,7 +6,7 @@
 Wraps a single ``browser_use.browser.session.BrowserSession`` (attach-only,
 ``is_local=False``) and exposes plain-dict-in/plain-dict-out async methods
 that ``main.py`` dispatches wire requests to. Everything here operates on
-wire-level dicts (JSON-safe), never on the ``backends.contract.base`` dataclasses --
+wire-level dicts (JSON-safe), never on the driver contract's dataclasses --
 those live in the agent-core process, not here.
 
 Element refs cross the wire as plain dicts:
@@ -17,7 +17,7 @@ Element refs cross the wire as plain dicts:
     {"kind": "driver", "handle": <str>, "driver_generation": <int>}
 
 ``"driver"`` is the opaque, backend-neutral durable ref (see
-``backends/contract/base.py:DriverRef``). This adapter is a CDP backend, so it
+``contract/refs.py:DriverRef``). This adapter is a CDP backend, so it
 mints handles of the form ``"bnid:<backend_node_id>"`` and parses that same
 prefix back on the way in; a non-CDP backend would mint and parse whatever
 scheme fits its own identity model instead.

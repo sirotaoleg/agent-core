@@ -3,17 +3,17 @@
 
 """Sidecar-local exception classes.
 
-STDLIB ONLY. The sidecar cannot import ``openjiuwen.harness.tools.browser_move.
-backends.contract.errors`` (that would pull the main env's ``openjiuwen`` package, and
-transitively ``anthropic>=0.120.2``, back into the sidecar closure -- exactly
-the conflict the sidecar exists to avoid).
+STDLIB ONLY. The sidecar cannot import the ``openjiuwen`` package (that would
+pull the main env's dependencies, transitively ``anthropic>=0.120.2``, back into
+the sidecar closure -- exactly the conflict the sidecar exists to avoid).
 
-Instead, these classes are named IDENTICALLY to the wire error codes in
+These classes are named IDENTICALLY to the wire error codes in
 ``wire.ERROR_CODES``. ``main.py`` maps a raised exception to a wire error
-code purely by ``type(exc).__name__``, so the two sides stay in sync without
-sharing a class hierarchy. ``backends/browser_use/sidecar/wire.py`` and
-``backends/contract/errors.py`` are the sources of truth for the code strings; a unit
-test in the main env asserts every name here has a matching class there.
+code purely by ``type(exc).__name__``; in the agent-core process,
+``transport.py`` raises the same classes for the codes it receives, and the
+driver maps them to the contract's typed errors by name. ``wire.py`` is the
+source of truth for the code strings; a unit test in the main env asserts
+every code has a class here.
 """
 
 from __future__ import annotations
