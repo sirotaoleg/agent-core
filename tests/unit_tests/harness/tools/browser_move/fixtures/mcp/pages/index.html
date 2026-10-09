@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="data:,">
+  <title>Fixture form page</title>
+</head>
+<body>
+  <h1>Fixture form page</h1>
+  <nav>
+    <a href="second.html">Second page</a>
+    <a href="blocked.html">Blocked page</a>
+    <a href="report.csv" download>Download report</a>
+  </nav>
+  <form id="order" onsubmit="return false">
+    <label for="name">Full name</label>
+    <input id="name" name="name" type="text" placeholder="Your name">
+    <label for="size">Size</label>
+    <select id="size" name="size">
+      <option value="s">Small</option>
+      <option value="m">Medium</option>
+      <option value="l">Large</option>
+    </select>
+    <label><input id="gift" name="gift" type="checkbox"> Gift wrap</label>
+    <button id="save" type="button" onclick="document.getElementById('status').textContent = 'Saved';">Save</button>
+  </form>
+  <p id="status">Not saved</p>
+  <button id="alert" type="button" onclick="alert('Order saved')">Show alert</button>
+  <button id="confirm" type="button"
+          onclick="document.getElementById('answer').textContent = confirm('Delete order?') ? 'Deleted' : 'Kept';">
+    Delete order
+  </button>
+  <p id="answer">No answer</p>
+  <button id="log" type="button" onclick="console.log('fixture console message')">Log to console</button>
+  <iframe title="Embedded frame" src="frame.html" width="320" height="80"></iframe>
+</body>
+</html>

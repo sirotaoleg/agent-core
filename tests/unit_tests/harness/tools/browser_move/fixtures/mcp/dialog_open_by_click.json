@@ -1,0 +1,21 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "dialog_open_by_click",
+  "request": {
+    "tool": "browser_click",
+    "arguments": {
+      "element": "Delete order button",
+      "target": "e15"
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Ran Playwright code\n```js\nawait page.getByRole('button', { name: 'Delete order' }).click();\n```\n### Page\n- Page URL: http://127.0.0.1:<PORT>/index.html\n### Modal state\n- [\"confirm\" dialog with message \"Delete order?\"]: can be handled by browser_handle_dialog\n### Snapshot\n- [Snapshot](.playwright-mcp\\page-<TS>.yml)"
+      }
+    ],
+    "isError": false
+  },
+  "model_text": "### Ran Playwright code\n```js\nawait page.getByRole('button', { name: 'Delete order' }).click();\n```\n### Page\n- Page URL: http://127.0.0.1:<PORT>/index.html\n### Modal state\n- [\"confirm\" dialog with message \"Delete order?\"]: can be handled by browser_handle_dialog\n### Snapshot\n- [Snapshot](.playwright-mcp\\page-<TS>.yml)"
+}

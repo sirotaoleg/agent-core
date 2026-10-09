@@ -1,0 +1,20 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "tabs_list",
+  "request": {
+    "tool": "browser_tabs",
+    "arguments": {
+      "action": "list"
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Result\n- 0: (current) [Fixture second page](http://127.0.0.1:<PORT>/second.html)"
+      }
+    ],
+    "isError": false
+  },
+  "model_text": "### Result\n- 0: (current) [Fixture second page](http://127.0.0.1:<PORT>/second.html)"
+}

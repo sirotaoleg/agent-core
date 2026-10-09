@@ -1,0 +1,20 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "dialog_handle_accept",
+  "request": {
+    "tool": "browser_handle_dialog",
+    "arguments": {
+      "accept": true
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Page\n- Page URL: http://127.0.0.1:<PORT>/index.html\n- Page Title: Fixture form page"
+      }
+    ],
+    "isError": false
+  },
+  "model_text": "### Page\n- Page URL: http://127.0.0.1:<PORT>/index.html\n- Page Title: Fixture form page"
+}

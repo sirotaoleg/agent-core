@@ -1,0 +1,21 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "events_console_message",
+  "request": {
+    "tool": "browser_click",
+    "arguments": {
+      "element": "Log to console button",
+      "target": "e17"
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Ran Playwright code\n```js\nawait page.getByRole('button', { name: 'Log to console' }).click();\n```\n### Page\n- Page URL: http://127.0.0.1:<PORT>/index.html\n- Page Title: Fixture form page\n### Snapshot\n- [Snapshot](.playwright-mcp\\page-<TS>.yml)\n### Events\n- New console entries: .playwright-mcp\\console-<TS>.log#L1"
+      }
+    ],
+    "isError": false
+  },
+  "model_text": "### Ran Playwright code\n```js\nawait page.getByRole('button', { name: 'Log to console' }).click();\n```\n### Page\n- Page URL: http://127.0.0.1:<PORT>/index.html\n- Page Title: Fixture form page\n### Snapshot\n- [Snapshot](.playwright-mcp\\page-<TS>.yml)\n### Events\n- New console entries: .playwright-mcp\\console-<TS>.log#L1"
+}

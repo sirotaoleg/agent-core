@@ -1,0 +1,20 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "navigate_same_url_reload",
+  "request": {
+    "tool": "browser_navigate",
+    "arguments": {
+      "url": "http://127.0.0.1:<PORT>/index.html"
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Ran Playwright code\n```js\nawait page.goto('http://127.0.0.1:<PORT>/index.html');\n```\n### Page\n- Page URL: http://127.0.0.1:<PORT>/index.html\n- Page Title: Fixture form page\n### Snapshot\n- [Snapshot](.playwright-mcp\\page-<TS>.yml)"
+      }
+    ],
+    "isError": false
+  },
+  "model_text": "### Ran Playwright code\n```js\nawait page.goto('http://127.0.0.1:<PORT>/index.html');\n```\n### Page\n- Page URL: http://127.0.0.1:<PORT>/index.html\n- Page Title: Fixture form page\n### Snapshot\n- [Snapshot](.playwright-mcp\\page-<TS>.yml)"
+}
