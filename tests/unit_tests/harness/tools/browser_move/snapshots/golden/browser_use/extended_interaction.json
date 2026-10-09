@@ -1,0 +1,589 @@
+{
+  "agents": [
+    {
+      "role": "main",
+      "system_prompt": "You are a browser automation agent. Complete the user's web task by planning and using the available browser tools to navigate, inspect, interact, and extract evidence. Every model call includes one runtime-maintained <browser_working_context> immediately before the latest complete <browser_state> observation. Treat working context as authoritative for phase status, field coverage, blockers, structured evidence, recent action deltas, and the runtime directive. A fresh browser capture occurs initially and after a recognized state-invalidating action; otherwise the cached observation is reused. When the runtime directive requires replanning or a recent action reports no semantic progress, do not repeat it; use a materially different approach or finish with the available evidence. Before acting, classify the task as a simple lookup or a complex workflow and keep a compact phase plan. Prefer direct navigation when the task already contains a known URL. Prefer observable page conditions over fixed sleeps. Keep actions targeted, avoid redundant verification, and only claim completion when the requested outcome is evidenced on the page.\n\n# Safety\n\n- Never disclose private data.\n- Ask the user before modifying or deleting important files, running commands that affect the system, or performing operations involving money, accounts, or sensitive information.\n- Refuse requests that are illegal, harmful, or infringe on the rights of others.\n- Obtain user confirmation before sending emails, publishing publicly, or taking other actions with external impact.\n- Internal operations such as reading files, searching, and organizing may proceed normally.\n- If a task fails, briefly explain the reason and provide a suggestion.\n- When uncertain, state the uncertainty and then provide the most likely approach.\n- Do not fabricate tool results, file contents, execution status, or actions claimed to be completed.\n\n\nWhen you stop and answer without another browser tool call, append exactly one <browser_progress>{...}</browser_progress> JSON block. This is a text protocol in your response, never a tool call. Use status=completed only when the requested browser outcome is evidenced. Include compact fields: status, completed_steps, remaining_steps, next_step, completion_evidence, missing_requirements.\n\nImage input support is still being verified for this run. browser_take_screenshot remains available when the task asks to capture a screenshot. Until verification finishes, do not assume the model can inspect screenshot pixels; prefer DOM probes and accessibility snapshots for visual questions.",
+      "tools": [
+        {
+          "description": "Cancel an in-progress browser task by session_id. Optionally pass request_id to target a specific request within the session. Returns JSON with ok/session_id/request_id/error.",
+          "name": "browser_cancel_run",
+          "parameters": {
+            "properties": {
+              "request_id": {
+                "description": "Optional: specific request ID to cancel",
+                "type": "string"
+              },
+              "session_id": {
+                "description": "Session ID of the task to cancel",
+                "type": "string"
+              }
+            },
+            "required": [
+              "session_id"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Clear the cancellation flag for a browser session or request. Returns JSON with ok/session_id/request_id/error.",
+          "name": "browser_clear_cancel",
+          "parameters": {
+            "properties": {
+              "request_id": {
+                "description": "Optional: specific request ID to clear",
+                "type": "string"
+              },
+              "session_id": {
+                "description": "Session ID to clear",
+                "type": "string"
+              }
+            },
+            "required": [
+              "session_id"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Click an element.",
+          "name": "browser_click",
+          "parameters": {
+            "properties": {
+              "button": {
+                "description": "Mouse button: left, right, or middle. Default left.",
+                "type": "string"
+              },
+              "click_count": {
+                "description": "Number of clicks. Default 1.",
+                "type": "integer"
+              },
+              "generation_id": {
+                "description": "Current PageState generation_id for the element target.",
+                "type": "string"
+              },
+              "ref": {
+                "description": "Element ref from the current page observation.",
+                "type": "string"
+              },
+              "selector": {
+                "description": "CSS selector when a validated selector is already known.",
+                "type": "string"
+              },
+              "target_id": {
+                "description": "Generation-scoped target_id from PageState / probes.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "generation_id"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Close the active browser tab.",
+          "name": "browser_close",
+          "parameters": {
+            "properties": {},
+            "required": [],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Drag from a source element to a target element.",
+          "name": "browser_drag",
+          "parameters": {
+            "properties": {
+              "generation_id": {
+                "description": "Current PageState generation_id for the element target.",
+                "type": "string"
+              },
+              "source_ref": {
+                "description": "Source element ref.",
+                "type": "string"
+              },
+              "source_selector": {
+                "description": "Source CSS selector.",
+                "type": "string"
+              },
+              "source_target_id": {
+                "description": "Source element target_id from PageState.",
+                "type": "string"
+              },
+              "steps": {
+                "description": "Intermediate drag steps. Default 10.",
+                "type": "integer"
+              },
+              "target_ref": {
+                "description": "Target element ref.",
+                "type": "string"
+              },
+              "target_selector": {
+                "description": "Target CSS selector.",
+                "type": "string"
+              },
+              "target_target_id": {
+                "description": "Target element target_id from PageState.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "generation_id"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Drop local files and/or MIME-typed data onto an element as if dragged from outside the page. Distinct from browser_drag (element→element). At least one of paths or data is required. Supported MIME types: text/plain, text/uri-list, text/html.",
+          "name": "browser_drop",
+          "parameters": {
+            "properties": {
+              "data": {
+                "description": "MIME-typed drag data items (mimeType + data).",
+                "items": {
+                  "properties": {
+                    "data": {
+                      "type": "string"
+                    },
+                    "mimeType": {
+                      "type": "string"
+                    },
+                    "mime_type": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "generation_id": {
+                "description": "Current PageState generation_id for the element target.",
+                "type": "string"
+              },
+              "paths": {
+                "description": "Absolute or workspace-relative file paths to drop. Resolved like browser_file_upload (BROWSER_UPLOAD_ROOT).",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "ref": {
+                "description": "Element ref from the current page observation.",
+                "type": "string"
+              },
+              "selector": {
+                "description": "CSS selector when a validated selector is already known.",
+                "type": "string"
+              },
+              "target_id": {
+                "description": "Generation-scoped target_id from PageState / probes.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "generation_id"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Evaluate a small JavaScript expression in the page. Do not dump the full document.",
+          "name": "browser_evaluate",
+          "parameters": {
+            "properties": {
+              "args": {
+                "description": "Optional JSON-serializable argument passed to the script."
+              },
+              "function": {
+                "description": "JavaScript source to evaluate (expression or function body).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "function"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Upload one or more files to a file input element.",
+          "name": "browser_file_upload",
+          "parameters": {
+            "properties": {
+              "generation_id": {
+                "description": "Current PageState generation_id for the element target.",
+                "type": "string"
+              },
+              "paths": {
+                "description": "Absolute or workspace-relative file paths to upload. Relative/bare names also resolve under BROWSER_UPLOAD_ROOT when set (see list_upload_files).",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "ref": {
+                "description": "Element ref from the current page observation.",
+                "type": "string"
+              },
+              "selector": {
+                "description": "CSS selector when a validated selector is already known.",
+                "type": "string"
+              },
+              "target_id": {
+                "description": "Generation-scoped target_id from PageState / probes.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "generation_id",
+              "paths"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Fill multiple form fields in one call (type / select / checkbox).",
+          "name": "browser_fill_form",
+          "parameters": {
+            "properties": {
+              "fields": {
+                "description": "Ordered field fill steps.",
+                "items": {
+                  "properties": {
+                    "label": {
+                      "type": "string"
+                    },
+                    "ref": {
+                      "type": "string"
+                    },
+                    "selector": {
+                      "type": "string"
+                    },
+                    "sensitive": {
+                      "type": "boolean"
+                    },
+                    "target_id": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Field type: textbox, combobox/select, checkbox/radio.",
+                      "type": "string"
+                    },
+                    "value": {}
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "generation_id": {
+                "description": "Current PageState generation_id for the element target.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "generation_id",
+              "fields"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Search the current accessibility / page snapshot for text or a regex. Returns matching nodes with target_id/ref and short context. Requires a prior browser_snapshot (or probe) for the current generation.",
+          "name": "browser_find",
+          "parameters": {
+            "properties": {
+              "generation_id": {
+                "description": "Optional PageState generation_id; defaults to current.",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum matches to return (1-100). Default 20.",
+                "type": "integer"
+              },
+              "query": {
+                "description": "Text or regex pattern to search for in the current snapshot.",
+                "type": "string"
+              },
+              "regex": {
+                "description": "Treat query as a regular expression. Default false.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Accept or dismiss a JavaScript alert/confirm/prompt. If no dialog is open yet, arms handling for the next dialog — call this before the click/type that opens it.",
+          "name": "browser_handle_dialog",
+          "parameters": {
+            "properties": {
+              "accept": {
+                "description": "True to accept/OK, false to dismiss/Cancel.",
+                "type": "boolean"
+              },
+              "promptText": {
+                "description": "Optional text to submit for a prompt() dialog.",
+                "type": "string"
+              },
+              "prompt_text": {
+                "description": "Alias for promptText.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "accept"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Hover the mouse over an element (tooltips / :hover menus).",
+          "name": "browser_hover",
+          "parameters": {
+            "properties": {
+              "generation_id": {
+                "description": "Current PageState generation_id for the element target.",
+                "type": "string"
+              },
+              "ref": {
+                "description": "Element ref from the current page observation.",
+                "type": "string"
+              },
+              "selector": {
+                "description": "CSS selector when a validated selector is already known.",
+                "type": "string"
+              },
+              "target_id": {
+                "description": "Generation-scoped target_id from PageState / probes.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "generation_id"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Navigate to a URL.",
+          "name": "browser_navigate",
+          "parameters": {
+            "properties": {
+              "timeout_ms": {
+                "description": "Optional navigation timeout in milliseconds.",
+                "type": "integer"
+              },
+              "url": {
+                "description": "Absolute URL to open, e.g. https://example.com",
+                "type": "string"
+              },
+              "wait_until": {
+                "description": "Navigation wait condition. Default load.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "url"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Navigate back in browser history.",
+          "name": "browser_navigate_back",
+          "parameters": {
+            "properties": {},
+            "required": [],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Press a keyboard key or key combination.",
+          "name": "browser_press_key",
+          "parameters": {
+            "properties": {
+              "key": {
+                "description": "Key or combination, e.g. Enter, Control+a, Escape.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "key"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Recall a bounded text fragment from an older browser probe or snapshot result when a <persisted-output> marker's preview is insufficient. Pass only its 32-character handle. The tool can read only ToolResultWindowProcessor output owned by the current browser session; it cannot read arbitrary files. Use query to find the first matching fragment at or after offset, or omit query to read a chunk. Recalled refs and selectors are stale evidence after navigation and must never be used for browser interaction.",
+          "name": "browser_recall_offload",
+          "parameters": {
+            "properties": {
+              "handle": {
+                "description": "The 32-character handle from a persisted browser output marker.",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum returned characters. Default 8000, hard-capped at 16000.",
+                "maximum": 16000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "offset": {
+                "description": "Character offset for chunking or the query search start. Default 0.",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "query": {
+                "description": "Optional case-insensitive text to locate inside the original result.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "handle"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Select an option from a native select element.",
+          "name": "browser_select_option",
+          "parameters": {
+            "properties": {
+              "generation_id": {
+                "description": "Current PageState generation_id for the element target.",
+                "type": "string"
+              },
+              "label": {
+                "description": "Visible option label to select.",
+                "type": "string"
+              },
+              "ref": {
+                "description": "Element ref from the current page observation.",
+                "type": "string"
+              },
+              "selector": {
+                "description": "CSS selector when a validated selector is already known.",
+                "type": "string"
+              },
+              "target_id": {
+                "description": "Generation-scoped target_id from PageState / probes.",
+                "type": "string"
+              },
+              "value": {
+                "description": "Option value attribute to select.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "generation_id"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Capture an accessibility/page observation of the current page.",
+          "name": "browser_snapshot",
+          "parameters": {
+            "properties": {
+              "include_screenshot": {
+                "description": "Include a screenshot in the observation. Default false.",
+                "type": "boolean"
+              }
+            },
+            "required": [],
+            "type": "object"
+          }
+        },
+        {
+          "description": "List, select, or close browser tabs.",
+          "name": "browser_tabs",
+          "parameters": {
+            "properties": {
+              "action": {
+                "description": "Tab action: list, select, or close. Default list.",
+                "enum": [
+                  "list",
+                  "select",
+                  "close"
+                ],
+                "type": "string"
+              },
+              "index": {
+                "description": "Zero-based tab index for select/close.",
+                "type": "integer"
+              }
+            },
+            "required": [],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Take a screenshot of the current page.",
+          "name": "browser_take_screenshot",
+          "parameters": {
+            "properties": {
+              "full_page": {
+                "description": "Capture the full scrollable page. Default false.",
+                "type": "boolean"
+              }
+            },
+            "required": [],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Type text into an element.",
+          "name": "browser_type",
+          "parameters": {
+            "properties": {
+              "clear": {
+                "description": "Clear existing content before typing. Default true.",
+                "type": "boolean"
+              },
+              "generation_id": {
+                "description": "Current PageState generation_id for the element target.",
+                "type": "string"
+              },
+              "press_enter": {
+                "description": "Press Enter after typing. Default false.",
+                "type": "boolean"
+              },
+              "ref": {
+                "description": "Element ref from the current page observation.",
+                "type": "string"
+              },
+              "selector": {
+                "description": "CSS selector when a validated selector is already known.",
+                "type": "string"
+              },
+              "sensitive": {
+                "description": "Mark input as sensitive (e.g. password). Default false.",
+                "type": "boolean"
+              },
+              "target_id": {
+                "description": "Generation-scoped target_id from PageState / probes.",
+                "type": "string"
+              },
+              "text": {
+                "description": "Text to type into the element.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "generation_id",
+              "text"
+            ],
+            "type": "object"
+          }
+        }
+      ]
+    }
+  ],
+  "driver": "browser_use",
+  "source_commit": "857239db",
+  "view": "extended_interaction"
+}

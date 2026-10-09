@@ -1,0 +1,839 @@
+{
+  "agents": [
+    {
+      "role": "main",
+      "system_prompt": "You are a browser automation agent responsible for executing web tasks directly. Choose the strategy at this agent level and use the available Playwright and runtime tools; the runtime validates targets and outcomes but does not replace your task judgment.\nEvery model call includes one runtime-maintained <browser_working_context> followed by the latest <browser_state>. Runtime outcomes and blockers are authoritative; inferred fields are extraction hints, not additional user requirements. Source observations also provide usable evidence. A fresh browser capture occurs initially and after a recognized page mutation; otherwise the cached observation is reused. When the runtime directive requires replanning, change the strategy materially.\nFor a simple lookup, prefer a direct search-results URL when the engine and query are known. Use browser_probe_interactives for page controls and browser_probe_cards for repeated results or products. Use the compact PageState target_id with its generation_id directly; never reconstruct guessed CSS from a target ID. When a card has primary_link or href, navigate directly to that URL.\nUse browser_batch_interact when two or more deterministic actions or same-page field extractions are already known. Use a primitive for one uncertain action. Prefer observable condition waits over fixed sleep. Use browser_snapshot only when compact probes are insufficient, and browser_evaluate only for a small exact target or computation. If an older result has a <persisted-output> marker, recall it only when its preview does not contain the needed evidence; recalled targets are not executable after navigation.\nUse canonical fields when convenient, but do not reread a page just to rename already observed facts. Report genuinely unavailable values as unknown. One trustworthy page value or structured result is enough; do not verify the same fact with multiple tools. Stop immediately when the requested outcome is evidenced. The runtime determines final status, so return a concise natural-language result rather than another progress object.\nIf an optional capability makes a browser_run_code tool visible, use it only when deterministic tools are insufficient, and never dump the full document. Preserve session continuity and report a concrete blocker when the available browser state or tools cannot complete the task.\n\n# Safety\n\n- Never disclose private data.\n- Ask the user before modifying or deleting important files, running commands that affect the system, or performing operations involving money, accounts, or sensitive information.\n- Refuse requests that are illegal, harmful, or infringe on the rights of others.\n- Obtain user confirmation before sending emails, publishing publicly, or taking other actions with external impact.\n- Internal operations such as reading files, searching, and organizing may proceed normally.\n- If a task fails, briefly explain the reason and provide a suggestion.\n- When uncertain, state the uncertainty and then provide the most likely approach.\n- Do not fabricate tool results, file contents, execution status, or actions claimed to be completed.\n\n\nImage input is unavailable or unverified for this run. Do not request screenshots, including browser_take_screenshot or browser_batch_interact with op=screenshot. Use DOM probes, accessibility snapshots, and targeted evaluation instead.\n\nFor calendar/date-picker widgets, do not type the date into a text field. Click the specific day cell instead (look for a data-iso=\"YYYY-MM-DD\" attribute or an aria-label naming the full date), then confirm the selection before proceeding.",
+      "tools": [
+        {
+          "description": "Execute deterministic browser interactions in one standalone runtime tool call. Use after browser_probe_interactives/browser_probe_cards when a page-level flow has multiple known targets, such as three or more form fields, click+type+choose autocomplete, dropdown or date-picker selection, filter panels, search submit plus result wait, or compact extraction. This is a first-class helper like the probe tools; do not route this through browser_custom_action. Pass the current PageState generation_id and use target_id from probes for actions. Only read-only extraction and explicit wait operations accept a validated selector. Locator strategies are mutually exclusive. A one-step call is rewritten by the runtime to an equivalent official browser primitive when one exists, so it does not fail and require another model turn. Multi-step calls are preflighted before side effects. Results use status=completed/partial/failed and contain only compact step status, extracted fields, condition observations, metrics, and PageState.",
+          "name": "browser_batch_interact",
+          "parameters": {
+            "properties": {
+              "condition_timeout_ms": {
+                "description": "Default timeout for condition waits in milliseconds. Default 10000, clamped to the action timeout..30000.",
+                "type": "integer"
+              },
+              "continue_on_error": {
+                "description": "When true, continue after failed steps and return per-step errors.",
+                "type": "boolean"
+              },
+              "generation_id": {
+                "description": "Current PageState generation_id returned by navigate, probe, snapshot, or the previous batch. Targets from older generations are rejected before browser execution.",
+                "pattern": "^g[0-9]+$",
+                "type": "string"
+              },
+              "global_timeout_ms": {
+                "description": "Hard timeout for the whole batch. Default is computed from step count, capped at 120000; explicit values are capped at 180000.",
+                "type": "integer"
+              },
+              "request_id": {
+                "description": "Optional browser task request id.",
+                "type": "string"
+              },
+              "session_id": {
+                "description": "Optional browser task session id.",
+                "type": "string"
+              },
+              "steps": {
+                "description": "Ordered browser steps to execute in one batch. Supported ops: click, fill, type, autocomplete, select_visible_text, press, select_option, set_checked, wait_for_selector, wait_for_text, wait_for_load_state, wait_for_url, wait_for_first_card_title, wait_for_sort_state, wait_for_result_count, wait_for_dom_text_change, wait_for_stable, wait_for_tab, extract_text, extract_value, screenshot.",
+                "items": {
+                  "properties": {
+                    "activate": {
+                      "description": "For wait_for_tab, activate the matched new tab for subsequent steps. Default true.",
+                      "type": "boolean"
+                    },
+                    "attribute": {
+                      "description": "Attribute inspected by wait_for_sort_state; defaults to aria-sort.",
+                      "type": "string"
+                    },
+                    "checked": {
+                      "description": "Desired checked state for set_checked.",
+                      "type": "boolean"
+                    },
+                    "choose_name": {
+                      "description": "Alias for option_name.",
+                      "type": "string"
+                    },
+                    "choose_role": {
+                      "description": "Alias for option_role.",
+                      "type": "string"
+                    },
+                    "choose_selector": {
+                      "description": "Alias for option_selector.",
+                      "type": "string"
+                    },
+                    "choose_text": {
+                      "description": "Alias for option_text in autocomplete flows.",
+                      "type": "string"
+                    },
+                    "count": {
+                      "description": "Exact result count expected.",
+                      "type": "integer"
+                    },
+                    "delay_ms": {
+                      "description": "Optional typing delay in milliseconds.",
+                      "type": "integer"
+                    },
+                    "description": {
+                      "description": "Human-readable purpose for logs/debugging.",
+                      "type": "string"
+                    },
+                    "exact": {
+                      "description": "Use exact matching for role/label/text locators.",
+                      "type": "boolean"
+                    },
+                    "expected_text": {
+                      "description": "Expected first-card title text.",
+                      "type": "string"
+                    },
+                    "expected_url": {
+                      "description": "Alias for the exact URL expected by wait_for_url.",
+                      "type": "string"
+                    },
+                    "expected_value": {
+                      "description": "Expected attribute or text value for a wait condition.",
+                      "type": "string"
+                    },
+                    "field": {
+                      "description": "Structured output field name for extraction steps.",
+                      "type": "string"
+                    },
+                    "full_page": {
+                      "description": "When true, screenshot the full page.",
+                      "type": "boolean"
+                    },
+                    "index": {
+                      "description": "Native select option index.",
+                      "type": "integer"
+                    },
+                    "key": {
+                      "description": "Keyboard key for press, e.g. Enter or Escape.",
+                      "type": "string"
+                    },
+                    "label": {
+                      "description": "Label text for labeled form controls.",
+                      "type": "string"
+                    },
+                    "label_value": {
+                      "description": "Native select visible label alias.",
+                      "type": "string"
+                    },
+                    "max_chars": {
+                      "description": "Maximum characters for extract_text.",
+                      "type": "integer"
+                    },
+                    "max_count": {
+                      "description": "Maximum result count expected.",
+                      "type": "integer"
+                    },
+                    "min_count": {
+                      "description": "Minimum result count expected.",
+                      "type": "integer"
+                    },
+                    "min_tabs": {
+                      "description": "Minimum context tab count for wait_for_tab. By default the runtime waits for one more tab than existed when the batch started.",
+                      "type": "integer"
+                    },
+                    "name": {
+                      "description": "Accessible name for role-based locating.",
+                      "type": "string"
+                    },
+                    "op": {
+                      "description": "Step operation name.",
+                      "enum": [
+                        "click",
+                        "fill",
+                        "type",
+                        "autocomplete",
+                        "select_visible_text",
+                        "press",
+                        "select_option",
+                        "set_checked",
+                        "wait_for_selector",
+                        "wait_for_text",
+                        "wait_for_load_state",
+                        "wait_for_url",
+                        "wait_for_first_card_title",
+                        "wait_for_sort_state",
+                        "wait_for_result_count",
+                        "wait_for_dom_text_change",
+                        "wait_for_stable",
+                        "wait_for_tab",
+                        "extract_text",
+                        "extract_value",
+                        "screenshot"
+                      ],
+                      "type": "string"
+                    },
+                    "option_label": {
+                      "description": "Native select visible label. Alias for option_text when op=select_option.",
+                      "type": "string"
+                    },
+                    "option_name": {
+                      "description": "Accessible name for option_role.",
+                      "type": "string"
+                    },
+                    "option_ref": {
+                      "description": "Current-generation AX ref for an autocomplete/dropdown option.",
+                      "type": "string"
+                    },
+                    "option_role": {
+                      "description": "ARIA role for an autocomplete/dropdown option, e.g. option/menuitem.",
+                      "type": "string"
+                    },
+                    "option_selector": {
+                      "description": "CSS selector for an autocomplete/dropdown option to choose.",
+                      "type": "string"
+                    },
+                    "option_target_id": {
+                      "description": "PageState target_id for an autocomplete/dropdown option.",
+                      "type": "string"
+                    },
+                    "option_text": {
+                      "description": "Visible option text for autocomplete/select_visible_text/native select label.",
+                      "type": "string"
+                    },
+                    "option_value": {
+                      "description": "Native select option value. Alias for value when op=select_option.",
+                      "type": "string"
+                    },
+                    "optional": {
+                      "description": "When true, failure records the step but continues.",
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "description": "Screenshot path for op=screenshot.",
+                      "type": "string"
+                    },
+                    "placeholder": {
+                      "description": "Placeholder text for form controls.",
+                      "type": "string"
+                    },
+                    "poll_interval_ms": {
+                      "description": "Dynamic-condition polling interval, clamped to 50..1000ms; default 100ms. Polling always shares the step's total timeout.",
+                      "type": "integer"
+                    },
+                    "previous_text": {
+                      "description": "Previous DOM text used by wait_for_dom_text_change.",
+                      "type": "string"
+                    },
+                    "ref": {
+                      "description": "Native AX ref returned by browser_snapshot/browser_find in the current generation. The runtime resolves it without model-generated CSS.",
+                      "type": "string"
+                    },
+                    "role": {
+                      "description": "ARIA role to locate, e.g. button/textbox/link.",
+                      "type": "string"
+                    },
+                    "selector": {
+                      "description": "Current-generation selector_hint from a probe, or an explicit selector only for a wait condition. Do not combine with another locator strategy.",
+                      "type": "string"
+                    },
+                    "stable_ms": {
+                      "description": "How long a matched value must remain unchanged.",
+                      "type": "integer"
+                    },
+                    "state": {
+                      "description": "Wait state for wait_for_selector/load_state, e.g. visible/attached/domcontentloaded.",
+                      "type": "string"
+                    },
+                    "target_id": {
+                      "description": "Generation-scoped target_id returned by the current PageState/probe. Preferred for actions and mutually exclusive with ref/selector/role/label/placeholder/text/testid.",
+                      "type": "string"
+                    },
+                    "testid": {
+                      "description": "Exact data-testid value for a target.",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Visible text for locate/click/wait_for_text.",
+                      "type": "string"
+                    },
+                    "timeout_ms": {
+                      "description": "Optional per-step timeout override.",
+                      "type": "integer"
+                    },
+                    "title_contains": {
+                      "description": "Title substring expected on a newly opened tab.",
+                      "type": "string"
+                    },
+                    "url": {
+                      "description": "Exact URL expected by wait_for_url.",
+                      "type": "string"
+                    },
+                    "url_contains": {
+                      "description": "URL substring expected by wait_for_url.",
+                      "type": "string"
+                    },
+                    "url_pattern": {
+                      "description": "Regular expression expected to match the current URL.",
+                      "type": "string"
+                    },
+                    "value": {
+                      "description": "Value to fill/type/select, or autocomplete query.",
+                      "type": "string"
+                    },
+                    "values": {
+                      "description": "MCP/Playwright-style native select values list. Also accepted for single-select fields.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "op"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 25,
+                "minItems": 1,
+                "type": "array"
+              },
+              "timeout_ms": {
+                "description": "Default per-step timeout in milliseconds. Default 2500, clamped to 250..30000.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "steps",
+              "generation_id"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Return compact repeated card/listing structures from the current page. Use this first on product pages, marketplace pages, search-result pages, catalog pages, article-list pages, table/list-row result pages, or any page with repeated visible cards/listings. The result includes compact PageState with generation-scoped card/control target_id values, candidate card title, author/source, summary/snippet, price, rating, review count, availability, primary link, and visible controls, region/kind/result_index/is_ad semantics that distinguish main results, accounts, sidebars, hot searches, shops, chats, and product links, match_count/visible/enabled/clickable/generation_id, recurring structure signatures, and cache diagnostics. Navigate primary_link/href directly instead of clicking a card hint. If this returns the fields needed for the task, including article/search-result title/link/author/source/summary fields, use the compact card result directly instead of taking screenshots/snapshots or running broad DOM evaluation. Only evaluate again when a required field is missing.",
+          "name": "browser_probe_cards",
+          "parameters": {
+            "properties": {
+              "include_buttons": {
+                "description": "When true, include visible buttons/links inside each card. Default true.",
+                "type": "boolean"
+              },
+              "max_cards": {
+                "description": "Maximum number of cards to return. Default 12, hard-capped at 20.",
+                "type": "integer"
+              },
+              "query": {
+                "description": "Optional text filter, e.g. 'mouse', 'book', 'laptop', or 'cart'.",
+                "type": "string"
+              },
+              "viewport_only": {
+                "description": "When true, only inspect cards visible in the current viewport. Default true.",
+                "type": "boolean"
+              }
+            },
+            "required": [],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Return a compact list of visible, high-value interactive elements on the current page. Use this for page-level controls such as buttons, links, inputs, forms, navigation, login, pagination, menus, calendar dates, sort tabs, rating filters, and visible actions. Dynamic controls are returned as generation-scoped targets with region/kind semantics. The optional query filter is alias-aware for common search/input terms, including placeholders, aria labels, input type/name/id/class, and Chinese search text such as 搜索/关键词. Prefer max_items around 20-30 unless a larger inventory is needed. For product/search/listing card data, prefer browser_probe_cards first. The result includes compact PageState and generation-scoped target_id values that can be passed directly to browser_batch_interact without rebuilding CSS. It also includes role/text/region/kind plus match_count/visible/enabled/actionable. The model-facing result does not expose Probe-local ids or internal selectors.",
+          "name": "browser_probe_interactives",
+          "parameters": {
+            "properties": {
+              "max_items": {
+                "description": "Maximum number of elements to return. Default 30, hard-capped at 40.",
+                "type": "integer"
+              },
+              "query": {
+                "description": "Optional text filter, e.g. 'cart', 'search', 'next', or 'login'.",
+                "type": "string"
+              },
+              "viewport_only": {
+                "description": "When true, only return elements currently visible in the viewport. Default true.",
+                "type": "boolean"
+              }
+            },
+            "required": [],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Recall a bounded text fragment from an older browser probe or snapshot result when a <persisted-output> marker's preview is insufficient. Pass only its 32-character handle. The tool can read only ToolResultWindowProcessor output owned by the current browser session; it cannot read arbitrary files. Use query to find the first matching fragment at or after offset, or omit query to read a chunk. Recalled refs and selectors are stale evidence after navigation and must never be used for browser interaction.",
+          "name": "browser_recall_offload",
+          "parameters": {
+            "properties": {
+              "handle": {
+                "description": "The 32-character handle from a persisted browser output marker.",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum returned characters. Default 8000, hard-capped at 16000.",
+                "maximum": 16000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "offset": {
+                "description": "Character offset for chunking or the query search start. Default 0.",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "query": {
+                "description": "Optional case-insensitive text to locate inside the original result.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "handle"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Perform click on a web page",
+          "name": "mcp_playwright-official_browser_click",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "button": {
+                "description": "Button to click, defaults to left",
+                "enum": [
+                  "left",
+                  "right",
+                  "middle"
+                ],
+                "type": "string"
+              },
+              "doubleClick": {
+                "description": "Whether to perform a double click instead of a single click",
+                "type": "boolean"
+              },
+              "element": {
+                "description": "Human-readable element description used to obtain permission to interact with the element",
+                "type": "string"
+              },
+              "modifiers": {
+                "description": "Modifier keys to press",
+                "items": {
+                  "enum": [
+                    "Alt",
+                    "Control",
+                    "ControlOrMeta",
+                    "Meta",
+                    "Shift"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "target": {
+                "description": "Exact target element reference from the page snapshot, or a unique element selector",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Close the page",
+          "name": "mcp_playwright-official_browser_close",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          }
+        },
+        {
+          "description": "Perform drag and drop between two elements",
+          "name": "mcp_playwright-official_browser_drag",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "endElement": {
+                "description": "Human-readable target element description used to obtain the permission to interact with the element",
+                "type": "string"
+              },
+              "endTarget": {
+                "description": "Exact target element reference from the page snapshot, or a unique element selector",
+                "type": "string"
+              },
+              "startElement": {
+                "description": "Human-readable source element description used to obtain the permission to interact with the element",
+                "type": "string"
+              },
+              "startTarget": {
+                "description": "Exact target element reference from the page snapshot, or a unique element selector",
+                "type": "string"
+              }
+            },
+            "required": [
+              "startTarget",
+              "endTarget"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Drop files or MIME-typed data onto an element, as if dragged from outside the page. At least one of \"paths\" or \"data\" must be provided.",
+          "name": "mcp_playwright-official_browser_drop",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Data to drop, as a map of MIME type to string value (e.g. {\"text/plain\": \"hello\", \"text/uri-list\": \"https://example.com\"}).",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "element": {
+                "description": "Human-readable element description used to obtain permission to interact with the element",
+                "type": "string"
+              },
+              "paths": {
+                "description": "Absolute paths to files to drop onto the element.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "target": {
+                "description": "Exact target element reference from the page snapshot, or a unique element selector",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Evaluate JavaScript expression on page or element",
+          "name": "mcp_playwright-official_browser_evaluate",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "element": {
+                "description": "Human-readable element description used to obtain permission to interact with the element",
+                "type": "string"
+              },
+              "filename": {
+                "description": "Filename to save the result to. If not provided, result is returned as text.",
+                "type": "string"
+              },
+              "function": {
+                "description": "() => { /* code */ } or (element) => { /* code */ } when element is provided",
+                "type": "string"
+              },
+              "target": {
+                "description": "Exact target element reference from the page snapshot, or a unique element selector",
+                "type": "string"
+              }
+            },
+            "required": [
+              "function"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Upload one or multiple files",
+          "name": "mcp_playwright-official_browser_file_upload",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "paths": {
+                "description": "The absolute paths to the files to upload. Can be single file or multiple files. If omitted, file chooser is cancelled.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "description": "Fill multiple form fields",
+          "name": "mcp_playwright-official_browser_fill_form",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "fields": {
+                "description": "Fields to fill in",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "element": {
+                      "description": "Human-readable element description used to obtain permission to interact with the element",
+                      "type": "string"
+                    },
+                    "name": {
+                      "description": "Human-readable field name",
+                      "type": "string"
+                    },
+                    "target": {
+                      "description": "Exact target element reference from the page snapshot, or a unique element selector",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Type of the field",
+                      "enum": [
+                        "textbox",
+                        "checkbox",
+                        "radio",
+                        "combobox",
+                        "slider"
+                      ],
+                      "type": "string"
+                    },
+                    "value": {
+                      "description": "Value to fill in the field. If the field is a checkbox, the value should be `true` or `false`. If the field is a combobox, the value should be the text of the option.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "target",
+                    "name",
+                    "type",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "fields"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Search the accessibility snapshot of the current page for text or a regular expression. Returns matching snapshot nodes with a few lines of surrounding context (like search snippets), each shown under its path from the root of the tree, which is cheaper than capturing the whole snapshot when you only need to locate an element and its ref.",
+          "name": "mcp_playwright-official_browser_find",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "regex": {
+                "description": "Regular expression to search for in the page snapshot. Matching is case-sensitive by default; wrap the pattern in slashes to add flags, e.g. \"/error/i\" for case-insensitive. Provide either text or regex, not both.",
+                "type": "string"
+              },
+              "text": {
+                "description": "Plain text to search for in the page snapshot (case-insensitive substring match). Provide either text or regex, not both.",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "description": "Handle a dialog",
+          "name": "mcp_playwright-official_browser_handle_dialog",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "accept": {
+                "description": "Whether to accept the dialog.",
+                "type": "boolean"
+              },
+              "promptText": {
+                "description": "The text of the prompt in case of a prompt dialog.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "accept"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Hover over element on page",
+          "name": "mcp_playwright-official_browser_hover",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "element": {
+                "description": "Human-readable element description used to obtain permission to interact with the element",
+                "type": "string"
+              },
+              "target": {
+                "description": "Exact target element reference from the page snapshot, or a unique element selector",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Navigate to a URL",
+          "name": "mcp_playwright-official_browser_navigate",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "url": {
+                "description": "The URL to navigate to",
+                "type": "string"
+              }
+            },
+            "required": [
+              "url"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Go back to the previous page in the history",
+          "name": "mcp_playwright-official_browser_navigate_back",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          }
+        },
+        {
+          "description": "Press a key on the keyboard",
+          "name": "mcp_playwright-official_browser_press_key",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "key": {
+                "description": "Name of the key to press or a character to generate, such as `ArrowLeft` or `a`",
+                "type": "string"
+              }
+            },
+            "required": [
+              "key"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Select an option in a dropdown",
+          "name": "mcp_playwright-official_browser_select_option",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "element": {
+                "description": "Human-readable element description used to obtain permission to interact with the element",
+                "type": "string"
+              },
+              "target": {
+                "description": "Exact target element reference from the page snapshot, or a unique element selector",
+                "type": "string"
+              },
+              "values": {
+                "description": "Array of values to select in the dropdown. This can be a single value or multiple values.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "target",
+              "values"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Capture accessibility snapshot of the current page, this is better than screenshot",
+          "name": "mcp_playwright-official_browser_snapshot",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "boxes": {
+                "description": "Include each element's bounding box as [box=x,y,width,height] in the snapshot. Coordinates are viewport-relative, in CSS pixels (Element.getBoundingClientRect)",
+                "type": "boolean"
+              },
+              "depth": {
+                "description": "Limit the depth of the snapshot tree",
+                "type": "number"
+              },
+              "filename": {
+                "description": "Save snapshot to markdown file instead of returning it in the response.",
+                "type": "string"
+              },
+              "target": {
+                "description": "Exact target element reference from the page snapshot, or a unique element selector",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "description": "List, create, close, or select a browser tab.",
+          "name": "mcp_playwright-official_browser_tabs",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "description": "Operation to perform",
+                "enum": [
+                  "list",
+                  "new",
+                  "close",
+                  "select"
+                ],
+                "type": "string"
+              },
+              "index": {
+                "description": "Tab index, used for close/select. If omitted for close, current tab is closed.",
+                "type": "number"
+              },
+              "url": {
+                "description": "URL to navigate to in the new tab, used for new.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "action"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Type text into editable element",
+          "name": "mcp_playwright-official_browser_type",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "element": {
+                "description": "Human-readable element description used to obtain permission to interact with the element",
+                "type": "string"
+              },
+              "slowly": {
+                "description": "Whether to type one character at a time. Useful for triggering key handlers in the page. By default entire text is filled in at once.",
+                "type": "boolean"
+              },
+              "submit": {
+                "description": "Whether to submit entered text (press Enter after)",
+                "type": "boolean"
+              },
+              "target": {
+                "description": "Exact target element reference from the page snapshot, or a unique element selector",
+                "type": "string"
+              },
+              "text": {
+                "description": "Text to type into the element",
+                "type": "string"
+              }
+            },
+            "required": [
+              "target",
+              "text"
+            ],
+            "type": "object"
+          }
+        }
+      ]
+    }
+  ],
+  "driver": "playwright_mcp",
+  "view": "extended_interaction"
+}
