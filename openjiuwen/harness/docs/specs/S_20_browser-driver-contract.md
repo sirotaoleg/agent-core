@@ -166,6 +166,35 @@ queues in order, raises `Unsupported(dispatched=False)` for commands or ref kind
 `DriverError(dispatched=...)` or any exception via `fail_next`, and raises `ConnectionLost` from the n-th call
 until the next `start()` via `lose_connection_on(n)`. Running out of script fails with `AssertionError`.
 
+## Drivers
+
+### browser-use (`drivers/browser_use/`)
+
+`BrowserUseDriver(HandlerDriver)` runs commands through the browser-use sidecar: a separate Python process
+(`sidecar/`, its own venv; the agent-core process never imports `browser_use`) reached over NDJSON on stdio
+(`transport.py`). `info`: `name="browser_use"`, `surfaces={"browser"}`, `observes={elements, screenshot,
+native_text, surface}`, `versions` from the sidecar's `connect` reply.
+
+- Factory: `create_browser_use_driver(device, surface_settings)` builds `BrowserUseConfig(cdp_url=device.endpoint)`;
+  `start(config=None)` spawns the sidecar and attaches to that CDP endpoint (an explicit config overrides).
+- Handlers, all with `refs={DriverRef}` where the command has a target: `Click`, `TypeText` (target required, no
+  `slowly`), `Scroll` (one axis per command), `Hover`, `Drag`, `SelectOption` (exactly one value), `UploadFile`
+  (target required), `Drop`, `FillForm`, `RunScript` (page JS; with a target the element is stamped and passed as
+  the first argument). Without refs: `PressKey`, `HandleDialog`, `Wait` (sleep, or polling page text for 10 s),
+  `Navigate`, `Back`, `OpenContext`, `SwitchContext`, `CloseContext`. Any other form raises
+  `Unsupported(dispatched=False)` before anything is sent.
+- `DriverRef.ref` is the handle the sidecar mints in `observe()` (`bnid:<backend node id>`). The sidecar's index
+  refs (`IndexRef`) stay internal; no handler accepts them.
+- `observe()` fills `elements`, `native_text` (browser-use's own page text), `screenshot` (a separate full-page
+  capture when `full_page`) and `BrowserContext` (url, title, tabs, PDF viewer, scroll pixels). The focused context is
+  the first tab whose URL is the page URL. `generation` stays empty.
+- `context_changed`: `Navigate`, `Back`, `OpenContext` always (a same-URL reload too); `SwitchContext` and
+  `CloseContext` always; other commands when the sidecar reports a URL change.
+- Errors: each sidecar error code maps to one typed error. `dispatched=False` only for `StaleIndexError` (→
+  `StaleRef`), `ElementNotFound`, `DriverNotConnected` (→ `ConnectionLost`) and `DriverUnsupported` (→
+  `Unsupported`), which the sidecar raises before any input reaches the page. Codes it cannot classify become
+  `DriverError(dispatched=True)` and are logged raw.
+
 ## Relation to other specs
 
 - `S_05` (tools contract): the tools built from these commands are registered like every harness tool and go
