@@ -15,9 +15,8 @@ Folder roles used by the rules (plan section 3/4, Phase 1 item 1):
   ``utils`` under ``runtime/``, ``clients`` into ``drivers/playwright_mcp/``).
 - ``surfaces/``: one sub-package per kind of screen (lands in Phase 2).
 - concrete drivers: ``drivers/<name>`` and today's ``backends/browser_use``.
-  Today's ``drivers/managed_browser.py`` is the provisioner that Phase 2 moves to
-  ``provisioning/managed_browser.py``; it is treated as a provisioning module.
-- ``provisioning/<module>``: provisioners (land in Phase 3).
+- ``provisioning/<module>``: provisioners (``managed_browser`` moved there in Phase 2;
+  the rest land in Phase 3).
 
 Folders that do not exist yet simply contribute no files, so every rule over them
 passes vacuously until they appear.

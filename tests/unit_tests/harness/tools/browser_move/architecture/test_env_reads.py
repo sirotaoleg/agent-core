@@ -85,7 +85,7 @@ KNOWN_ENV_READS: dict[str, dict[str, int]] = {
     "controllers/action.py": {
         "utils.env.resolve_upload_root()": 1,
     },
-    "drivers/managed_browser.py": {
+    "provisioning/managed_browser.py": {
         "os.getenv(LOCALAPPDATA)": 2,
         "os.getenv(ProgramFiles(x86))": 1,
         "os.getenv(ProgramFiles)": 1,

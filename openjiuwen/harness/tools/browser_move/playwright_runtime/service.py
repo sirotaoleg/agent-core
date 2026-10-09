@@ -26,7 +26,7 @@ from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.runner import Runner
 from openjiuwen.core.single_agent.agents.react_agent import ReActAgent
 
-from ..drivers.managed_browser import ManagedBrowserDriver, _default_chrome_user_data_dir
+from ..provisioning.managed_browser import ManagedBrowserDriver, _default_chrome_user_data_dir
 from ..utils.parsing import extract_json_object
 from .agents import build_browser_worker_agent, refresh_browser_worker_system_prompt
 from .config import BrowserInstanceConfig, BrowserRunGuardrails, parse_command_args, resolve_playwright_mcp_cwd

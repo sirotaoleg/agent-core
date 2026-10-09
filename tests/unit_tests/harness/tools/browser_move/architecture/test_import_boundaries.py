@@ -25,7 +25,7 @@ from . import _scan
 # (file relative to the package, imported module relative to the package) -> count.
 KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {
     # removed in Phase 7 (service.py stops starting Chrome itself in Phase 3)
-    ("playwright_runtime/service.py", "drivers.managed_browser"): 2,
+    ("playwright_runtime/service.py", "provisioning.managed_browser"): 2,
 }
 
 # (file relative to openjiuwen/core, imported module) -> count.
@@ -55,8 +55,6 @@ def _concrete_kind(parts: tuple[str, ...]) -> str | None:
     if len(parts) < 2:
         return None
     head, name = parts[0], parts[1]
-    if head == "drivers" and name == "managed_browser":
-        return "provisioning"  # today's location; Phase 2 moves it to provisioning/
     if head == "drivers" and name != "middleware":
         return "driver"
     if head == "backends" and name == "browser_use":

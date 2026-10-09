@@ -272,7 +272,7 @@ def io_stubs(
     import mcp.client.stdio
 
     from openjiuwen.core.foundation.llm import model as model_mod
-    from openjiuwen.harness.tools.browser_move.drivers.managed_browser import ManagedBrowserDriver
+    from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import ManagedBrowserDriver
 
     session_cls = type(
         "FakeMcpSession",
