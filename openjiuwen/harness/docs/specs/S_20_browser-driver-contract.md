@@ -246,25 +246,51 @@ native_text, surface}`, `versions` from the sidecar's `connect` reply.
 
 - Factory: `create_browser_use_driver(device, surface_settings)` builds `BrowserUseConfig(cdp_url=device.endpoint)`;
   `start(config=None)` spawns the sidecar and attaches to that CDP endpoint (an explicit config overrides).
-- Handlers, all with `refs={DriverRef}` where the command has a target: `Click`, `TypeText` (target required, no
-  `slowly`), `Scroll` (one axis per command), `Hover`, `Drag`, `SelectOption` (exactly one value), `UploadFile`
-  (target required), `Drop`, `FillForm` (each field's `sensitive` goes to the sidecar's `type_text`), `RunScript`
-  (page JS; with a target the element is stamped and passed as the first argument). Without refs: `PressKey`,
-  `HandleDialog`, `Wait` (sleep `seconds`, or poll page text for `until_text` up to `seconds`, default 10 s),
-  `Navigate`, `Back`, `OpenContext`, `SwitchContext`, `CloseContext`. Any other form raises
+- Handlers with `refs={DriverRef, Locator}`: `Click`, `TypeText` (target required, no `slowly`), `Hover`, `Drag`,
+  `SelectOption` (exactly one value), `UploadFile` (target required), `Drop`, `FillForm` (each field's
+  `sensitive` goes to the sidecar's `type_text`). With `refs={DriverRef}`: `Scroll` (one axis per command),
+  `RunScript` (page JS; with a target the element is stamped and passed as the first argument). Without refs:
+  `PressKey`, `HandleDialog`, `Wait` (sleep `seconds`, or poll page text for `until_text` up to `seconds`, default
+  10 s), `Navigate`, `Back`, `OpenContext`, `SwitchContext`, `CloseContext`. Any other form raises
   `Unsupported(dispatched=False)` before anything is sent.
-- `DriverRef.ref` is the handle the sidecar mints in `observe()` (`bnid:<backend node id>`). The sidecar's index
-  refs (`IndexRef`) stay internal; no handler accepts them.
+- `DriverRef.ref` is the handle the sidecar mints in `observe()` (`bnid:<backend node id>`). A `Locator` is
+  accepted by CSS only, for the commands whose browser-use tools take a `selector`; it goes to the sidecar as its
+  selector ref, which resolves to the first match in the current document. A `Locator` with `text` raises
+  `Unsupported(dispatched=False)` (for `FillForm`, before any field is filled). The sidecar's index refs
+  (`IndexRef`) stay internal; no handler accepts them.
 - `observe()` fills `elements`, `native_text` (browser-use's own page text), `screenshot` (a separate full-page
   capture when `full_page`) and `BrowserContext` (url, title, tabs, PDF viewer, scroll pixels). The title is read
   from `document.title`, because browser-use's own title lags behind it; the sidecar's title is kept only when the
   page runs no script. The focused context is the first tab whose URL is the page URL. `generation` stays empty.
+- Element and keyboard commands run in the sidecar as one action each (wire version 2). The action resolves its
+  ref, then sends its input as a task and watches the page while it runs:
+  - Dialogs. The sidecar owns `Page.javascriptDialogOpening` (it takes it back from browser-use's auto-accepting
+    popups watchdog before every action and observation). When a dialog opens that `HandleDialog` did not arm,
+    Chrome holds the input until the dialog closes; the action returns at once with `dialog_opened` (type and
+    message) and its input waits in the background. `HandleDialog` answers the dialog on the session that reported
+    it. While a dialog is open, `observe()`, screenshots and page scripts fail at once (`DriverError`) instead of
+    blocking, and any other action returns `ok=False` without sending input.
+  - Popups. A page that opens a popup can wait for the debugger until told to run, which held the click for 30 s.
+    When a page target is created during the action, the sidecar resumes the current page
+    (`Runtime.runIfWaitingForDebugger`) and reports the new pages as `new_targets`.
+  - Navigation. A navigation of the page's main frame that the action started (`Page.frameRequestedNavigation`,
+    current tab) gets up to 1 s (`_NAVIGATION_COMMIT_WAIT_S`) to commit (`Page.frameNavigated`). A committed one
+    is a `document_changed`, a same-URL reload from a click or a submit included; one that does not commit in
+    time counts only if the URL changed.
+  - Intercepted input. Before the mouse is used for `Click`, `Hover` and the `Drag` source, the sidecar hit-tests
+    the point with `elementFromPoint`. If another element is on top (not the target or inside it; a `<label>` of
+    the target is allowed), it raises `ActionIntercepted` with `by` = `tag#id.class "name"` of that element, and
+    nothing is sent. The `Drag` destination, `Drop` and the focusing click of `TypeText` are not hit-tested.
 - `context_changed`: `Navigate`, `Back`, `OpenContext` always (a same-URL reload too); `SwitchContext` and
-  `CloseContext` always; other commands when the sidecar reports a URL change.
-- Errors: each sidecar error code maps to one typed error. `dispatched=False` only for `StaleIndexError` (→
-  `StaleRef`), `ElementNotFound`, `DriverNotConnected` (→ `ConnectionLost`) and `DriverUnsupported` (→
-  `Unsupported`), which the sidecar raises before any input reaches the page. Codes it cannot classify become
-  `DriverError(dispatched=True)` and are logged raw.
+  `CloseContext` always; other commands when the sidecar reports `document_changed`, a dialog, or new pages (which
+  become `opened_contexts`). `detail` names an opened dialog.
+- Errors: each sidecar error code maps to one typed error. `dispatched=False` only for errors the sidecar raises
+  before any input reaches the page: `StaleIndexError` and `StaleNodeError` (→ `StaleRef`; a node the CDP says is
+  not in the document, "does not belong to the document" / "No node with given id"), `ElementNotFound`,
+  `ActionIntercepted` (with `by`), `DriverNotConnected` (→ `ConnectionLost`) and `DriverUnsupported` (→
+  `Unsupported`). Each action marks where its input starts; a stale or missing node after that point reaches the
+  driver as a plain `DriverError(dispatched=True)`. Codes it cannot classify become `DriverError(dispatched=True)`
+  and are logged raw.
 
 ## Relation to other specs
 
