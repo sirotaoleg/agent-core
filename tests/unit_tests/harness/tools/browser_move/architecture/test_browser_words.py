@@ -26,7 +26,7 @@ KNOWN_BROWSER_WORDS: dict[str, int] = {
     "playwright_runtime/browser_working_context.py": 17,
     "playwright_runtime/browser_working_context_processor.py": 3,
     "playwright_runtime/browser_working_context_rail.py": 1,
-    "playwright_runtime/config.py": 6,
+    "playwright_runtime/config.py": 8,
     "playwright_runtime/final_answer_recovery.py": 2,
     "playwright_runtime/intercepted_action.py": 1,
     "playwright_runtime/main.py": 4,

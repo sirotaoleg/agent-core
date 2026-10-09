@@ -15,6 +15,9 @@ from . import _scan
 KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {
     # legacy: service.py still starts Chrome itself until provisioners take over
     ("playwright_runtime/service.py", "provisioning.managed_browser"): 2,
+    # legacy: the public RuntimeSettings facade composes BrowserSettings until it can take them from the
+    # surface registry
+    ("playwright_runtime/config.py", "surfaces.browser.config"): 1,
 }
 
 # (file relative to openjiuwen/core, imported module) -> count.

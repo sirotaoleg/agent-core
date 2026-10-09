@@ -312,6 +312,10 @@ def _known_env_names() -> frozenset[str]:
     names = set(KEY_TUPLE_ENV_NAMES)
     for relpath in _scan.pkg_files():
         names |= _direct_and_helper_reads(relpath)[2]
+        if _scan.is_config_module(relpath):
+            # Settings parsers read a mapping they are given, so every name they spell is an env name.
+            tree = _scan.parse(relpath)
+            names |= {n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
     return frozenset(n for n in names if UPPER_SNAKE_RE.match(n))
 
 
