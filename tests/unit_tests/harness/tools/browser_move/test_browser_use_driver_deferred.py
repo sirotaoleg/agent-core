@@ -17,8 +17,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from openjiuwen.harness.tools.browser_move.contract import DriverRef, HandleDialog, Hover
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import BrowserUseDriver
-from openjiuwen.harness.tools.browser_move.backends.contract.base import SelectorRef
+from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Drop
 
 _SIDECAR_DIR = (
     Path(__file__).resolve().parents[5]
@@ -55,7 +56,7 @@ def _run(coro):
 
 
 def _make_driver_with_transport(transport: AsyncMock) -> BrowserUseDriver:
-    driver = BrowserUseDriver.__new__(BrowserUseDriver)
+    driver = BrowserUseDriver()
     driver._transport = transport
     driver._driver_generation = 3
     return driver
@@ -163,11 +164,11 @@ def test_driver_hover_serializes_to_sidecar() -> None:
         return_value={"ok": True, "detail": "hovered", "document_changed": False, "driver_generation": 4}
     )
     driver = _make_driver_with_transport(transport)
-    result = _run(driver.hover(SelectorRef(css="#btn")))
+    result = _run(driver.execute(Hover(DriverRef("bnid:7", "g1"))))
     assert result.ok is True
     method, params = transport.request.call_args.args
     assert method == "hover"
-    assert params["ref"]["kind"] == "selector"
+    assert params["ref"] == {"kind": "driver", "handle": "bnid:7", "driver_generation": 3}
 
 
 def test_driver_handle_dialog_serializes() -> None:
@@ -181,7 +182,7 @@ def test_driver_handle_dialog_serializes() -> None:
         }
     )
     driver = _make_driver_with_transport(transport)
-    result = _run(driver.handle_dialog(accept=True, prompt_text="x"))
+    result = _run(driver.execute(HandleDialog(accept=True, prompt_text="x")))
     assert result.ok is True
     method, params = transport.request.call_args.args
     assert method == "handle_dialog"
@@ -193,7 +194,7 @@ def test_driver_drop_missing_path_skips_sidecar() -> None:
     transport.request = AsyncMock()
     driver = _make_driver_with_transport(transport)
     missing = str(Path(tempfile.gettempdir()) / "openjiuwen_missing_drop2.txt")
-    result = _run(driver.drop(SelectorRef(css="#zone"), paths=[missing]))
+    result = _run(driver.execute(Drop(DriverRef("bnid:9", "g1"), paths=(missing,))))
     assert result.ok is False
     assert "not found" in result.detail.lower()
     transport.request.assert_not_called()
@@ -210,10 +211,12 @@ def test_driver_drop_temp_file_calls_sidecar() -> None:
         path = handle.name
     try:
         result = _run(
-            driver.drop(
-                SelectorRef(css="#zone"),
-                paths=[path],
-                data=[{"mimeType": "text/plain", "data": "hi"}],
+            driver.execute(
+                Drop(
+                    DriverRef("bnid:9", "g1"),
+                    paths=(path,),
+                    data=(("text/plain", "hi"),),
+                )
             )
         )
     finally:

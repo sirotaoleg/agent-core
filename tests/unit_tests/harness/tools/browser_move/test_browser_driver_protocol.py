@@ -12,7 +12,6 @@ import sys
 import pytest
 
 from openjiuwen.harness.tools.browser_move.backends.contract.base import BrowserDriver
-from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import BrowserUseDriver
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import wire
 
 from tests.unit_tests.harness.tools.browser_move.fakes.fake_driver import FakeDriver, assert_is_browser_driver
@@ -30,7 +29,7 @@ def _public_callables(cls: type) -> set[str]:
     }
 
 
-@pytest.mark.parametrize("driver_cls", [FakeDriver, BrowserUseDriver])
+@pytest.mark.parametrize("driver_cls", [FakeDriver])
 def test_driver_satisfies_runtime_checkable_protocol(driver_cls: type) -> None:
     driver = driver_cls()
     assert_is_browser_driver(driver)
@@ -39,11 +38,6 @@ def test_driver_satisfies_runtime_checkable_protocol(driver_cls: type) -> None:
 def test_fake_driver_implements_every_protocol_method() -> None:
     missing = set(_protocol_method_names()) - _public_callables(FakeDriver)
     assert not missing, f"FakeDriver missing protocol methods: {sorted(missing)}"
-
-
-def test_browser_use_driver_implements_every_protocol_method() -> None:
-    missing = set(_protocol_method_names()) - _public_callables(BrowserUseDriver)
-    assert not missing, f"BrowserUseDriver missing protocol methods: {sorted(missing)}"
 
 
 def test_importing_browser_use_driver_does_not_load_browser_use_package() -> None:

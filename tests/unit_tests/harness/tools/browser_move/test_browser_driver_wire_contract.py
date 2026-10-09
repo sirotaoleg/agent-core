@@ -9,7 +9,8 @@ from __future__ import annotations
 import inspect
 
 from openjiuwen.harness.tools.browser_move.backends.contract import errors as driver_errors
-from openjiuwen.harness.tools.browser_move.backends.contract.base import BrowserDriver, DriverRef, NodeRef
+from openjiuwen.harness.tools.browser_move.backends.contract.base import BrowserDriver
+from openjiuwen.harness.tools.browser_move.contract import DriverRef
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import _ref_to_wire
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import wire
 
@@ -30,12 +31,11 @@ def test_wire_method_names_match_protocol_plus_control() -> None:
 
 
 def test_driver_method_names_are_subset_of_wire_methods_and_driver_ref_round_trips() -> None:
-    """Wire-shape coverage for the two element-ref encodings that cross the
-    process boundary: the driver method names must stay a subset of the
-    control-augmented wire surface, and the new ``DriverRef`` kind (see
-    ``backends/contract/base.py``) must round-trip through ``_ref_to_wire``
-    and the sidecar's own minting convention exactly like the pre-existing
-    ``NodeRef`` kind does.
+    """Wire-shape coverage for the element ref that crosses the process
+    boundary: the driver method names must stay a subset of the
+    control-augmented wire surface, and the contract's ``DriverRef`` must
+    round-trip through ``_ref_to_wire`` and the sidecar's own minting
+    convention.
     """
     assert set(wire.DRIVER_METHOD_NAMES) <= wire.WIRE_METHOD_NAMES
 
@@ -44,13 +44,9 @@ def test_driver_method_names_are_subset_of_wire_methods_and_driver_ref_round_tri
         _parse_driver_ref_handle,
     )
 
-    node_ref = NodeRef(backend_node_id=42, frame_id="frame-1")
-    node_wire = _ref_to_wire(node_ref)
-    assert node_wire == {"kind": "node", "backend_node_id": 42, "frame_id": "frame-1"}
-
     minted = _mint_driver_ref(backend_node_id=42, driver_generation=3)
-    driver_ref = DriverRef(handle=minted["handle"], driver_generation=minted["driver_generation"])
-    driver_wire = _ref_to_wire(driver_ref)
+    driver_ref = DriverRef(ref=minted["handle"], generation="g1")
+    driver_wire = _ref_to_wire(driver_ref, minted["driver_generation"])
     assert driver_wire == {"kind": "driver", "handle": "bnid:42", "driver_generation": 3}
     assert _parse_driver_ref_handle(driver_wire["handle"]) == 42
 

@@ -12,9 +12,12 @@ import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from openjiuwen.harness.tools.browser_move.backends.contract.base import ActResult, SelectorRef
+from openjiuwen.harness.tools.browser_move.contract import ActionResult, DriverRef
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import BrowserUseDriver
+from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import UploadFile
 from openjiuwen.harness.tools.browser_move.utils.upload_paths import resolve_upload_file_paths
+
+_FILE_INPUT = DriverRef("bnid:5", "g1")
 
 
 def _run(coro):
@@ -22,7 +25,7 @@ def _run(coro):
 
 
 def _make_driver_with_transport(transport: AsyncMock) -> BrowserUseDriver:
-    driver = BrowserUseDriver.__new__(BrowserUseDriver)
+    driver = BrowserUseDriver()
     driver._transport = transport
     driver._driver_generation = 7
     return driver
@@ -34,9 +37,9 @@ def test_upload_files_missing_path_returns_failed_act_result_without_sidecar() -
     driver = _make_driver_with_transport(transport)
     missing = str(Path(tempfile.gettempdir()) / "openjiuwen_missing_upload_no_such_file.txt")
 
-    result = _run(driver.upload_files(SelectorRef(css="input[type=file]"), [missing]))
+    result = _run(driver.execute(UploadFile(_FILE_INPUT, (missing,))))
 
-    assert isinstance(result, ActResult)
+    assert isinstance(result, ActionResult)
     assert result.ok is False
     assert "not found" in result.detail.lower()
     assert "not readable" not in result.detail.lower()
@@ -66,7 +69,7 @@ def test_upload_files_existing_path_calls_sidecar_with_resolved_absolute() -> No
         old_cwd = Path.cwd()
         try:
             os.chdir(parent)
-            result = _run(driver.upload_files(SelectorRef(css="input[type=file]"), [rel]))
+            result = _run(driver.execute(UploadFile(_FILE_INPUT, (rel,))))
         finally:
             os.chdir(old_cwd)
     finally:
@@ -97,7 +100,7 @@ def test_upload_files_tilde_path_is_expanded_before_sidecar() -> None:
         existing = Path(handle.name)
     try:
         tilde_path = f"~/{existing.name}"
-        result = _run(driver.upload_files(SelectorRef(css="input[type=file]"), [tilde_path]))
+        result = _run(driver.execute(UploadFile(_FILE_INPUT, (tilde_path,))))
     finally:
         existing.unlink(missing_ok=True)
 
@@ -125,7 +128,7 @@ def test_upload_files_strips_wrapping_quotes_before_is_file() -> None:
         existing = handle.name
     try:
         quoted = f"'{existing}'"
-        result = _run(driver.upload_files(SelectorRef(css="input[type=file]"), [quoted]))
+        result = _run(driver.execute(UploadFile(_FILE_INPUT, (quoted,))))
     finally:
         Path(existing).unlink(missing_ok=True)
 
