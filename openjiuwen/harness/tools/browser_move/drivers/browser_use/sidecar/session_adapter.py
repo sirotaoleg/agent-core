@@ -154,6 +154,19 @@ def browser_use_version() -> str:
         return "unknown"
 
 
+class _Act:
+    """What happened while one element/keyboard action ran (see ``SessionAdapter._act``)."""
+
+    def __init__(self) -> None:
+        self.dialog: dict[str, str] | None = None
+        # Set when a dialog opened that nothing handles: the action's input now waits for ``handle_dialog``.
+        self.dialog_blocking = asyncio.Event()
+
+
+def _dialog_note(dialog: dict[str, Any]) -> str:
+    return f"a {dialog.get('type') or 'dialog'} dialog is open ({dialog.get('message', '')!r}); handle it first"
+
+
 class SessionAdapter:
     """Owns the browser-use session and translates wire calls into it."""
 
@@ -167,7 +180,11 @@ class SessionAdapter:
         self._dialog_pending: dict[str, Any] | None = None
         self._dialog_listener_registered = False
         self._dialog_unregister: Any = None
+        self._dialog_handler: Any = None
         self._dialog_handle_tasks: set[asyncio.Task] = set()
+        # The action running now, and inputs left waiting on a dialog after their action returned.
+        self._current_act: _Act | None = None
+        self._waiting_inputs: set[asyncio.Task] = set()
 
     # -- lifecycle ---------------------------------------------------
 
@@ -215,6 +232,8 @@ class SessionAdapter:
 
     async def close(self) -> None:
         """Detach only. MUST NOT KILL CHROME -- ``stop()``, never ``kill()``."""
+        for task in list(self._waiting_inputs):
+            task.cancel()
         if self._session is not None:
             await self._session.stop()
         self._session = None
@@ -226,6 +245,8 @@ class SessionAdapter:
     async def observe(
         self, *, include_dom: bool = True, include_screenshot: bool = False, cached: bool = False
     ) -> dict[str, Any]:
+        self._refuse_while_dialog_open("observe", exceptions.ObserveError)
+        await self._ensure_dialog_listener()
         summary = await self._session.get_browser_state_summary(
             include_screenshot=include_screenshot, cached=cached
         )
@@ -240,6 +261,7 @@ class SessionAdapter:
         )
 
     async def screenshot(self, *, full_page: bool = False, clip: dict[str, Any] | None = None) -> str:
+        self._refuse_while_dialog_open("screenshot", exceptions.ObserveError)
         data = await self._session.take_screenshot(full_page=full_page, clip=clip)
         return base64.b64encode(data).decode("ascii")
 
@@ -268,6 +290,7 @@ class SessionAdapter:
         }
 
     async def stamp(self, ref: dict[str, Any], *, attribute: str, value: str) -> str:
+        self._refuse_while_dialog_open("stamp", exceptions.EvaluateError)
         backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
         cdp_session = await self._ensure_cdp_session()
         await cdp.call_function_on_backend_node(
@@ -328,6 +351,7 @@ class SessionAdapter:
         return await self._nav_result(before_url)
 
     # -- hands: element actions -------------------------------------------
+    # Each action is a ``body(act)`` run by ``_act``, which returns early when a dialog blocks the input.
 
     async def click(
         self,
@@ -337,18 +361,20 @@ class SessionAdapter:
         click_count: int = 1,
         modifiers: list[str] | None = None,
     ) -> dict[str, Any]:
-        before_url = await self._safe_current_url()
-        backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
-        box = await self._element_box(backend_node_id)
-        if box is None:
-            raise exceptions.ElementNotFound(f"element (backend_node_id={backend_node_id}) has no bounding box")
-        cx, cy = box["x"] + box["width"] / 2.0, box["y"] + box["height"] / 2.0
-        cdp_session = await self._ensure_cdp_session()
-        for _ in range(max(1, click_count)):
-            await cdp.dispatch_mouse_click(
-                cdp_session.cdp_client, cdp_session.session_id, x=cx, y=cy, button=button, click_count=click_count
-            )
-        return await self._act_result(before_url, ok=True, detail="clicked")
+        async def body(act: _Act) -> tuple[bool, str]:
+            backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
+            box = await self._element_box(backend_node_id)
+            if box is None:
+                raise exceptions.ElementNotFound(f"element (backend_node_id={backend_node_id}) has no bounding box")
+            cx, cy = box["x"] + box["width"] / 2.0, box["y"] + box["height"] / 2.0
+            cdp_session = await self._ensure_cdp_session()
+            for _ in range(max(1, click_count)):
+                await cdp.dispatch_mouse_click(
+                    cdp_session.cdp_client, cdp_session.session_id, x=cx, y=cy, button=button, click_count=click_count
+                )
+            return True, "clicked"
+
+        return await self._act(body)
 
     async def type_text(
         self,
@@ -359,185 +385,184 @@ class SessionAdapter:
         press_enter: bool = False,
         sensitive: bool = False,
     ) -> dict[str, Any]:
-        before_url = await self._safe_current_url()
-        backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
-        cdp_session = await self._ensure_cdp_session()
-        box = await self._element_box(backend_node_id)
-        if box is not None:
-            cx, cy = box["x"] + box["width"] / 2.0, box["y"] + box["height"] / 2.0
-            await cdp.dispatch_mouse_click(cdp_session.cdp_client, cdp_session.session_id, x=cx, y=cy)
-        if clear:
-            await cdp.call_function_on_backend_node(
-                cdp_session.cdp_client,
-                cdp_session.session_id,
-                backend_node_id,
-                "function(){ if ('value' in this) { this.value = ''; } else { this.textContent = ''; } "
-                "this.dispatchEvent(new Event('input', {bubbles: true})); }",
-            )
-        await cdp.insert_text(cdp_session.cdp_client, cdp_session.session_id, text)
-        if press_enter:
-            await cdp.dispatch_key_press(cdp_session.cdp_client, cdp_session.session_id, "Enter")
-        detail = "typed" if not sensitive else "typed (sensitive)"
-        return await self._act_result(before_url, ok=True, detail=detail)
+        async def body(act: _Act) -> tuple[bool, str]:
+            backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
+            cdp_session = await self._ensure_cdp_session()
+            box = await self._element_box(backend_node_id)
+            if box is not None:
+                cx, cy = box["x"] + box["width"] / 2.0, box["y"] + box["height"] / 2.0
+                await cdp.dispatch_mouse_click(cdp_session.cdp_client, cdp_session.session_id, x=cx, y=cy)
+            if clear:
+                await cdp.call_function_on_backend_node(
+                    cdp_session.cdp_client,
+                    cdp_session.session_id,
+                    backend_node_id,
+                    "function(){ if ('value' in this) { this.value = ''; } else { this.textContent = ''; } "
+                    "this.dispatchEvent(new Event('input', {bubbles: true})); }",
+                )
+            await cdp.insert_text(cdp_session.cdp_client, cdp_session.session_id, text)
+            if press_enter:
+                await cdp.dispatch_key_press(cdp_session.cdp_client, cdp_session.session_id, "Enter")
+            return True, "typed" if not sensitive else "typed (sensitive)"
+
+        return await self._act(body)
 
     async def press_key(self, keys: str) -> dict[str, Any]:
-        before_url = await self._safe_current_url()
-        from browser_use.browser.events import SendKeysEvent
+        async def body(act: _Act) -> tuple[bool, str]:
+            from browser_use.browser.events import SendKeysEvent
 
-        event = self._session.event_bus.dispatch(SendKeysEvent(keys=key_utils.normalize_key_combo(keys)))
-        await event
-        await event.event_result(raise_if_any=True, raise_if_none=False)
-        return await self._act_result(before_url, ok=True, detail="keys sent")
+            event = self._session.event_bus.dispatch(SendKeysEvent(keys=key_utils.normalize_key_combo(keys)))
+            await event
+            await event.event_result(raise_if_any=True, raise_if_none=False)
+            return True, "keys sent"
+
+        return await self._act(body)
 
     async def select_option(
         self, ref: dict[str, Any], *, value: str | None = None, label: str | None = None
     ) -> dict[str, Any]:
-        before_url = await self._safe_current_url()
-        from browser_use.browser.events import SelectDropdownOptionEvent
+        async def body(act: _Act) -> tuple[bool, str]:
+            from browser_use.browser.events import SelectDropdownOptionEvent
 
-        node = await self._node_for_event(ref)
-        text = label if label is not None else (value or "")
-        event = self._session.event_bus.dispatch(SelectDropdownOptionEvent(node=node, text=text))
-        await event
-        await event.event_result(raise_if_any=True, raise_if_none=False)
-        return await self._act_result(before_url, ok=True, detail="option selected")
+            node = await self._node_for_event(ref)
+            text = label if label is not None else (value or "")
+            event = self._session.event_bus.dispatch(SelectDropdownOptionEvent(node=node, text=text))
+            await event
+            await event.event_result(raise_if_any=True, raise_if_none=False)
+            return True, "option selected"
+
+        return await self._act(body)
 
     async def set_checked(self, ref: dict[str, Any], checked: bool) -> dict[str, Any]:
-        before_url = await self._safe_current_url()
-        backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
-        cdp_session = await self._ensure_cdp_session()
-        await cdp.call_function_on_backend_node(
-            cdp_session.cdp_client,
-            cdp_session.session_id,
-            backend_node_id,
-            "function(want){ if (this.checked !== want) { this.checked = want; "
-            "this.dispatchEvent(new Event('click', {bubbles: true})); "
-            "this.dispatchEvent(new Event('change', {bubbles: true})); } }",
-            arguments=[{"value": bool(checked)}],
-        )
-        return await self._act_result(before_url, ok=True, detail="checked state set")
+        async def body(act: _Act) -> tuple[bool, str]:
+            backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
+            cdp_session = await self._ensure_cdp_session()
+            await cdp.call_function_on_backend_node(
+                cdp_session.cdp_client,
+                cdp_session.session_id,
+                backend_node_id,
+                "function(want){ if (this.checked !== want) { this.checked = want; "
+                "this.dispatchEvent(new Event('click', {bubbles: true})); "
+                "this.dispatchEvent(new Event('change', {bubbles: true})); } }",
+                arguments=[{"value": bool(checked)}],
+            )
+            return True, "checked state set"
+
+        return await self._act(body)
 
     async def scroll(
         self, *, direction: str, amount: float, ref: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        before_url = await self._safe_current_url()
-        from browser_use.browser.events import ScrollEvent
+        async def body(act: _Act) -> tuple[bool, str]:
+            from browser_use.browser.events import ScrollEvent
 
-        node = await self._node_for_event(ref) if ref is not None else None
-        event = self._session.event_bus.dispatch(ScrollEvent(node=node, direction=direction, amount=amount))
-        await event
-        await event.event_result(raise_if_any=True, raise_if_none=False)
-        return await self._act_result(before_url, ok=True, detail="scrolled")
+            node = await self._node_for_event(ref) if ref is not None else None
+            event = self._session.event_bus.dispatch(ScrollEvent(node=node, direction=direction, amount=amount))
+            await event
+            await event.event_result(raise_if_any=True, raise_if_none=False)
+            return True, "scrolled"
+
+        return await self._act(body)
 
     async def upload_files(self, ref: dict[str, Any], paths: list[str]) -> dict[str, Any]:
-        before_url = await self._safe_current_url()
-        normalized, path_error = _normalize_upload_paths(paths or [])
-        if path_error:
-            return await self._act_result(before_url, ok=False, detail=path_error)
-        backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
-        cdp_session = await self._ensure_cdp_session()
-        facts = await cdp.call_function_on_backend_node(
-            cdp_session.cdp_client,
-            cdp_session.session_id,
-            backend_node_id,
-            "function(){"
-            "  const isFile = !!(this && this.tagName === 'INPUT' &&"
-            "    String(this.type || '').toLowerCase() === 'file');"
-            "  return {isFile: isFile, multiple: !!(isFile && this.multiple),"
-            "    files: (isFile && this.files) ? this.files.length : 0};"
-            "}",
-        )
-        if not isinstance(facts, dict) or not facts.get("isFile"):
-            return await self._act_result(
-                before_url,
-                ok=False,
-                detail="upload target is not an <input type=file>",
+        async def body(act: _Act) -> tuple[bool, str]:
+            normalized, path_error = _normalize_upload_paths(paths or [])
+            if path_error:
+                return False, path_error
+            backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
+            cdp_session = await self._ensure_cdp_session()
+            facts = await cdp.call_function_on_backend_node(
+                cdp_session.cdp_client,
+                cdp_session.session_id,
+                backend_node_id,
+                "function(){"
+                "  const isFile = !!(this && this.tagName === 'INPUT' &&"
+                "    String(this.type || '').toLowerCase() === 'file');"
+                "  return {isFile: isFile, multiple: !!(isFile && this.multiple),"
+                "    files: (isFile && this.files) ? this.files.length : 0};"
+                "}",
             )
-        if len(normalized) > 1 and not facts.get("multiple"):
-            return await self._act_result(
-                before_url,
-                ok=False,
-                detail=(
+            if not isinstance(facts, dict) or not facts.get("isFile"):
+                return False, "upload target is not an <input type=file>"
+            if len(normalized) > 1 and not facts.get("multiple"):
+                return False, (
                     f"upload target does not accept multiple files "
                     f"(got {len(normalized)} paths); pass a single path or a multiple= file input"
-                ),
+                )
+            await cdp.set_file_input_files(
+                cdp_session.cdp_client,
+                cdp_session.session_id,
+                backend_node_id,
+                normalized,
             )
-        await cdp.set_file_input_files(
-            cdp_session.cdp_client,
-            cdp_session.session_id,
-            backend_node_id,
-            normalized,
-        )
-        attached = await cdp.call_function_on_backend_node(
-            cdp_session.cdp_client,
-            cdp_session.session_id,
-            backend_node_id,
-            "function(){ return (this.files && this.files.length) || 0; }",
-        )
-        count = int(attached or 0)
-        if count < 1:
-            return await self._act_result(
-                before_url,
-                ok=False,
-                detail=(
+            attached = await cdp.call_function_on_backend_node(
+                cdp_session.cdp_client,
+                cdp_session.session_id,
+                backend_node_id,
+                "function(){ return (this.files && this.files.length) || 0; }",
+            )
+            count = int(attached or 0)
+            if count < 1:
+                return False, (
                     "file input has no files after attach "
                     "(DOM.setFileInputFiles did not stick; check path is readable by Chrome)"
-                ),
-            )
-        if count != len(normalized):
-            return await self._act_result(
-                before_url,
-                ok=False,
-                detail=f"file input has {count} file(s) after attach, expected {len(normalized)}",
-            )
-        return await self._act_result(before_url, ok=True, detail=f"uploaded {count} file(s)")
+                )
+            if count != len(normalized):
+                return False, f"file input has {count} file(s) after attach, expected {len(normalized)}"
+            return True, f"uploaded {count} file(s)"
+
+        return await self._act(body)
 
     async def drag(
         self, source: dict[str, Any], target: dict[str, Any], *, steps: int = 10, delay_ms: int = 0
     ) -> dict[str, Any]:
-        before_url = await self._safe_current_url()
-        source_id = await self._resolve_ref_to_backend_node_id(source)
-        target_id = await self._resolve_ref_to_backend_node_id(target)
-        source_box = await self._element_box(source_id)
-        target_box = await self._element_box(target_id)
-        if source_box is None or target_box is None:
-            raise exceptions.ElementNotFound("drag source or target has no bounding box")
-        sx, sy = source_box["x"] + source_box["width"] / 2.0, source_box["y"] + source_box["height"] / 2.0
-        tx, ty = target_box["x"] + target_box["width"] / 2.0, target_box["y"] + target_box["height"] / 2.0
-        source_is_html5 = await self._element_is_html5_draggable(source_id)
-        cdp_session = await self._ensure_cdp_session()
-        result = await cdp.perform_drag(
-            cdp_session.cdp_client,
-            cdp_session.session_id,
-            sx=sx,
-            sy=sy,
-            tx=tx,
-            ty=ty,
-            steps=steps,
-            delay_ms=delay_ms,
-            source_is_html5=source_is_html5,
-            source_backend_node_id=source_id,
-            target_backend_node_id=target_id,
-        )
-        return await self._act_result(before_url, ok=bool(result.get("ok")), detail=str(result.get("detail") or ""))
+        async def body(act: _Act) -> tuple[bool, str]:
+            source_id = await self._resolve_ref_to_backend_node_id(source)
+            target_id = await self._resolve_ref_to_backend_node_id(target)
+            source_box = await self._element_box(source_id)
+            target_box = await self._element_box(target_id)
+            if source_box is None or target_box is None:
+                raise exceptions.ElementNotFound("drag source or target has no bounding box")
+            sx, sy = source_box["x"] + source_box["width"] / 2.0, source_box["y"] + source_box["height"] / 2.0
+            tx, ty = target_box["x"] + target_box["width"] / 2.0, target_box["y"] + target_box["height"] / 2.0
+            source_is_html5 = await self._element_is_html5_draggable(source_id)
+            cdp_session = await self._ensure_cdp_session()
+            result = await cdp.perform_drag(
+                cdp_session.cdp_client,
+                cdp_session.session_id,
+                sx=sx,
+                sy=sy,
+                tx=tx,
+                ty=ty,
+                steps=steps,
+                delay_ms=delay_ms,
+                source_is_html5=source_is_html5,
+                source_backend_node_id=source_id,
+                target_backend_node_id=target_id,
+            )
+            return bool(result.get("ok")), str(result.get("detail") or "")
+
+        return await self._act(body)
 
     async def hover(self, ref: dict[str, Any]) -> dict[str, Any]:
-        before_url = await self._safe_current_url()
-        backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
-        box = await self._element_box(backend_node_id)
-        if box is None:
-            raise exceptions.ElementNotFound(f"element (backend_node_id={backend_node_id}) has no bounding box")
-        cx, cy = box["x"] + box["width"] / 2.0, box["y"] + box["height"] / 2.0
-        cdp_session = await self._ensure_cdp_session()
-        # Approach stream then settle on center (tooltip / :hover menus).
-        await cdp.dispatch_mouse_move(
-            cdp_session.cdp_client,
-            cdp_session.session_id,
-            x=max(0.0, cx - 4.0),
-            y=max(0.0, cy - 4.0),
-        )
-        await cdp.dispatch_mouse_move(cdp_session.cdp_client, cdp_session.session_id, x=cx, y=cy)
-        return await self._act_result(before_url, ok=True, detail="hovered")
+        async def body(act: _Act) -> tuple[bool, str]:
+            backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
+            box = await self._element_box(backend_node_id)
+            if box is None:
+                raise exceptions.ElementNotFound(f"element (backend_node_id={backend_node_id}) has no bounding box")
+            cx, cy = box["x"] + box["width"] / 2.0, box["y"] + box["height"] / 2.0
+            cdp_session = await self._ensure_cdp_session()
+            # Approach stream then settle on center (tooltip / :hover menus).
+            await cdp.dispatch_mouse_move(
+                cdp_session.cdp_client,
+                cdp_session.session_id,
+                x=max(0.0, cx - 4.0),
+                y=max(0.0, cy - 4.0),
+            )
+            await cdp.dispatch_mouse_move(cdp_session.cdp_client, cdp_session.session_id, x=cx, y=cy)
+            return True, "hovered"
+
+        return await self._act(body)
 
     async def handle_dialog(self, *, accept: bool, prompt_text: str | None = None) -> dict[str, Any]:
         """Handle the open dialog, or arm for the next one.
@@ -546,27 +571,25 @@ class SessionAdapter:
         dialog is not already pending. Success always means either
         ``Page.handleJavaScriptDialog`` ran, or the next opening is armed to run it.
         """
-        before_url = await self._safe_current_url()
-        await self._ensure_dialog_listener()
-        if self._dialog_pending is not None:
-            pending = self._dialog_pending
-            self._dialog_pending = None
-            cdp_session = await self._ensure_cdp_session()
-            await cdp.handle_javascript_dialog(
-                cdp_session.cdp_client,
-                cdp_session.session_id,
-                accept=bool(accept),
-                prompt_text=prompt_text,
-            )
-            dialog_type = str(pending.get("type") or "dialog")
-            action = "accepted" if accept else "dismissed"
-            return await self._act_result(before_url, ok=True, detail=f"{action} {dialog_type}")
-        self._dialog_armed = {"accept": bool(accept), "prompt_text": prompt_text}
-        return await self._act_result(
-            before_url,
-            ok=True,
-            detail="armed for next dialog; call before the action that opens it",
-        )
+
+        async def body(act: _Act) -> tuple[bool, str]:
+            if self._dialog_pending is not None:
+                pending = self._dialog_pending
+                self._dialog_pending = None
+                cdp_session = await self._ensure_cdp_session()
+                await cdp.handle_javascript_dialog(
+                    cdp_session.cdp_client,
+                    pending.get("session_id") or cdp_session.session_id,
+                    accept=bool(accept),
+                    prompt_text=prompt_text,
+                )
+                dialog_type = str(pending.get("type") or "dialog")
+                action = "accepted" if accept else "dismissed"
+                return True, f"{action} {dialog_type}"
+            self._dialog_armed = {"accept": bool(accept), "prompt_text": prompt_text}
+            return True, "armed for next dialog; call before the action that opens it"
+
+        return await self._act(body, while_dialog=True)
 
     async def drop(
         self,
@@ -576,57 +599,56 @@ class SessionAdapter:
         data: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Drop external files and/or MIME data onto an element (not element→element drag)."""
-        before_url = await self._safe_current_url()
-        path_list = list(paths or [])
-        data_list = list(data or [])
-        if not path_list and not data_list:
-            return await self._act_result(
-                before_url,
-                ok=False,
-                detail="drop requires at least one of paths or data",
-            )
-        normalized: list[str] = []
-        if path_list:
-            normalized, path_error = _normalize_upload_paths(path_list)
-            if path_error:
-                return await self._act_result(before_url, ok=False, detail=path_error)
-        backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
-        box = await self._element_box(backend_node_id)
-        if box is None:
-            raise exceptions.ElementNotFound(f"drop target (backend_node_id={backend_node_id}) has no bounding box")
-        cx, cy = box["x"] + box["width"] / 2.0, box["y"] + box["height"] / 2.0
-        cdp_session = await self._ensure_cdp_session()
-        try:
-            result = await cdp.perform_external_drop(
-                cdp_session.cdp_client,
-                cdp_session.session_id,
-                x=cx,
-                y=cy,
-                paths=normalized,
-                items=data_list,
-            )
-        except exceptions.DriverUnsupported:
-            raise
-        except exceptions.DriverError as exc:
-            return await self._act_result(before_url, ok=False, detail=str(exc))
-        detail = str(result.get("detail") or "dropped")
-        # Best-effort verify: file inputs may receive files via the DataTransfer.
-        if normalized:
-            attached = await cdp.call_function_on_backend_node(
-                cdp_session.cdp_client,
-                cdp_session.session_id,
-                backend_node_id,
-                "function(){"
-                "  if (this && this.tagName === 'INPUT' &&"
-                "      String(this.type || '').toLowerCase() === 'file') {"
-                "    return (this.files && this.files.length) || 0;"
-                "  }"
-                "  return null;"
-                "}",
-            )
-            if isinstance(attached, int) and attached > 0:
-                detail = f"{detail}; file input now has {attached} file(s)"
-        return await self._act_result(before_url, ok=bool(result.get("ok")), detail=detail)
+
+        async def body(act: _Act) -> tuple[bool, str]:
+            path_list = list(paths or [])
+            data_list = list(data or [])
+            if not path_list and not data_list:
+                return False, "drop requires at least one of paths or data"
+            normalized: list[str] = []
+            if path_list:
+                normalized, path_error = _normalize_upload_paths(path_list)
+                if path_error:
+                    return False, path_error
+            backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
+            box = await self._element_box(backend_node_id)
+            if box is None:
+                raise exceptions.ElementNotFound(f"drop target (backend_node_id={backend_node_id}) has no bounding box")
+            cx, cy = box["x"] + box["width"] / 2.0, box["y"] + box["height"] / 2.0
+            cdp_session = await self._ensure_cdp_session()
+            try:
+                result = await cdp.perform_external_drop(
+                    cdp_session.cdp_client,
+                    cdp_session.session_id,
+                    x=cx,
+                    y=cy,
+                    paths=normalized,
+                    items=data_list,
+                )
+            except exceptions.DriverUnsupported:
+                raise
+            except exceptions.DriverError as exc:
+                return False, str(exc)
+            detail = str(result.get("detail") or "dropped")
+            # Best-effort verify: file inputs may receive files via the DataTransfer.
+            if normalized:
+                attached = await cdp.call_function_on_backend_node(
+                    cdp_session.cdp_client,
+                    cdp_session.session_id,
+                    backend_node_id,
+                    "function(){"
+                    "  if (this && this.tagName === 'INPUT' &&"
+                    "      String(this.type || '').toLowerCase() === 'file') {"
+                    "    return (this.files && this.files.length) || 0;"
+                    "  }"
+                    "  return null;"
+                    "}",
+                )
+                if isinstance(attached, int) and attached > 0:
+                    detail = f"{detail}; file input now has {attached} file(s)"
+            return bool(result.get("ok")), detail
+
+        return await self._act(body)
 
     async def switch_tab(self, tab: dict[str, Any]) -> dict[str, Any]:
         before_url = await self._safe_current_url()
@@ -659,6 +681,7 @@ class SessionAdapter:
         await_promise: bool = True,
         return_by_value: bool = True,
     ) -> Any:
+        self._refuse_while_dialog_open("evaluate", exceptions.EvaluateError)
         cdp_session = await self._ensure_cdp_session()
         return await cdp.evaluate_expression(
             cdp_session.cdp_client,
@@ -682,52 +705,98 @@ class SessionAdapter:
         return self._cdp_session
 
     async def _ensure_dialog_listener(self) -> None:
-        """Enable Page events and arm javascriptDialogOpening routing."""
-        if self._dialog_listener_registered:
-            return
+        """Enable Page events on the current session and (re)claim javascriptDialogOpening routing.
+
+        The CDP client keeps one handler per event, and browser-use's popups watchdog registers its own
+        auto-accepting dialog handler whenever a tab is created; re-registering ours on every call keeps
+        dialogs for ``handle_dialog``.
+        """
         cdp_session = await self._ensure_cdp_session()
-        await cdp.enable_page_domain(cdp_session.cdp_client, cdp_session.session_id)
+        if not self._dialog_listener_registered:
+            await cdp.enable_page_domain(cdp_session.cdp_client, cdp_session.session_id)
+            self._dialog_listener_registered = True
+        if self._dialog_handler is None:
+            self._dialog_handler = self._on_dialog
+        self._dialog_unregister = cdp.register_javascript_dialog_opening(cdp_session.cdp_client, self._dialog_handler)
 
-        def _on_dialog(event: Any, _sid: Any = None) -> None:
-            payload = event if isinstance(event, dict) else getattr(event, "__dict__", {}) or {}
-            if not isinstance(payload, dict):
-                payload = {}
-            info = {
-                "type": str(payload.get("type") or "alert"),
-                "message": str(payload.get("message") or ""),
-                "defaultPrompt": str(payload.get("defaultPrompt") or ""),
-            }
-            armed = self._dialog_armed
-            if armed is not None:
-                self._dialog_armed = None
-                self._dialog_pending = None
-                task = asyncio.create_task(
-                    self._apply_armed_dialog(
-                        accept=bool(armed.get("accept")),
-                        prompt_text=armed.get("prompt_text"),
-                    )
+    def _on_dialog(self, event: Any, session_id: Any = None) -> None:
+        payload = event if isinstance(event, dict) else getattr(event, "__dict__", {}) or {}
+        if not isinstance(payload, dict):
+            payload = {}
+        info = {"type": str(payload.get("type") or "alert"), "message": str(payload.get("message") or "")}
+        act = self._current_act
+        if act is not None:
+            act.dialog = info
+        armed = self._dialog_armed
+        if armed is not None:
+            self._dialog_armed = None
+            self._dialog_pending = None
+            task = asyncio.create_task(
+                self._apply_armed_dialog(
+                    accept=bool(armed.get("accept")),
+                    prompt_text=armed.get("prompt_text"),
+                    session_id=session_id,
                 )
-                self._dialog_handle_tasks.add(task)
-                task.add_done_callback(self._dialog_handle_tasks.discard)
-            else:
-                self._dialog_pending = info
+            )
+            self._dialog_handle_tasks.add(task)
+            task.add_done_callback(self._dialog_handle_tasks.discard)
+        else:
+            self._dialog_pending = {**info, "session_id": session_id}
+            if act is not None:
+                act.dialog_blocking.set()
 
-        self._dialog_unregister = cdp.register_javascript_dialog_opening(
-            cdp_session.cdp_client, _on_dialog
-        )
-        self._dialog_listener_registered = True
-
-    async def _apply_armed_dialog(self, *, accept: bool, prompt_text: str | None) -> None:
+    async def _apply_armed_dialog(self, *, accept: bool, prompt_text: str | None, session_id: Any = None) -> None:
         try:
             cdp_session = await self._ensure_cdp_session()
             await cdp.handle_javascript_dialog(
                 cdp_session.cdp_client,
-                cdp_session.session_id,
+                session_id or cdp_session.session_id,
                 accept=accept,
                 prompt_text=prompt_text,
             )
         except Exception:  # noqa: BLE001 - dialog arming must not crash the session
             pass
+
+    def _refuse_while_dialog_open(self, method: str, error: type[exceptions.DriverError]) -> None:
+        """Page scripts and captures block while a JS dialog is open: fail at once instead of timing out."""
+        if self._dialog_pending is not None:
+            raise error(f"{method}: {_dialog_note(self._dialog_pending)}")
+
+    async def _act(self, body: Any, *, while_dialog: bool = False) -> dict[str, Any]:
+        """Run ``body(act)`` (one element or keyboard action) and report what it changed.
+
+        The input runs as a task. When a dialog opens that nothing handles, the page stops answering input
+        events until the dialog is handled, so the action returns at once with ``dialog_opened`` and leaves
+        its input waiting in the background. While a dialog is open, an action other than ``handle_dialog``
+        returns ``ok=False`` without sending anything.
+        """
+        before_url = await self._safe_current_url()
+        if self._dialog_pending is not None and not while_dialog:
+            return await self._act_result(before_url, ok=False, detail=_dialog_note(self._dialog_pending))
+        await self._ensure_dialog_listener()
+        act = _Act()
+        self._current_act = act
+        task = asyncio.ensure_future(body(act))
+        dialog_waiter = asyncio.ensure_future(act.dialog_blocking.wait())
+        try:
+            await asyncio.wait({task, dialog_waiter}, return_when=asyncio.FIRST_COMPLETED)
+            if task.done():
+                ok, detail = task.result()
+            else:
+                self._waiting_inputs.add(task)
+                task.add_done_callback(self._forget_waiting_input)
+                ok, detail = True, "the input waits until the dialog is handled"
+        finally:
+            dialog_waiter.cancel()
+            if not task.done() and task not in self._waiting_inputs:
+                task.cancel()
+            self._current_act = None
+        return await self._act_result(before_url, ok=ok, detail=detail, act=act)
+
+    def _forget_waiting_input(self, task: asyncio.Task) -> None:
+        self._waiting_inputs.discard(task)
+        if not task.cancelled():
+            task.exception()  # retrieved: its action already returned
 
     async def _safe_current_url(self) -> str:
         try:
@@ -749,12 +818,18 @@ class SessionAdapter:
             "driver_generation": self._driver_generation,
         }
 
-    async def _act_result(self, before_url: str, *, ok: bool, detail: str) -> dict[str, Any]:
+    async def _act_result(self, before_url: str, *, ok: bool, detail: str, act: _Act | None = None) -> dict[str, Any]:
         url = await self._safe_current_url()
         changed = url != before_url
         if changed:
             self._driver_generation += 1
-        return {"ok": ok, "detail": detail, "document_changed": changed, "driver_generation": self._driver_generation}
+        return {
+            "ok": ok,
+            "detail": detail,
+            "document_changed": changed,
+            "driver_generation": self._driver_generation,
+            "dialog_opened": None if act is None else act.dialog,
+        }
 
     def _node_from_index(self, index: int, driver_generation: int) -> Any:
         if driver_generation != self._driver_generation:

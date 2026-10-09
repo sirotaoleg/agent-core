@@ -265,6 +265,7 @@ def test_session_adapter_drag_raises_when_box_missing() -> None:
     adapter._safe_current_url = AsyncMock(return_value="https://example.test/")
     adapter._resolve_ref_to_backend_node_id = AsyncMock(side_effect=[1, 2])
     adapter._element_box = AsyncMock(return_value=None)
+    adapter._ensure_dialog_listener = AsyncMock()  # connect() arms it in a real session
 
     with pytest.raises(exceptions.ElementNotFound, match="bounding box"):
         _run(

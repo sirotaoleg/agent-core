@@ -1,7 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Wire protocol v1 constants, shared verbatim by both sides of the sidecar boundary.
+"""Wire protocol constants, shared verbatim by both sides of the sidecar boundary.
 
 This module is STDLIB ONLY. It is imported by the agent-core process as
 ``openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar.wire``
@@ -13,7 +13,8 @@ what lets a unit test catch sidecar drift without spawning a sidecar.
 
 from __future__ import annotations
 
-WIRE_VERSION = 1
+# 2: act replies carry ``dialog_opened`` ({"type", "message"} or None).
+WIRE_VERSION = 2
 
 # SessionAdapter method names (main.py dispatches requests to them by name), then the two control methods.
 DRIVER_METHOD_NAMES: tuple[str, ...] = (

@@ -418,6 +418,23 @@ def test_act_result_follows_the_sidecar_document_change(document_changed, expect
     assert asyncio.run(driver.execute(Click(E1))).context_changed is expected
 
 
+def test_a_dialog_opened_by_the_command_changes_the_context_and_is_named():
+    dialog = {"type": "confirm", "message": "Proceed?"}
+    driver, _request = _driver(
+        {**ACT_OK, "detail": "the input waits until the dialog is handled", "dialog_opened": dialog}
+    )
+    result = asyncio.run(driver.execute(Click(E1)))
+    assert result.ok is True
+    assert result.context_changed is True
+    assert result.detail == "the input waits until the dialog is handled; confirm dialog opened: 'Proceed?'"
+
+
+def test_no_dialog_leaves_the_detail_alone():
+    driver, _request = _driver({**ACT_OK, "dialog_opened": None})
+    result = asyncio.run(driver.execute(Click(E1)))
+    assert (result.context_changed, result.detail) == (False, "done")
+
+
 def test_switch_context_always_changes_context():
     driver, _request = _driver(dict(ACT_OK))
     assert asyncio.run(driver.execute(SwitchContext(TAB_2))).context_changed is True
