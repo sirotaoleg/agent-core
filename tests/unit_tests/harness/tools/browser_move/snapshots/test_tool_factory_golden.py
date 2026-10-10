@@ -30,9 +30,8 @@ CAPABILITY_VIEWS = [view for view in builder.list_views() if view != builder.RUN
 
 # Extra tools the worker removes after the build.
 PROBES = frozenset({"browser_probe_interactives", "browser_probe_cards"})
-RUNNER_REMOVED = PROBES | {"browser_recall_offload"}
-# Golden tools no extra tool of the surface builds yet.
-NOT_BUILT = frozenset({"browser_batch_interact"})
+BATCH = "browser_batch_interact"
+RUNNER_REMOVED = PROBES | {BATCH, "browser_recall_offload"}
 # Server tools with no command: dropped from the agent, each selection logged once.
 NO_COMMAND: dict[str, frozenset[str]] = {
     "unsafe_dev": frozenset({"browser_run_code_unsafe"}),
@@ -165,22 +164,20 @@ def test_runner_tools_without_the_helpers_it_removes_equal_the_golden_byte_for_b
     assert len(built) == len(golden) == 14
 
 
-def test_core_tools_equal_the_golden_byte_for_byte_but_the_tools_not_built_yet(
-    surface: Any, mcp_driver: Driver
-) -> None:
+def test_core_tools_equal_the_golden_byte_for_byte(surface: Any, mcp_driver: Driver) -> None:
     golden = _golden(builder.GOLDEN_DIR, "core")
     built = _built(surface.profile, mcp_driver, _capabilities("core"))
 
-    assert builder.render(built) == builder.render(_without(golden, NOT_BUILT))
-    assert len(built) == len(golden) - len(NOT_BUILT) == 17
+    assert builder.render(built) == builder.render(golden)
+    assert len(built) == len(golden) == 18
 
 
 @pytest.mark.parametrize("view", CAPABILITY_VIEWS)
-def test_playwright_mcp_view_equals_the_golden_but_tools_not_built_and_tools_with_no_command(
+def test_playwright_mcp_view_equals_the_golden_but_tools_with_no_command(
     view: str, surface: Any, mcp_driver: Driver
 ) -> None:
     golden = _golden(builder.GOLDEN_DIR, view)
-    expected = _without(_without(golden, NOT_BUILT), NO_COMMAND.get(view, frozenset()), MCP_PREFIX)
+    expected = _without(golden, NO_COMMAND.get(view, frozenset()), MCP_PREFIX)
 
     assert builder.render(_built(surface.profile, mcp_driver, _capabilities(view))) == builder.render(expected)
 
@@ -204,13 +201,13 @@ def test_browser_use_view_equals_the_golden_but_the_one_catalog_differences(view
     built = {tool["name"]: tool for tool in _built(surface.profile, BrowserUseDriver(), _capabilities(view))}
 
     missing = set(golden) - set(built)
-    expected_missing = BROWSER_USE_DROPPED | NOT_BUILT | {SCREENSHOT}
+    expected_missing = BROWSER_USE_DROPPED | {SCREENSHOT}
     if view != "extended_interaction":
         expected_missing |= BROWSER_USE_OUTSIDE_CORE
     assert missing == expected_missing & set(golden)
-    assert set(built) - set(golden) == PROBES
+    assert set(built) - set(golden) == PROBES | {BATCH}
     for name, tool in built.items():
-        if name == "browser_tabs" or name in PROBES:
+        if name in ("browser_tabs", BATCH) or name in PROBES:
             continue
         assert tool == golden[name], name
 

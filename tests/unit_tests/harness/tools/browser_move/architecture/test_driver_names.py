@@ -111,6 +111,8 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
     "utils/__init__.py": 4,
     "utils/env.py": 3,
     "utils/parsing.py": 1,
+    # model-facing card text, kept byte-identical to the golden tool list
+    "surfaces/browser/helpers/batch_steps.py": 1,
 }
 
 # file relative to the package -> number of MCP tool-name matches.

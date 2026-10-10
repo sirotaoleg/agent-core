@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from openjiuwen.harness.tools.browser_move.contract import CloseContext, Driver, Observe
+from openjiuwen.harness.tools.browser_move.contract import CloseContext, Driver, Observe, RunScript
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import create_browser_use_driver
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.driver import create_playwright_mcp_driver
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.result import result_text
@@ -25,6 +25,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navi
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import (
+    BatchTool,
     FindTool,
     ProbeInteractivesTool,
     activate_page,
@@ -78,6 +79,30 @@ async def _probe(context: ToolContext) -> Any:
     return await ProbeInteractivesTool(context).invoke({"query": "save"})
 
 
+async def _fill_save_and_read_back(context: ToolContext) -> tuple[Any, str]:
+    probed = (await ProbeInteractivesTool(context).invoke({"max_items": 40, "viewport_only": False})).data["content"]
+    page_state = context.page_state
+    ids = {page_state.get_target(element["target_id"]).selector: element["target_id"] for element in probed["elements"]}
+    steps = [
+        {"op": "fill", "target_id": ids["#name"], "value": "Ada"},
+        {"op": "set_checked", "target_id": ids["#gift"], "checked": True},
+        {"op": "click", "target_id": ids["#save"]},
+        {"op": "wait_for_selector", "selector": "#save"},
+        {"op": "extract_value", "selector": "#name", "field": "name"},
+    ]
+    output = await BatchTool(context).invoke({"steps": steps, "generation_id": probed["generation_id"]})
+    title = await context.execute(RunScript(code="() => document.title"))
+    return output.data["content"], title.value
+
+
+def _assert_the_batch_filled_saved_and_read_back(outcome: tuple[Any, str]) -> None:
+    payload, title = outcome
+    assert payload["ok"] is True, payload
+    assert [step["status"] for step in payload["steps"]] == ["completed"] * 5
+    assert payload["extracted"] == {"name": "Ada"}
+    assert title == "clicked"
+
+
 def _assert_probe_found_the_save_button(output: Any) -> None:
     assert output.success, output.error
     payload = output.data["content"]
@@ -118,6 +143,15 @@ class TestHelpersOnPlaywrightMcp:
         for ours, server in _on_page(driver, scene_url, both):
             assert ours == server
 
+    def test_batch_fills_checks_clicks_and_reads_back_in_one_call(
+        self,
+        chrome_device: ProvisionedDevice,  # noqa: F811
+        mcp_settings: BrowserSettings,  # noqa: F811
+        scene_url: str,
+    ) -> None:
+        driver = create_playwright_mcp_driver(chrome_device, mcp_settings)
+        _assert_the_batch_filled_saved_and_read_back(_on_page(driver, scene_url, _fill_save_and_read_back))
+
 
 @pytest.mark.live
 @pytest.mark.skipif(browser_use_skip_reason() is not None, reason=browser_use_skip_reason() or "")
@@ -149,3 +183,11 @@ class TestHelpersOnBrowserUse:
         fronted, surface = _on_page(driver, scene_url, front_the_first)
         assert fronted and surface.url == scene_url
         assert surface.tab_urls[surface.current_tab] == scene_url
+
+    def test_batch_fills_checks_clicks_and_reads_back_in_one_call(
+        self,
+        chrome_device: ProvisionedDevice,  # noqa: F811
+        scene_url: str,
+    ) -> None:
+        driver = create_browser_use_driver(chrome_device, BrowserSettings.from_process_env())
+        _assert_the_batch_filled_saved_and_read_back(_on_page(driver, scene_url, _fill_save_and_read_back))

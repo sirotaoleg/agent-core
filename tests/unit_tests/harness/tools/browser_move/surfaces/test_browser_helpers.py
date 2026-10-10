@@ -41,6 +41,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.config import Browse
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import (
     EXTRA_TOOLS,
+    BatchTool,
     FindTool,
     ProbeCardsTool,
     ProbeInteractivesTool,
@@ -130,13 +131,19 @@ def test_probe_cards_equal_the_old_helper_cards() -> None:
     assert [tool.card.tool_info() for tool in new] == [tool.card.tool_info() for tool in old]
 
 
-def test_the_extra_tools_are_the_probes_find_and_recall() -> None:
-    assert EXTRA_TOOLS == (ProbeInteractivesTool, ProbeCardsTool, FindTool, RecallOffloadTool)
+def test_the_extra_tools_are_the_probes_the_batch_find_and_recall() -> None:
+    assert EXTRA_TOOLS == (ProbeInteractivesTool, ProbeCardsTool, BatchTool, FindTool, RecallOffloadTool)
 
 
 def test_the_helpers_declare_read_progress_and_only_recall_is_exempt_from_budgets() -> None:
     assert ToolFlags() == ToolFlags(effect=Effect.READ, exempt_from_budget=False, progress=True)
-    assert [tool.flags for tool in EXTRA_TOOLS] == [ToolFlags()] * 3 + [ToolFlags(exempt_from_budget=True)]
+    assert [tool.flags for tool in EXTRA_TOOLS] == [
+        ToolFlags(),
+        ToolFlags(),
+        ToolFlags(effect=Effect.ACT),
+        ToolFlags(),
+        ToolFlags(exempt_from_budget=True),
+    ]
 
 
 # --- the shared command step and records -----------------------------------------------------------------------------
