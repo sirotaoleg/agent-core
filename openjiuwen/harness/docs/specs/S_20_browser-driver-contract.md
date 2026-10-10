@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `helpers/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `helpers/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
 | Last revised | 2026-10-10 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -104,8 +104,9 @@ where a command class is defined, and a new surface adds its commands (`Tap`, `S
 
 `sensitive=True` on `TypeText`, `RunScript` and a `FormField` means its text, code or value must never reach traces
 or logs. Each of the three names its fields in a class-level `__sensitive_fields__` (`("text",)`,
-`("code", "args")`, `("value",)`); `Tracing` masks the listed fields of any dataclass whose `sensitive` is true, so a new surface
-command opts in by declaring the attribute and a `sensitive` field.
+`("code", "args")`, `("value",)`); `masked` (`drivers/middleware.py`) replaces the listed fields of any dataclass
+whose `sensitive` is true, for `Tracing` and for `CommandRecord.action` alike, so a new surface command opts in by
+declaring the attribute and a `sensitive` field.
 
 ### ActionResult (`results.py`)
 
@@ -288,7 +289,8 @@ scaled to the screenshot. An `IndexRef` cannot be built (skipped).
 
 ## Middleware (`drivers/middleware.py`)
 
-Three wrappers, each a `Driver` around an inner `Driver`. They know only `contract/` types, so they work for any
+Three wrappers, each a `Driver` around an inner `Driver`, and the masking helper `Tracing` shares with the tool
+factory. They know only `contract/` types, so they work for any
 driver and any surface; the architecture tests scan the module like the core (no browser words, no driver names, no
 concrete imports). `info`, `start`, `stop` and `health` pass through to the inner driver unchanged. The stack order
 is `Tracing(RetryOnStale(Timeouts(driver, per_effect)), sink)`: the trace sees the error a timeout or a stale ref
@@ -304,9 +306,8 @@ finally produced, and the re-observe of `RetryOnStale` runs under the READ bound
   `dispatched=True`, a `StaleRef` included, passes through untouched, without an observation (invariant 7).
 - **`Tracing(inner, sink)`** writes one dict per `observe` / `execute` call to `sink` (`TraceSink`: any callable
   taking that dict), after the call returns or raises a `DriverError`:
-  - `call` (`"observe"` / `"execute"`), `command` (class name), `args` (the command's fields, nested dataclasses as
-    dicts and sequences as lists, with `MASK` = `"***"` in place of each `__sensitive_fields__` field of a dataclass
-    whose `sensitive` is true);
+  - `call` (`"observe"` / `"execute"`), `command` (class name), `args` (the fields of `masked(command)`, nested
+    dataclasses as dicts and sequences as lists);
   - then `ok`, `detail`, `context_changed` for a result; `context` (id) and `elements` (count) for an observation,
     whose element values and native text may show what a sensitive command typed; or `error` (class name),
     `message`, `dispatched` for a `DriverError`, which is raised again. `message` is left out when the command is
@@ -315,6 +316,10 @@ finally produced, and the re-observe of `RetryOnStale` runs under the READ bound
 
   `ActionResult.value` and observation contents are never traced. Other exceptions (cancellation included) pass
   through without a record.
+- **`masked(value)`** returns a copy of a command (or any value) with `MASK` = `"***"` in place of each
+  `__sensitive_fields__` field of every dataclass in it whose `sensitive` is true (a `FormField` inside a
+  `FillForm` included); other values are copied unchanged. It is the one masking rule: `Tracing` traces its
+  output and `CommandTool` stores it as `CommandRecord.action`.
 
 ## Settings (`playwright_runtime/config.py`, `surfaces/browser/config.py`)
 
@@ -732,7 +737,8 @@ For each entry, `profile.capability_tools[entry]` gives the spec names in order 
 
 The tool name is `driver_info.tool_name_prefix + spec.name`. Without `image_support`, a spec whose only command is
 `Observe` and whose decoder, called with no arguments, asks for a screenshot is not emitted (today's rule for
-`browser_take_screenshot`, without a tool name in the core). Each emitted spec's `prompt_section` is collected. Then
+`browser_take_screenshot`, without a tool name in the core); with image support that spec is a screenshot-only
+tool. Each emitted spec's `prompt_section` is collected. Then
 each `profile.extra_tools` factory is called with the `ToolContext` and its tool appended. An entry that selects no
 tool, a skipped spec, and a selected name with no spec that no extra tool serves (under its name or the prefixed
 one) are logged once per factory on `tool_logger`.
@@ -751,12 +757,13 @@ One instance per emitted tool, a core `Tool` (`ToolCard(id=name, name, descripti
 3. `session.execute(action)`, or `session.observe(action)` for an `Observe`;
 4. `page_state.record(action, outcome)`;
 5. render: an `ActionResult` with `renderer.result`; an observation with `renderer.observation` when the tool's only
-   command is `Observe`, else with `renderer.result` on `ActionResult(ok=True, value=<screenshot>, observation,
-   surface)` (the tab list of `browser_tabs list`); a `DriverError` with `renderer.error(action, error, None)`.
+   command is `Observe` and it is not a screenshot-only tool, else with `renderer.result` on `ActionResult(ok=True,
+   value=<screenshot>, observation, surface)` (the tab list of `browser_tabs list`; the image alone for a
+   screenshot-only tool); a `DriverError` with `renderer.error(action, error, None)`.
 
 The output is a `ToolOutput`: `success = ok`; `data = {"content": <text blocks joined by newlines>, "command":
 CommandRecord}`; on failure `error` is the same text. With `image_support`, image blocks go to `data["multimodal"]`
-as `{"type": "image", "source": <driver name>, "source_path": <tool name>, "mime_type": "image/png", "data_url"}`
+as `{"type": "image", "source": <profile name>, "source_path": <tool name>, "mime_type": "image/png", "data_url"}`
 and the content gets the note `N image(s) attached as multimodal input.`, the shape MCP tools deliver; without it
 image blocks are dropped. A task failure from the session (`BaseError`, second lost connection) propagates.
 
@@ -772,20 +779,63 @@ Frozen; never parsed from text.
 | `dispatched` | `True` for a result; `error.dispatched` for an error |
 | `context_changed` | `ActionResult.context_changed` |
 | `error` | the `DriverError` type name, or `None` |
+| `blocked_by` | `ActionIntercepted.by` for that error, else `None` |
 | `surface` | the result's surface context; for an error, the page state's |
-| `value` | `ActionResult.value` |
+| `value` | `ActionResult.value`; for an `Observe`, the observed elements (stamped `Element`s) |
 | `generation` | the generation stamped by `record` (the page state's current one for an error) |
+| `action` | `masked(command)`: the command with its sensitive fields masked |
 
 `message_metadata` gives the tool-message metadata keys the context processors read: `success = ok`, `executed =
 dispatched`, `state_changed = context_changed or (effect != READ and (ok or error == "ActionTimeout"))`, `denied =
 False` (denials come from `ActionPolicy`). A tool cannot set `ToolMessage.metadata` (core builds the message from
 `render_for_llm` after `invoke`); a rail copies `message_metadata` onto it in `after_tool_call`.
 
+`command_record(tool_result)` returns the record from a tool output (`ToolCallInputs.tool_result` in a rail), or
+`None`: arguments that decoded to no command, or a tool that is not a `CommandTool`. A rail treats a tool message
+without a record as a failed call that sent nothing.
+
 ### `ToolContext`
 
 `ToolContext(driver, page_state, renderer, driver_info, settings, image_support)`: what `profile.extra_tools` and
 `profile.rails` factories receive; `driver` is the `DriverSession`. The factory builds it from its arguments,
 `profile.renderer` and `profile.settings`.
+
+## Rails on command records
+
+Two worker rails read `CommandRecord`s, never tool text. They sit next to the text-based rails of the same modules,
+which still serve the agent. Neither adds a model call: each rewrites the tool message in `after_tool_call`, or
+empties the tools of the next model call (invariant: a rail never adds a model round trip).
+
+### `CommandRepeatGuardRail` (`repeated_call_guard.py`)
+
+A subclass of `RepeatedCallGuardRail` that replaces only `after_tool_call`; state reset per invoke, the finish
+section and the withholding in `before_model_call` are inherited.
+
+- **Identity.** Two calls are identical when their commands and their results are: `record.action` (masked) and
+  `(ok, error, value, surface)`. A `RunScript` compares its code without whitespace and with digits replaced by
+  `#`, and its value as sorted JSON with digits replaced; an `Observe` compares its observed elements. A message
+  without a record compares by tool name and arguments (canonical JSON; non-JSON text as is).
+- **No-op scripts.** A `RunScript` whose whitespace-free code only returns literals, the document title or its
+  address (the same pattern as before) counts toward a no-op streak, whatever its result.
+- **Counting.** The 3rd identical (or no-op) call in a row appends `### Repeated call` to the tool message, once;
+  after the 5th the next model call gets no tools and a finish instruction. Any other call resets the streak.
+  Calls of one model turn are counted in the order their `after_tool_call` runs, like separate turns.
+
+### `CommandInterceptedHintRail` (`intercepted_action.py`)
+
+For a record with `error == "ActionIntercepted"` and a non-empty `blocked_by`, and a string tool message, it
+replaces the message with `explain_blocked_command(record)`:
+
+```
+### Error
+<command type> not delivered: <target> is covered by <blocked_by>.
+<hint>
+Then retry the action (take a fresh browser_snapshot if the page changed).
+```
+
+`<target>` is the `DriverRef` id, the `Locator` css (or text), `(x, y)` for a `PointRef`, else `the target`.
+`<hint>` is the cookie-consent hint when `blocked_by` matches the consent pattern, else the generic one. The tool
+output (`tool_result`) keeps the driver's own error. Other records and messages without a record are left alone.
 
 ## Drivers
 

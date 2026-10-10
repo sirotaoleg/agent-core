@@ -1235,7 +1235,8 @@ nothing in `runtime.py`, `service.py`, `agents.py` or `browser_agent.py` changed
    goldens then compare all 14 / 18 tools.
 2. Nothing copies `CommandRecord.message_metadata` onto the tool message yet (the switch's rail work).
 3. A screenshot tool renders through `observe()`: on MCP that is the snapshot text and the image (two server calls);
-   today the model gets the image and a file link. Only vision with image support sees it.
+   today the model gets the image and a file link. Only vision with image support sees it. (Rendering done: a
+   screenshot-only tool now shows the image only; see "Rails on command records".)
 4. browser-use does not fill `tab_urls` / `current_tab` yet (helpers task).
 5. `profile.rails` factories are not called by the factory; the rails task registers them with the `ToolContext`.
 6. The browser-use tool-result golden needs the browser-use wire fixtures (helpers task).
@@ -1348,3 +1349,92 @@ indented with tabs.
    constants when the old runtime helpers are deleted.
 6. browser-use still does not fill `tab_urls` / `current_tab`; `page_metadata` and `activate_page` fall back to the
    page state's current context there (a tab cannot be picked by URL on browser-use).
+
+## Rails on command records
+
+Phase 4 item 5: the worker rails that read tool text get typed versions that read `CommandRecord`s (S_20 "Rails on
+command records"), built next to the old ones like the helpers. The record gains what they need. The old rails, their
+tests and the service registering them are unchanged; the switch registers the new classes, deletes the old ones and
+gives the new ones the old names.
+
+### Decisions
+
+1. **`CommandRecord.blocked_by`** (O1) carries `ActionIntercepted.by`; the hint names the blocker from it instead of
+   parsing the Playwright call log.
+2. **`CommandRecord.action`** (O2): the command with its sensitive fields masked. The rule moved out of `Tracing` into
+   `masked` in `drivers/middleware.py` (no browser words, already importable from the core); `Tracing` traces
+   `masked(command)`, so both share one rule. The guard compares commands, not tool arguments.
+3. **An `Observe` record keeps its observed elements as `value`** (decided with Aleh, 2026-10-10). The old guard
+   compared snapshot text, so a loading page whose progress bar moves is not a repeat; the record had nothing that
+   changes with it (the generation advances only on large changes). The elements are typed, so no text is compared;
+   an unchanged screen is still a repeat.
+4. **A call without a record compares by tool name and arguments** (decided with Aleh, 2026-10-10). O6 says such a
+   call is a failed call that sent nothing; keying it on the call keeps today's behaviour (identical undecodable calls
+   form a streak) and reads no tool text. The hint rail leaves it alone.
+5. **"Identical" = same masked command and same result** `(ok, error type, value, surface context)`. A script keeps
+   the old normalisation: whitespace-free code with digits masked, value with digits masked, so counter variants
+   (`() => 'done1'`, `'done2'` …) form one streak as before. `detail` is not compared, so the `### Events` and
+   console counts the old fingerprint stripped play no part.
+6. **Same behaviour list** (D6): note from the 3rd identical call, tools withheld for the next model call after the
+   5th, reset on a different call, no-op scripts as one streak, same-turn calls counted in order (F1 stays), state
+   reset per invoke. Only the model-facing message changes: the note is appended to plain text, as there is no
+   `{"result": …}` envelope any more.
+7. **The typed guard subclasses the old one** and overrides `after_tool_call`; `before_invoke` / `before_model_call`
+   are shared, so the withholding and the finish section cannot drift. The switch folds them into one class.
+8. **Hint wording** per design §4 item 5: `Click not delivered: e57 is covered by <blocker>.` The verb is the command
+   type (`Click`, `Hover`, `TypeText` …) and the target is the ref the model used, not Playwright's resolved
+   element. The consent hint is keyed on `blocked_by`; the hints and the retry sentence are the old ones (one shared
+   constant). Messages that are not strings are left alone, as before.
+9. **`FinalAnswerRecoveryRail` is unchanged**: it reads the model output and the recovery flag, never tool text.
+   Its tests run again with the snapshot tool as a `CommandTool`.
+10. **A screenshot-only `Observe` tool renders the image only** (O4): `renderer.result` on the screenshot, where it
+    showed the snapshot text and the image. A tool that only sometimes takes a screenshot still renders the
+    observation.
+11. **The image block is labelled with the surface name** (O8): `profile.name` (`browser`) instead of the driver name
+    (`playwright_mcp`; the old path wrote `mcp`). `ToolContext` is unchanged (the helper tests build it
+    positionally); `CommandTool` takes the label.
+12. **`command_record(tool_result)`** in the tool factory is the one way rails read a record.
+
+### Rejected options
+
+- **Observe identity by a new `Observation.fingerprint` field** on the record: it covers ref, role and name only, so
+  a progress value change would count as a repeat.
+- **Observe never counted as a repeat**: five identical snapshots would no longer withhold tools.
+- **A call without a record resetting the streak**: a loop on undecodable arguments would never be stopped.
+- **Carrying the error object in the record**: one string is what the hint needs; the record stays plain data.
+- **Rewording the retry sentence** to drop the tool name: model-visible text change beyond the design's item 5.
+- **A `surface` field on `ToolContext`** for the image label: the helper tests construct it positionally.
+- **Standalone typed guard** duplicating `before_invoke` / `before_model_call`: two copies of the withholding logic
+  until the switch.
+
+### Verification
+
+- `test_browser_repeated_call_guard_records.py` (52 passed, 1 strict xfail): every case of the old guard tests under
+  the same name, on records from `CommandTool` over `FakeDriver` with Playwright MCP tool names and arguments
+  (`command_tools.py`), plus one case showing the surface context is part of the result. Worker loops end with tools
+  withheld; same-turn press-key batch still withholds (F1 pinned); no extra model round trip with and without the
+  rail. Mutation checks: dropping value/surface from the identity fails 5 cases, dropping the script normalisation
+  fails 3.
+- `test_browser_intercepted_action_hint_records.py` (21 passed, 1 strict xfail): every old case under the same name
+  (blockers from the old fixtures in the form the drivers report, ref / locator / hover targets, untouched errors,
+  observer keeps the raw error, no extra model round trip).
+- `test_browser_final_answer_recovery_records.py` (15): every old case with the snapshot tool as a `CommandTool`.
+- The two service-registration cases are strict xfails: they turn into failures once the service registers the
+  typed rails, so the switch has to remove the marks.
+- `test_tool_factory.py` (36): one test runs a sensitive `TypeText` through `Tracing` and a `CommandTool` and finds
+  the mask in both; `blocked_by`, the `Observe` value, the image-only screenshot tool, the surface-name label,
+  `command_record`. Six of them fail on the previous code.
+- `pytest tests/unit_tests/harness/tools/browser_move`: **2329 passed, 116 skipped, 2 xfailed** (old rail tests,
+  factory and tool-result goldens, runner contract and architecture included; tool-result goldens unchanged: they
+  render at the renderer level, where O4 and O8 do not apply).
+- Live (after the record change): Playwright MCP conformance **51 passed**, browser-use conformance **45 passed**.
+
+### Known leftovers
+
+1. The service still registers the text-based rails; the switch registers `CommandRepeatGuardRail` and
+   `CommandInterceptedHintRail` (removing the two xfail marks), deletes the old classes and renames the new ones.
+2. The retry sentence names `browser_snapshot`, a tool name in a core module (allowlisted with the old rail); a
+   surface-provided wording would remove it.
+3. The hint verb is the command type name (`TypeText not delivered`); a surface may want friendlier verbs.
+4. Helper tools (probes, find) return no record, so the guard compares their calls by tool name and arguments.
+5. F1 (same-turn batches counted as a loop) is unchanged, as decided; a fix belongs to the benchmark phase.
