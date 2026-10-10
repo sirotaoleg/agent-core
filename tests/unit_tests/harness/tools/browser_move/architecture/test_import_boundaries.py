@@ -12,11 +12,7 @@ from collections import Counter
 from . import _scan
 
 # (file relative to the package, imported module relative to the package) -> count.
-KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {
-    # legacy: the public RuntimeSettings facade composes BrowserSettings until it can take them from the
-    # surface registry
-    ("playwright_runtime/config.py", "surfaces.browser.config"): 1,
-}
+KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {}
 
 # (file relative to openjiuwen/core, imported module) -> count.
 KNOWN_CORE_TO_HARNESS_IMPORTS: dict[tuple[str, str], int] = {

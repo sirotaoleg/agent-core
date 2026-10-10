@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Optional, Protocol
 
-from ..contract.registry import register_provisioner
+from ..contract.registry import PROVISIONERS, register_provisioner
 
 
 @dataclass(frozen=True)
@@ -32,4 +32,4 @@ for _name in ("managed", "remote", "extension"):
     register_provisioner(_name, f"{__name__}.managed_browser:ManagedBrowserProvisioner")
 
 
-__all__ = ["ProvisionedDevice", "Provisioner"]
+__all__ = ["PROVISIONERS", "ProvisionedDevice", "Provisioner"]

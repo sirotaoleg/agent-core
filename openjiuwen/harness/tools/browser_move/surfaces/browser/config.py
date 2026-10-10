@@ -41,7 +41,9 @@ def _provisioning(environ: Mapping[str, str]) -> str:
         )
     else:
         legacy = ""
-    value = explicit or legacy or "remote"
+    # Without an explicit choice the extension flag selects the provisioning, so device and MCP config agree.
+    implied = "extension" if is_truthy_env(environ.get("PLAYWRIGHT_MCP_EXTENSION", "")) else "remote"
+    value = explicit or legacy or implied
     if value not in PROVISIONINGS:
         raise ValueError(f"BROWSER_PROVISIONING must be one of: {', '.join(PROVISIONINGS)} (got {explicit!r})")
     return value

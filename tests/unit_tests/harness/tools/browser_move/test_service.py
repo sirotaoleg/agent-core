@@ -16,7 +16,6 @@ from openjiuwen.harness.tools.browser_move.contract.registry import PROVISIONERS
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserInstanceConfig,
     BrowserRunGuardrails,
-    BrowserSettings,
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.profiles import BrowserProfile
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
@@ -26,6 +25,7 @@ from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import (
     ManagedBrowserProvisioner,
     _build_profile,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 
 from openjiuwen.core.foundation.tool import McpServerConfig
 

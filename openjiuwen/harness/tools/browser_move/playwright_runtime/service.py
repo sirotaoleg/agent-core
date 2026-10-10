@@ -29,7 +29,7 @@ from ..contract.registry import PROVISIONERS
 from ..provisioning import ProvisionedDevice  # importing the package registers the built-in provisioners
 from ..utils.parsing import extract_json_object
 from .agents import build_browser_worker_agent, refresh_browser_worker_system_prompt
-from .config import BrowserInstanceConfig, BrowserRunGuardrails, BrowserSettings, CoreSettings
+from .config import BrowserInstanceConfig, BrowserRunGuardrails, CoreSettings, SurfaceSettings, browser_surface_settings
 from .final_answer_recovery import (
     FinalAnswerRecoveryRail,
     final_answer_recovery,
@@ -227,7 +227,7 @@ class BrowserService:
         cancel_store: Optional[BaseKVStore] = None,
         instance: Optional[BrowserInstanceConfig] = None,
         allowed_tool_names: Optional[Iterable[str]] = None,
-        browser_settings: Optional[BrowserSettings] = None,
+        browser_settings: Optional[SurfaceSettings] = None,
         core_settings: Optional[CoreSettings] = None,
     ) -> None:
         self.provider = provider
@@ -237,7 +237,7 @@ class BrowserService:
         self.mcp_cfg = mcp_cfg
         self.guardrails = guardrails
         self._instance = instance or BrowserInstanceConfig()
-        self._settings = browser_settings or BrowserSettings.from_process_env()
+        self._settings = browser_settings or browser_surface_settings()
         self._core_settings = core_settings
         self._allowed_tool_names = (
             None
@@ -330,7 +330,10 @@ class BrowserService:
         if not explicit:
             return self._settings.provisioning
         if explicit not in {"remote", "managed", "extension"}:
-            raise ValueError("BROWSER_DRIVER must be one of: remote, managed, extension")
+            raise ValueError(
+                "BrowserInstanceConfig.provisioning (driver_mode) must be one of: remote, managed, extension "
+                f"(got {explicit!r}); leave it empty to use BROWSER_PROVISIONING"
+            )
         return explicit
 
     def _build_lifecycle_identity(self) -> BrowserServiceIdentity:
@@ -496,7 +499,7 @@ class BrowserService:
             return ""
         return os.path.normcase(os.path.normpath(str(Path(raw).expanduser())))
 
-    def _provisioning_settings(self) -> BrowserSettings:
+    def _provisioning_settings(self) -> SurfaceSettings:
         instance = self._instance
         if instance and instance.managed_port > 0:
             port = instance.managed_port

@@ -14,7 +14,8 @@ from typing import Any, Dict, Iterable, Mapping, Optional
 
 from openjiuwen.core.foundation.tool import McpServerConfig
 
-from ..surfaces.browser.config import BrowserSettings
+from ..contract import SurfaceSettings
+from ..surfaces import SURFACES
 from ..utils.env import (
     DEFAULT_BROWSER_TIMEOUT_S,
     DEFAULT_GUARDRAIL_MAX_FAILURES,
@@ -458,9 +459,13 @@ def runtime_server_child_env(environ: Mapping[str, str]) -> dict[str, str]:
     return env
 
 
+def browser_surface_settings(environ: Mapping[str, str] | None = None) -> SurfaceSettings:
+    return SURFACES.create("browser", os.environ if environ is None else environ).settings
+
+
 def resolve_playwright_mcp_cwd() -> str:
     """Resolve MCP working directory with relocatable defaults."""
-    return str(BrowserSettings.from_process_env().mcp_cwd)
+    return str(browser_surface_settings().mcp_cwd)
 
 
 def _ensure_capabilities(
@@ -501,11 +506,11 @@ def build_playwright_mcp_config(
     instance: Optional[BrowserInstanceConfig] = None,
     required_capability: Optional[list[str]] = None,
 ) -> McpServerConfig:
-    return _playwright_mcp_config(BrowserSettings.from_process_env(), instance, required_capability)
+    return _playwright_mcp_config(browser_surface_settings(), instance, required_capability)
 
 
 def _playwright_mcp_config(
-    settings: BrowserSettings,
+    settings: Any,
     instance: Optional[BrowserInstanceConfig] = None,
     required_capability: Optional[list[str]] = None,
 ) -> McpServerConfig:
@@ -577,7 +582,7 @@ def build_runtime_settings(
     instance: Optional[BrowserInstanceConfig] = None,
     *,
     core_settings: CoreSettings | None = None,
-    browser_settings: BrowserSettings | None = None,
+    browser_settings: SurfaceSettings | None = None,
 ) -> RuntimeSettings:
     core = core_settings or CoreSettings.from_process_env()
     if core.provider not in SUPPORTED_MODEL_PROVIDERS:
@@ -589,7 +594,7 @@ def build_runtime_settings(
         api_key=core.api_key,
         api_base=core.api_base,
         model_name=core.model_name,
-        mcp_cfg=_playwright_mcp_config(browser_settings or BrowserSettings.from_process_env(), instance),
+        mcp_cfg=_playwright_mcp_config(browser_settings or browser_surface_settings(), instance),
         guardrails=core.guardrails,
         instance=instance,
     )

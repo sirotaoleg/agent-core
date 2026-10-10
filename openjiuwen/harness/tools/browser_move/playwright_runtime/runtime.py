@@ -49,7 +49,7 @@ from .browser_working_context import (
     BrowserWorkingContextStore,
     latest_browser_user_request,
 )
-from .config import BrowserInstanceConfig, BrowserRunGuardrails, BrowserSettings, CoreSettings
+from .config import BrowserInstanceConfig, BrowserRunGuardrails, CoreSettings, SurfaceSettings, browser_surface_settings
 from .page_state import CARD_EVIDENCE_FIELDS, BrowserPageState, BrowserTarget
 from .probe_semantics import normalize_card_probe_payload
 from .probes import (
@@ -434,12 +434,12 @@ class BrowserAgentRuntime:
         allowed_tool_names: Optional[Iterable[str]] = None,
         *,
         core_settings: Optional[CoreSettings] = None,
-        browser_settings: Optional[BrowserSettings] = None,
+        browser_settings: Optional[SurfaceSettings] = None,
     ) -> None:
         ensure_browser_runtime_client_patch()
         self._instance = instance
         self._core_settings = core_settings
-        self._browser_settings = browser_settings or BrowserSettings.from_process_env()
+        self._browser_settings = browser_settings or browser_surface_settings()
         resolved_allowed_tool_names = (
             CORE_BROWSER_TOOL_NAMES if allowed_tool_names is None else tuple(dict.fromkeys(allowed_tool_names))
         )

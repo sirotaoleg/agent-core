@@ -30,9 +30,10 @@ from clients.stdio_client import BrowserMoveStdioClient
 from clients.streamable_http_client import BrowserMoveStreamableHttpClient
 from playwright_runtime.config import (
     MISSING_API_KEY_MESSAGE,
-    BrowserSettings,
     CoreSettings,
     RuntimeServerSettings,
+    SurfaceSettings,
+    browser_surface_settings,
     build_runtime_settings,
     load_repo_dotenv,
     process_environ,
@@ -59,7 +60,7 @@ _runtime: Optional["BrowserAgentRuntime"] = None
 _runtime_lock = asyncio.Lock()
 # Set by main(); without it (module imported, not run) the runtime reads the process environment.
 _core_settings: Optional[CoreSettings] = None
-_browser_settings: Optional[BrowserSettings] = None
+_browser_settings: Optional[SurfaceSettings] = None
 
 load_repo_dotenv()
 
@@ -379,7 +380,7 @@ def main() -> None:
     if args.transport == "stdio":
         _configure_stdio_logging(server_settings.log_dir)
     _core_settings = CoreSettings.from_env(environ)
-    _browser_settings = BrowserSettings.from_env(environ)
+    _browser_settings = browser_surface_settings(environ)
     kwargs: Dict[str, Any] = {
         "show_banner": not args.no_banner,
         "log_level": args.log_level,

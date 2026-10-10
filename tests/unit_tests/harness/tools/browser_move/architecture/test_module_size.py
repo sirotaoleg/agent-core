@@ -17,7 +17,7 @@ KNOWN_OVERSIZED_MODULES: dict[str, int] = {
     "controllers/action.py": 2539,
     "playwright_runtime/probes.py": 3010,
     "playwright_runtime/runtime.py": 6396,
-    "playwright_runtime/service.py": 1907,
+    "playwright_runtime/service.py": 1910,
 }
 
 

@@ -1,17 +1,24 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""What a surface hands to the core: its profile, its policy rules and its conformance scene. Dataclasses only."""
+"""What a surface hands to the core: its settings, its profile, its policy rules and its conformance scene."""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from .actions import Action, Effect
 from .observation import Observation
 from .results import ActionResult
+
+
+class SurfaceSettings(Protocol):
+    """Settings a surface parses from its own environment variables; the core reads only ``provisioning``."""
+
+    @property
+    def provisioning(self) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -85,3 +92,11 @@ class SurfaceProfile:
     messages: Mapping[str, str] = field(default_factory=dict, hash=False)
     settings: Any = field(default=None, hash=False)
     scene: Scene | None = None
+
+
+@dataclass(frozen=True)
+class SurfaceBundle:
+    """What a surface factory returns: the surface settings and, once the surface has one, its profile."""
+
+    settings: SurfaceSettings
+    profile: SurfaceProfile | None = None

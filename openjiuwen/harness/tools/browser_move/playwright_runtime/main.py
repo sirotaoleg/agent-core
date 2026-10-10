@@ -20,8 +20,8 @@ _tool_mgr_mod.StreamableHttpClient = BrowserMoveStreamableHttpClient
 
 from .config import (
     MISSING_API_KEY_MESSAGE,
-    BrowserSettings,
     CoreSettings,
+    browser_surface_settings,
     build_runtime_settings,
     load_repo_dotenv,
     process_environ,
@@ -34,7 +34,7 @@ async def main() -> None:
     load_repo_dotenv()
     environ = process_environ()
     core_settings = CoreSettings.from_env(environ)
-    browser_settings = BrowserSettings.from_env(environ)
+    browser_settings = browser_surface_settings(environ)
     settings = build_runtime_settings(core_settings=core_settings, browser_settings=browser_settings)
     if not settings.api_key:
         raise RuntimeError(MISSING_API_KEY_MESSAGE)

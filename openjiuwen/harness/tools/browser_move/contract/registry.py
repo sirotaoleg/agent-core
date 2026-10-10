@@ -10,7 +10,7 @@ from collections.abc import Callable
 from typing import Any, Generic, TypeVar
 
 from .driver import Driver
-from .surface import SurfaceProfile
+from .surface import SurfaceBundle
 
 T = TypeVar("T")
 
@@ -45,7 +45,15 @@ class Registry(Generic[T]):
             raise KeyError(f"unknown {self._kind} {name!r}; registered: {known}") from None
         if isinstance(factory, str):
             module, _, attribute = factory.partition(":")
-            resolved: Any = importlib.import_module(module)
+            try:
+                resolved: Any = importlib.import_module(module)
+            except ModuleNotFoundError as error:
+                if error.name is None or not f"{module}.".startswith(f"{error.name}."):
+                    raise
+                raise ModuleNotFoundError(
+                    f"{self._kind} {name!r} is registered but not built yet: module {module!r} does not exist",
+                    name=module,
+                ) from error
             for part in attribute.split("."):
                 resolved = getattr(resolved, part)
             factory = self._entries[name] = resolved
@@ -54,7 +62,7 @@ class Registry(Generic[T]):
 
 # The only module-level state of the package; everything else is passed in by the composition root.
 DRIVERS: Registry[Driver] = Registry("driver")
-SURFACES: Registry[SurfaceProfile] = Registry("surface")
+SURFACES: Registry[SurfaceBundle] = Registry("surface")
 PROVISIONERS: Registry[Any] = Registry("provisioner")
 
 
@@ -63,7 +71,8 @@ def register_driver(name: str, factory: Callable[..., Driver] | str) -> None:
     DRIVERS.register(name, factory)
 
 
-def register_surface(name: str, profile_factory: Callable[..., SurfaceProfile] | str) -> None:
+def register_surface(name: str, profile_factory: Callable[..., SurfaceBundle] | str) -> None:
+    """``profile_factory(environ) -> SurfaceBundle``."""
     SURFACES.register(name, profile_factory)
 
 
