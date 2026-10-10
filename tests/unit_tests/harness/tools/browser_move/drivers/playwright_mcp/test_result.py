@@ -106,7 +106,7 @@ RAISED = {
     "click_intercepted_by_overlay": (ActionIntercepted, False),
     "click_timeout_not_enabled": (ActionTimeout, False),
     "click_timeout_after_action": (ActionTimeout, True),
-    "wait_for_timeout": (ActionTimeout, False),
+    "wait_for_timeout": (ActionTimeout, True),
     "click_stale_ref": (StaleRef, False),
     "evaluate_new_tab_failed": (ConnectionLost, True),
     "evaluate_browser_closed": (ConnectionLost, True),
