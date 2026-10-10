@@ -16,9 +16,11 @@ from openjiuwen.harness.tools.browser_move.contract.registry import PROVISIONERS
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserInstanceConfig,
     BrowserRunGuardrails,
+    BrowserSettings,
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.profiles import BrowserProfile
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
+from openjiuwen.harness.tools.browser_move.playwright_runtime.service_registry import BROWSER_SERVICE_REGISTRY
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import (
     ManagedBrowserProvisioner,
@@ -28,7 +30,13 @@ from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import (
 from openjiuwen.core.foundation.tool import McpServerConfig
 
 
-def _make_service(*, retry_once: bool = False, runtime_cwd: str | None = None) -> BrowserService:
+def _make_service(
+    *,
+    retry_once: bool = False,
+    runtime_cwd: str | None = None,
+    instance: BrowserInstanceConfig | None = None,
+    browser_settings: BrowserSettings | None = None,
+) -> BrowserService:
     mcp_cfg = McpServerConfig(
         server_id="test-playwright",
         server_name="test-playwright",
@@ -43,6 +51,8 @@ def _make_service(*, retry_once: bool = False, runtime_cwd: str | None = None) -
         model_name="test-model",
         mcp_cfg=mcp_cfg,
         guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=retry_once),
+        instance=instance,
+        browser_settings=browser_settings,
     )
 
 
@@ -753,6 +763,93 @@ def test_existing_profile_browser_binary_is_cleared_for_auto_detection() -> None
         start.assert_called_once()
 
     _run(_test())
+
+
+def test_managed_chrome_comes_from_the_registered_provisioner_with_the_instance_settings(tmp_path: Path) -> None:
+    async def _test():
+        service = _make_service(
+            runtime_cwd=str(tmp_path),
+            instance=BrowserInstanceConfig(key="k", user_data_dir=" C:/udd ", browser_binary="C:/chrome.exe"),
+            browser_settings=BrowserSettings(provisioning="managed", managed_args=("--headless=new",)),
+        )
+        profile = BrowserProfile(name="k", driver_type="managed")
+        provisioner = MagicMock()
+        provisioner.provision.return_value = ProvisionedDevice(
+            kind="chrome", endpoint="http://127.0.0.1:45000", extras={"profile": profile}
+        )
+
+        with (
+            patch.object(service, "_resolve_existing_cdp_profile", return_value=None),
+            patch.object(PROVISIONERS, "create", return_value=provisioner) as create,
+            patch.object(BROWSER_SERVICE_REGISTRY, "register_managed_driver") as register,
+        ):
+            assert await service._ensure_managed_driver_started() is True
+
+        create.assert_called_once_with("managed", profile_store=service._profile_store)
+        handed = provisioner.provision.call_args.args[0]
+        assert (handed.provisioning, handed.profile_name, handed.managed_port) == ("managed", "k", 0)
+        assert (handed.user_data_dir, handed.browser_binary, handed.mcp_cwd) == ("C:/udd", "C:/chrome.exe", tmp_path)
+        assert handed.managed_args == ("--headless=new",)
+        assert service._managed_driver is provisioner
+        assert service._active_profile is profile
+        assert service.mcp_cfg.params["env"]["PLAYWRIGHT_MCP_CDP_ENDPOINT"] == "http://127.0.0.1:45000"
+        register.assert_called_once_with(service.lifecycle_identity, service, provisioner)
+
+    _run(_test())
+
+
+@pytest.mark.parametrize(
+    ("instance", "expected_port"),
+    [
+        (BrowserInstanceConfig(), 9444),
+        (BrowserInstanceConfig(key="k"), 0),
+        (BrowserInstanceConfig(key="k", managed_port=9501), 9501),
+    ],
+)
+def test_provisioning_port_comes_from_the_instance_then_the_key_then_the_settings(
+    instance: BrowserInstanceConfig, expected_port: int
+) -> None:
+    service = _make_service(
+        instance=instance, browser_settings=BrowserSettings(provisioning="managed", managed_port=9444)
+    )
+
+    assert service._provisioning_settings().managed_port == expected_port
+
+
+@pytest.mark.parametrize("provisioning", ["remote", "extension"])
+def test_remote_and_extension_services_do_not_provision(provisioning: str) -> None:
+    service = _make_service(browser_settings=BrowserSettings(provisioning=provisioning))
+
+    with patch.object(PROVISIONERS, "create") as create:
+        assert _run(service._ensure_managed_driver_started()) is False
+
+    create.assert_not_called()
+
+
+def test_given_browser_settings_win_over_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BROWSER_PROVISIONING", "remote")
+    monkeypatch.setenv("BROWSER_PROFILE_NAME", "from-env")
+    monkeypatch.setenv("BROWSER_MANAGED_ARGS", "--from-env")
+
+    service = _make_service(
+        browser_settings=BrowserSettings(provisioning="managed", profile_name="from-settings", managed_args=("--x",))
+    )
+
+    assert (service._driver_mode, service._profile_name) == ("managed", "from-settings")
+    assert service.lifecycle_identity.managed_args == ("--x",)
+
+
+def test_without_browser_settings_the_service_reads_them_once_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BROWSER_PROVISIONING", "managed")
+    monkeypatch.setenv("BROWSER_PROFILE_NAME", "from-env")
+
+    service = _make_service()
+    monkeypatch.setenv("BROWSER_PROFILE_NAME", "changed-later")
+
+    assert (service._driver_mode, service._profile_name) == ("managed", "from-env")
+    assert service._provisioning_settings().profile_name == "from-env"
 
 
 def test_reset_stops_browser_without_eager_restart() -> None:

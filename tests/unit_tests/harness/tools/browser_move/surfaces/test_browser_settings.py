@@ -257,3 +257,20 @@ def test_from_process_env_reads_the_process_environment() -> None:
         settings = BrowserSettings.from_process_env()
 
     assert (settings.provisioning, settings.managed_port) == ("managed", 9444)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Chrome install roots come from the environment only on Windows")
+def test_chrome_install_paths_follow_the_windows_install_roots_in_order() -> None:
+    settings = BrowserSettings.from_env({"ProgramW6432": "D:/w64", "LOCALAPPDATA": "C:/la", "ProgramFiles": "C:/pf"})
+
+    tail = ("Google", "Chrome", "Application", "chrome.exe")
+    assert settings.browser_binary_candidates == tuple(str(Path(root, *tail)) for root in ("C:/la", "C:/pf", "D:/w64"))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="outside Windows no install path comes from the environment")
+def test_no_chrome_install_paths_come_from_the_environment_outside_windows() -> None:
+    assert BrowserSettings.from_env({"ProgramFiles": "C:/pf"}).browser_binary_candidates == ()
+
+
+def test_chrome_install_paths_default_to_none() -> None:
+    assert BrowserSettings().browser_binary_candidates == ()
