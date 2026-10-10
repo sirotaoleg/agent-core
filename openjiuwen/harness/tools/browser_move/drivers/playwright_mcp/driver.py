@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import json
 import re
@@ -145,11 +146,12 @@ def _point(ref: PointRef) -> dict[str, int]:
     return {"x": ref.x, "y": ref.y}
 
 
-def _staged(paths: Iterable[str], root: Path) -> list[str]:
+def _staged(paths: Iterable[str], root: Path) -> tuple[list[str], list[Path]]:
     # The server reads files only under its working directory: a file elsewhere is copied in first. Anything else
     # (a missing file, a directory) goes as given and the server refuses it before touching the page.
     root = root.resolve()
     staged = []
+    created = []
     for path in paths:
         source = (root / path).resolve()
         if source.is_relative_to(root) or not source.is_file():
@@ -157,9 +159,18 @@ def _staged(paths: Iterable[str], root: Path) -> list[str]:
             continue
         target = root / "uploads" / uuid.uuid4().hex[:12] / source.name
         target.parent.mkdir(parents=True)
+        created.append(target.parent)
         shutil.copy2(source, target)
         staged.append(str(target))
-    return staged
+    return staged, created
+
+
+def _unstaged(directories: list[Path]) -> None:
+    for directory in directories:
+        shutil.rmtree(directory, ignore_errors=True)
+    # The working directory may be the user's: an uploads folder goes only when nothing else is left in it.
+    with contextlib.suppress(OSError):
+        directories[0].parent.rmdir()
 
 
 class PlaywrightMcpDriver(HandlerDriver):
@@ -171,6 +182,7 @@ class PlaywrightMcpDriver(HandlerDriver):
         self._context: BrowserContext | None = None
         self._tool_hints: dict[type[Action], str] = {}
         self._native_tools: dict[str, NativeTool] = {}
+        self._staged_dirs: list[Path] = []
 
     @property
     def config(self) -> PlaywrightMcpConfig | None:
@@ -222,6 +234,9 @@ class PlaywrightMcpDriver(HandlerDriver):
         client, self._client = self._client, None
         if client is not None:
             await client.disconnect()
+        staged, self._staged_dirs = self._staged_dirs, []
+        if staged:
+            await asyncio.to_thread(_unstaged, staged)
 
     async def health(self) -> Health:
         if self._client is None:
@@ -352,14 +367,14 @@ class PlaywrightMcpDriver(HandlerDriver):
     async def _drop(self, action: Drop) -> ActionResult:
         args = _aim(action.target, "drop on")
         if action.paths:
-            args["paths"] = await asyncio.to_thread(_staged, action.paths, self._output_dir())
+            args["paths"] = await self._stage(action.paths)
         if action.data:
             args["data"] = dict(action.data)
         return await self._run("browser_drop", args)
 
     @handles(UploadFile)
     async def _upload_file(self, action: UploadFile) -> ActionResult:
-        args = {"paths": await asyncio.to_thread(_staged, action.paths, self._output_dir())} if action.paths else {}
+        args = {"paths": await self._stage(action.paths)} if action.paths else {}
         return await self._run("browser_file_upload", args)
 
     @handles(HandleDialog)
@@ -457,6 +472,11 @@ class PlaywrightMcpDriver(HandlerDriver):
         if isinstance(result.surface, BrowserContext):
             self._context = result.surface
         return result
+
+    async def _stage(self, paths: Iterable[str]) -> list[str]:
+        staged, created = await asyncio.to_thread(_staged, paths, self._output_dir())
+        self._staged_dirs.extend(created)
+        return staged
 
     def _output_dir(self) -> Path:
         return self._config.output_dir if self._config is not None else Path.cwd()
