@@ -665,7 +665,8 @@ still runs the old Playwright MCP path.
    instance CDP URL. One builder, so the driver launches the same server the runtime does.
 2. **The clients return the raw `CallToolResult`.** `call_tool_result` is the transport part of the old
    `call_tool`; `call_tool` keeps its text extraction on top, so the runtime path is unchanged. The decoder needs the
-   content blocks and `isError`, not the joined text.
+   content blocks and `isError`, not the joined text. The driver itself calls the single-attempt `call_tool_once`
+   (see "Playwright MCP live conformance").
 3. **Tool hints come from the server.** `start()` reads `tools/list` once and keeps the description of each mapped
    tool; whether they or our own texts are better is a benchmark question.
 4. **`native_text` of `observe()` is the whole `browser_snapshot` text**, so a renderer can reproduce today's model
@@ -694,8 +695,80 @@ still runs the old Playwright MCP path.
 
 ### Known leftovers
 
-1. **The MCP clients re-send a call after a timeout or a transport error** (`call_tool_result` reconnects and loops
-   once). A click that reached the page and then timed out at the transport would be sent twice; the driver must
-   never retry a dispatched command. The driver also maps every client exception to `ConnectionLost`, so a
-   transport timeout would look like a dead server. Both are fixed with the live conformance run.
-2. Live conformance on this driver is not run yet.
+1. Fixed with the live conformance run: the re-sent tool call after a timeout or transport error, and every client
+   exception read as `ConnectionLost`. Live conformance now runs (next section).
+
+## Playwright MCP live conformance
+
+The conformance suite runs live on `PlaywrightMcpDriver`
+(`drivers/playwright_mcp/test_conformance_playwright_mcp_live.py`): the registry factory over a headless Chrome with
+a fresh profile, `@playwright/mcp@0.0.78` attached over CDP, `Tracing` around the driver, the browser scene. Every
+failure of the first run was a driver or decoder bug or the test's server setup; the suite and the scene are
+unchanged.
+
+### Decisions
+
+1. **One attempt per tool call.** The clients' `call_tool_result` reconnects and sends the call again after a
+   timeout or a transport error, so a click could run twice (invariant 7). The clients got `call_tool_once` (no
+   reconnect, no retry) and a `connected` property; the driver uses only those. Transport timeout →
+   `ActionTimeout(dispatched=True)`; no connection → `ConnectionLost(dispatched=False)`, nothing sent; any other
+   failure → `ConnectionLost(dispatched=True)`. The retrying `call_tool` stays for the runtime path.
+2. **`observe()` asks for boxes and strips them from the text.** Without `boxes` the snapshot has no bounds, so no
+   `PointRef` can be built from an observation, although the driver offers the coordinate tools. With `boxes` and
+   ` [box=…]` removed, the text is byte for byte today's `browser_snapshot` text (checked live on both scene pages),
+   so the model input does not change.
+3. **A `browser_wait_for` timeout is dispatched.** Its call log (`waiting for getByText(…) to be visible`) reads
+   like an actionability wait, which made it `dispatched=False`; but the wait is the command itself.
+4. **Sensitive commands drop the echoed code from `detail`.** The server echoes what it ran
+   (`### Ran Playwright code`, e.g. `fill('<typed text>')`), and `Tracing` records `detail`. `decode(...,
+   sensitive=True)` leaves the section out for `TypeText` and `RunScript` with `sensitive=True` and for a `FillForm`
+   with a sensitive field. Other commands keep it: it is part of what the model reads today.
+5. **The live test starts the server with `--allow-unrestricted-file-access`.** The server reads upload and drop
+   files only under its working directory and its output directory; the scene keeps its upload file in its own
+   temporary directory. The driver's production command line is unchanged (Known leftovers 1).
+
+### Rejected options
+
+- **Masking the typed text inside `detail`.** The server quotes it as a JavaScript string literal, so escaped forms
+  would slip through; dropping the code section is exact.
+- **Dropping `PointRef` from the driver's handled refs.** Today's MCP agent clicks by coordinates in vision mode.
+- **Adding `--allow-unrestricted-file-access` to the driver's command line.** It also opens `file://` navigation; a
+  security choice, not a driver fix.
+- **A server working directory that contains the scene's files** (the system temp directory). The server would write
+  its output files into a shared directory the test cannot clean up.
+
+### Verification
+
+- `drivers/playwright_mcp/test_conformance_playwright_mcp_live.py`: first run 9 failed, 42 passed (the three
+  `PointRef` happy paths: no bounds; `Drop` ×2 and `UploadFile`: file outside the server roots; the timeout case:
+  `dispatched=False`; sensitive text in the trace ×2). After the fixes: **51 passed** in two runs; no
+  `@playwright/mcp` node process left after either run.
+- `test_assembly_live.py`: `BROWSER_DRIVER=playwright_mcp` over a managed Chrome: `assemble_driver` starts the
+  server, `observe()` works, `close()` leaves no process the test started (`npx`, the server, Chrome) and frees the
+  CDP port. Both assembly cases: 2 passed.
+- New unit tests, each failing on the code before its fix: a call that times out on a fake session is sent once and
+  raises `ActionTimeout(dispatched=True)`; a closed transport is not re-sent; no connection sends nothing; observe
+  sends `boxes` and returns bounds with box-free text; `without_boxes`; `wait_for_timeout` is dispatched; a
+  sensitive call's `detail` has no code (decoder; `TypeText`, `FillForm`, `RunScript` through the driver).
+- Browser-use live conformance: **45 passed** in two runs. `pytest tests/unit_tests/harness/tools/browser_move -q`:
+  **1681 passed, 61 skipped** (the MCP live module and the MCP assembly case included; goldens unchanged).
+
+### Known leftovers (differences between the drivers for Phase 4)
+
+1. **Upload and drop files must be under the MCP server's working directory** (`mcp_cwd`) or its output directory;
+   browser-use reads any path (only under `upload_root` when that is set) and answers a refused path with
+   `ok=False`. The MCP refusal arrives as `DriverError(dispatched=True)` although nothing was sent. Phase 4 decides whether the runtime stages files into
+   the workspace, or the server gets roots or the flag.
+2. **`Wait(until_text, seconds)` ignores `seconds` on MCP**: `browser_wait_for` takes no timeout for a text, the
+   server's own applies (5 s on 0.0.78). browser-use waits up to `seconds`.
+3. **Context ids are tab positions on MCP** and shift when an earlier tab closes; browser-use ids are target ids.
+4. **Bounds only from `observe()`**: the observation that comes free with an MCP action result has none, so a
+   `PointRef` is built from an `observe()`.
+5. **`detail` differs**: MCP carries `### Ran Playwright code`, `### Page` and `### Modal state` there; browser-use
+   none of them. A sensitive MCP call's `detail` has no code section.
+6. **An open dialog blocks every other MCP tool** (`ok=False`, the modal state in `detail`).
+7. **An MCP transport timeout comes after `mcp_timeout_s`** (600 s by default); the `Timeouts` middleware
+   (`tool_timeout_s`) normally ends the call first, also as `ActionTimeout(dispatched=True)`.
+8. **`observe()` with boxes costs one box per element** on large pages; measured in the benchmark phase.
+9. **The live MCP test runs wherever `npx` and Chrome exist** (gated on them, not on an environment variable) and
+   needs network the first time `npx` fetches the server.

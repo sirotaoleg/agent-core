@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `scene/`) |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `scene/`) |
 | Last revised | 2026-10-10 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -17,9 +17,9 @@
 
 The contract is the only thing the agent core and a driver both know. The core sends commands and reads typed
 results and errors; a driver translates commands for one library and declares which commands it handles. As of
-this revision the browser-use driver implements the contract, the middleware wraps any driver and the composition
-root builds a started driver stack by name; no agent code uses them yet. For Playwright MCP only the text parser
-and the result decoder exist; the driver class does not.
+this revision the browser-use and Playwright MCP drivers implement the contract and pass the conformance suite
+live, the middleware wraps any driver and the composition root builds a started driver stack by name; no agent code
+uses them yet.
 
 Out of scope here: rendering and the model-facing tool schemas. They consume these types and get their own
 sections.
@@ -238,6 +238,11 @@ otherwise get `PytestUnknownMarkWarning`.
 A case the scene cannot provide is skipped with the scene's reason; a case needing a command (or ref kind) the driver
 does not handle is skipped naming it. Nothing passes silently. The trace case skips when the factory writes nothing
 to the sink; the test modules build their driver as `Tracing(driver, sink)`, so it runs.
+
+Live modules: `drivers/test_conformance_browser_use_live.py` (needs `BROWSER_USE_SIDECAR_PYTHON` and Chrome) and
+`drivers/playwright_mcp/test_conformance_playwright_mcp_live.py` (needs the MCP command, `npx` by default, and
+Chrome; `npx` fetches `@playwright/mcp@0.0.78` on first use). Both build the driver with its registry factory over
+one headless Chrome with a fresh profile on a free CDP port, which the test starts and kills.
 
 ### The browser scene (`surfaces/browser/scene/`)
 
@@ -553,6 +558,8 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
 - **Sections.** A result is one or more `text` blocks (plus an `image` block for screenshots) made of `### Name`
   sections: `Ran Playwright code`, `Open tabs`, `Page`, `Modal state`, `Snapshot`, `Result`, `Events`, `Error`.
   `split_sections` keeps their order.
+- **Boxes.** `without_boxes(text)` removes the ` [box=x,y,width,height]` annotations of a snapshot taken with
+  `boxes`; the result is byte for byte the text the server gives without `boxes` (checked live on the scene pages).
 - **Header** (`PageHeader(url, title, tabs, focused)`). From `### Page` (`- Page URL:`, `- Page Title:`; the title
   is missing while a dialog is open) and `### Open tabs`, or from a `browser_tabs` result list (`parse_tabs`). A
   tab is `ContextRef(id=<index>, kind="tab", title)`; the `(current)` one is `focused`. The server lists tabs only
@@ -567,9 +574,10 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   attributes (`level`, `cursor`, `checked`, …; flags as `True`), `/key: value` property lines (`url`,
   `placeholder`) and other nodes' inline text (`text`). YAML-quoted lines (`'button "Note: read me" [ref=…]'`,
   `: "42"`) are unquoted.
-- **`decode(tool_name, raw_result, *, output_dir, before=None) -> ActionResult`.** `raw_result` is the
-  `CallToolResult` as JSON (`content`, `isError`). `output_dir` is the server's working directory: file links in
-  the text are relative to it. `before` is the `BrowserContext` before the call.
+- **`decode(tool_name, raw_result, *, output_dir, before=None, sensitive=False) -> ActionResult`.** `raw_result`
+  is the `CallToolResult` as JSON (`content`, `isError`). `output_dir` is the server's working directory: file links
+  in the text are relative to it. `before` is the `BrowserContext` before the call. `sensitive` drops
+  `### Ran Playwright code`, which echoes typed text and scripts, before anything else is read.
   - `value`: the screenshot from an `image` block (`Screenshot`, size from the PNG header); else `### Result`
     parsed as JSON when it is JSON (`undefined` → `None`), the text otherwise; `None` for a `browser_tabs` list,
     which goes to `surface`.
@@ -593,6 +601,7 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   | `Target page, context or browser has been closed`, `Failed to open a new tab` | `ConnectionLost` | `True` |
   | call log shows `performing <x> action` or `<x> action done` | `ActionTimeout` on a timeout, else `DriverError` | `True` |
   | call log has `… intercepts pointer events` | `ActionIntercepted(by=tag#id.class "text")` of the last blocker (`… in <container>` for a `from … subtree` blocker) | `False` |
+  | `browser_wait_for` timed out (the wait is the command, though its log reads like an actionability wait) | `ActionTimeout` | `True` |
   | `TimeoutError:` / `Timeout Nms exceeded` | `ActionTimeout` | `False` if every call-log line is an actionability wait, else `True` |
   | anything else | `DriverError` | `True` |
 
@@ -608,9 +617,21 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
 - `start()` owns one MCP client (`BrowserMoveStdioClient`, or `BrowserMoveStreamableHttpClient` for
   `streamable-http`) and calls it directly, never through `ToolMgr`; it reads `tools/list` once and keeps each
   mapped tool's description as `DriverInfo.tool_hints`. `health()` pings the session.
-- `observe()` calls `browser_snapshot` (and `browser_take_screenshot` when asked). `native_text` is the full text of
-  that result (header, open tabs, YAML): what the model reads today. Tabs come from the snapshot header, never from
-  a `browser_tabs list`.
+- `observe()` calls `browser_snapshot` with `boxes: true` (and `browser_take_screenshot` when asked), so every
+  element has `bounds` and a `PointRef` can be built from an observation. `native_text` is the full text of that
+  result (header, open tabs, YAML) without the boxes (`without_boxes`): what the model reads today. Tabs come from
+  the snapshot header, never from a `browser_tabs list`. An observation that comes free with an action result
+  (the linked snapshot file) has no bounds.
+- **One attempt per tool call.** The driver calls `call_tool_once` on its client, never the retrying `call_tool`
+  the runtime path uses: a call that fails is not sent again. A transport timeout (`mcp_timeout_s`) is
+  `ActionTimeout(dispatched=True)`; no connection is `ConnectionLost(dispatched=False)`; any other transport failure
+  is `ConnectionLost(dispatched=True)`.
+- **Sensitive commands.** `TypeText(sensitive=True)`, `RunScript(sensitive=True)` and a `FillForm` with a sensitive
+  field are decoded with `sensitive=True`, so their `detail` has no echoed code; the error message of a failed
+  sensitive call can still quote it, and `Tracing` does not record that message.
+- **Files.** The server reads upload and drop files only under its working directory and its output directory;
+  any other path is refused with `File access denied: … is outside allowed roots` (decoded as
+  `DriverError(dispatched=True)`), unless the server runs with `--allow-unrestricted-file-access`.
 - Every handler sends one tool call and decodes it with `decode(..., before=<last BrowserContext>)` in a worker
   thread (the decoder may read the linked snapshot file). Commands and tools: Click → `browser_click` /
   `browser_mouse_click_xy`; TypeText → `browser_type`; PressKey → `browser_press_key`; Hover → `browser_hover` /
