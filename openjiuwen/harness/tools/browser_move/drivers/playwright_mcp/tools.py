@@ -84,8 +84,8 @@ def _target(value: Any, resolver: RefResolver) -> DriverRef | Locator:
     return Locator(css=target, text=None, generation=generation)
 
 
-def _point(args: Mapping[str, Any], x: str, y: str) -> PointRef:
-    return PointRef(_number(args, x), _number(args, y), "")
+def _point(args: Mapping[str, Any], x: str, y: str, resolver: RefResolver) -> PointRef:
+    return PointRef(_number(args, x), _number(args, y), resolver.screenshot_generation)
 
 
 def _current_context(resolver: RefResolver) -> ContextRef:
@@ -211,15 +211,17 @@ def build_close(args: Mapping[str, Any], resolver: RefResolver) -> Action:
 
 
 def build_mouse_click_xy(args: Mapping[str, Any], resolver: RefResolver) -> Action:
-    return Click(_point(args, "x", "y"), button=str(args.get("button") or "left"), count=_number(args, "clickCount", 1))
+    return Click(
+        _point(args, "x", "y", resolver), button=str(args.get("button") or "left"), count=_number(args, "clickCount", 1)
+    )
 
 
 def build_mouse_move_xy(args: Mapping[str, Any], resolver: RefResolver) -> Action:
-    return Hover(_point(args, "x", "y"))
+    return Hover(_point(args, "x", "y", resolver))
 
 
 def build_mouse_drag_xy(args: Mapping[str, Any], resolver: RefResolver) -> Action:
-    return Drag(_point(args, "startX", "startY"), _point(args, "endX", "endY"))
+    return Drag(_point(args, "startX", "startY", resolver), _point(args, "endX", "endY", resolver))
 
 
 def build_mouse_wheel(args: Mapping[str, Any], resolver: RefResolver) -> Action:

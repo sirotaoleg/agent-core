@@ -1,7 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""``browser_find``: text or regex search over the snapshot of the last observation."""
+"""``browser_find``: text or regex search over the snapshot of the current observation."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ _REGEX_FLAGS = {"i": re.IGNORECASE, "m": re.MULTILINE, "s": re.DOTALL}
 
 
 class FindTool(Tool):
-    """Searches the last observation's text like the server's own find: matches in context, under their path."""
+    """Searches the current observation like the server's own find, observing again when the last one is outdated."""
 
     flags = ToolFlags()
 
@@ -71,7 +71,7 @@ class FindTool(Tool):
             query, matches, limit = _search(inputs)
         except ValueError as error:
             return ToolOutput(success=False, error=f"{_ERROR}\n{error}")
-        observation = page_state.last_observation
+        observation = page_state.fresh_observation
         observed = observation is None
         if observation is None:
             try:

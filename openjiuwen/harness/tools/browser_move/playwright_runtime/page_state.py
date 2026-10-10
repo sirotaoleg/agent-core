@@ -201,6 +201,8 @@ class BrowserPageState:
         self.generation = max(0, int(generation))
         self.element_change_threshold = element_change_threshold
         self.last_observation: Observation | None = None
+        self.screenshot_generation = ""
+        self._dispatched_since_observation = False
         self.surface_context: SurfaceContext | None = None
         self.contexts: tuple[ContextRef, ...] = ()
         self.current_context: ContextRef | None = None
@@ -224,6 +226,18 @@ class BrowserPageState:
     def generation_id(self) -> str:
         """Return the current generation in the public PageState format."""
         return f"g{self.generation}"
+
+    @property
+    def fresh_observation(self) -> Observation | None:
+        """The last observation while it is current: of this generation, with no command dispatched after it."""
+        observation = self.last_observation
+        if observation is None or observation.generation != self.generation_id or self._dispatched_since_observation:
+            return None
+        return observation
+
+    def note_dispatched(self) -> None:
+        """A command reached the surface but failed, so there is no result to record."""
+        self._dispatched_since_observation = True
 
     def advance(self, *, url: str = "", title: str = "") -> None:
         """Start a new document generation while retaining stale-target history."""
@@ -436,6 +450,9 @@ class BrowserPageState:
             observation = self._register_observation(observation)
             self.current_context = observation.context
             self.last_observation = observation
+            if observation.screenshot is not None:
+                self.screenshot_generation = self.generation_id
+        self._dispatched_since_observation = observation is None
         if isinstance(outcome, Observation):
             return observation
         return dataclasses.replace(result, generation=self.generation_id, observation=observation)

@@ -66,6 +66,10 @@ class RefResolver(Protocol):
     @property
     def current_context(self) -> ContextRef | None: ...
 
+    @property
+    def screenshot_generation(self) -> str:
+        """The generation of the last screenshot, whose pixels a ``PointRef`` addresses; empty before the first."""
+
     def resolve(self, model_id: str, generation: str) -> Ref:
         """The ref behind a runtime-minted element id; raises ``ValueError`` for an id it does not know."""
 

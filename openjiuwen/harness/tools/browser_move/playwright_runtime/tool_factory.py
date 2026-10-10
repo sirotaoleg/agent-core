@@ -63,7 +63,13 @@ class ToolContext:
 
     async def execute(self, action: Action) -> ActionResult:
         """Run ``action`` on the driver session and record it in ``page_state``."""
-        return self.page_state.record(action, await self.driver.execute(action))
+        try:
+            result = await self.driver.execute(action)
+        except DriverError as error:
+            if error.dispatched:
+                self.page_state.note_dispatched()
+            raise
+        return self.page_state.record(action, result)
 
     async def observe(self, command: Observe) -> Observation:
         """Observe through the driver session and record the observation in ``page_state``."""
@@ -366,6 +372,7 @@ class ToolFactory:
 class _NoRefs:
     contexts: tuple[ContextRef, ...] = ()
     current_context: ContextRef | None = None
+    screenshot_generation = ""
 
     def resolve(self, model_id: str, generation: str) -> Ref:
         raise ValueError(model_id)
@@ -397,7 +404,7 @@ def _generated_build(spec: ToolSpec) -> Builder:
             ref = str(args["ref"])
             return command(DriverRef(ref, resolver.generation_of(ref)))
         if args.get("x") is not None and args.get("y") is not None:
-            return command(PointRef(int(args["x"]), int(args["y"]), ""))
+            return command(PointRef(int(args["x"]), int(args["y"]), resolver.screenshot_generation))
         if args.get("css"):
             css = str(args["css"])
             return command(Locator(css=css, text=None, generation=resolver.generation_of(css)))
