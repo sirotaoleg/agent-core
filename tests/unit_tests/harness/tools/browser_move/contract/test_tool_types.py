@@ -114,6 +114,10 @@ def test_native_tool_decodes_arguments_with_the_resolver() -> None:
     assert tool.build({"ref": "e9"}, _Resolver()) == Click(DriverRef("e9", "g3"))
 
 
+def test_native_tool_has_no_decoder_by_default() -> None:
+    assert NativeTool("Find it.", {"type": "object"}).build is None
+
+
 def test_tool_spec_has_no_schema_and_no_decoder_by_default() -> None:
     spec = ToolSpec("toy_click", (Click,))
     assert spec.schema is None and spec.build is None

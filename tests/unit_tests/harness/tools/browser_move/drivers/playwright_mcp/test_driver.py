@@ -275,12 +275,19 @@ def test_native_tools_are_the_server_entries_with_a_decoder_after_start(tmp_path
 
     native, _calls = _run(tmp_path, {}, lambda driver: _value(dict(driver.info.native_tools)))
 
-    assert set(native) == set(DECODERS)
+    assert set(native) == set(DECODERS) | {"browser_find"}
     for name, tool in native.items():
         assert tool.description == listed[name]["description"]
         assert tool.schema == sanitize_json_schema(listed[name]["inputSchema"])
         assert "$schema" not in tool.schema
-        assert tool.build is DECODERS[name]
+        assert tool.build is DECODERS.get(name)
+
+
+def test_find_is_listed_as_a_server_tool_no_command_backs(tmp_path: Path) -> None:
+    native, _calls = _run(tmp_path, {}, lambda driver: _value(dict(driver.info.native_tools)))
+
+    assert "browser_find" not in DECODERS
+    assert native["browser_find"].build is None
 
 
 def test_native_tools_are_empty_before_start(tmp_path: Path) -> None:

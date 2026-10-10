@@ -30,6 +30,7 @@ from openjiuwen.harness.tools.browser_move.surfaces import SURFACES
 from openjiuwen.harness.tools.browser_move.surfaces.browser import commands
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import GetPdf, OpenContext, UploadFile
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
+from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import EXTRA_TOOLS
 from openjiuwen.harness.tools.browser_move.surfaces.browser.renderer import BrowserRenderer
 from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import BROWSER_TOOL_SPECS
 
@@ -52,7 +53,8 @@ def test_profile_fields_are_filled(profile: SurfaceProfile) -> None:
     assert isinstance(profile.renderer, BrowserRenderer)
     assert profile.tool_specs == BROWSER_TOOL_SPECS
     assert set(profile.capability_catalog) == set(profile.capability_tools)
-    assert profile.policy_rules == () and profile.rails == () and profile.extra_tools == ()
+    assert profile.policy_rules == () and profile.rails == ()
+    assert profile.extra_tools == EXTRA_TOOLS
     assert profile.native_tools == ()
 
 
