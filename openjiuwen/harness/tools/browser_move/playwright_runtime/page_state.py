@@ -6,11 +6,25 @@
 
 from __future__ import annotations
 
+import dataclasses
 import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Mapping, Optional
 
+from ..contract import (
+    Action,
+    ActionResult,
+    ContextRef,
+    DriverRef,
+    Locator,
+    Observation,
+    Observe,
+    Ref,
+    StaleRef,
+    SurfaceContext,
+    iter_refs,
+)
 
 _AX_REF_LINE_RE = re.compile(
     r"^\s*-\s+(?P<role>[A-Za-z][\w-]*)"
@@ -92,6 +106,22 @@ def _generation_number(generation_id: str) -> int:
     return int(normalized[1:])
 
 
+def _element_change(before: Observation, after: Observation) -> float:
+    """Jaccard distance between the ``(ref, role)`` sets of two observations."""
+    old = {(element.ref.ref, element.role) for element in before.elements}
+    new = {(element.ref.ref, element.role) for element in after.elements}
+    union = old | new
+    return 1 - len(old & new) / len(union) if union else 0.0
+
+
+def _stale_message(ref: Ref, current: str) -> str:
+    if isinstance(ref, DriverRef):
+        return f"Stale AX ref {ref.ref} belongs to {ref.generation}; current generation is {current}."
+    if isinstance(ref, Locator) and ref.css:
+        return f"Stale selector belongs to {ref.generation}; current generation is {current}: {ref.css}"
+    return f"Stale {type(ref).__name__} belongs to {ref.generation}; current generation is {current}."
+
+
 @dataclass
 class BrowserTarget:
     """One model-visible target bound to a single page generation."""
@@ -165,9 +195,16 @@ class BrowserPageState:
         *,
         page_id: Optional[str] = None,
         generation: int = 0,
+        element_change_threshold: float = 0.5,
     ) -> None:
         self.page_id = page_id or f"page-{uuid.uuid4().hex[:12]}"
         self.generation = max(0, int(generation))
+        self.element_change_threshold = element_change_threshold
+        self.last_observation: Observation | None = None
+        self.surface_context: SurfaceContext | None = None
+        self.contexts: tuple[ContextRef, ...] = ()
+        self.current_context: ContextRef | None = None
+        self.free_observations = 0
         self.url = ""
         self.title = ""
         self.field_coverage: set[str] = set()
@@ -343,25 +380,11 @@ class BrowserPageState:
         registered: list[str] = []
         for match in _AX_REF_LINE_RE.finditer(text):
             ref_value = match.group("ref")
-            role = str(match.group("role") or "").strip()
-            name = str(match.group("name") or "").strip()
-            self.reference_generations[ref_value] = self.generation
-            existing_id = self._ref_targets.get(ref_value)
-            existing_target = self._targets.get(existing_id or "")
-            if existing_target is not None and existing_target.generation == self.generation:
-                target = existing_target
-            else:
-                target = self._new_target(
-                    source="ax",
-                    locator={"ref": ref_value},
-                    ref=ref_value,
-                    role=role,
-                    name=name,
-                    text=name,
-                )
-                self._ref_targets[ref_value] = target.target_id
-            if target.target_id not in self._interactive_target_ids:
-                self._interactive_target_ids.append(target.target_id)
+            self._register_ax_ref(
+                ref_value,
+                role=str(match.group("role") or "").strip(),
+                name=str(match.group("name") or "").strip(),
+            )
             registered.append(ref_value)
 
         for ref_value in _ANY_REF_RE.findall(text):
@@ -392,6 +415,116 @@ class BrowserPageState:
         for ref_value in missing_refs:
             self._remove_current_ax_ref(ref_value)
         return self.register_ax_snapshot(text)
+
+    def record(self, action: Action, outcome: ActionResult | Observation) -> ActionResult | Observation:
+        """Advance the generation when ``outcome`` shows a new context or document; return it stamped."""
+        result = outcome if isinstance(outcome, ActionResult) else ActionResult(ok=True, observation=outcome)
+        observation = result.observation
+        if observation is not None and not isinstance(action, Observe):
+            self.free_observations += 1
+        surface = (observation.surface if observation is not None else None) or result.surface
+        address = str(getattr(surface, "url", "") or "")
+        moved = bool(address) and self.url not in ("", address)
+        if moved or self._changes_context(result):
+            self.advance()
+            self._forget_contexts()
+        self.observe(url=address, title=getattr(surface, "title", ""))
+        if surface is not None:
+            self.surface_context = surface
+            self.contexts = tuple(getattr(surface, "tabs", ())) or self.contexts
+        if observation is not None:
+            observation = self._register_observation(observation)
+            self.current_context = observation.context
+            self.last_observation = observation
+        if isinstance(outcome, Observation):
+            return observation
+        return dataclasses.replace(result, generation=self.generation_id, observation=observation)
+
+    def check(self, action: Action) -> None:
+        """Raise ``StaleRef(dispatched=False)`` if any ref in ``action`` belongs to an older generation."""
+        stale = [
+            _stale_message(ref, self.generation_id)
+            for ref in iter_refs(action)
+            if ref.generation and _generation_number(ref.generation) < self.generation
+        ]
+        if stale:
+            raise StaleRef(" ".join(stale), dispatched=False)
+
+    def generation_of(self, ref: str) -> str:
+        """The generation ``ref`` was last registered in; the current one for a ref never seen."""
+        generation = self.reference_generations.get(ref)
+        return self.generation_id if generation is None else f"g{generation}"
+
+    def resolve(self, model_id: str, generation: str) -> Ref:
+        """The contract ref behind a ``target_id``; ``ValueError`` when it is stale, unknown or has no locator."""
+        target = self.resolve_target(generation_id=generation, target_id=model_id)
+        if target.ref:
+            return DriverRef(target.ref, target.generation_id)
+        if target.selector:
+            return Locator(css=target.selector, text=None, generation=target.generation_id)
+        raise ValueError(f"PageState target_id {target.target_id} has no element locator")
+
+    def reset(self) -> None:
+        """Start a new generation with no contexts and no last observation, as after a driver restart."""
+        self.advance()
+        self._forget_contexts()
+
+    def _changes_context(self, result: ActionResult) -> bool:
+        if result.context_changed:
+            return True
+        observation = result.observation
+        if observation is None:
+            return False
+        if self.current_context is not None and observation.context.id != self.current_context.id:
+            return True
+        return (
+            self.last_observation is not None
+            and _element_change(self.last_observation, observation) > self.element_change_threshold
+        )
+
+    def _forget_contexts(self) -> None:
+        # Context ids may be positions, valid only until the next context change.
+        self.last_observation = None
+        self.surface_context = None
+        self.contexts = ()
+        self.current_context = None
+
+    def _register_observation(self, observation: Observation) -> Observation:
+        elements = tuple(
+            dataclasses.replace(element, ref=DriverRef(element.ref.ref, self.generation_id))
+            for element in observation.elements
+        )
+        refs = {element.ref.ref for element in elements}
+        missing_refs = [
+            ref_value
+            for ref_value, generation in self.reference_generations.items()
+            if generation == self.generation and ref_value not in refs
+        ]
+        for ref_value in missing_refs:
+            self._remove_current_ax_ref(ref_value)
+        for element in elements:
+            self._register_ax_ref(element.ref.ref, role=element.role, name=element.name)
+        self._update_blockers({}, [observation.context.title or "", *(element.name for element in elements)])
+        return dataclasses.replace(observation, generation=self.generation_id, elements=elements)
+
+    def _register_ax_ref(self, ref_value: str, *, role: str, name: str) -> None:
+        self.reference_generations[ref_value] = self.generation
+        existing_id = self._ref_targets.get(ref_value)
+        existing_target = self._targets.get(existing_id or "")
+        if existing_target is not None and existing_target.generation == self.generation:
+            target = existing_target
+        else:
+            target = self._new_target(
+                source="ax",
+                locator={"ref": ref_value},
+                ref=ref_value,
+                role=role,
+                name=name,
+                text=name,
+            )
+            self._ref_targets[ref_value] = target.target_id
+        if target.target_id not in self._interactive_target_ids:
+            self._interactive_target_ids.append(target.target_id)
 
     def add_field_coverage(self, fields: Iterable[str]) -> None:
         """Record structured fields extracted from the current document."""

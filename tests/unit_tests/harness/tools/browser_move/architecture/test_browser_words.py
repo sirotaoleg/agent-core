@@ -29,7 +29,7 @@ KNOWN_BROWSER_WORDS: dict[str, int] = {
     "playwright_runtime/final_answer_recovery.py": 2,
     "playwright_runtime/intercepted_action.py": 1,
     "playwright_runtime/main.py": 3,
-    "playwright_runtime/page_state.py": 26,
+    "playwright_runtime/page_state.py": 29,
     "playwright_runtime/probe_semantics.py": 2,
     "playwright_runtime/probes.py": 47,
     "playwright_runtime/profiles.py": 2,
