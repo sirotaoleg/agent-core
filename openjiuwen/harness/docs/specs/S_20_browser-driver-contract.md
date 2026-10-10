@@ -162,7 +162,7 @@ re-export the registry, so `from ..drivers import DRIVERS` gives a registry with
 | Package | Names | Factory |
 |---|---|---|
 | `drivers/__init__.py` | `browser_use` | `drivers.browser_use.driver:create_browser_use_driver` |
-| | `playwright_mcp` | `drivers.playwright_mcp:create_playwright_mcp_driver` (module not written yet: "not built yet") |
+| | `playwright_mcp` | `drivers.playwright_mcp.driver:create_playwright_mcp_driver` (module not written yet: "not built yet") |
 | `surfaces/__init__.py` | `browser` | `surfaces.browser.profile:create_browser_surface` |
 | `provisioning/__init__.py` | `managed`, `remote`, `extension` | `provisioning.managed_browser:ManagedBrowserProvisioner` |
 

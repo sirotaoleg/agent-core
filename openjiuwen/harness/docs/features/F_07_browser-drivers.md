@@ -458,7 +458,8 @@ G2, G3, G5, G7 are implemented here, together with the two middleware follow-ups
    `create_browser_use_driver(device, None)` no longer honours `BROWSER_USE_SIDECAR_PYTHON`. `utils` no longer
    exports the deleted helpers.
 6. `python -m openjiuwen.harness.tools.browser_move.playwright_runtime_mcp_server` fails before this step's code at
-   `from clients.stdio_client import ...` (relative import beyond the top-level package); not changed here.
+   the clients import, now `from drivers.playwright_mcp.clients.stdio_client import ...` (relative import beyond the
+   top-level package); not changed here.
 
 ## Composition root
 
