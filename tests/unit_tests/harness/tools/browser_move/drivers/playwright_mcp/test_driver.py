@@ -54,6 +54,7 @@ from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.driver import 
 )
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.result import result_text
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.snapshot import without_boxes
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import DECODERS
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserInstanceConfig,
     build_playwright_mcp_config,
@@ -74,6 +75,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     UploadFile,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
+from openjiuwen.harness.tools.browser_move.utils.parsing import sanitize_json_schema
 from tests.unit_tests.harness.tools.browser_move.snapshots.builder import FakeMcpSession, load_mcp_tools
 
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "mcp"
@@ -266,6 +268,28 @@ def test_tool_hints_are_the_server_descriptions_after_start(tmp_path: Path) -> N
     assert hints[Click] == described["browser_click"]
     assert hints[Scroll] == described["browser_mouse_wheel"]
     assert hints[OpenContext] == hints[CloseContext] == described["browser_tabs"]
+
+
+def test_native_tools_are_the_server_entries_with_a_decoder_after_start(tmp_path: Path) -> None:
+    listed = {tool["name"]: tool for tool in load_mcp_tools()}
+
+    native, _calls = _run(tmp_path, {}, lambda driver: _value(dict(driver.info.native_tools)))
+
+    assert set(native) == set(DECODERS)
+    for name, tool in native.items():
+        assert tool.description == listed[name]["description"]
+        assert tool.schema == sanitize_json_schema(listed[name]["inputSchema"])
+        assert "$schema" not in tool.schema
+        assert tool.build is DECODERS[name]
+
+
+def test_native_tools_are_empty_before_start(tmp_path: Path) -> None:
+    assert dict(PlaywrightMcpDriver(_config(tmp_path)).info.native_tools) == {}
+
+
+def test_tool_name_prefix_is_the_model_prefix_of_the_server(tmp_path: Path) -> None:
+    assert PlaywrightMcpDriver(_config(tmp_path)).info.tool_name_prefix == "mcp_playwright-official_"
+    assert PlaywrightMcpDriver().info.tool_name_prefix == ""
 
 
 async def _value(value: Any) -> Any:

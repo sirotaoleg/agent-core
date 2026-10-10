@@ -57,7 +57,6 @@ TAB = ContextRef("0", "tab", "Fixture second page")
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 _SNAPSHOT_LINK = re.compile(r"\n### Snapshot\n- \[Snapshot\]\([^)]*\)")
 _EVENTS = re.compile(r"\n### Events\n(?:- .*(?:\n|$))+")
-_TAB_LINE = re.compile(r"^- (\d+): (\(current\) )?\[[^\]]*\]\(([^)]*)\)$", re.MULTILINE)
 
 ACTION_RESULT_CASES = [
     "click_success",
@@ -130,14 +129,6 @@ def _error(case: str, tmp_path: Path) -> tuple[Action, DriverError]:
 
 def _enveloped(case: str) -> str:
     return json.loads(_fixture(case)["model_text"])["result"]
-
-
-def _with_tab_fields(result: ActionResult, model_text: str) -> ActionResult:
-    """The tab URLs and focus the decoder will report, read from the recorded tab list."""
-    lines = _TAB_LINE.findall(model_text)
-    current = next(int(index) for index, mark, _url in lines if mark)
-    surface = dataclasses.replace(result.surface, tab_urls=tuple(url for *_rest, url in lines), current_tab=current)
-    return dataclasses.replace(result, surface=surface)
 
 
 def _observed(case: str) -> Observation:
@@ -217,13 +208,15 @@ def test_run_script_values_render_as_the_server_shows_them(value: Any, shown: st
 @pytest.mark.parametrize("case", TAB_CASES)
 def test_tab_list_is_rebuilt_from_the_surface(case: str, tmp_path: Path) -> None:
     action, result = _decode(case, tmp_path)
-    model_text = _fixture(case)["model_text"]
-    assert RENDERER.result(action, _with_tab_fields(result, model_text)) == (model_text,)
+    assert RENDERER.result(action, result) == (_fixture(case)["model_text"],)
 
 
 def test_tab_list_without_tab_urls_shows_titles_only(tmp_path: Path) -> None:
     action, result = _decode("tabs_new", tmp_path)
-    assert RENDERER.result(action, result) == ("### Result\n- 0: [Fixture second page]\n- 1: []",)
+    unknown = dataclasses.replace(result.surface, tab_urls=(), current_tab=None)
+    assert RENDERER.result(action, dataclasses.replace(result, surface=unknown)) == (
+        "### Result\n- 0: [Fixture second page]\n- 1: []",
+    )
 
 
 def test_current_tab_without_its_own_url_shows_the_surface_url() -> None:

@@ -52,16 +52,26 @@ def _inline_yaml(case: str) -> str:
     return text.split("```yaml\n", 1)[1].rsplit("```", 1)[0]
 
 
-FORM = BrowserContext(url=f"{BASE}/index.html", title="Fixture form page", tabs=(_tab(0, "Fixture form page"),))
-POPUP = BrowserContext(url=f"{BASE}/popup.html", title="Fixture popup page", tabs=(_tab(0, "Fixture popup page"),))
-SECOND = BrowserContext(url=f"{BASE}/second.html", title="Fixture second page", tabs=(_tab(0, "Fixture second page"),))
+def _one_tab(url: str, title: str) -> BrowserContext:
+    return BrowserContext(url=url, title=title, tabs=(_tab(0, title),), tab_urls=(url,), current_tab=0)
+
+
+FORM = _one_tab(f"{BASE}/index.html", "Fixture form page")
+POPUP = _one_tab(f"{BASE}/popup.html", "Fixture popup page")
+SECOND = _one_tab(f"{BASE}/second.html", "Fixture second page")
 POPUP_AND_SECOND = BrowserContext(
     url=f"{BASE}/popup.html",
     title="Fixture popup page",
     tabs=(_tab(0, "Fixture popup page"), _tab(1, "Fixture second page")),
+    tab_urls=(f"{BASE}/popup.html", f"{BASE}/second.html"),
+    current_tab=0,
 )
 SECOND_AND_BLANK = BrowserContext(
-    url=f"{BASE}/second.html", title="Fixture second page", tabs=(_tab(0, "Fixture second page"), _tab(1, ""))
+    url=f"{BASE}/second.html",
+    title="Fixture second page",
+    tabs=(_tab(0, "Fixture second page"), _tab(1, "")),
+    tab_urls=(f"{BASE}/second.html", "about:blank"),
+    current_tab=0,
 )
 
 
@@ -93,12 +103,12 @@ DECODED = {
     "evaluate_result": (FORM, True, False),
     "screenshot_element": (FORM, True, False),
     "file_chooser_open_by_click": (
-        BrowserContext(url=f"{BASE}/upload.html", title="Fixture upload page", tabs=(_tab(0, "Fixture upload page"),)),
+        _one_tab(f"{BASE}/upload.html", "Fixture upload page"),
         True,
         False,
     ),
     "file_upload": (
-        BrowserContext(url=f"{BASE}/upload.html", title="", tabs=(_tab(0, ""),)),
+        _one_tab(f"{BASE}/upload.html", ""),
         True,
         False,
     ),
@@ -214,6 +224,8 @@ def test_click_that_changes_the_url_changes_the_context(tmp_path: Path) -> None:
         url=f"{BASE}/second.html",
         title="Fixture second page",
         tabs=(_tab(0, "Fixture second page"), _tab(1, "Fixture second page")),
+        tab_urls=(f"{BASE}/second.html", f"{BASE}/second.html"),
+        current_tab=0,
     )
 
 
@@ -229,7 +241,9 @@ def test_new_tab_from_the_tab_list(tmp_path: Path) -> None:
     result = _decode("tabs_new", tmp_path, SECOND)
 
     assert result.opened_contexts == (_tab(1, ""),)
-    assert result.surface == BrowserContext(url="about:blank", title="", tabs=SECOND_AND_BLANK.tabs)
+    assert result.surface == BrowserContext(
+        url="about:blank", title="", tabs=SECOND_AND_BLANK.tabs, tab_urls=SECOND_AND_BLANK.tab_urls, current_tab=1
+    )
     assert (result.value, result.detail) == (None, None)
 
 
@@ -246,9 +260,7 @@ def test_dialog_opened_by_click_changes_the_context(tmp_path: Path) -> None:
     assert result.context_changed is True
     assert result.detail is not None
     assert '["confirm" dialog with message "Delete order?"]' in result.detail
-    assert result.surface == BrowserContext(
-        url=f"{BASE}/index.html", title="", tabs=(_tab(0, ""),), dialog="confirm: Delete order?"
-    )
+    assert result.surface == dataclasses.replace(_one_tab(f"{BASE}/index.html", ""), dialog="confirm: Delete order?")
 
 
 def test_file_chooser_is_reported_but_keeps_the_context(tmp_path: Path) -> None:
@@ -280,9 +292,7 @@ def test_action_refused_by_an_open_dialog_shows_it_on_the_page_before(tmp_path: 
 def test_tab_list_during_a_dialog_shows_the_page_and_the_dialog(tmp_path: Path) -> None:
     result = _decode("tabs_list_during_dialog", tmp_path, FORM)
 
-    assert result.surface == BrowserContext(
-        url=f"{BASE}/index.html", title="", tabs=(_tab(0, ""),), dialog="confirm: Delete order?"
-    )
+    assert result.surface == dataclasses.replace(_one_tab(f"{BASE}/index.html", ""), dialog="confirm: Delete order?")
 
 
 def test_dialog_message_keeps_quotes_and_line_breaks(tmp_path: Path) -> None:
