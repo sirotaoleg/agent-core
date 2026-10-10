@@ -573,12 +573,39 @@ def _outside_and_server(tmp_path: Path) -> tuple[Path, Path]:
 def test_a_file_outside_the_server_directory_is_uploaded_from_a_copy_under_it(tmp_path: Path) -> None:
     outside, server = _outside_and_server(tmp_path)
 
-    _outcomes, [(tool, arguments)] = _execute(server, {"browser_file_upload": OK}, UploadFile(None, (str(outside),)))
+    async def upload(driver: PlaywrightMcpDriver) -> bytes:
+        await driver.execute(UploadFile(None, (str(outside),)))
+        return next((server / "uploads").glob("*/cv.pdf")).read_bytes()
+
+    copied, [(tool, arguments)] = _run(server, {"browser_file_upload": OK}, upload)
 
     [staged] = map(Path, arguments["paths"])
     assert tool == "browser_file_upload"
     assert staged.parent.parent == server / "uploads" and staged.name == "cv.pdf"
-    assert staged.read_bytes() == b"%PDF-cv"
+    assert copied == b"%PDF-cv"
+
+
+def test_stop_removes_the_upload_copies_and_the_uploads_folder_they_left_empty(tmp_path: Path) -> None:
+    outside, server = _outside_and_server(tmp_path)
+
+    _execute(server, {"browser_file_upload": OK}, UploadFile(None, (str(outside),)), UploadFile(None, (str(outside),)))
+
+    assert not (server / "uploads").exists()
+
+
+def test_stop_leaves_everything_in_the_uploads_folder_it_did_not_stage(tmp_path: Path) -> None:
+    outside, server = _outside_and_server(tmp_path)
+    mine = server / "uploads" / "mine" / "keep.txt"
+    mine.parent.mkdir(parents=True)
+    mine.write_text("keep", encoding="utf-8")
+
+    _execute(server, {"browser_file_upload": OK}, UploadFile(None, (str(outside),)))
+
+    assert [path.relative_to(server).as_posix() for path in sorted(server.rglob("*"))] == [
+        "uploads",
+        "uploads/mine",
+        "uploads/mine/keep.txt",
+    ]
 
 
 def test_a_drop_stages_its_files_too(tmp_path: Path) -> None:
