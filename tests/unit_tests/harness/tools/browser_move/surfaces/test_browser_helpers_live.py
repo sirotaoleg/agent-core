@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -29,6 +30,8 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import (
     FindTool,
     ProbeInteractivesTool,
     activate_page,
+    drag_and_drop,
+    set_input_files,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import MESSAGES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.renderer import BrowserRenderer
@@ -95,6 +98,32 @@ async def _fill_save_and_read_back(context: ToolContext) -> tuple[Any, str]:
     return output.data["content"], title.value
 
 
+def _upload_then_drag(path: Path) -> Callable[[ToolContext], Awaitable[tuple[Any, ...]]]:
+    async def run(context: ToolContext) -> tuple[Any, ...]:
+        title = RunScript(code="() => document.title")
+        uploaded = await set_input_files(context, selector="#upload", paths=[str(path)])
+        uploaded_title = (await context.execute(title)).value
+        dragged = await drag_and_drop(context, element_source="#drag-source", element_target="#drop-target")
+        return uploaded, uploaded_title, dragged, (await context.execute(title)).value
+
+    return run
+
+
+def _assert_uploaded_then_dragged(outcome: tuple[Any, ...]) -> None:
+    uploaded, uploaded_title, dragged, dragged_title = outcome
+    assert uploaded["ok"] is True, uploaded
+    assert uploaded_title == "upload:note.txt"
+    assert dragged["ok"] is True, dragged
+    assert dragged_title == "dragged"
+
+
+@pytest.fixture
+def note(tmp_path: Path) -> Path:
+    path = tmp_path / "note.txt"
+    path.write_text("note", encoding="utf-8")
+    return path
+
+
 def _assert_the_batch_filled_saved_and_read_back(outcome: tuple[Any, str]) -> None:
     payload, title = outcome
     assert payload["ok"] is True, payload
@@ -152,6 +181,16 @@ class TestHelpersOnPlaywrightMcp:
         driver = create_playwright_mcp_driver(chrome_device, mcp_settings)
         _assert_the_batch_filled_saved_and_read_back(_on_page(driver, scene_url, _fill_save_and_read_back))
 
+    def test_custom_actions_upload_through_the_chooser_and_drag_between_elements(
+        self,
+        chrome_device: ProvisionedDevice,  # noqa: F811
+        mcp_settings: BrowserSettings,  # noqa: F811
+        scene_url: str,
+        note: Path,
+    ) -> None:
+        driver = create_playwright_mcp_driver(chrome_device, mcp_settings)
+        _assert_uploaded_then_dragged(_on_page(driver, scene_url, _upload_then_drag(note)))
+
 
 @pytest.mark.live
 @pytest.mark.skipif(browser_use_skip_reason() is not None, reason=browser_use_skip_reason() or "")
@@ -191,3 +230,12 @@ class TestHelpersOnBrowserUse:
     ) -> None:
         driver = create_browser_use_driver(chrome_device, BrowserSettings.from_process_env())
         _assert_the_batch_filled_saved_and_read_back(_on_page(driver, scene_url, _fill_save_and_read_back))
+
+    def test_custom_actions_upload_on_the_input_and_drag_between_elements(
+        self,
+        chrome_device: ProvisionedDevice,  # noqa: F811
+        scene_url: str,
+        note: Path,
+    ) -> None:
+        driver = create_browser_use_driver(chrome_device, BrowserSettings.from_process_env())
+        _assert_uploaded_then_dragged(_on_page(driver, scene_url, _upload_then_drag(note)))
