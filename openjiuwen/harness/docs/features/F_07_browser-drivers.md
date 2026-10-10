@@ -651,3 +651,51 @@ grew from 14 to 33 cases so that every decoding rule has a real server answer be
    the driver. A browser closed by a tool call between calls is not an error at all: the server starts a new
    browser on the next call (a stale ref is what the model then sees).
 5. `last_status` and the scroll pixels of `BrowserContext` stay at their defaults: the server reports neither.
+
+## Playwright MCP driver
+
+`drivers/playwright_mcp/driver.py`: `PlaywrightMcpDriver(HandlerDriver)` over a `@playwright/mcp` server it starts
+and owns, plus the registry factory `create_playwright_mcp_driver`. Nothing outside tests uses it yet; the agent
+still runs the old Playwright MCP path.
+
+### Decisions
+
+1. **The factory reuses today's server config builder.** `_playwright_mcp_config` became the public
+   `playwright_mcp_config(settings, instance, required_capability)`; the factory passes the device endpoint as the
+   instance CDP URL. One builder, so the driver launches the same server the runtime does.
+2. **The clients return the raw `CallToolResult`.** `call_tool_result` is the transport part of the old
+   `call_tool`; `call_tool` keeps its text extraction on top, so the runtime path is unchanged. The decoder needs the
+   content blocks and `isError`, not the joined text.
+3. **Tool hints come from the server.** `start()` reads `tools/list` once and keeps the description of each mapped
+   tool; whether they or our own texts are better is a benchmark question.
+4. **`native_text` of `observe()` is the whole `browser_snapshot` text**, so a renderer can reproduce today's model
+   input exactly; an observation read from a linked file carries the file's YAML.
+5. **The driver keeps the last `BrowserContext`** from observe and every result and passes it to `decode`; that is how
+   a navigating click and a popup become context changes.
+6. **Coordinates are screenshot pixels at scale 1** (screenshots are taken at CSS scale), so `PointRef` goes to the
+   coordinate tools unchanged.
+7. **`count=2` is `doubleClick`; more is `Unsupported`.** `TypeText` without `clear` must be `slowly` (the tool
+   replaces the content otherwise).
+
+### Rejected options
+
+- **A second copy of the MCP command-line logic in the driver.** Two builders would drift; decision 1.
+- **Going through `ToolMgr` and the client patch.** The driver owns its client; the patch dies with the old path.
+
+### Verification
+
+- `drivers/playwright_mcp/test_driver.py` (81) on a fake MCP session: pinned `info.actions`; one case per handler
+  with the exact tool and arguments; `Unsupported` cases send nothing; observe with and without screenshots;
+  start/stop/health; context tracking across calls; the factory's config equals `build_playwright_mcp_config` for
+  remote, managed and extension devices.
+- `test_assembly.py`: the `playwright_mcp` registry name now builds a `PlaywrightMcpDriver`.
+- `pytest tests/unit_tests/harness/tools/browser_move -q`: **1619 passed, 61 skipped**; live browser-use
+  conformance and assembly: 46 passed.
+
+### Known leftovers
+
+1. **The MCP clients re-send a call after a timeout or a transport error** (`call_tool_result` reconnects and loops
+   once). A click that reached the page and then timed out at the transport would be sent twice; the driver must
+   never retry a dispatched command. The driver also maps every client exception to `ConnectionLost`, so a
+   transport timeout would look like a dead server. Both are fixed with the live conformance run.
+2. Live conformance on this driver is not run yet.

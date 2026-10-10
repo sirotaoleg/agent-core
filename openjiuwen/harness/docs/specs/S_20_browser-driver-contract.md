@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `scene/`) |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `scene/`) |
 | Last revised | 2026-10-10 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -599,6 +599,28 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   Call-log lines are read without ANSI escapes and without the `N ×` fold. A call refused because a dialog is open
   (`Tool "<name>" does not handle the modal state`) is not raised: it returns `ok=False` with the error and the
   modal state in `detail`, as browser-use does for an action while a dialog is open.
+
+#### The driver (`drivers/playwright_mcp/driver.py`)
+
+- `create_playwright_mcp_driver(device, surface_settings)` builds the `@playwright/mcp` server config with
+  `playwright_runtime.config.playwright_mcp_config` (the same builder `build_playwright_mcp_config` uses), with
+  `device.endpoint` as the CDP endpoint. The composition root never sees the command line.
+- `start()` owns one MCP client (`BrowserMoveStdioClient`, or `BrowserMoveStreamableHttpClient` for
+  `streamable-http`) and calls it directly, never through `ToolMgr`; it reads `tools/list` once and keeps each
+  mapped tool's description as `DriverInfo.tool_hints`. `health()` pings the session.
+- `observe()` calls `browser_snapshot` (and `browser_take_screenshot` when asked). `native_text` is the full text of
+  that result (header, open tabs, YAML): what the model reads today. Tabs come from the snapshot header, never from
+  a `browser_tabs list`.
+- Every handler sends one tool call and decodes it with `decode(..., before=<last BrowserContext>)` in a worker
+  thread (the decoder may read the linked snapshot file). Commands and tools: Click → `browser_click` /
+  `browser_mouse_click_xy`; TypeText → `browser_type`; PressKey → `browser_press_key`; Hover → `browser_hover` /
+  `browser_mouse_move_xy`; Drag → `browser_drag` / `browser_mouse_drag_xy`; Scroll → `browser_mouse_wheel`;
+  SelectOption, FillForm, Drop, UploadFile (no target: answers the open file chooser), HandleDialog, Wait
+  (`browser_wait_for`), RunScript (`browser_evaluate`, page JavaScript), Navigate, Back, Open/Switch/CloseContext
+  (`browser_tabs`), GetPdf, GetConsole, GetNetwork. Element refs: `DriverRef`, `Locator(css)`; `PointRef` for the
+  coordinate tools.
+- **Context ids are valid until the next context change.** On this driver they are tab positions (`"0"`, `"1"`),
+  which shift when an earlier tab closes; every open, switch and close reports `context_changed`.
 
 ## Relation to other specs
 
