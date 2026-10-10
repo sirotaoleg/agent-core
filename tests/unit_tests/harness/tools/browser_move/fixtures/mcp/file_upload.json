@@ -1,0 +1,22 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "file_upload",
+  "request": {
+    "tool": "browser_file_upload",
+    "arguments": {
+      "paths": [
+        "<TMP>\\attachment.csv"
+      ]
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Ran Playwright code\n```js\nawait fileChooser.setFiles([\"<TMP>\\\\attachment.csv\"])\n```\n### Page\n- Page URL: http://127.0.0.1:<PORT>/upload.html\n- Page Title: Fixture upload page\n### Snapshot\n- [Snapshot](.playwright-mcp\\page-<TS>.yml)"
+      }
+    ],
+    "isError": false
+  },
+  "model_text": "### Ran Playwright code\n```js\nawait fileChooser.setFiles([\"<TMP>\\\\attachment.csv\"])\n```\n### Page\n- Page URL: http://127.0.0.1:<PORT>/upload.html\n- Page Title: Fixture upload page\n### Snapshot\n- [Snapshot](.playwright-mcp\\page-<TS>.yml)"
+}

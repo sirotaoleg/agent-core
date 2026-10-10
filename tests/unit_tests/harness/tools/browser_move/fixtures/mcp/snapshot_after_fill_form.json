@@ -1,0 +1,18 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "snapshot_after_fill_form",
+  "request": {
+    "tool": "browser_snapshot",
+    "arguments": {}
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Page\n- Page URL: http://127.0.0.1:<PORT>/index.html\n- Page Title: Fixture form page\n### Snapshot\n```yaml\n- generic [ref=f7e1]:\n  - heading \"Fixture form page\" [level=1] [ref=f7e2]\n  - navigation [ref=f7e3]:\n    - link \"Second page\" [ref=f7e4] [cursor=pointer]:\n      - /url: second.html\n    - link \"Blocked page\" [ref=f7e5] [cursor=pointer]:\n      - /url: blocked.html\n    - link \"Download report\" [ref=f7e6] [cursor=pointer]:\n      - /url: report.csv\n  - generic [ref=f7e7]:\n    - text: Full name\n    - textbox \"Full name\" [ref=f7e8]:\n      - /placeholder: Your name\n      - text: Ada\n    - text: Size\n    - combobox \"Size\" [ref=f7e9]:\n      - option \"Small\"\n      - option \"Medium\" [selected]\n      - option \"Large\"\n    - generic [ref=f7e10]:\n      - checkbox \"Gift wrap\" [checked] [active] [ref=f7e11]\n      - text: Gift wrap\n    - button \"Save\" [ref=f7e12]\n  - paragraph [ref=f7e13]: Not saved\n  - button \"Show alert\" [ref=f7e14]\n  - button \"Delete order\" [ref=f7e15]\n  - paragraph [ref=f7e16]: No answer\n  - button \"Log to console\" [ref=f7e17]\n  - iframe [ref=f7e18]:\n    - generic [ref=f8e1]:\n      - paragraph [ref=f8e2]: Inside the frame\n      - button \"Frame button\" [ref=f8e3]\n```"
+      }
+    ],
+    "isError": false
+  },
+  "model_text": "### Page\n- Page URL: http://127.0.0.1:<PORT>/index.html\n- Page Title: Fixture form page\n### Snapshot\n```yaml\n- generic [ref=f7e1]:\n  - heading \"Fixture form page\" [level=1] [ref=f7e2]\n  - navigation [ref=f7e3]:\n    - link \"Second page\" [ref=f7e4] [cursor=pointer]:\n      - /url: second.html\n    - link \"Blocked page\" [ref=f7e5] [cursor=pointer]:\n      - /url: blocked.html\n    - link \"Download report\" [ref=f7e6] [cursor=pointer]:\n      - /url: report.csv\n  - generic [ref=f7e7]:\n    - text: Full name\n    - textbox \"Full name\" [ref=f7e8]:\n      - /placeholder: Your name\n      - text: Ada\n    - text: Size\n    - combobox \"Size\" [ref=f7e9]:\n      - option \"Small\"\n      - option \"Medium\" [selected]\n      - option \"Large\"\n    - generic [ref=f7e10]:\n      - checkbox \"Gift wrap\" [checked] [active] [ref=f7e11]\n      - text: Gift wrap\n    - button \"Save\" [ref=f7e12]\n  - paragraph [ref=f7e13]: Not saved\n  - button \"Show alert\" [ref=f7e14]\n  - button \"Delete order\" [ref=f7e15]\n  - paragraph [ref=f7e16]: No answer\n  - button \"Log to console\" [ref=f7e17]\n  - iframe [ref=f7e18]:\n    - generic [ref=f8e1]:\n      - paragraph [ref=f8e2]: Inside the frame\n      - button \"Frame button\" [ref=f8e3]\n```"
+}

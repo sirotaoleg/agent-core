@@ -1,0 +1,20 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "evaluate_error",
+  "request": {
+    "tool": "browser_evaluate",
+    "arguments": {
+      "function": "() => { throw new Error('fixture failure'); }"
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Error\nError: fixture failure\n    at eval (eval at <anonymous> (eval at evaluate (:303:30)), <anonymous>:1:16)\n    at eval (eval at evaluate (:303:30), <anonymous>:4:50)\n    at UtilityScript.evaluate (<anonymous>:305:16)\n    at UtilityScript.<anonymous> (<anonymous>:1:44)"
+      }
+    ],
+    "isError": true
+  },
+  "model_text": "{\"result\": \"### Error\\nError: fixture failure\\n    at eval (eval at <anonymous> (eval at evaluate (:303:30)), <anonymous>:1:16)\\n    at eval (eval at evaluate (:303:30), <anonymous>:4:50)\\n    at UtilityScript.evaluate (<anonymous>:305:16)\\n    at UtilityScript.<anonymous> (<anonymous>:1:44)\"}"
+}

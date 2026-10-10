@@ -1,0 +1,20 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "wait_for_timeout",
+  "request": {
+    "tool": "browser_wait_for",
+    "arguments": {
+      "text": "Never shown"
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Error\nTimeoutError: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByText('Never shown').first() to be visible\u001b[22m\n"
+      }
+    ],
+    "isError": true
+  },
+  "model_text": "{\"result\": \"### Error\\nTimeoutError: Timeout 5000ms exceeded.\\nCall log:\\n\\u001b[2m  - waiting for getByText('Never shown').first() to be visible\\u001b[22m\\n\"}"
+}

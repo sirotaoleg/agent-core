@@ -4,7 +4,8 @@ Real answers of the Playwright MCP server, recorded once from a local headless
 Chrome against the static pages in `pages/`. They are the input for the Phase 5
 snapshot parser and envelope decoder (`drivers/playwright_mcp/`) and for the
 Phase 4 rail tests. `test_mcp_fixtures_wellformed.py` only checks that the
-files are complete; parsing tests come with the code that parses them.
+files are complete; `drivers/playwright_mcp/test_snapshot.py` and
+`test_result.py` parse them.
 
 ## Re-recording
 
@@ -18,7 +19,8 @@ uv run python tests/unit_tests/harness/tools/browser_move/fixtures/mcp/record_mc
 
 The recorder:
 
-- serves `pages/` on a free port of `127.0.0.1`;
+- serves `pages/` on a free port of `127.0.0.1`, plus `/hang`, which answers
+  only after 30 s;
 - launches the server the way the runtime does: `build_playwright_mcp_config()`
   and `BrowserMoveStdioClient`, with the WebVoyager baseline arguments
   (`-y @playwright/mcp@0.0.78 --isolated --config <baseline config>`) plus
@@ -62,6 +64,25 @@ in brackets.
 | `tabs_close` [5] | `browser_tabs` `close` index 1 |
 | `click_intercepted_by_overlay` [3] | `browser_click` on a button under a fixed backdrop: `isError`, Playwright's call log with `intercepts pointer events`, ending in the 5000 ms action timeout |
 | `click_timeout_not_enabled` [9] | `browser_click` on a disabled button: `isError`, call log with `element is not enabled`, the same 5000 ms action timeout |
+| `click_stale_ref` | `browser_click` with a ref of `blocked.html` after navigating away: `Ref … not found in the current page snapshot` |
+| `snapshot_with_boxes` | `browser_snapshot` `boxes: true` of `index.html`: every ref line has `[box=x,y,width,height]` |
+| `fill_form` | `browser_fill_form` with a textbox, a checkbox and a combobox: only `### Ran Playwright code`, no page or snapshot |
+| `snapshot_after_fill_form` | `browser_snapshot` after it: the textbox value is a child `text:` line, the combobox value its `[selected]` option, the checkbox `[checked]` |
+| `select_option` | `browser_select_option` `values: ["Large"]` |
+| `evaluate_result` | `browser_evaluate` returning an object: `### Result` with pretty-printed JSON before `### Ran Playwright code` |
+| `evaluate_error` | `browser_evaluate` whose function throws: `isError`, the JS error and its stack |
+| `screenshot_element` | `browser_take_screenshot` of the heading: a `### Result` file link plus an `image/png` content block |
+| `wait_for_timeout` | `browser_wait_for` text that never appears: `TimeoutError: Timeout 5000ms exceeded.`, call log with only the visibility wait |
+| `click_blocked_by_dialog` | `browser_click` while a `confirm()` is open: `Tool "browser_click" does not handle the modal state.` plus `### Modal state` |
+| `click_opens_tab` | `browser_click` on a `target="_blank"` link of `popup.html`: `### Open tabs` lists both tabs, the focused tab is unchanged |
+| `snapshot_two_tabs` | `browser_snapshot` with two tabs: `### Open tabs` before `### Page`; YAML quoting (`'button "Note: read me" …'`, `paragraph …: "42"`) |
+| `click_navigates` | `browser_click` on a same-tab link: only the URL in `### Page` shows the navigation |
+| `navigate_back` | `browser_navigate_back` |
+| `file_chooser_open_by_click` | `browser_click` on a file input of `upload.html`: `### Modal state` with `[File chooser]` |
+| `file_upload` | `browser_file_upload` of a file in the server's working directory |
+| `click_timeout_after_action` | `browser_click` on a link to `/hang` (the page server answers after 30 s): call log with `performing click action`, `click action done`, then the 5000 ms timeout while waiting for the navigation |
+| `evaluate_new_tab_failed` | first `browser_evaluate` after the browser was closed during a call (set up with `browser_run_code_unsafe`): `Failed to open a new tab` |
+| `evaluate_browser_closed` | the next `browser_evaluate`: `Target page, context or browser has been closed` |
 
 ## Things to know about the raw format
 
@@ -78,3 +99,13 @@ in brackets.
   `TimeoutError: browserBackend.callTool: Timeout 5000ms exceeded.`; only the
   call log tells them apart. The call log keeps the ANSI dim escapes
   (`\u001b[2m … \u001b[22m`) and folds repeats as `N ×`.
+- The linked snapshot file holds only the YAML. While a dialog is open the
+  server writes it empty.
+- Nothing marks a navigation by click or a new tab: only the URL in
+  `### Page` and the `### Open tabs` list (shown only with more than one tab)
+  differ from the result before.
+- Closing the browser with a tool call does not break the session: the server
+  starts a new one on the next call. Only a close during a running call leaves
+  it broken, which is how the two `evaluate_*` closed cases are set up.
+- The temporary directory also appears with doubled backslashes inside the JS
+  code lines; both spellings become `<TMP>`.

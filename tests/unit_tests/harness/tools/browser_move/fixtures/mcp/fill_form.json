@@ -1,0 +1,39 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "fill_form",
+  "request": {
+    "tool": "browser_fill_form",
+    "arguments": {
+      "fields": [
+        {
+          "target": "f7e8",
+          "name": "Full name",
+          "type": "textbox",
+          "value": "Ada"
+        },
+        {
+          "target": "f7e11",
+          "name": "Gift wrap",
+          "type": "checkbox",
+          "value": "true"
+        },
+        {
+          "target": "f7e9",
+          "name": "Size",
+          "type": "combobox",
+          "value": "Medium"
+        }
+      ]
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Ran Playwright code\n```js\nawait page.getByRole('textbox', { name: 'Full name' }).fill('Ada');\nawait page.getByRole('checkbox', { name: 'Gift wrap' }).setChecked(true);\nawait page.getByLabel('Size').selectOption('Medium');\n```"
+      }
+    ],
+    "isError": false
+  },
+  "model_text": "### Ran Playwright code\n```js\nawait page.getByRole('textbox', { name: 'Full name' }).fill('Ada');\nawait page.getByRole('checkbox', { name: 'Gift wrap' }).setChecked(true);\nawait page.getByLabel('Size').selectOption('Medium');\n```"
+}

@@ -1,0 +1,21 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "click_stale_ref",
+  "request": {
+    "tool": "browser_click",
+    "arguments": {
+      "element": "Covered button",
+      "target": "f5e3"
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Error\nError: Ref f5e3 not found in the current page snapshot. Try capturing new snapshot."
+      }
+    ],
+    "isError": true
+  },
+  "model_text": "{\"result\": \"### Error\\nError: Ref f5e3 not found in the current page snapshot. Try capturing new snapshot.\"}"
+}

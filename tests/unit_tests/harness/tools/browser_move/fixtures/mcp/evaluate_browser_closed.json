@@ -1,0 +1,20 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "evaluate_browser_closed",
+  "request": {
+    "tool": "browser_evaluate",
+    "arguments": {
+      "function": "() => document.title"
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Error\nError: browserBackend.callTool: Target page, context or browser has been closed"
+      }
+    ],
+    "isError": true
+  },
+  "model_text": "{\"result\": \"### Error\\nError: browserBackend.callTool: Target page, context or browser has been closed\"}"
+}

@@ -13,6 +13,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -58,9 +59,21 @@ _BASELINE_MCP_CONFIG = {
 }
 
 
+# Longer than the server's 5 s action timeout, so a click on a link to it times out after the click.
+_HANG_S = 30
+
+
 class _QuietHandler(SimpleHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - stdlib signature
         return
+
+    def do_GET(self) -> None:  # noqa: N802 - stdlib name
+        if self.path == "/hang":
+            time.sleep(_HANG_S)
+            self.send_response(204)
+            self.end_headers()
+            return
+        super().do_GET()
 
 
 def _start_page_server() -> ThreadingHTTPServer:
@@ -91,7 +104,12 @@ class _Placeholders:
     def __init__(self, port: int, tmp_dir: Path) -> None:
         tmp = str(tmp_dir)
         resolved = str(tmp_dir.resolve())
-        variants = {tmp, tmp.replace("\\", "/"), resolved, resolved.replace("\\", "/")}
+        # The doubled form is how paths appear inside the server's JS code lines.
+        variants = {
+            spelling
+            for path in (tmp, resolved)
+            for spelling in (path, path.replace("\\", "/"), path.replace("\\", "\\\\"))
+        }
         self._paths = sorted(variants, key=len, reverse=True)
         self._port = re.compile(rf"(127\.0\.0\.1|localhost):{port}\b")
 
@@ -156,7 +174,14 @@ def _ref(snapshot_text: str, role: str, name: str) -> str:
     return match.group(1)
 
 
-async def _run_cases(rec: _Recorder, base_url: str) -> None:
+# Closes the browser while a Playwright call is in flight; the server does not relaunch it afterwards.
+_CLOSE_BROWSER_MID_CALL = (
+    "async (page) => { const pending = page.locator('#never').click({ timeout: 3000 }); "
+    "await page.context().browser().close(); await pending; }"
+)
+
+
+async def _run_cases(rec: _Recorder, base_url: str, work_dir: Path) -> None:
     index_url = f"{base_url}/index.html"
     await rec.call("browser_navigate", {"url": index_url})
 
@@ -219,6 +244,104 @@ async def _run_cases(rec: _Recorder, base_url: str) -> None:
         {"element": "Disabled button", "target": _ref(blocked_snapshot, "button", "Disabled button")},
     )
 
+    await rec.call("browser_navigate", {"url": f"{base_url}/second.html"})
+    await rec.record(
+        "click_stale_ref",
+        "browser_click",
+        {"element": "Covered button", "target": _ref(blocked_snapshot, "button", "Covered button")},
+    )
+
+    await rec.call("browser_navigate", {"url": index_url})
+    _, form = await rec.call("browser_snapshot", {})
+    await rec.record("snapshot_with_boxes", "browser_snapshot", {"boxes": True})
+    await rec.record(
+        "fill_form",
+        "browser_fill_form",
+        {
+            "fields": [
+                {"target": _ref(form, "textbox", "Full name"), "name": "Full name", "type": "textbox", "value": "Ada"},
+                {
+                    "target": _ref(form, "checkbox", "Gift wrap"),
+                    "name": "Gift wrap",
+                    "type": "checkbox",
+                    "value": "true",
+                },
+                {"target": _ref(form, "combobox", "Size"), "name": "Size", "type": "combobox", "value": "Medium"},
+            ]
+        },
+    )
+    await rec.record("snapshot_after_fill_form", "browser_snapshot", {})
+    await rec.record(
+        "select_option",
+        "browser_select_option",
+        {"element": "Size select", "target": _ref(form, "combobox", "Size"), "values": ["Large"]},
+    )
+    await rec.record(
+        "evaluate_result",
+        "browser_evaluate",
+        {
+            "function": "() => ({ name: document.getElementById('name').value, "
+            "size: document.getElementById('size').value })"
+        },
+    )
+    await rec.record(
+        "evaluate_error",
+        "browser_evaluate",
+        {"function": "() => { throw new Error('fixture failure'); }"},
+    )
+    await rec.record(
+        "screenshot_element",
+        "browser_take_screenshot",
+        {"element": "Page heading", "target": _ref(form, "heading", "Fixture form page"), "type": "png"},
+    )
+    await rec.record("wait_for_timeout", "browser_wait_for", {"text": "Never shown"})
+    await rec.call("browser_click", {"element": "Delete order button", "target": _ref(form, "button", "Delete order")})
+    await rec.record(
+        "click_blocked_by_dialog",
+        "browser_click",
+        {"element": "Save button", "target": _ref(form, "button", "Save")},
+    )
+    await rec.call("browser_handle_dialog", {"accept": False})
+
+    await rec.call("browser_navigate", {"url": f"{base_url}/popup.html"})
+    _, popup = await rec.call("browser_snapshot", {})
+    await rec.record(
+        "click_opens_tab",
+        "browser_click",
+        {"element": "New tab link", "target": _ref(popup, "link", "Open second page in a new tab")},
+    )
+    await rec.record("snapshot_two_tabs", "browser_snapshot", {})
+    await rec.record(
+        "click_navigates",
+        "browser_click",
+        {"element": "Second page link", "target": _ref(popup, "link", "Go to second page")},
+    )
+    await rec.record("navigate_back", "browser_navigate_back", {})
+    await rec.call("browser_tabs", {"action": "close", "index": 1})
+
+    attachment = work_dir / "attachment.csv"
+    attachment.write_text("name,size\nAda,Large\n", encoding="utf-8")
+    await rec.call("browser_navigate", {"url": f"{base_url}/upload.html"})
+    _, upload = await rec.call("browser_snapshot", {})
+    await rec.record(
+        "file_chooser_open_by_click",
+        "browser_click",
+        {"element": "Attachment input", "target": _ref(upload, "button", "Attachment")},
+    )
+    await rec.record("file_upload", "browser_file_upload", {"paths": [str(attachment)]})
+
+    await rec.call("browser_navigate", {"url": f"{base_url}/slow.html"})
+    _, slow = await rec.call("browser_snapshot", {})
+    await rec.record(
+        "click_timeout_after_action",
+        "browser_click",
+        {"element": "Slow link", "target": _ref(slow, "link", "Slow link")},
+    )
+
+    await rec.call("browser_run_code_unsafe", {"code": _CLOSE_BROWSER_MID_CALL})
+    await rec.record("evaluate_new_tab_failed", "browser_evaluate", {"function": "() => document.title"})
+    await rec.record("evaluate_browser_closed", "browser_evaluate", {"function": "() => document.title"})
+
 
 async def main() -> int:
     tmp_dir = Path(tempfile.mkdtemp(prefix="mcp-fixtures-"))
@@ -232,7 +355,7 @@ async def main() -> int:
             return 1
         tools = {card.name: MCPTool(client, card) for card in await client.list_tools()}
         recorder = _Recorder(client, tools, _Placeholders(port, tmp_dir))
-        await _run_cases(recorder, f"http://127.0.0.1:{port}")
+        await _run_cases(recorder, f"http://127.0.0.1:{port}", tmp_dir)
         print(f"wrote {len(recorder.written)} fixtures to {HERE}")
         return 0
     finally:

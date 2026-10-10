@@ -1,0 +1,21 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "click_opens_tab",
+  "request": {
+    "tool": "browser_click",
+    "arguments": {
+      "element": "New tab link",
+      "target": "f9e3"
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Ran Playwright code\n```js\nawait page.getByRole('link', { name: 'Open second page in a new tab' }).click();\n```\n### Open tabs\n- 0: (current) [Fixture popup page](http://127.0.0.1:<PORT>/popup.html)\n- 1: [Fixture second page](http://127.0.0.1:<PORT>/second.html)\n### Page\n- Page URL: http://127.0.0.1:<PORT>/popup.html\n- Page Title: Fixture popup page\n### Snapshot\n- [Snapshot](.playwright-mcp\\page-<TS>.yml)"
+      }
+    ],
+    "isError": false
+  },
+  "model_text": "### Ran Playwright code\n```js\nawait page.getByRole('link', { name: 'Open second page in a new tab' }).click();\n```\n### Open tabs\n- 0: (current) [Fixture popup page](http://127.0.0.1:<PORT>/popup.html)\n- 1: [Fixture second page](http://127.0.0.1:<PORT>/second.html)\n### Page\n- Page URL: http://127.0.0.1:<PORT>/popup.html\n- Page Title: Fixture popup page\n### Snapshot\n- [Snapshot](.playwright-mcp\\page-<TS>.yml)"
+}

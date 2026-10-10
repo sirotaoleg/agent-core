@@ -1,0 +1,20 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "evaluate_result",
+  "request": {
+    "tool": "browser_evaluate",
+    "arguments": {
+      "function": "() => ({ name: document.getElementById('name').value, size: document.getElementById('size').value })"
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Result\n{\n  \"name\": \"Ada\",\n  \"size\": \"l\"\n}\n### Ran Playwright code\n```js\nawait page.evaluate('() => ({ name: document.getElementById(\\'name\\').value, size: document.getElementById(\\'size\\').value })');\n```"
+      }
+    ],
+    "isError": false
+  },
+  "model_text": "### Result\n{\n  \"name\": \"Ada\",\n  \"size\": \"l\"\n}\n### Ran Playwright code\n```js\nawait page.evaluate('() => ({ name: document.getElementById(\\'name\\').value, size: document.getElementById(\\'size\\').value })');\n```"
+}

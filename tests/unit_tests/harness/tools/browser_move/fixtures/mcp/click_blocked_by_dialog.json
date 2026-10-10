@@ -1,0 +1,21 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "click_blocked_by_dialog",
+  "request": {
+    "tool": "browser_click",
+    "arguments": {
+      "element": "Save button",
+      "target": "f7e12"
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Error\nError: Tool \"browser_click\" does not handle the modal state.\n### Modal state\n- [\"confirm\" dialog with message \"Delete order?\"]: can be handled by browser_handle_dialog"
+      }
+    ],
+    "isError": true
+  },
+  "model_text": "{\"result\": \"### Error\\nError: Tool \\\"browser_click\\\" does not handle the modal state.\\n### Modal state\\n- [\\\"confirm\\\" dialog with message \\\"Delete order?\\\"]: can be handled by browser_handle_dialog\"}"
+}

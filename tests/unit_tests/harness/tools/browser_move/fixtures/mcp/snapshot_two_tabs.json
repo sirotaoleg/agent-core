@@ -1,0 +1,18 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "snapshot_two_tabs",
+  "request": {
+    "tool": "browser_snapshot",
+    "arguments": {}
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Open tabs\n- 0: (current) [Fixture popup page](http://127.0.0.1:<PORT>/popup.html)\n- 1: [Fixture second page](http://127.0.0.1:<PORT>/second.html)\n### Page\n- Page URL: http://127.0.0.1:<PORT>/popup.html\n- Page Title: Fixture popup page\n### Snapshot\n```yaml\n- generic [ref=f9e1]:\n  - heading \"Fixture popup page\" [level=1] [ref=f9e2]\n  - link \"Open second page in a new tab\" [active] [ref=f9e3] [cursor=pointer]:\n    - /url: second.html\n  - link \"Go to second page\" [ref=f9e4] [cursor=pointer]:\n    - /url: second.html\n  - 'button \"Note: read me\" [ref=f9e5]'\n  - paragraph [ref=f9e6]: \"42\"\n```"
+      }
+    ],
+    "isError": false
+  },
+  "model_text": "### Open tabs\n- 0: (current) [Fixture popup page](http://127.0.0.1:<PORT>/popup.html)\n- 1: [Fixture second page](http://127.0.0.1:<PORT>/second.html)\n### Page\n- Page URL: http://127.0.0.1:<PORT>/popup.html\n- Page Title: Fixture popup page\n### Snapshot\n```yaml\n- generic [ref=f9e1]:\n  - heading \"Fixture popup page\" [level=1] [ref=f9e2]\n  - link \"Open second page in a new tab\" [active] [ref=f9e3] [cursor=pointer]:\n    - /url: second.html\n  - link \"Go to second page\" [ref=f9e4] [cursor=pointer]:\n    - /url: second.html\n  - 'button \"Note: read me\" [ref=f9e5]'\n  - paragraph [ref=f9e6]: \"42\"\n```"
+}

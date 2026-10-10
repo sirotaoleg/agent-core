@@ -1,0 +1,20 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "snapshot_with_boxes",
+  "request": {
+    "tool": "browser_snapshot",
+    "arguments": {
+      "boxes": true
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Page\n- Page URL: http://127.0.0.1:<PORT>/index.html\n- Page Title: Fixture form page\n### Snapshot\n```yaml\n- generic [active] [ref=f7e1] [box=8,21,1264,309]:\n  - heading \"Fixture form page\" [level=1] [ref=f7e2] [box=8,21,1264,37]\n  - navigation [ref=f7e3] [box=8,80,1264,18]:\n    - link \"Second page\" [ref=f7e4] [cursor=pointer] [box=8,80,81,17]:\n      - /url: second.html\n    - link \"Blocked page\" [ref=f7e5] [cursor=pointer] [box=93,80,88,17]:\n      - /url: blocked.html\n    - link \"Download report\" [ref=f7e6] [cursor=pointer] [box=185,80,109,17]:\n      - /url: report.csv\n  - generic [ref=f7e7] [box=8,98,1264,22]:\n    - text: Full name\n    - textbox \"Full name\" [ref=f7e8] [box=76,99,177,21]:\n      - /placeholder: Your name\n    - text: Size\n    - combobox \"Size\" [ref=f7e9] [box=289,100,70,19]:\n      - option \"Small\" [selected] [box=0,0,0,0]\n      - option \"Medium\" [box=0,0,0,0]\n      - option \"Large\" [box=0,0,0,0]\n    - generic [ref=f7e10] [box=363,100,86,17]:\n      - checkbox \"Gift wrap\" [ref=f7e11] [box=367,101,13,13]\n      - text: Gift wrap\n    - button \"Save\" [ref=f7e12] [box=453,99,46,21]\n  - paragraph [ref=f7e13] [box=8,136,1264,18]: Not saved\n  - button \"Show alert\" [ref=f7e14] [box=8,170,79,21]\n  - button \"Delete order\" [ref=f7e15] [box=91,170,89,21]\n  - paragraph [ref=f7e16] [box=8,207,1264,18]: No answer\n  - button \"Log to console\" [ref=f7e17] [box=8,310,103,21]\n  - iframe [ref=f7e18] [box=115,241,324,84]:\n    - generic [ref=f8e1] [box=8,16,304,55]:\n      - paragraph [ref=f8e2] [box=8,16,304,18]: Inside the frame\n      - button \"Frame button\" [ref=f8e3] [box=8,50,95,21]\n```"
+      }
+    ],
+    "isError": false
+  },
+  "model_text": "### Page\n- Page URL: http://127.0.0.1:<PORT>/index.html\n- Page Title: Fixture form page\n### Snapshot\n```yaml\n- generic [active] [ref=f7e1] [box=8,21,1264,309]:\n  - heading \"Fixture form page\" [level=1] [ref=f7e2] [box=8,21,1264,37]\n  - navigation [ref=f7e3] [box=8,80,1264,18]:\n    - link \"Second page\" [ref=f7e4] [cursor=pointer] [box=8,80,81,17]:\n      - /url: second.html\n    - link \"Blocked page\" [ref=f7e5] [cursor=pointer] [box=93,80,88,17]:\n      - /url: blocked.html\n    - link \"Download report\" [ref=f7e6] [cursor=pointer] [box=185,80,109,17]:\n      - /url: report.csv\n  - generic [ref=f7e7] [box=8,98,1264,22]:\n    - text: Full name\n    - textbox \"Full name\" [ref=f7e8] [box=76,99,177,21]:\n      - /placeholder: Your name\n    - text: Size\n    - combobox \"Size\" [ref=f7e9] [box=289,100,70,19]:\n      - option \"Small\" [selected] [box=0,0,0,0]\n      - option \"Medium\" [box=0,0,0,0]\n      - option \"Large\" [box=0,0,0,0]\n    - generic [ref=f7e10] [box=363,100,86,17]:\n      - checkbox \"Gift wrap\" [ref=f7e11] [box=367,101,13,13]\n      - text: Gift wrap\n    - button \"Save\" [ref=f7e12] [box=453,99,46,21]\n  - paragraph [ref=f7e13] [box=8,136,1264,18]: Not saved\n  - button \"Show alert\" [ref=f7e14] [box=8,170,79,21]\n  - button \"Delete order\" [ref=f7e15] [box=91,170,89,21]\n  - paragraph [ref=f7e16] [box=8,207,1264,18]: No answer\n  - button \"Log to console\" [ref=f7e17] [box=8,310,103,21]\n  - iframe [ref=f7e18] [box=115,241,324,84]:\n    - generic [ref=f8e1] [box=8,16,304,55]:\n      - paragraph [ref=f8e2] [box=8,16,304,18]: Inside the frame\n      - button \"Frame button\" [ref=f8e3] [box=8,50,95,21]\n```"
+}
