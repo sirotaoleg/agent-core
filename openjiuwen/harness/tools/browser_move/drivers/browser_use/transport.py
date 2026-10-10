@@ -196,6 +196,11 @@ class SidecarTransport:
             except asyncio.TimeoutError:
                 await self._cancel(request_id)
                 raise driver_errors.ActionTimeout(f"{method} timed out after {effective_timeout}s") from None
+            except asyncio.CancelledError:
+                # A caller's timeout cancels us here; without the cancel the sidecar keeps running the action
+                # while the next one starts.
+                await self._cancel(request_id)
+                raise
 
             return self._unwrap_reply(reply)
 
