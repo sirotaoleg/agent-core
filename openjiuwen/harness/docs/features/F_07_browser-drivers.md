@@ -928,3 +928,10 @@ tool-call logging hook"). This resolves Environment boundary decision 7 and its 
    points now writes them to the core log.
 4. The registry and the logger state are process-wide; tests reset them (`_TOOL_CALL_LOGGERS`, the marked handler and
    the audit attribute).
+
+### Logger fallback reads only the log settings
+
+Before anything configures it, the browser-agent logger takes its settings from the process environment on first
+use. It used to parse the whole `CoreSettings`, so an invalid unrelated value (an unknown `BROWSER_DRIVER`) raised at
+import time in every module that fetches the logger (`drivers/browser_use/driver.py`, `transport.py`).
+`CoreSettings.logging_from_process_env()` reads only the four log fields; everything else keeps its default.
