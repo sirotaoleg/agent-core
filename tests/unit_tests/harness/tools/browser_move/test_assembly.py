@@ -261,9 +261,11 @@ class TestBuiltInRegistrations:
     def test_drivers_register_browser_use_and_playwright_mcp(self) -> None:
         assert {"browser_use", "playwright_mcp"} <= set(DRIVERS.names())
 
-    def test_playwright_mcp_driver_is_not_built_yet(self) -> None:
-        with pytest.raises(ModuleNotFoundError, match="driver 'playwright_mcp' is registered but not built yet"):
-            DRIVERS.create("playwright_mcp", DEVICE, None)
+    def test_playwright_mcp_driver_is_built_from_its_registry_name(self) -> None:
+        driver = DRIVERS.create("playwright_mcp", DEVICE, BrowserSettings())
+
+        assert type(driver).__name__ == "PlaywrightMcpDriver"
+        assert driver.info.surfaces == frozenset({"browser"})
 
     def test_provisioners_register_managed_remote_and_extension(self) -> None:
         assert {"managed", "remote", "extension"} <= set(PROVISIONERS.names())
@@ -278,10 +280,8 @@ class TestBuiltInRegistrations:
         assert bundle.profile is None
 
     def test_default_registries_reach_the_built_in_names(self) -> None:
-        core = CoreSettings(driver="playwright_mcp", surface="browser")
-
-        with pytest.raises(ModuleNotFoundError, match="driver 'playwright_mcp' is registered but not built yet"):
-            asyncio.run(assemble_driver(core, {"BROWSER_PROVISIONING": "remote"}))
+        assert {"playwright_mcp", "browser_use"} <= set(DRIVERS.names())
+        assert "browser" in SURFACES.names()
 
 
 _CONCRETE_MODULES_PROBE = """
