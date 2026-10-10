@@ -270,14 +270,15 @@ class TestBuiltInRegistrations:
     def test_provisioners_register_managed_remote_and_extension(self) -> None:
         assert {"managed", "remote", "extension"} <= set(PROVISIONERS.names())
 
-    def test_browser_surface_returns_its_settings_and_no_profile_yet(self) -> None:
+    def test_browser_surface_returns_its_settings_and_its_profile(self) -> None:
         bundle = SURFACES.create("browser", {"BROWSER_PROVISIONING": "managed", "BROWSER_MANAGED_PORT": "9444"})
 
         assert isinstance(bundle, SurfaceBundle)
         assert bundle.settings == BrowserSettings.from_env(
             {"BROWSER_PROVISIONING": "managed", "BROWSER_MANAGED_PORT": "9444"}
         )
-        assert bundle.profile is None
+        assert bundle.profile.name == "browser"
+        assert bundle.profile.settings is bundle.settings
 
     def test_default_registries_reach_the_built_in_names(self) -> None:
         assert {"playwright_mcp", "browser_use"} <= set(DRIVERS.names())

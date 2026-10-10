@@ -152,3 +152,9 @@ def test_policy_rule_check_gets_the_action_and_the_current_context() -> None:
     assert rule.check(click, None) == "no context yet"
     assert rule.check(click, SurfaceContext()) is None
     assert seen == [(click, None), (click, SurfaceContext())]
+
+
+def test_surface_profile_has_no_capability_tools_by_default() -> None:
+    first = SurfaceProfile(name="toy", commands=(), renderer=_Renderer())
+    second = SurfaceProfile(name="toy", commands=(), renderer=_Renderer())
+    assert first.capability_tools == {} and first.capability_tools is not second.capability_tools
