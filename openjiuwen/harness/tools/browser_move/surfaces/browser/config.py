@@ -15,6 +15,7 @@ from typing import Mapping
 from ...utils.env import (
     DEFAULT_PLAYWRIGHT_MCP_ARGS,
     DEFAULT_PLAYWRIGHT_MCP_COMMAND,
+    env_value,
     first_value,
     int_value,
     is_truthy_env,
@@ -77,12 +78,8 @@ def _optional_path(raw: str) -> Path | None:
 def _chrome_install_paths(environ: Mapping[str, str]) -> tuple[str, ...]:
     if os.name != "nt":
         return ()
-    roots = (
-        environ.get("LOCALAPPDATA"),
-        environ.get("ProgramFiles"),
-        environ.get("ProgramFiles(x86)"),
-        environ.get("ProgramW6432"),
-    )
+    keys = ("LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432")
+    roots = tuple(env_value(environ, key) for key in keys)
     return tuple(str(Path(root) / "Google" / "Chrome" / "Application" / "chrome.exe") for root in roots if root)
 
 

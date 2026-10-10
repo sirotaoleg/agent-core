@@ -16,6 +16,7 @@ from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import ex
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import wire
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging import get_browser_agent_logger
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import process_environ
+from openjiuwen.harness.tools.browser_move.utils.env import env_value
 
 _logger = get_browser_agent_logger()
 
@@ -82,7 +83,7 @@ def _sidecar_env(environ: Mapping[str, str], upload_root: Path | None) -> dict[s
             env[key] = value
     if platform.system() == "Windows":
         for key in ("SystemRoot", "TEMP", "TMP", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "LOCALAPPDATA", "APPDATA"):
-            value = environ.get(key)
+            value = env_value(environ, key)
             if value is not None:
                 env[key] = value
     else:

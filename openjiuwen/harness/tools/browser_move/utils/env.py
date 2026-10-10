@@ -44,6 +44,12 @@ def parse_command_args(value: str) -> list[str]:
     return shlex.split(value)
 
 
+def env_value(environ: Mapping[str, str], key: str) -> str | None:
+    # A dict copy of os.environ on Windows keeps only upper-case names (SystemRoot -> SYSTEMROOT).
+    value = environ.get(key)
+    return environ.get(key.upper()) if value is None else value
+
+
 def first_value(environ: Mapping[str, str], *keys: str, default: str = "") -> str:
     """The first non-blank value among ``keys``, stripped."""
     for key in keys:
