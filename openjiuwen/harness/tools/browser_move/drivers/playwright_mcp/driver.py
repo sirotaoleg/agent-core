@@ -244,7 +244,7 @@ class PlaywrightMcpDriver(HandlerDriver):
             args["submit"] = True
         if action.slowly:
             args["slowly"] = True
-        return await self._run("browser_type", args)
+        return await self._run("browser_type", args, sensitive=action.sensitive)
 
     @handles(PressKey)
     async def _press_key(self, action: PressKey) -> ActionResult:
@@ -296,7 +296,8 @@ class PlaywrightMcpDriver(HandlerDriver):
                     "value": field.value,
                 }
             )
-        return await self._run("browser_fill_form", {"fields": fields})
+        sensitive = any(field.sensitive for field in action.fields)
+        return await self._run("browser_fill_form", {"fields": fields}, sensitive=sensitive)
 
     @handles(Drop, refs={DriverRef, Locator})
     async def _drop(self, action: Drop) -> ActionResult:
@@ -335,7 +336,7 @@ class PlaywrightMcpDriver(HandlerDriver):
             params = f"element, {json.dumps(action.args)}" if action.target is not None else json.dumps(action.args)
             head = "(element)" if action.target is not None else "()"
             function = f"{head} => ({action.code})({params})"
-        return await self._run("browser_evaluate", {**args, "function": function})
+        return await self._run("browser_evaluate", {**args, "function": function}, sensitive=action.sensitive)
 
     @handles(Navigate)
     async def _navigate(self, action: Navigate) -> ActionResult:
@@ -384,8 +385,8 @@ class PlaywrightMcpDriver(HandlerDriver):
             args["filter"] = action.filter
         return await self._run("browser_network_requests", args)
 
-    async def _run(self, tool: str, arguments: dict[str, Any]) -> ActionResult:
-        return await self._decode(tool, await self._call(tool, arguments))
+    async def _run(self, tool: str, arguments: dict[str, Any], *, sensitive: bool = False) -> ActionResult:
+        return await self._decode(tool, await self._call(tool, arguments), sensitive=sensitive)
 
     async def _call(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if self._client is None:
@@ -400,9 +401,11 @@ class PlaywrightMcpDriver(HandlerDriver):
             raise ConnectionLost(f"{tool}: {exc}", dispatched=True) from exc
         return result.model_dump(mode="json", by_alias=True, exclude_none=True)
 
-    async def _decode(self, tool: str, raw: dict[str, Any]) -> ActionResult:
+    async def _decode(self, tool: str, raw: dict[str, Any], *, sensitive: bool = False) -> ActionResult:
         output_dir = self._config.output_dir if self._config is not None else Path.cwd()
-        result = await asyncio.to_thread(decode, tool, raw, output_dir=output_dir, before=self._context)
+        result = await asyncio.to_thread(
+            decode, tool, raw, output_dir=output_dir, before=self._context, sensitive=sensitive
+        )
         if isinstance(result.surface, BrowserContext):
             self._context = result.surface
         return result

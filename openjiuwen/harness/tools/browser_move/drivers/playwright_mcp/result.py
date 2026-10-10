@@ -37,6 +37,8 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.context import Brows
 _NAVIGATING_TOOLS = frozenset({"browser_navigate", "browser_navigate_back", "browser_tabs"})
 # Results go to value or surface, snapshots to observation; events are not reported.
 _DROPPED_SECTIONS = frozenset({"Result", "Snapshot", "Events"})
+# The server echoes the code it ran, typed text and scripts included; a sensitive call's detail leaves it out.
+_CODE_SECTION = "Ran Playwright code"
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -73,11 +75,14 @@ def decode(
     *,
     output_dir: Path,
     before: BrowserContext | None = None,
+    sensitive: bool = False,
 ) -> ActionResult:
     """``raw_result`` is the ``CallToolResult`` as JSON; ``before`` is the context before the call."""
     blocks = raw_result.get("content") or ()
     text = result_text(raw_result)
     parts = split_sections(text)
+    if sensitive:
+        parts.pop(_CODE_SECTION, None)
     if raw_result.get("isError") or "Error" in parts:
         if _MODAL_REFUSAL.search(parts.get("Error", "")):
             return ActionResult(ok=False, detail=_detail(parts))
