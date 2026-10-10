@@ -13,13 +13,14 @@ import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 import pytest
 
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.contract import (
     ActionResult,
+    ActionTimeout,
     Click,
     CloseContext,
     ConnectionLost,
@@ -45,6 +46,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     Wait,
 )
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp import driver as driver_module
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.clients import BrowserMoveStdioClient
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.driver import (
     PlaywrightMcpConfig,
     PlaywrightMcpDriver,
@@ -95,6 +97,8 @@ POINT = PointRef(10, 20, "g3")
 POINT_2 = PointRef(30, 40, "g3")
 TAB_1 = ContextRef(id="1", kind="tab", title="Second")
 
+HANG = "hang"
+
 Call = tuple[str, dict[str, Any]]
 
 
@@ -135,6 +139,8 @@ class _Session(FakeMcpSession):
             reply = reply.pop(0)
         if isinstance(reply, Exception):
             raise reply
+        if reply == HANG:
+            await asyncio.sleep(3600)
         return types.CallToolResult.model_validate(reply)
 
 
@@ -155,7 +161,7 @@ def _mcp(replies: dict[str, Any]) -> Iterator[list[Call]]:
         yield calls
 
 
-def _config(cwd: Path) -> PlaywrightMcpConfig:
+def _config(cwd: Path, timeout_s: float = 5) -> PlaywrightMcpConfig:
     server = McpServerConfig(
         server_id="playwright_official_stdio",
         server_name="playwright-official",
@@ -165,7 +171,7 @@ def _config(cwd: Path) -> PlaywrightMcpConfig:
             "command": sys.executable,
             "args": ["-y", "@playwright/mcp@0.0.78", "--caps=vision,pdf"],
             "cwd": str(cwd),
-            "timeout_s": 5,
+            "timeout_s": timeout_s,
         },
     )
     return PlaywrightMcpConfig(server)
@@ -318,6 +324,44 @@ def test_transport_failure_is_connection_lost_dispatched(tmp_path: Path) -> None
     assert outcome.dispatched is True
     assert "pipe broke" in str(outcome)
     assert calls == [("browser_press_key", {"key": "Enter"})]
+
+
+def test_a_call_that_times_out_is_sent_once_and_counts_as_dispatched(tmp_path: Path) -> None:
+    async def scenario() -> Any:
+        driver = PlaywrightMcpDriver(_config(tmp_path, timeout_s=0.2))
+        await driver.start()
+        try:
+            return await driver.execute(PressKey("Enter"))
+        except DriverError as exc:
+            return exc
+        finally:
+            await driver.stop()
+
+    with _mcp({"browser_press_key": [HANG, OK]}) as calls:
+        outcome = asyncio.run(scenario())
+
+    assert isinstance(outcome, ActionTimeout)
+    assert outcome.dispatched is True
+    assert [call for call in calls if call != "tools/list"] == [("browser_press_key", {"key": "Enter"})]
+
+
+def test_a_closed_transport_is_not_resent(tmp_path: Path) -> None:
+    replies = {"browser_press_key": [RuntimeError("ClosedResourceError: connection closed"), OK]}
+
+    (outcome,), calls = _execute(tmp_path, replies, PressKey("Enter"))
+
+    assert isinstance(outcome, ConnectionLost)
+    assert outcome.dispatched is True
+    assert calls == [("browser_press_key", {"key": "Enter"})]
+
+
+def test_a_call_without_a_connection_is_connection_lost_before_dispatch(tmp_path: Path) -> None:
+    with patch.object(BrowserMoveStdioClient, "connected", new_callable=PropertyMock, return_value=False):
+        (outcome,), calls = _execute(tmp_path, {"browser_press_key": OK}, PressKey("Enter"))
+
+    assert isinstance(outcome, ConnectionLost)
+    assert outcome.dispatched is False
+    assert calls == []
 
 
 # --- observe ----------------------------------------------------------------------------------------------------------
