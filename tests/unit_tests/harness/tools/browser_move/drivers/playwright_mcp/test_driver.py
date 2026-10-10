@@ -561,6 +561,45 @@ def test_handler_sends_one_tool_call(tmp_path: Path, action: Any, tool: str, arg
     assert calls == [(tool, arguments)]
 
 
+def _outside_and_server(tmp_path: Path) -> tuple[Path, Path]:
+    outside = tmp_path / "home" / "cv.pdf"
+    outside.parent.mkdir()
+    outside.write_bytes(b"%PDF-cv")
+    server = tmp_path / "server"
+    server.mkdir()
+    return outside, server
+
+
+def test_a_file_outside_the_server_directory_is_uploaded_from_a_copy_under_it(tmp_path: Path) -> None:
+    outside, server = _outside_and_server(tmp_path)
+
+    _outcomes, [(tool, arguments)] = _execute(server, {"browser_file_upload": OK}, UploadFile(None, (str(outside),)))
+
+    [staged] = map(Path, arguments["paths"])
+    assert tool == "browser_file_upload"
+    assert staged.parent.parent == server / "uploads" and staged.name == "cv.pdf"
+    assert staged.read_bytes() == b"%PDF-cv"
+
+
+def test_a_drop_stages_its_files_too(tmp_path: Path) -> None:
+    outside, server = _outside_and_server(tmp_path)
+
+    _outcomes, [(_tool, arguments)] = _execute(server, {"browser_drop": OK}, Drop(E12, paths=(str(outside),)))
+
+    assert Path(arguments["paths"][0]).is_relative_to(server / "uploads")
+
+
+def test_files_under_the_server_directory_and_missing_files_go_as_given(tmp_path: Path) -> None:
+    _outside, server = _outside_and_server(tmp_path)
+    (server / "in.csv").write_text("a", encoding="utf-8")
+    paths = ("in.csv", str(server / "in.csv"), str(tmp_path / "gone.csv"), str(tmp_path / "home"))
+
+    _outcomes, [(_tool, arguments)] = _execute(server, {"browser_file_upload": OK}, UploadFile(None, paths))
+
+    assert arguments["paths"] == list(paths)
+    assert not (server / "uploads").exists()
+
+
 UNSUPPORTED = [
     Click(E12, count=3),
     Click(POINT, modifiers=("Shift",)),

@@ -28,8 +28,8 @@ from tests.unit_tests.harness.tools.browser_move.drivers.test_conformance_browse
 
 pytest_plugins = ["openjiuwen.harness.tools.browser_move.contract.testing.conformance"]
 
-# The server reads files only under its working directory; the scene keeps its upload file in a directory of its own.
-SERVER_ARGS = "-y @playwright/mcp@0.0.78 --allow-unrestricted-file-access"
+# The scene keeps its upload file outside the server's working directory, so uploads and drops go through staging.
+SERVER_ARGS = "-y @playwright/mcp@0.0.78"
 
 
 LIVE_MCP_ENV = "BROWSER_MOVE_LIVE_MCP"
