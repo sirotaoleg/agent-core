@@ -155,7 +155,8 @@ environment variables, split by owner (S_20 "Settings"). This step adds the pars
     `RuntimeSettings` facade composes `BrowserSettings`; recorded in the import-boundary allowlist as legacy until
     the facade can take the surface settings from the surface registry. The env-read test also learns env names
     from the string constants of the config modules: parsers that read a mapping no longer show up as `os.getenv`
-    or `utils/env` calls, and the names must stay known for reads elsewhere to be caught.
+    or `utils/env` calls, and the names must stay known for reads elsewhere to be caught. (The import is gone since
+    "Composition root", decision 4.)
 
 ### Rejected options
 
@@ -348,14 +349,17 @@ the same Chrome, flags, ports and profiles.
 3. The service stops Chrome through the handle API, not `release(device)`: the process registry shares handles
    among services and calls `stop` itself.
 4. `service.py` imports `BrowserSettings` through `playwright_runtime/config.py`; when that module stops importing
-   the surface (review decision G1), the service needs another way to the type.
+   the surface (review decision G1), the service needs another way to the type. (Settled by "Composition root",
+   decision 4.)
 5. Visible differences, all from reading settings once: the browser variables are read at service construction,
    not at Chrome start; a legacy `BROWSER_DRIVER` also warns when the service is built; `BROWSER_DRIVER` set to a
    driver name no longer raises in the service; an invalid `BROWSER_MANAGED_PORT` raises at service construction in
    every mode; the profile-store writes around a start run in the worker thread.
 6. `PLAYWRIGHT_MCP_EXTENSION=true` with `remote` or `managed` puts Playwright MCP into extension mode (config
    builder), while the provisioner is chosen by `provisioning` alone and hands out a remote or managed device.
+   (Without an explicit provisioning, settled by "Composition root", decision 5.)
 7. An invalid instance `driver_mode` still raises "BROWSER_DRIVER must be one of: remote, managed, extension".
+   (Settled by "Composition root", decision 6.)
 8. Settings leftover 3.3 (Chrome install discovery) is settled by decision 9; Settings leftover 1 no longer applies
    to `service.py`.
 
@@ -455,3 +459,102 @@ G2, G3, G5, G7 are implemented here, together with the two middleware follow-ups
    exports the deleted helpers.
 6. `python -m openjiuwen.harness.tools.browser_move.playwright_runtime_mcp_server` fails before this step's code at
    `from clients.stdio_client import ...` (relative import beyond the top-level package); not changed here.
+
+## Composition root
+
+`playwright_runtime/assembly.py` builds the driver stack from registry names: surface, provisioner, device,
+driver, middleware, start (S_20 "Composition root"). The built-in drivers, surfaces and provisioners are
+registered with lazy strings. The core no longer imports the browser surface. In this step the root ends at a
+started driver; `create_browser_agent` and the Playwright MCP path keep their wiring.
+
+### Decisions
+
+1. **The surface factory returns `SurfaceBundle(settings, profile=None)`.** The root needs the surface settings now
+   and the profile later. A bundle lets the browser factory add its profile without changing the factory's return
+   type or the root's `surface.settings` access. `SurfaceProfile` already has a `settings` field, but it cannot be
+   built yet (it needs commands and a renderer), and a profile with placeholder fields would be a stub.
+2. **The registry packages re-export their registry.** `from ..drivers import DRIVERS` imports the package that
+   registers the built-ins and gives back the filled registry; the root needs no import only for its side effect.
+   `drivers/__init__.py` re-exports `DRIVERS`, `surfaces/__init__.py` re-exports `SURFACES` and
+   `provisioning/__init__.py` re-exports `PROVISIONERS`.
+3. **"Not built yet" lives in `Registry`.** `playwright_mcp` is registered with its final string. Resolving a string
+   whose own module is missing raises `ModuleNotFoundError` with that message; a missing dependency inside an
+   existing module is raised unchanged. A raising placeholder factory would need an edit when the driver lands, and
+   the same message also helps a third-party registration that has a typo in it.
+4. **G1 / H5: the core types surface settings as `SurfaceSettings`.** This protocol has one member,
+   `provisioning`, and lives in `contract/surface.py`. `config.py` gets the browser settings with
+   `browser_surface_settings(environ=None)`, which is `SURFACES.create("browser", ...)`. `service.py`, `runtime.py`,
+   `main.py` and the MCP server use that function or take the settings from their caller. The private MCP config
+   builder `_playwright_mcp_config` takes `Any`: it reads a dozen browser fields, the protocol does not declare them,
+   and it moves into the Playwright MCP driver.
+5. **H4: `PLAYWRIGHT_MCP_EXTENSION=true` without a provisioning selects `extension`**, in
+   `BrowserSettings.from_env`. An explicit `BROWSER_PROVISIONING` wins, and so does a legacy `BROWSER_DRIVER`
+   provisioning value, because it is an explicit choice in the deprecated spelling. One visible effect: the
+   browser service identity now says `extension` instead of `remote` for that environment.
+6. **H6:** the instance validation error names `BrowserInstanceConfig.provisioning (driver_mode)` and
+   `BROWSER_PROVISIONING`.
+7. **Per-effect timeouts are `core.tool_timeout_s` for every effect.** That is today's per-tool-call bound
+   (`PLAYWRIGHT_TOOL_TIMEOUT_S`, default 240 s), so it is longer than the longest `Wait` (G8). The surface profile
+   supplies per-effect values once it exists.
+8. **Provisioning runs in a worker thread.** The provisioner protocol is synchronous (Provisioning, decision 2), so
+   the root calls `provision` and `release` through `asyncio.to_thread`, as the service does.
+9. **The trace sink writes to the debug log**, one record per call, already masked by `Tracing`. The root gets
+   no sink parameter: no caller needs a different sink yet, and the tests read the stack and the log.
+10. **Failure handling.** A failure after provisioning releases the device. A failed `start` also stops the
+    stack, because a driver may hold part of its connection. `close()` releases the device even when `stop`
+    raises.
+11. **`Registries` is a frozen dataclass passed in by keyword.** `None` means the three default registries.
+    There is no module-level default object and no other state.
+
+### Rejected options
+
+- **The surface factory returns `SurfaceProfile` with only `settings` filled.** The required fields would need
+  placeholders.
+- **The surface factory returns the bare settings now and the profile later.** That changes the return type in
+  Phase 4, and every caller of the factory would change with it.
+- **A placeholder `playwright_mcp` factory that raises.** It is stub code, and it must be edited when the driver
+  lands.
+- **Side-effect imports (`from .. import drivers  # noqa`) in the root.** Decision 2 makes the dependency explicit.
+- **`await provisioner.provision(...)`.** The protocol is synchronous (Provisioning, decision 2).
+- **A `trace_sink` parameter on `assemble_driver`.** Speculative; nothing passes one.
+- **Typing `_playwright_mcp_config` with `SurfaceSettings`.** It reads attributes the protocol does not declare.
+
+### Verification
+
+- `test_assembly.py` (+20): call order with fake registries (surface with the given environ, provisioner by the
+  settings' provisioning, provision, driver with device and settings, start); middleware order; every `Effect`
+  bounded by `tool_timeout_s` (`ActionTimeout`, dispatched); refusal of a driver that does not serve the surface,
+  with the device released and the driver not started; the device released when the driver factory, `start` or
+  `stop` fails; no driver when `provision` fails; trace records in the debug log. Also the built-in names, the
+  browser surface returning its settings and no profile, the default registries reaching `playwright_mcp` ("not
+  built yet"), and a subprocess check that importing the package and then the root loads no `browser_use`, browser-use
+  or Playwright MCP driver, browser surface or managed-browser module.
+- `contract/test_registry.py` (+2): "not built yet", and a missing dependency raised unchanged.
+  `surfaces/test_browser_settings.py` (+4, H4). `test_settings_facades.py` (+1, G1: the facades take the settings
+  from the surface registry, once per call, with the process environment). `test_service.py` (+1, H6).
+- `test_assembly_live.py` (+1, `live`): managed Chrome from the provisioner (headless, free port, temporary
+  profile and store) and the browser-use driver started through `assemble_driver`; `observe()` on `about:blank`;
+  after `close()` the CDP endpoint is gone and no Chrome process uses the profile. A probe run saw 11 Chrome
+  processes before `close()` and 0 after it.
+- Tests changed for moved symbols (no assertion weakened): `test_service.py` imports `BrowserSettings` from
+  `surfaces/browser/config.py`.
+- Architecture allowlists: core imports of concrete modules 1 entry -> 0 (`config.py -> surfaces.browser.config`
+  removed); module size `service.py` 1907 -> 1910 (H6 message); browser words, driver names and env reads
+  unchanged; the root itself has no browser word, driver name or env read.
+- `pytest tests/unit_tests/harness/tools/browser_move -q`: **1429 passed, 61 skipped** (before: 1401 / 60; the new
+  skip is the live test without the sidecar interpreter; MCP goldens, tool/prompt snapshots and the runner
+  contract unchanged). Harness tests that build the browser subagent: **262 passed**. Live, with
+  `BROWSER_USE_SIDECAR_PYTHON` set: browser-use conformance **45 passed**, `test_assembly_live.py` **1 passed**.
+
+### Known leftovers
+
+1. `create_browser_agent`, the browser service and the runtime MCP server do not build through the root yet. The
+   service still provisions managed Chrome itself and adopts a live Chrome from the profile store (H1); the root
+   does not adopt.
+2. Per-effect timeouts come from `CoreSettings.tool_timeout_s` until the surface profile supplies them.
+3. `mypy` on `config.py`, `service.py` and `runtime.py` reports 13 more errors than before (26 instead of 13). They
+   are `attr-defined` (and one `type-var` on `dataclasses.replace`) where browser code in the core reads browser
+   fields on a `SurfaceSettings`. `make type-check` is advisory. The errors go away when that code moves to the
+   surface and the MCP driver, or earlier if the stored settings are typed `Any`.
+4. A legacy `BROWSER_DRIVER=remote|managed` wins over `PLAYWRIGHT_MCP_EXTENSION=true` (decision 5), so in that
+   environment the device and the MCP config still disagree, as before.

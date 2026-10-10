@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/middleware.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/browser/` (`commands.py` / `context.py` / `config.py` / `scene/`) |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `scene/`) |
 | Last revised | 2026-10-10 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -17,11 +17,11 @@
 
 The contract is the only thing the agent core and a driver both know. The core sends commands and reads typed
 results and errors; a driver translates commands for one library and declares which commands it handles. As of
-this revision the browser-use driver implements the contract and the middleware wraps any driver; no agent code
-uses them yet.
+this revision the browser-use driver implements the contract, the middleware wraps any driver and the composition
+root builds a started driver stack by name; no agent code uses them yet.
 
-Out of scope here: the composition root, rendering and the model-facing tool schemas. They consume
-these types and get their own sections.
+Out of scope here: rendering and the model-facing tool schemas. They consume these types and get their own
+sections.
 
 ## Contract types
 
@@ -149,14 +149,35 @@ Every constructor accepts an explicit `dispatched=` to override the default.
 
 `Registry[T]`: `register(name, factory)` refuses a duplicate name; `factory` is a callable or a lazy import string
 `"pkg.module:attr"` that is imported on the first `create(name, *args, **kwargs)`; an unknown name raises
-`KeyError` listing the registered ones; `names()` keeps registration order. Three default registries — `DRIVERS`,
-`SURFACES`, `PROVISIONERS` — with `register_driver`, `register_surface`, `register_provisioner`, so a driver,
-surface or provisioner can live in another repository. Nothing is registered in `contract/`; the packages that
-own the built-ins register them. A driver factory has the signature `factory(device, surface_settings) -> Driver`.
+`KeyError` listing the registered ones; `names()` keeps registration order. A lazy string whose module does not
+exist raises `ModuleNotFoundError` "<kind> '<name>' is registered but not built yet"; a missing module imported
+*by* that module is raised unchanged. Three default registries — `DRIVERS`, `SURFACES`, `PROVISIONERS` — with
+`register_driver`, `register_surface`, `register_provisioner`, so a driver, surface or provisioner can live in
+another repository. Factory signatures: driver `factory(device, surface_settings) -> Driver`, surface
+`factory(environ) -> SurfaceBundle`, provisioner `factory(**kwargs) -> Provisioner`.
 
-### Surface profile types (`surface.py`)
+Nothing is registered in `contract/`; the packages that own the built-ins register them with lazy strings and
+re-export the registry, so `from ..drivers import DRIVERS` gives a registry with the built-ins in it:
 
-Dataclasses only; their use is specified with the composition root and the tool factory.
+| Package | Names | Factory |
+|---|---|---|
+| `drivers/__init__.py` | `browser_use` | `drivers.browser_use.driver:create_browser_use_driver` |
+| | `playwright_mcp` | `drivers.playwright_mcp:create_playwright_mcp_driver` (module not written yet: "not built yet") |
+| `surfaces/__init__.py` | `browser` | `surfaces.browser.profile:create_browser_surface` |
+| `provisioning/__init__.py` | `managed`, `remote`, `extension` | `provisioning.managed_browser:ManagedBrowserProvisioner` |
+
+Importing the package, a registry package or the composition root imports no concrete driver, surface or
+provisioner module and not `browser_use`.
+
+### Surface types (`surface.py`)
+
+Data types only; their use is specified with the composition root and the tool factory.
+
+- `SurfaceSettings` (protocol): the settings a surface parses from its own variables. The core reads one attribute,
+  `provisioning` (a provisioner registry name), and passes the object on to the provisioner and the driver factory
+  unchanged. The core types surface settings with it and never imports a surface's settings class.
+- `SurfaceBundle(settings, profile=None)`: what a surface factory returns. A surface without a profile yet returns
+  its settings only; the profile is added to the same bundle, so callers of the factory do not change.
 
 - `SurfaceProfile`: `name`, `commands`, `renderer`, `tool_specs`, `native_tools`, `capability_catalog`
   (entry -> `(command, ref kind | None)` pairs), `extra_tools`, `rails`, `policy_rules`, `timeouts` (per
@@ -292,7 +313,7 @@ listed in [[F_07_browser-drivers]] ("Settings", inventory).
   `PLAYWRIGHT_RUNTIME_*` and then the `BROWSER_RUNTIME_*` alias; `server_from_env` (server entry point) reads only
   `PLAYWRIGHT_RUNTIME_*` with the server's defaults (path `""`, log dir `<cwd>/logs`), except the log dir, which also
   takes `BROWSER_RUNTIME_LOG_DIR` as before.
-- **`BrowserSettings`** (browser surface): `provisioning`, `cdp_url`, `cdp_headers`, `cdp_timeout`, `managed_host`,
+- **`BrowserSettings`** (browser surface, a `SurfaceSettings`): `provisioning`, `cdp_url`, `cdp_headers`, `cdp_timeout`, `managed_host`,
   `managed_port`, `managed_kill_existing`, `managed_args`, `user_data_dir`, `profile_name`, `profile_store_path`,
   `browser_binary`, `browser_binary_candidates` (Chrome install paths under `LOCALAPPDATA`, `ProgramFiles`,
   `ProgramFiles(x86)`, `ProgramW6432` on Windows; empty elsewhere and by default), `launch_args` (Playwright MCP
@@ -307,12 +328,13 @@ listed in [[F_07_browser-drivers]] ("Settings", inventory).
 
 | `BROWSER_DRIVER` | `CoreSettings.driver` | `BrowserSettings.provisioning` |
 |---|---|---|
-| unset or empty | `playwright_mcp` | `BROWSER_PROVISIONING`, default `remote` |
-| `playwright_mcp`, `browser_use` | that value | `BROWSER_PROVISIONING`, default `remote` |
+| unset or empty | `playwright_mcp` | `BROWSER_PROVISIONING`, default `remote` (`extension` when `PLAYWRIGHT_MCP_EXTENSION` is true) |
+| `playwright_mcp`, `browser_use` | that value | as for unset |
 | `managed`, `remote`, `extension` (legacy) | `playwright_mcp` | `BROWSER_PROVISIONING` if set, else the legacy value; one `DeprecationWarning` from `BrowserSettings` |
-| anything else | `ValueError` | `BROWSER_PROVISIONING`, default `remote` |
+| anything else | `ValueError` | as for unset |
 
-Values are compared after trimming and lower-casing. `BROWSER_DRIVER_BACKEND` is not read.
+Values are compared after trimming and lower-casing. An explicit `BROWSER_PROVISIONING` or a legacy value wins over
+`PLAYWRIGHT_MCP_EXTENSION`; without one, the provisioner and the Playwright MCP config agree on extension mode. `BROWSER_DRIVER_BACKEND` is not read.
 
 Errors: `ValueError` for an unknown `BROWSER_DRIVER` or `BROWSER_PROVISIONING`, a `BROWSER_MANAGED_PORT` that is not
 a positive integer, and a `PLAYWRIGHT_MCP_ENV_JSON` that is not JSON. Every other invalid value falls back to the
@@ -322,9 +344,12 @@ model from the parent agent and must not fail on it); `build_runtime_settings` r
 Public facades; their signatures do not change:
 
 - `RuntimeSettings` keeps its fields; `build_runtime_settings(instance, *, core_settings=None,
-  browser_settings=None)` builds it from the given objects, each `None` replaced by its `from_process_env()`.
-  `build_playwright_mcp_config`,
+  browser_settings=None)` builds it from the given objects: `None` core settings are `CoreSettings.from_process_env()`,
+  `None` browser settings are `browser_surface_settings()`. `build_playwright_mcp_config`,
   `build_browser_guardrails` and `resolve_playwright_mcp_cwd` read the same two objects.
+- `browser_surface_settings(environ=None)` is `SURFACES.create("browser", environ).settings`, with the process
+  environment when `environ` is `None`. The core modules (`config.py`, `service.py`, `runtime.py`) and the entry
+  points get the browser settings through it or from their caller and type them as `SurfaceSettings`.
 - `BrowserInstanceConfig` keeps its eight positional fields and appends `provisioning` and `driver` (`""` = from
   settings). `driver_mode` is an alias of `provisioning`: whichever is given sets both; two different non-empty
   values raise `ValueError`. `cdp_url` stays: the input for `remote`; for `managed` the endpoint comes from the Chrome that was started. In the
@@ -334,7 +359,8 @@ Public facades; their signatures do not change:
 ### Environment boundary (invariant 9)
 
 Only the two config modules touch the process environment: `from_process_env()` of each settings class,
-`process_environ()` (a snapshot dict) and `load_repo_dotenv()` (loads the repo `.env`), all in
+`browser_surface_settings()` without a mapping, `process_environ()` (a snapshot dict) and `load_repo_dotenv()`
+(loads the repo `.env`), all in
 `playwright_runtime/config.py` or `surfaces/browser/config.py`. Everything else receives a settings object or a
 value from one.
 
@@ -408,8 +434,8 @@ Managed provisioning:
 
 ### The browser service (`playwright_runtime/service.py`)
 
-`BrowserService` takes the keywords `browser_settings: BrowserSettings | None` (`None` means
-`BrowserSettings.from_process_env()`, read once at construction) and `core_settings: CoreSettings | None`, which it
+`BrowserService` takes the keywords `browser_settings: SurfaceSettings | None` (`None` means
+`browser_surface_settings()`, read once at construction) and `core_settings: CoreSettings | None`, which it
 hands to the worker agent (`None`: the worker reads `CoreSettings.from_process_env()` when it is built). The service
 reads no environment variable itself.
 In managed mode, before it registers or refreshes the Playwright MCP server, it:
@@ -427,7 +453,31 @@ The settings handed to the provisioner are the service settings with the instanc
 `managed_port` (instance port; a keyed instance without one gets 0; else the settings port), `user_data_dir` and
 `browser_binary` (instance first), `mcp_cwd` (the MCP server config's `cwd`, else the settings). With `remote` and
 `extension` the service provisions nothing: the Playwright MCP config already carries the CDP endpoint or the
-extension flags.
+extension flags. An instance `provisioning` / `driver_mode` other than `remote`, `managed` or `extension` raises
+`ValueError` naming `BrowserInstanceConfig.provisioning` and `BROWSER_PROVISIONING`.
+
+## Composition root (`playwright_runtime/assembly.py`)
+
+`assemble_driver(core: CoreSettings, environ, *, registries=None) -> DriverAssembly` builds the driver stack from
+names only and returns it started. `registries` is `Registries(drivers, surfaces, provisioners)`; `None` means the
+three default registries with the built-ins. The module imports no concrete driver, surface or provisioner and
+holds no state. `create_browser_agent` and the Playwright MCP path do not call it yet.
+
+1. `surface = registries.surfaces.create(core.surface, environ)`, a `SurfaceBundle`.
+2. `provisioner = registries.provisioners.create(surface.settings.provisioning)`.
+3. `device = provisioner.provision(surface.settings)`, run in a worker thread.
+4. `driver = registries.drivers.create(core.driver, device, surface.settings)`.
+5. When `core.surface not in driver.info.surfaces`: `ValueError` naming the driver, the surface and the surfaces
+   the driver serves.
+6. `stack = Tracing(RetryOnStale(Timeouts(driver, per_effect)), sink)`: every `Effect` is bounded by
+   `core.tool_timeout_s` (the per-tool-call timeout); the sink writes each trace record to the debug log.
+7. `await stack.start()`.
+
+A failure in steps 4–6 releases the device; a failure in `start` calls `close()`. A failure in `provision` leaves
+nothing to release.
+
+`DriverAssembly(stack, device, provisioner)`: `close()` stops the stack, then releases the device with
+`provisioner.release` in a worker thread, also when `stop` raises.
 
 ## Drivers
 
