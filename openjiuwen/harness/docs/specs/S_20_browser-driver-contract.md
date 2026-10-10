@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `scene/`) |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
 | Last revised | 2026-10-10 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -393,10 +393,35 @@ value from one.
   Helpers whose value has an obvious "not configured" take the value and treat `None` as not configured:
   `resolve_upload_file_paths(paths, *, upload_root)`, `register_builtin_actions(controller, *, upload_root)`,
   `get_selector_cache(path)`, `discover_sidecar_python(override)`.
-- The env-read architecture test allows three exceptions: the browser-use sidecar (a separate process with its own
-  config boundary), `playwright_runtime/browser_logging.py` (a process-global logger fetched at import time; it is
-  configured from settings once the logging hook moves into `openjiuwen.core`) and the three `env_map` accesses in
-  `service.py`, which touch the Playwright MCP child's env mapping, not the process environment.
+- The env-read architecture test allows two exceptions: the browser-use sidecar (a separate process with its own
+  config boundary) and the three `env_map` accesses in `service.py`, which touch the Playwright MCP child's env
+  mapping, not the process environment.
+
+### Browser-agent log and the tool-call logging hook
+
+`openjiuwen.core` imports nothing from `openjiuwen.harness` for logging. Core owns the hook
+(`openjiuwen/core/common/logging/tool_call.py`); the harness registers the browser log with it.
+
+- `register_tool_call_logger(matches, log)` registers `log(message, *args)` for tool names for which
+  `matches(name)` is true; registering the same `matches` again replaces its `log`. `tool_call_logger(name)` returns
+  the first registered `log` whose matcher accepts `name`, or `None`. The registry is process-wide, like the loggers
+  it routes to: agents are built by callers that never see the harness.
+- `ReActAgent` writes one line per tool call, `Executing tool: %s with args: %s` (name, redacted arguments), to
+  `tool_call_logger(name)` when one is registered and to the core logger otherwise.
+- `configure_browser_agent_logging(settings: CoreSettings)` (`playwright_runtime/browser_logging.py`) applies
+  `log_file`, `log_level`, `log_mirror_common` and `log_audit_raw` to the stdlib logger `openjiuwen.browser_agent`
+  and registers browser tool names with the hook: `browser_` anywhere in the name or a `mcp_playwright` prefix,
+  case-insensitive. It is called where a browser agent is built or given browser tools: `create_browser_agent`,
+  `build_browser_worker_agent` and `register_browser_runtime_mcp_server`. Without a call, no tool-call line goes to
+  the browser log.
+- The logger keeps what it was configured with (it is process-wide): the file handler, level, propagation and the
+  audit flag. Until the first `configure_browser_agent_logging`, the first use of the logger configures it from
+  `CoreSettings.from_process_env()`, so modules that fetch it at import time keep `./logs/browser_agent.log`.
+- Reconfiguring with the same file keeps the open handler (the file is not truncated again); with another file the
+  old handler is closed and the new file is opened in write mode; with `log_file=None` there is no file, and the
+  lines written through `browser_agent_log_info` / `_warning` / `_error` also go to the common logger. `log_mirror_common` propagates browser lines to the parent
+  loggers. Raw audit artifacts are written only with `log_audit_raw`, a log file and the browser log context, next
+  to the log file under `browser_agent_audit/`.
 
 ## Provisioning (`provisioning/`)
 

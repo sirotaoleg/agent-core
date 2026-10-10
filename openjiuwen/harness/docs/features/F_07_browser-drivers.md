@@ -6,7 +6,7 @@
 |---|---|
 | Type | feature |
 | Date | 2026-10-10 |
-| Scope | `openjiuwen/harness/tools/browser_move/` (`contract/`, `drivers/`, `provisioning/`, `surfaces/browser/`, `playwright_runtime/`, `controllers/action.py`, `utils/`, `playwright_runtime_mcp_server.py`), `tests/unit_tests/harness/tools/browser_move/` |
+| Scope | `openjiuwen/harness/tools/browser_move/` (`contract/`, `drivers/`, `provisioning/`, `surfaces/browser/`, `playwright_runtime/`, `controllers/action.py`, `utils/`, `playwright_runtime_mcp_server.py`), `openjiuwen/harness/subagents/browser_agent.py`, `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/single_agent/agents/react_agent.py`, `tests/unit_tests/harness/tools/browser_move/` |
 | Test baseline | see "Verification" in each section |
 | Related spec | [[S_20_browser-driver-contract]] |
 | Refs | #driver-architecture |
@@ -400,7 +400,7 @@ G2, G3, G5, G7 are implemented here, together with the two middleware follow-ups
 7. **`browser_logging` stays an allowlisted exception.** Configuring the logger from `CoreSettings` at a composition
    point needs process-global state (the plan forbids module-level state), and code that never passes a composition
    point (core `react_agent`, the live driver, tests) would lose `./logs/browser_agent.log`. It moves with the
-   logging hook into `openjiuwen.core` (plan Phase 4).
+   logging hook into `openjiuwen.core` (plan Phase 4); done in "Tool-call logging hook".
 8. **`BrowserSettings.local_app_data`** carries `LOCALAPPDATA` for the default Chrome user-data dir, next to the
    install paths of G4.
 9. **G10**: `RunScript.args` joins `__sensitive_fields__`; `Tracing` leaves `message` out of the error record of a
@@ -446,7 +446,7 @@ G2, G3, G5, G7 are implemented here, together with the two middleware follow-ups
 
 ### Known leftovers
 
-1. `browser_logging` reads the environment (decision 7).
+1. `browser_logging` reads the environment (decision 7). Resolved in "Tool-call logging hook".
 2. The three `env_map` entries of `service.py` (Provisioning leftover 2).
 3. `controllers/action.py` `list_upload_files`: ruff now reports ASYNC240 on its existing `upload_root.exists()`,
    because the root became a typed parameter; behaviour unchanged.
@@ -854,3 +854,77 @@ Phase 5 close.
    `native_text`. browser-use has no file-chooser state.
 4. **Where upload and drop files may live on MCP is unchanged** ("Playwright MCP live conformance", Known leftovers
    1); only the refusal is now `dispatched=False`.
+
+## Tool-call logging hook
+
+`core/single_agent/agents/react_agent.py` imported `browser_logging` from the harness to send browser tool-call
+lines to `browser_agent.log` (core → harness, the wrong direction). The hook now lives in core
+(`openjiuwen/core/common/logging/tool_call.py`), the harness registers the browser log with it, and
+`browser_logging` is configured from `CoreSettings` instead of the environment (S_20 "Browser-agent log and the
+tool-call logging hook"). This resolves Environment boundary decision 7 and its Known leftover 1.
+
+### Decisions
+
+1. **Core asks for a logger by tool name.** `tool_call_logger(name)` returns the registered `log(message, *args)`
+   whose matcher accepts the name, or `None`; `ReActAgent` falls back to the core logger. The line
+   (`Executing tool: %s with args: %s`) and the argument redaction stay in core.
+2. **The registry is one module-level dict in core.** Agents are built by callers that never see the harness (the
+   DeepAgent, the worker, an application's own agent given the runtime MCP tools); routing per agent would need each
+   of them to pass the logger. Registering the same matcher again replaces its entry, so repeated agent builds do
+   not stack.
+3. **`configure_browser_agent_logging(settings)` applies the four logging fields and registers the browser
+   matcher.** Called by `create_browser_agent` (`CoreSettings.from_process_env()`, as that factory has no core
+   settings), `build_browser_worker_agent` (its settings) and `register_browser_runtime_mcp_server`
+   (`CoreSettings.from_env(environ)`): the three places that give an agent browser tools in this repo. The matcher
+   is the one core used (`browser_` anywhere or a `mcp_playwright` prefix, case-insensitive).
+4. **The applied settings live on the stdlib logger, not in a new module variable.** The logger
+   `openjiuwen.browser_agent` is already process-wide; level, propagation and the file handler were already set on
+   it. The audit flag is stored on it too, and "no log file" is read from the absence of the marked file handler.
+5. **Until the first configuration, the first use configures from `CoreSettings.from_process_env()`.** The
+   browser-use driver and transport fetch the logger at import time; the MCP clients, the runtime and tests log
+   without passing a composition point. Defaults alone would drop an env-configured path (or create
+   `./logs/browser_agent.log` when the file is disabled); the env read stays in the config module.
+6. **Reconfiguration replaces the file handler.** Same path: the handler stays (no second truncation). Other path or
+   none: the old handler is closed. Before, a changed path added a second handler and both files were written.
+7. **`task_tool.py` keeps its import.** It is harness importing harness (the `browser_agent` invoke line); not in
+   scope.
+
+### Rejected options
+
+- **Passing the tool-call logger into each agent (config field or constructor).** No module state, but agents built
+  outside the harness would stop routing browser lines; a behaviour change for the runtime MCP topology.
+- **Registering at import of `browser_logging`.** Import side effect, and it could not take settings.
+- **Defaults (`CoreSettings()`) before the first configuration** (decision 5).
+- **Passing `audit_raw` from `runtime.py` to `write_browser_agent_audit_artifact`.** Removes the flag from the logger
+  but changes five call sites in `runtime.py`, which Phase 4 rewrites.
+
+### Verification
+
+- New tests: `tests/unit_tests/core/common/log/test_tool_call.py` (3: nothing registered, matching names only,
+  re-registration replaces), `tests/unit_tests/agent/react_agent/test_react_agent_tool_call_logging.py` (2: without a
+  registered logger every line goes to the core logger; with one, browser lines go to it and the rest to core),
+  `test_browser_logging.py` (7: file, level and mirroring from settings; reconfiguring moves the file; no file falls
+  back to the common logger; an unconfigured logger takes the process settings; configuring routes `browser_*` and
+  `mcp_playwright*` lines to the browser file; the two audit tests, moved from
+  `test_browser_subagent_status_logging.py` and switched from environment variables to settings).
+- Architecture allowlists: `KNOWN_CORE_TO_HARNESS_IMPORTS` without `react_agent.py`; `KNOWN_ENV_READS` without
+  `browser_logging.py` (3 files / 9 reads -> 2 / 4). Browser-word counts and module sizes unchanged.
+- `pytest tests/unit_tests/harness/tools/browser_move -q`: **1653 passed, 113 skipped** (goldens and runner contract
+  unchanged). Harness tests that mention `react_agent` or `browser_agent`, `tests/unit_tests/agent/react_agent/` and
+  `tests/unit_tests/core/common/log/`: **759 passed, 2 skipped**.
+- Full unit suite (without `agent_teams/cli/` and `agent_rl/online/test_ppo_executor.py`, which need
+  `prompt_toolkit` / `omegaconf`): 101 failed, 20959 passed, 23 errors; every failure and error also fails on the
+  commit before this change (Windows paths and symlinks, `grep`, missing `chromadb`, Pulsar).
+- Live: browser-use conformance **45 passed**, Playwright MCP conformance **51 passed**.
+
+### Known leftovers
+
+1. `CoreSettings.from_process_env()` raises on an unknown `BROWSER_DRIVER`; the import-time fetch in
+   `drivers/browser_use/driver.py` and `transport.py` now runs it, so such a value fails at import of the
+   browser-use driver instead of later.
+2. Core keeps its own `_is_browser_tool_name` for the argument redaction in `_summarize_tool_args_for_log`; the
+   routing matcher is a copy in `browser_logging.py`.
+3. A process that logs browser tool calls through a `ReActAgent` without passing one of the three registration
+   points now writes them to the core log.
+4. The registry and the logger state are process-wide; tests reset them (`_TOOL_CALL_LOGGERS`, the marked handler and
+   the audit attribute).
