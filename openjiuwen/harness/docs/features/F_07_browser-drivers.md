@@ -1234,7 +1234,7 @@ nothing in `runtime.py`, `service.py`, `agents.py` or `browser_agent.py` changed
 ### Known leftovers
 
 1. `browser_find` and the helper tools (probes, batch, recall) come as extra tools with the helpers task; the factory
-   goldens then compare all 14 / 18 tools. (Done except batch: `core` 17 / 18; see "Helper infrastructure".)
+   goldens then compare all 14 / 18 tools. (Done: `core` 18 / 18; see "Batch and custom actions over commands".)
 2. Nothing copies `CommandRecord.message_metadata` onto the tool message yet (the switch's rail work).
 3. A screenshot tool renders through `observe()`: on MCP that is the snapshot text and the image (two server calls);
    today the model gets the image and a file link. Only vision with image support sees it. (Rendering done: a
@@ -1341,7 +1341,7 @@ indented with tabs.
 
 1. `browser_batch_interact` and `browser_recall_offload` are not extra tools yet, so `core` is 16 / 18. The batch tool
    is the second helpers task; the recall tool needs the workspace, which `ToolContext` does not carry. (Recall done,
-   `core` 17 / 18; see "Helper infrastructure".)
+   `core` 17 / 18; see "Helper infrastructure". Batch done, `core` 18 / 18; see "Batch and custom actions over commands".)
 2. The helper tools return no `CommandRecord`, so nothing gives their tool messages metadata; the rails treat a
    message without a record as a call that sent nothing (O6). A probe is a `RunScript` (`Effect.SCRIPT`), which
    `message_metadata` would count as state-changing. (Done: records with the declared `READ` effect.)
@@ -1541,11 +1541,11 @@ path is unchanged.
 ### Known leftovers
 
 1. `browser_batch_interact` (next helpers task) makes `core` 18 / 18; it should run its steps through
-   `ToolContext.execute` and declare its flags.
+   `ToolContext.execute` and declare its flags. Done: see "Batch and custom actions over commands".
 2. No rail reads `ToolFlags` yet; the switch moves `_is_browser_progress_tool`, `_is_replan_exempt_tool` and the
    state-change checks onto them.
 3. The recall tool leaves no record; a rail sees its message as a call that sent nothing.
-4. Staged upload copies stay under `output_dir/uploads/`.
+4. Staged upload copies stay under `output_dir/uploads/`. Done: `stop()` removes them; see "Batch and custom actions over commands".
 5. browser-use's `current_tab` is the first tab whose URL is the page URL; two tabs at one URL are not told apart.
 
 ## Agent construction, instance settings and restart on a dead device
@@ -1660,12 +1660,173 @@ Six assertions on one scripted run (`look`, an off-board `poke`, `click`, a `pok
 
 1. **browser-use does not report a dead Chrome as `ConnectionLost`.** Killing the managed Chrome under browser-use
    makes the next `observe` fail with a plain `DriverError` ("CDP still not connected"), so the session never
-   restarts. The driver's error mapping needs the connection case (checked live, not in a test).
+   restarts. The driver's error mapping needs the connection case (checked live, not in a test). Done:
+   see "Batch and custom actions over commands".
 2. A `StaleRef` raised by a driver reaches `CommandTool` with the fresh observation on the error
    (`RetryOnStale`); the tool passes `observation=None` to `renderer.error` and does not record that observation in
-   the page state. The fake surface goes through the page-state path, which records it.
+   the page state. The fake surface goes through the page-state path, which records it. Done: see "Batch and custom actions over commands".
 3. `build_agent` registers no task hook: `begin_task()` and `close()` are the caller's until the switch wires the
    facade's acquire/release.
 4. `BrowserInstanceConfig.driver` is not read by the root; `core.driver` picks the driver.
 5. `DriverAssembly.surface_settings` duplicates `surface.settings`; it stays while hand-built assemblies pass it
    positionally.
+
+## Batch and custom actions over commands
+
+The last helpers task before the switch (design section 6 and Q7, Q8; phase-0 decisions C28, C29; wave-5 review R1,
+R5 to R8): `browser_batch_interact` becomes an extra tool that runs its steps as commands, the three Playwright-only
+custom actions become functions of the tool context, and four small fixes land. The old agent path (runtime, service,
+agents, controller, runtime tools) is unchanged; it still serves the agent until the switch.
+
+### Decisions
+
+1. **One step, one command** (design section 6 table). A step that maps to a command runs as that command on the
+   target's own ref: the `DriverRef` of a snapshot target is used as is (the old path first stamped it with
+   `browser_evaluate`), a probe target is `Locator(css)`. A card's primary link clicked alone is `Navigate`. Steps
+   with no single command (extractions, `set_checked`, `autocomplete`, the other waits, `press` with a locator) take
+   the loop, as the old path fell back to the script.
+2. **Several steps run as a Python loop** (Q7): snapshot targets are stamped first, one page script checks every
+   target before anything acts (preflight), and each step locates its element again with one page script that
+   stamps it with a fresh mark, then acts on `Locator(css='[data-openjiuwen-target-id="<mark>"]')`. Re-locating at
+   each step keeps what the Playwright locators did (they were lazy queries, re-resolved on each action), at one
+   page script per step.
+3. **Locator strategies in page JavaScript**: CSS, and stand-ins for Playwright's `getByRole` (explicit and implicit
+   roles, accessible name from `aria-labelledby`, `aria-label`, labels, placeholder, alt or text; hidden elements
+   left out), `getByLabel`, `getByPlaceholder`, `getByTestId` (`data-testid`) and `getByText` (the innermost elements
+   whose text matches), with `exact`. Strictness as before: more than one match fails at once.
+4. **A missing or hidden target is waited for within the step timeout** at every check. The old script failed at
+   once on zero matches and waited only for visibility; the loop polls both, because a target can appear after an
+   earlier step.
+5. **`type` and `autocomplete` empty the field first** (`Click`, `TypeText("")`, then `TypeText(slowly=True)`):
+   typing key by key does not clear on Playwright MCP (`pressSequentially`), and the old script cleared with
+   select-all and Backspace. `fill` is one `TypeText`.
+6. **Waits**: `wait_for_url` and `wait_for_tab` poll `Observe` (the tab list and addresses are in
+   `BrowserContext`) and switch with `SwitchContext`; the other waits poll one page script each, with the old
+   `stable_ms` rule. `sleep` is `Wait(seconds)`; the pauses after a step stay local sleeps.
+7. **Validation, stale-target refresh, preflight and the result keys are the old ones.** The controller's step
+   checks and the runtime's target contract run in that order, so the first error the model reads is unchanged. The
+   card and step contract live in `batch_steps.py`, the runner in `batch.py`: one module would pass the 1,500-line
+   limit. The read-selector check of the old runtime (exactly one visible match) is part of the preflight.
+8. **The batch record** (R6): one `CommandRecord` for the call, `command` and `action` of the last command sent,
+   `effect` the strongest of what ran with page scripts and observations counted as `READ` (they only find, mark and
+   read) and the order `READ` < `SCRIPT` < `ACT` < `NAVIGATE`, `ok` as the payload says, `dispatched` and
+   `context_changed` from any command, `value` the payload. The tool declares `ToolFlags(effect=ACT)`.
+9. **A lost connection ends the batch** even with `continue_on_error`: the page state was reset by the restart.
+10. **The batch card keeps "MCP/Playwright-style" in one property description**: the card is golden byte for byte,
+    so `batch_steps.py` is allowlisted in the driver-name scan with that reason (decided with Aleh).
+11. **Custom actions** (Q8, C28): `CUSTOM_ACTIONS` maps the controller names to functions of the tool context with the
+    controller's parameters, aliases, error texts and result keys; the switch registers them on the controller.
+    Coordinates are one page script (`querySelector` and the bounding box, else the element with the visible text);
+    drag stamps both elements and sends `Drag` between the stamps, or between two points of the last screenshot;
+    file inputs get `UploadFile` on the element when the driver accepts a `Locator` for it (browser-use), else a
+    `Click` that opens the chooser and `UploadFile(None, paths)` answering it (Playwright MCP, which stages the
+    files). The choice reads `driver_info.actions`, so no driver is named. Script values are read as values: the
+    executor path no longer reads the result envelope (F11).
+12. **R1**: an unclassified browser-use sidecar error that says `not connected` or `Reconnection wait timed out` is
+    `ConnectionLost(dispatched=True)`. browser-use raises a plain `ConnectionError` from its watchdogs once its
+    reconnect gives up, which the sidecar sends as the generic error code.
+13. **R5**: `CommandTool` records the observation a driver's `StaleRef` carries and renders the recorded one.
+14. **R7**: `message_metadata.executed` is `ok` for a `READ` record, `dispatched` otherwise.
+15. **R8, narrowed**: the Playwright MCP driver removes on `stop()` the staging folders it created and then
+    `uploads/` only if empty. The working directory defaults to the process directory, where `uploads/` may be the
+    user's own folder; removing it whole, as R8 reads, was rejected with Aleh.
+
+### Rejected options
+
+- **One page script per batch** (the old shape): the design keeps one command per step so the rails, the middleware
+  and the page state see each action.
+- **Re-using the preflight stamps for execution**: a stamp is lost when an earlier step re-renders the element; the
+  old locators were re-resolved too.
+- **Stamping a snapshot target for a single step**: one command was the rule, and the driver resolves its own refs.
+- **Typing `type` steps without clearing** (`TypeText(slowly=True)` alone): appends to a filled field on Playwright
+  MCP.
+- **Polling `wait_for_url` with `location.href` only**: it cannot see or switch to another tab.
+- **Applying drag offsets and `steps` / `delay_ms`**: `Drag` takes two refs; the offsets only move the reported
+  points and the two numbers are echoed.
+- **Porting the LLM fallbacks** of the custom actions (`_build_run_code_task`): dead on 0.0.78, and they sent page
+  code to the worker.
+- **Rewording the card text** to drop "MCP/": the core golden would no longer be byte for byte.
+
+### Step to command
+
+| Step | One step | In a loop |
+|---|---|---|
+| `click` | `Click(ref)`; card link: `Navigate(href)` | locate + `Click(stamp)`, one retry on a transient error |
+| `fill` | `TypeText(ref, value)` | locate + `TypeText(stamp, value)` |
+| `type` (or `fill` with `mode: type`) | `TypeText(ref, value, slowly=True)` | locate + `Click`, `TypeText("")`, `TypeText(value, clear=False, slowly=True)` |
+| `autocomplete` | loop | locate + as `type` (or `Click`, `TypeText` with `fill_first`), pause, locate option + `Click` |
+| `select_visible_text` | loop | locate option + `Click` |
+| `press` | without a locator: `PressKey(key)` | with a locator: locate and focus, `PressKey(key)` |
+| `select_option` | values / value: `SelectOption(ref, values)` | locate (option value at `index`) + `SelectOption(stamp, values)` |
+| `set_checked` | loop | locate + `FillForm((FormField(stamp, CHECKBOX, "true" / "false"),))` |
+| `wait_for_text` | `Wait(until_text=text)` | page script polled (body text, or an element whose text equals it with `exact`) |
+| `wait_for_selector`, `_load_state`, `_first_card_title`, `_sort_state`, `_result_count`, `_dom_text_change`, `_stable` | loop | page script polled, `stable_ms` where the old step had it |
+| `wait_for_url` | loop | `Observe` polled over the focused tab, then the others from the newest; `SwitchContext` to a match |
+| `wait_for_tab` | loop | `Observe` polled (tab count and match); `SwitchContext` unless `activate: false` |
+| `sleep` | `Wait(seconds=ms / 1000)` | `Wait(seconds=ms / 1000)` |
+| `extract_text`, `extract_value` | loop | locate and read `innerText` / `value` in the same page script |
+| `screenshot` | `Observe(include_screenshot=True, full_page)` | the same |
+
+### Ported and dropped batch tests
+
+`surfaces/test_browser_batch.py` keeps the old names where the case still applies: rejects more than 25 steps,
+rejects empty or non-list steps, validates the schema and the known bad cases before anything runs, the target
+contract for mutations, the transient click retry, extraction provenance, partial results, compact condition
+observations, `wait_for_tab` activating the new tab, `wait_for_url` switching to it, preflight rejecting a later
+ambiguous target, the read-selector check; the Playwright form stub became the realistic booking flow over commands.
+Dropped, with what they checked: the script text (`page.getByLabel`, `waitForTimeout`, fail-fast wording, the
+retry loop source), the code executor call and missing executor, the compact-RPC envelope and its metrics, and the
+drag script text (custom actions). The custom-action cases for the code executor and the LLM fallback go with those
+paths; the fenced coordinate result, empty paths and the default file input are ported.
+
+### Differences from the old path
+
+- The model reads `execution_mode: "commands"` for a multi-step batch (was `compact_rpc`) and `metrics` with
+  `command_count`, preflight and step times (was script build and transport numbers); one step reports
+  `metrics.command` (was `tool_name`).
+- A read-selector that matches more than one element fails as `batch_preflight_failed: ...` (was
+  `batch_target_validation_failed: Read-only batch selector must match exactly one visible element ...`).
+- `screenshot` no longer writes a file at `path`; it is an observation with a screenshot.
+- `delay_ms` does not slow typing (no delay in `TypeText`); `wait_for_load_state` `networkidle` is `complete`.
+- `session_id` / `request_id` come from the arguments only (the old tool also read the parent task's context).
+- Custom actions: Playwright selector syntax other than `:has-text("...")` is not understood (CSS plus the text
+  fallback); drag offsets and steps are not applied; error texts say `<action> failed: ...` instead of
+  `browser_run_code failed: ...`.
+- On browser-use `type` and `autocomplete` steps fail at the slow typing (`Unsupported`: the driver cannot type key
+  by key) after the click and the clearing; `fill` works on both drivers.
+
+### Golden comparison (factory alone, `image_support=False`, `language="en"`)
+
+| View | Result |
+|---|---|
+| MCP `runner` | 14 / 14 byte for byte (the worker removes both probes, the batch and recall) |
+| MCP `core` | **18 / 18** byte for byte |
+| MCP other views | equal minus the tools with no command (C7, C20, C25) |
+| browser-use, every view | as before plus both probes and the batch (C7) |
+
+### Verification
+
+- Fail-before (a separate worktree at the commit before the fixes, new tests copied in): R5 1 failure, R7 2, R8 2,
+  R1 3. The batch and custom-action tests import modules that did not exist.
+- `surfaces/test_browser_batch.py` (53), `surfaces/test_browser_custom_actions.py` (19),
+  `surfaces/test_browser_helpers.py` (extra tools and flags), `snapshots/test_tool_factory_golden.py` (core
+  18 / 18, the runner removing the batch), `architecture/test_driver_names.py` (one allowlisted card text),
+  `test_tool_factory.py` (+3: the driver's stale observation, two read records), `drivers/playwright_mcp/test_driver.py`
+  (+2, one changed to read the copy before `stop()`), `drivers/test_browser_use_driver.py` (+3).
+- `pytest tests/unit_tests/harness/tools/browser_move`: **2473 passed, 123 skipped, 2 xfailed** (architecture, old
+  goldens, factory goldens and the runner contract included); the 11 harness test files outside it that use the
+  browser agent: **248 passed**.
+- Live: helpers 8 (new: a fill, check, click, wait and read-back batch per driver on the scene; a file uploaded and
+  an element dragged per driver), assembly 4 (new: managed Chrome killed under browser-use is found dead, provisioned
+  again, and the next observation runs on a rebuilt driver), browser-use conformance 45, Playwright MCP conformance
+  51.
+
+### Known leftovers
+
+1. The batch and the custom actions serve no agent yet: the switch registers `CUSTOM_ACTIONS` on the controller and
+   drops the old batch path (the runtime tool, the controller action and its script).
+2. `select_visible_text` cannot pass validation (it needs a `target_id` but takes no primary locator), as before.
+3. The controller's own `browser_batch_interact` action (reachable through `browser_custom_action`) skips the
+   runtime's target contract on the old path; nothing replaces it here.
+4. `type` and `autocomplete` steps need a driver that types key by key (not browser-use).
+5. `wait_for_url` and `wait_for_tab` observe at every poll (a full snapshot on Playwright MCP).

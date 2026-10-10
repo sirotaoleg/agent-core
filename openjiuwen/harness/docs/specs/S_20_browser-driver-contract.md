@@ -679,11 +679,12 @@ unchanged public API) to those of its tool names that a spec or the `browser_fin
 
 Browser tools and functions built on the driver session through a `ToolContext` (see "Tool factory"); every command
 they send goes through `context.execute` / `context.observe`, which record it in the page state. The runtime's own
-helpers (MCP code runner) still serve the agent; nothing calls these yet except the factory, which appends the four
-tools (`EXTRA_TOOLS`) to every build.
+helpers (MCP code runner) still serve the agent; nothing calls these yet except the factory, which appends the five
+tools (`EXTRA_TOOLS`: both probes, the batch, find, recall) to every build. `CUSTOM_ACTIONS` are not tools: they are
+the controller's custom actions as functions of the context, for `browser_custom_action`.
 
 Each helper tool declares `flags: ToolFlags` (class attribute): the probes and find `ToolFlags()` (`READ`, not exempt
-from budgets, progress), the recall tool `ToolFlags(exempt_from_budget=True)`. A probe or find result is
+from budgets, progress), the batch `ToolFlags(effect=ACT)`, the recall tool `ToolFlags(exempt_from_budget=True)`. A probe or find result is
 `ToolOutput(success, data={"content": <payload>, "command": CommandRecord}, error)`: the model reads `content` as
 before (a probe's payload dict is rendered as JSON, find's text as is), and `command_record` finds the record. The
 record's `effect` is the declared one (`READ`), not the command's: a probe runs `RunScript` but changes nothing the
@@ -693,10 +694,14 @@ rails count.
 |---|---|---|
 | `ProbeInteractivesTool` (`browser_probe_interactives`) | `RunScript(code=<page function>, args=<params>)`, a second time if the value is not a JSON object | card equals the runtime helper's; `max_items` 1–30 (default 30); the probe page function of `playwright_runtime/probes.py` without its `async (page) => page.evaluate(...)` wrapper; result dict as the runtime helper's (`ok`, `error`, `url`, `title`, `generation_id`, `count`, `elements`, `page_state`, `diagnostics`, `audit`) |
 | `ProbeCardsTool` (`browser_probe_cards`) | same | card equals the runtime helper's; `max_cards` 1–12 (default 12); selector cache records go in and out as before; primary links registered in `selector_primary_links` |
+| `BatchTool` (`browser_batch_interact`) | one command for a step that maps to one; otherwise page scripts and one command per step | see below |
 | `FindTool` (`browser_find`) | none, or one `Observe` when the page state has no fresh observation | see below |
 | `RecallOffloadTool` (`browser_recall_offload`) | none | `BrowserOffloadRecallTool(context.workspace, language=context.language)`: card and behaviour of `offload_recall.py`; no record |
 | `probe_for_policy(context, source, params)` | `RunScript(code=source, args=params)`, up to two | the F_05 result: elements become targets, `generation_id` added; failure envelope `{"ok": False, "error", "elements": [], "page_state"}` on a `DriverError`, a refused script or a result with `ok: false` |
 | `activate_page(context, url) -> bool` | `Observe` when no context is known, then `SwitchContext(<tab whose URL is url, else the current context>)` | `False` on a `DriverError` or no context; the switch is recorded, so the generation advances |
+| `CUSTOM_ACTIONS["browser_get_element_coordinates"]` | `Navigate` when `url` is given; one `RunScript` unless only the four coordinates are given | the controller's parameters and aliases; `querySelector` and the bounding box, else the element whose text matches (a Playwright `:has-text("...")` contributes its text); `{ok, source, target, error}` with the controller's error texts |
+| `CUSTOM_ACTIONS["browser_drag_and_drop"]` | `Navigate` when `url` is given; elements: one `RunScript` that stamps both, then `Drag(Locator, Locator)` on the stamps; points: `Drag(PointRef, PointRef)` of the last screenshot | `{ok, message, source, target, steps, delay_ms, error}`; offsets only move the reported points, `steps` and `delay_ms` are echoed, not applied |
+| `CUSTOM_ACTIONS["browser_set_input_files"]` | `UploadFile(Locator(css), paths)` when `driver_info.actions[UploadFile]` accepts `Locator`; else `Click(Locator(css))` then `UploadFile(None, paths)` | selector default `input[type="file"]`; `{ok, selector, paths, error}`, plus `hint` on a strict-mode error; a `DriverError` in any custom action is `{ok: False, error: "<action> failed: ...", session_id, request_id}` |
 | `page_metadata(context) -> (dict, error)` | one `RunScript` (the page-measure function of the metadata script, no arguments) | `url`, `title` from the page state; `tabs` (`index`, `current`, `url`, `title`) from the last `BrowserContext` (current tab from `current_tab`, else the page state's current context; a tab URL from `tab_urls`, else the surface URL for the current tab); `page_position`, `semantic_state` from the script; `({}, error)` on a `DriverError` or an unparsable value |
 
 A probe result whose `url` differs from the page state's (non-empty) URL resets the page state (new generation, no
@@ -704,6 +709,52 @@ contexts) before its targets are registered: a script result does not report the
 dict in the result with `selector_hint` or `generation_id` gets the current generation id. A `DriverError` becomes
 the failure envelope (`browser_probe_* failed: <message>`) with `CommandRecord.failed` of the script; a task failure
 from the session propagates. The record of a result describes the last script sent (`value` = its raw value).
+
+`BatchTool` (`batch.py`; card and step contract in `batch_steps.py`): card equal to the runtime tool's (golden byte
+for byte). Before anything runs: the steps are validated (the controller's per-op contract, then the target contract:
+a mutating op needs a `target_id`, a read op exactly one of `target_id` / `selector`; failure `batch_validation_failed:
+<first error>` with `validation_errors`, no record); a stale `generation_id` refreshes probe targets (equivalent
+current target, else one `RunScript` that checks the stale target's selector) and refuses snapshot refs and
+model-written selectors outside conditions; targets resolve through the page state (`resolve_target`; a mutating op
+refuses a probe target that is not visible, enabled and actionable). A failure there is
+`batch_target_validation_failed: <message>` with `candidate_fresh_targets`.
+
+One step that maps to a command runs as that command alone, on the target's own ref (`DriverRef` of a snapshot
+target, `Locator(css)` of a probe target): `click` -> `Click` (a card's primary link -> `Navigate`), `fill` / `type` ->
+`TypeText` (`slowly` for `type` or a `delay_ms`), `select_option` with values -> `SelectOption`, `press` without a
+target -> `PressKey`, `wait_for_text` -> `Wait(until_text)`, `sleep` -> `Wait(seconds)`, `screenshot` ->
+`Observe(include_screenshot, full_page)`; `execution_mode: "primitive"`, `metrics.command` the command type name.
+
+Several steps (or one with no single command) run as a loop (`execution_mode: "commands"`):
+
+1. snapshot targets are stamped on the page (`RunScript` on the `DriverRef`, attribute `data-openjiuwen-target-id`)
+   and their page-state locator becomes the stamp selector;
+2. preflight: one `RunScript` checks every target of every step (the primary target of click, fill, type,
+   autocomplete, select_option, set_checked, the extractions and a press with a locator; the option of
+   select_visible_text and of an autocomplete given by target): exactly one match (more fails at once), visible,
+   enabled unless an extraction, polled until the step timeout. A failure is `batch_preflight_failed: steps[i]
+   <message>` and nothing acts;
+3. each step locates its target again with one `RunScript` that finds it (CSS, or page-side stand-ins for role +
+   name, label, placeholder, test id and text, with `exact`), checks the same conditions (polling while it is
+   missing or hidden), stamps it with a fresh mark and, when asked, focuses it or reads its text, its value or the
+   value of the option at an index; the step then sends its command on `Locator(css=<stamp>)`: `Click` (one retry
+   when the error reads detached, intercept, not stable or outside of the viewport), `TypeText`; for `type` and
+   `autocomplete` a `Click`, `TypeText("")` and `TypeText(slowly)` (typing key by key does not clear); `SelectOption`;
+   `FillForm` with a checkbox field for `set_checked`; `PressKey` after focusing. Waits poll a page script (selector
+   state, text, load state, first card title, sort state, result count, DOM text change, stable text, with
+   `stable_ms`) or, for `wait_for_url` / `wait_for_tab`, `Observe` (tabs from `BrowserContext`), then switch with
+   `SwitchContext`; `sleep` is `Wait(seconds)`; `screenshot` is `Observe(include_screenshot)`;
+4. a failed step stops the batch unless the step is `optional` or `continue_on_error` is set; a `ConnectionLost`
+   always stops it. The batch has the controller's `global_timeout_ms`, checked before each step.
+
+The result keeps the controller's keys (`ok`, `status` completed / partial / failed, `error`, `action`,
+`execution_mode`, `session_id`, `request_id`, `generation_id`, `steps` with `index`, `op`, `ok`, `status`,
+`elapsed_ms`, `phase`, `error`, `extracted`, `field_provenance`, `conditions` with `observed`, `metrics`), then
+`generation_id` (current), `generation_recovered_from` and `page_state`; extracted fields join the page state's field
+coverage. The record: one `CommandRecord` for the batch, `command` and `action` of the last command sent, `effect`
+the strongest of the commands that ran (page scripts and observations count as `READ`; `READ` < `SCRIPT` < `ACT` <
+`NAVIGATE`), `ok` as the payload, `dispatched` / `context_changed` when any command was dispatched / changed the
+context, `value` the payload; no record when nothing was sent.
 
 `FindTool`: name `driver_info.tool_name_prefix + "browser_find"`; description and schema from
 `driver_info.native_tools["browser_find"]` when present (Playwright MCP: the server's, byte for byte), else the
@@ -832,7 +883,10 @@ One instance per emitted tool, a core `Tool` (`ToolCard(id=name, name, descripti
 5. render: an `ActionResult` with `renderer.result`; an observation with `renderer.observation` when the tool's only
    command is `Observe` and it is not a screenshot-only tool, else with `renderer.result` on `ActionResult(ok=True,
    value=<screenshot>, observation, surface)` (the tab list of `browser_tabs list`; the image alone for a
-   screenshot-only tool); a `DriverError` with `renderer.error(action, error, None)`.
+   screenshot-only tool); a `DriverError` with `renderer.error(action, error, None)`, except a `StaleRef` the driver
+   raised with a fresh observation (its retry observed afresh): that observation is recorded
+   (`page_state.record(Observe(), observation)`, so its refs get the current generation) and the recorded one is
+   passed to `renderer.error`.
 
 The output is a `ToolOutput`: `success = ok`; `data = {"content": <text blocks joined by newlines>, "command":
 CommandRecord}`; on failure `error` is the same text. With `image_support`, image blocks go to `data["multimodal"]`
@@ -859,7 +913,8 @@ Frozen; never parsed from text.
 | `action` | `masked(command)`: the command with its sensitive fields masked |
 
 `message_metadata` gives the tool-message metadata keys the context processors read: `success = ok`, `executed =
-dispatched`, `state_changed = context_changed or (effect != READ and (ok or error == "ActionTimeout"))`, `denied =
+ok` for a `READ` record (a find over a current observation sent nothing but answered, as the server call did) and
+`dispatched` for any other effect, `state_changed = context_changed or (effect != READ and (ok or error == "ActionTimeout"))`, `denied =
 False` (denials come from `ActionPolicy`). A tool cannot set `ToolMessage.metadata` (core builds the message from
 `render_for_llm` after `invoke`); a rail copies `message_metadata` onto it in `after_tool_call`.
 
@@ -993,8 +1048,11 @@ native_text, surface}`, `versions` from the sidecar's `connect` reply.
   not in the document, "does not belong to the document" / "No node with given id"), `ElementNotFound`,
   `ActionIntercepted` (with `by`), `DriverNotConnected` (→ `ConnectionLost`) and `DriverUnsupported` (→
   `Unsupported`). Each action marks where its input starts; a stale or missing node after that point reaches the
-  driver as a plain `DriverError(dispatched=True)`. Codes it cannot classify become `DriverError(dispatched=True)`
-  and are logged raw.
+  driver as a plain `DriverError(dispatched=True)`. A browser that went away reaches the sidecar as browser-use's
+  own error once its reconnect gives up ("Reconnection failed - CDP still not connected", "Reconnection wait timed
+  out", "browser not connected"); an unclassified error whose message says `not connected` or `Reconnection wait
+  timed out` becomes `ConnectionLost(dispatched=True)`, so the driver session restarts. Other codes it cannot
+  classify become `DriverError(dispatched=True)` and are logged raw.
 - Cancellation. One request is in flight at a time; after 30 s without a reply the transport sends the sidecar a
   `cancel` for it and raises `ActionTimeout`. When the caller cancels the request instead (`Timeouts`), the
   transport sends the same `cancel` and re-raises the cancellation, so the sidecar does not run the action alongside
@@ -1100,7 +1158,9 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   relative paths resolved against it): it is copied to `output_dir/uploads/<12 hex>/<file name>` (the page sees the
   original name) and the copy's path is sent. Paths inside the working directory, missing files and directories go
   as given; the server refuses those outside with `File access denied: … is outside allowed roots` (decoded as
-  `DriverError(dispatched=False)`). Staged copies are not removed.
+  `DriverError(dispatched=False)`). `stop()` removes the `uploads/<12 hex>/` folders this driver created, then
+  `uploads/` itself only when nothing else is left in it: the working directory defaults to the process directory,
+  which may hold a user's own `uploads/` folder.
 - Every handler sends one tool call and decodes it with `decode(..., before=<last BrowserContext>)` in a worker
   thread (the decoder may read the linked snapshot file). Commands and tools: Click → `browser_click` /
   `browser_mouse_click_xy`; TypeText → `browser_type`; PressKey → `browser_press_key`; Hover → `browser_hover` /
