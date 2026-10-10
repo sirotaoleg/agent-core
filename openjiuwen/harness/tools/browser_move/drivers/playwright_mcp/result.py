@@ -81,7 +81,7 @@ def decode(
     if raw_result.get("isError") or "Error" in parts:
         if _MODAL_REFUSAL.search(parts.get("Error", "")):
             return ActionResult(ok=False, detail=_detail(parts))
-        raise _error(_ANSI.sub("", parts.get("Error") or text))
+        raise _error(tool_name, _ANSI.sub("", parts.get("Error") or text))
 
     tab_list = parse_tabs(parts.get("Result", "")) if tool_name == "browser_tabs" else None
     header = tab_list or parse_header(parts)
@@ -164,7 +164,7 @@ def _read_linked_snapshot(section: str, output_dir: Path) -> str | None:
         return None
 
 
-def _error(message: str) -> DriverError:
+def _error(tool_name: str, message: str) -> DriverError:
     if _STALE_REF.search(message):
         return StaleRef(message, dispatched=False)
     if _CLOSED.search(message):
@@ -177,6 +177,9 @@ def _error(message: str) -> DriverError:
     blockers = [match for match in map(_INTERCEPTED.match, lines) if match is not None]
     if blockers:
         return ActionIntercepted(message, by=_describe_blocker(blockers[-1]), dispatched=False)
+    # Waiting is the command itself, so its call log reads like an actionability wait but the command ran.
+    if timeout and tool_name == "browser_wait_for":
+        return ActionTimeout(message, dispatched=True)
     if timeout:
         only_waits = bool(lines) and all(_ACTIONABILITY_WAIT.fullmatch(line) for line in lines)
         return ActionTimeout(message, dispatched=not only_waits)
