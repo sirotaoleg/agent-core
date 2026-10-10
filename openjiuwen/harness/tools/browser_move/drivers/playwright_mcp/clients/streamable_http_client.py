@@ -172,6 +172,22 @@ class BrowserMoveStreamableHttpClient(StreamableHttpClient):
                 logger.error(f"Tool call failed via Streamable HTTP: {e}")
                 raise
 
+    @property
+    def connected(self) -> bool:
+        return self._session is not None
+
+    async def call_tool_once(self, tool_name: str, arguments: dict) -> Any:
+        """The ``CallToolResult`` of one call via Streamable HTTP, never re-sent: a failed call may already have run."""
+        if not self._session:
+            raise RuntimeError("Not connected to Streamable HTTP server")
+        browser_agent_log_info(
+            f"Calling tool '{tool_name}' via Streamable HTTP with arguments_summary: "
+            f"{summarize_tool_arguments_for_log(tool_name, arguments)}"
+        )
+        tool_result = await self._session.call_tool(tool_name, arguments=arguments)
+        browser_agent_log_info(f"Tool '{tool_name}' call completed via Streamable HTTP")
+        return tool_result
+
     async def call_tool(self, tool_name: str, arguments: dict, *, timeout: float = NO_TIMEOUT) -> Any:
         """Call tool via Streamable HTTP, with auto-reconnect and multi-content extraction."""
         tool_result = await self.call_tool_result(tool_name, arguments, timeout=timeout)

@@ -18,6 +18,7 @@ from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.contract import (
     Action,
     ActionResult,
+    ActionTimeout,
     Click,
     CloseContext,
     ConnectionLost,
@@ -389,8 +390,12 @@ class PlaywrightMcpDriver(HandlerDriver):
     async def _call(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if self._client is None:
             raise ConnectionLost("PlaywrightMcpDriver is not started", dispatched=False)
+        if not self._client.connected:
+            raise ConnectionLost(f"{tool}: not connected to the server", dispatched=False)
         try:
-            result = await self._client.call_tool_result(tool, arguments)
+            result = await self._client.call_tool_once(tool, arguments)
+        except TimeoutError as exc:
+            raise ActionTimeout(f"{tool}: the server did not answer in time", dispatched=True) from exc
         except Exception as exc:
             raise ConnectionLost(f"{tool}: {exc}", dispatched=True) from exc
         return result.model_dump(mode="json", by_alias=True, exclude_none=True)
