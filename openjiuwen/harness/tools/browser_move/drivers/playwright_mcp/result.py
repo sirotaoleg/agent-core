@@ -95,9 +95,16 @@ def decode(
 
     tab_list = parse_tabs(parts.get("Result", "")) if tool_name == "browser_tabs" else None
     header = tab_list or parse_header(parts)
-    surface = (
-        None if header is None else BrowserContext(url=header.url, title=header.title, tabs=header.tabs, dialog=dialog)
-    )
+    surface = None
+    if header is not None:
+        surface = BrowserContext(
+            url=header.url,
+            title=header.title,
+            tabs=header.tabs,
+            tab_urls=header.tab_urls,
+            current_tab=header.tabs.index(header.focused),
+            dialog=dialog,
+        )
     image = next((block for block in blocks if block.get("type") == "image"), None)
     if image is not None:
         value: Any = _screenshot(str(image["data"]))

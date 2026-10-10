@@ -37,6 +37,7 @@ class PageHeader:
     title: str
     tabs: tuple[ContextRef, ...]
     focused: ContextRef
+    tab_urls: tuple[str, ...]
 
 
 def split_sections(text: str) -> dict[str, str]:
@@ -61,16 +62,20 @@ def snapshot_yaml(section: str) -> str | None:
 def parse_tabs(body: str) -> PageHeader | None:
     """Header from a tab list (``browser_tabs`` result or ``### Open tabs``); None when it lists no tab."""
     tabs: list[ContextRef] = []
+    urls: list[str] = []
     focused: tuple[ContextRef, str] | None = None
     for match in _TAB_LINE.finditer(body):
         index, current, title, url = match.groups()
         tab = ContextRef(id=index, kind=TAB_KIND, title=title)
         tabs.append(tab)
+        urls.append(url)
         if current:
             focused = (tab, url)
     if focused is None:
         return None
-    return PageHeader(url=focused[1], title=focused[0].title or "", tabs=tuple(tabs), focused=focused[0])
+    return PageHeader(
+        url=focused[1], title=focused[0].title or "", tabs=tuple(tabs), focused=focused[0], tab_urls=tuple(urls)
+    )
 
 
 def parse_header(parts: dict[str, str]) -> PageHeader | None:
@@ -82,10 +87,10 @@ def parse_header(parts: dict[str, str]) -> PageHeader | None:
     url, title = fields.get("URL", ""), fields.get("Title", "")
     listed = parse_tabs(parts.get("Open tabs", ""))
     if listed is not None:
-        return PageHeader(url=url, title=title, tabs=listed.tabs, focused=listed.focused)
+        return PageHeader(url=url, title=title, tabs=listed.tabs, focused=listed.focused, tab_urls=listed.tab_urls)
     # The server lists tabs only when more than one is open.
     only = ContextRef(id="0", kind=TAB_KIND, title=title)
-    return PageHeader(url=url, title=title, tabs=(only,), focused=only)
+    return PageHeader(url=url, title=title, tabs=(only,), focused=only, tab_urls=(url,))
 
 
 def without_boxes(text: str) -> str:

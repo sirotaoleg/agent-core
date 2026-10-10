@@ -15,6 +15,7 @@ from types import MappingProxyType
 from typing import Any
 
 from openjiuwen.core.foundation.tool import McpServerConfig
+from openjiuwen.core.foundation.tool.mcp.base import mcp_model_tool_prefix
 from openjiuwen.harness.tools.browser_move.contract import (
     Action,
     ActionResult,
@@ -31,6 +32,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     Health,
     Hover,
     Locator,
+    NativeTool,
     Observation,
     Observe,
     PointRef,
@@ -55,6 +57,7 @@ from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.snapshot impor
     split_sections,
     without_boxes,
 )
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import DECODERS
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserInstanceConfig, playwright_mcp_config
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
@@ -145,6 +148,7 @@ class PlaywrightMcpDriver(HandlerDriver):
         self._client: BrowserMoveStdioClient | BrowserMoveStreamableHttpClient | None = None
         self._context: BrowserContext | None = None
         self._tool_hints: dict[type[Action], str] = {}
+        self._native_tools: dict[str, NativeTool] = {}
 
     @property
     def config(self) -> PlaywrightMcpConfig | None:
@@ -158,6 +162,8 @@ class PlaywrightMcpDriver(HandlerDriver):
             versions=MappingProxyType({"@playwright/mcp": version} if version else {}),
             observes=frozenset({"elements", "screenshot", "native_text", "surface"}),
             tool_hints=MappingProxyType(dict(self._tool_hints)),
+            native_tools=MappingProxyType(dict(self._native_tools)),
+            tool_name_prefix=mcp_model_tool_prefix(self._config.server.server_name) if self._config is not None else "",
         )
 
     async def start(self, config: PlaywrightMcpConfig | None = None) -> None:
@@ -181,6 +187,11 @@ class PlaywrightMcpDriver(HandlerDriver):
             raise ConnectionLost(f"{config.server.server_name}: {exc}", dispatched=False) from exc
         descriptions = {card.name: card.description for card in cards}
         self._tool_hints = {command: descriptions[tool] for command, tool in _TOOL_OF.items() if descriptions.get(tool)}
+        self._native_tools = {
+            card.name: NativeTool(card.description, card.input_params, DECODERS[card.name])
+            for card in cards
+            if card.name in DECODERS
+        }
         self._config = config
         self._client = client
         self._context = None
