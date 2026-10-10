@@ -152,3 +152,24 @@ async def test_start_passes_max_line_bytes_as_stream_limit() -> None:
     assert message["kind"] == "hello"
     assert mock_exec.await_args is not None
     assert mock_exec.await_args.kwargs["limit"] == wire.MAX_LINE_BYTES
+
+
+@pytest.mark.asyncio
+@pytest.mark.level0
+async def test_cancelled_request_sends_cancel_for_its_id_and_reraises() -> None:
+    written: list[dict] = []
+    stdin = AsyncMock()
+    stdin.write = lambda data: written.append(json.loads(data.decode("utf-8")))
+    stdin.drain = AsyncMock()
+    reader = asyncio.StreamReader(limit=wire.MAX_LINE_BYTES)
+    transport = _transport_with_stdout(reader)
+    assert transport._process is not None
+    transport._process.stdin = stdin
+
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(transport.request("click", {"ref": {}}, timeout_s=30.0), timeout=0.05)
+
+    request, cancel = written
+    assert request["method"] == "click"
+    assert cancel["method"] == "cancel"
+    assert cancel["params"] == {"id": request["id"]}
