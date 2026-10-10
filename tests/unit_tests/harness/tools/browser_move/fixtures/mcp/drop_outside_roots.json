@@ -1,0 +1,24 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "drop_outside_roots",
+  "request": {
+    "tool": "browser_drop",
+    "arguments": {
+      "element": "Page heading",
+      "target": "f16e2",
+      "paths": [
+        "<OUTSIDE>\\outside.csv"
+      ]
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Error\nError: File access denied: <OUTSIDE>\\outside.csv is outside allowed roots. Allowed roots: <TMP>\\.playwright-mcp, <TMP>"
+      }
+    ],
+    "isError": true
+  },
+  "model_text": "{\"result\": \"### Error\\nError: File access denied: <OUTSIDE>\\\\outside.csv is outside allowed roots. Allowed roots: <TMP>\\\\.playwright-mcp, <TMP>\"}"
+}

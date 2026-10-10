@@ -39,7 +39,8 @@ The recorder:
     renders as the JSON envelope `{"result": "<text>"}`.
 
 Run-specific values are replaced: the page server's port by `<PORT>`, the
-temporary directory by `<TMP>`, and the timestamps in the server's output-file
+temporary directory by `<TMP>`, a second temporary directory outside the
+server's roots by `<OUTSIDE>`, and the timestamps in the server's output-file
 names (`page-<TS>.yml`, `console-<TS>.log`) by `<TS>`. With these placeholders,
 running the recorder again produces the same files.
 
@@ -83,6 +84,7 @@ in brackets.
 | `click_timeout_after_action` | `browser_click` on a link to `/hang` (the page server answers after 30 s): call log with `performing click action`, `click action done`, then the 5000 ms timeout while waiting for the navigation |
 | `snapshot_during_dialog` | `browser_snapshot` `boxes: true` while a `confirm()` is open: refused like any other page tool (`does not handle the modal state` plus `### Modal state`), no `### Page` |
 | `tabs_list_during_dialog` | `browser_tabs` `list` while the `confirm()` is open: not a page tool, so it answers, with an empty title and `### Modal state` |
+| `drop_outside_roots` | `browser_drop` of a file outside the server's working and output directories: `File access denied: … is outside allowed roots`, refused before the page is touched |
 | `evaluate_new_tab_failed` | first `browser_evaluate` after the browser was closed during a call (set up with `browser_run_code_unsafe`): `Failed to open a new tab` |
 | `evaluate_browser_closed` | the next `browser_evaluate`: `Target page, context or browser has been closed` |
 

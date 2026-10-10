@@ -101,22 +101,21 @@ _OUTPUT_FILE_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z
 
 
 class _Placeholders:
-    def __init__(self, port: int, tmp_dir: Path) -> None:
-        tmp = str(tmp_dir)
-        resolved = str(tmp_dir.resolve())
+    def __init__(self, port: int, tmp_dir: Path, outside_dir: Path) -> None:
         # The doubled form is how paths appear inside the server's JS code lines.
         variants = {
-            spelling
-            for path in (tmp, resolved)
+            (spelling, token)
+            for directory, token in ((tmp_dir, "<TMP>"), (outside_dir, "<OUTSIDE>"))
+            for path in (str(directory), str(directory.resolve()))
             for spelling in (path, path.replace("\\", "/"), path.replace("\\", "\\\\"))
         }
-        self._paths = sorted(variants, key=len, reverse=True)
+        self._paths = sorted(variants, key=lambda variant: len(variant[0]), reverse=True)
         self._port = re.compile(rf"(127\.0\.0\.1|localhost):{port}\b")
 
     def apply(self, value: Any) -> Any:
         if isinstance(value, str):
-            for path in self._paths:
-                value = value.replace(path, "<TMP>")
+            for path, token in self._paths:
+                value = value.replace(path, token)
             value = _OUTPUT_FILE_TIMESTAMP.sub("<TS>", value)
             return self._port.sub(r"\1:<PORT>", value)
         if isinstance(value, list):
@@ -181,7 +180,7 @@ _CLOSE_BROWSER_MID_CALL = (
 )
 
 
-async def _run_cases(rec: _Recorder, base_url: str, work_dir: Path) -> None:
+async def _run_cases(rec: _Recorder, base_url: str, work_dir: Path, outside_dir: Path) -> None:
     index_url = f"{base_url}/index.html"
     await rec.call("browser_navigate", {"url": index_url})
 
@@ -345,6 +344,16 @@ async def _run_cases(rec: _Recorder, base_url: str, work_dir: Path) -> None:
     await rec.record("tabs_list_during_dialog", "browser_tabs", {"action": "list"})
     await rec.call("browser_handle_dialog", {"accept": False})
 
+    outside = outside_dir / "outside.csv"
+    outside.write_text("name\nAda\n", encoding="utf-8")
+    await rec.call("browser_navigate", {"url": f"{base_url}/upload.html"})
+    _, upload = await rec.call("browser_snapshot", {})
+    await rec.record(
+        "drop_outside_roots",
+        "browser_drop",
+        {"element": "Page heading", "target": _ref(upload, "heading", "Fixture upload page"), "paths": [str(outside)]},
+    )
+
     await rec.call("browser_run_code_unsafe", {"code": _CLOSE_BROWSER_MID_CALL})
     await rec.record("evaluate_new_tab_failed", "browser_evaluate", {"function": "() => document.title"})
     await rec.record("evaluate_browser_closed", "browser_evaluate", {"function": "() => document.title"})
@@ -352,6 +361,7 @@ async def _run_cases(rec: _Recorder, base_url: str, work_dir: Path) -> None:
 
 async def main() -> int:
     tmp_dir = Path(tempfile.mkdtemp(prefix="mcp-fixtures-"))
+    outside_dir = Path(tempfile.mkdtemp(prefix="mcp-outside-"))
     page_server = _start_page_server()
     port = page_server.server_address[1]
     _configure_env(tmp_dir)
@@ -361,8 +371,8 @@ async def main() -> int:
             print("could not start the MCP server", file=sys.stderr)
             return 1
         tools = {card.name: MCPTool(client, card) for card in await client.list_tools()}
-        recorder = _Recorder(client, tools, _Placeholders(port, tmp_dir))
-        await _run_cases(recorder, f"http://127.0.0.1:{port}", tmp_dir)
+        recorder = _Recorder(client, tools, _Placeholders(port, tmp_dir, outside_dir))
+        await _run_cases(recorder, f"http://127.0.0.1:{port}", tmp_dir, outside_dir)
         print(f"wrote {len(recorder.written)} fixtures to {HERE}")
         return 0
     finally:
@@ -370,6 +380,7 @@ async def main() -> int:
         page_server.shutdown()
         page_server.server_close()
         shutil.rmtree(tmp_dir, ignore_errors=True)
+        shutil.rmtree(outside_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

@@ -48,6 +48,7 @@ CASES = {
     "click_timeout_after_action",
     "snapshot_during_dialog",
     "tabs_list_during_dialog",
+    "drop_outside_roots",
     "evaluate_new_tab_failed",
     "evaluate_browser_closed",
 }

@@ -114,6 +114,7 @@ RAISED = {
     "evaluate_new_tab_failed": (ConnectionLost, True),
     "evaluate_browser_closed": (ConnectionLost, True),
     "evaluate_error": (DriverError, True),
+    "drop_outside_roots": (DriverError, False),
 }
 
 
