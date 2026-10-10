@@ -1239,3 +1239,112 @@ nothing in `runtime.py`, `service.py`, `agents.py` or `browser_agent.py` changed
 4. browser-use does not fill `tab_urls` / `current_tab` yet (helpers task).
 5. `profile.rails` factories are not called by the factory; the rails task registers them with the `ToolContext`.
 6. The browser-use tool-result golden needs the browser-use wire fixtures (helpers task).
+
+## Browser helpers over commands (probes, page metadata, find)
+
+Phase 4 helpers, first half: the page probes, the page metadata, `browser_find`, the decision-policy probe and
+`activate_page` run as commands on the driver session (S_20 "Helpers"). They are new code in
+`surfaces/browser/helpers/`, registered as the browser profile's `extra_tools`; the runtime's helpers (MCP code
+runner) still serve the agent and are unchanged, as are their tests. The switch points the agent at the new ones.
+
+### Decisions
+
+1. **Built next to the old helpers** (O3, wave-3 review). The runtime keeps its MCP path until the switch; the new
+   tools reach the agent only through `profile.extra_tools` factories taking the `ToolContext`.
+2. **Probes are page JavaScript** (C7). The page function is cut out of the existing builders'
+   `async (page) => { const params = …; return await page.evaluate((params) => {…}, params); }` with one anchored
+   regex, and run as `RunScript(code=<function>, args=<params>)`; the builders (clamping, site profiles, selector
+   cache records, generation id) stay the single source, untouched. Two attempts, retried when the value is not a
+   JSON object, as before. The result dict the model reads keeps today's keys.
+3. **Every helper command is recorded** with `page_state.record`, as `CommandTool` does: the page state sees the
+   surface a driver reports with the script result. A probe result whose `url` differs from the page state's URL
+   resets the page state (advance and forget contexts, the rule `record` applies to a new address), because
+   browser-use reports no address with a script result; the old runtime only advanced the generation.
+4. **Page metadata splits** into what the page state already has (URL, title, tabs from the last `BrowserContext`)
+   and one `RunScript` for page position and semantic state, the page-measure function cut out of the metadata
+   script. When a driver gives no `current_tab` (browser-use), the focused tab is the page state's current context.
+5. **`activate_page` is `SwitchContext`** to the tab whose URL matches, else the current context, observing first
+   when no context is known. The Playwright MCP server's tab select calls `bringToFront()`, which is what the old
+   script did. The switch is recorded, so the generation advances (the old script did not touch the page state);
+   a policy probes again after activating, so its targets are fresh.
+6. **`browser_find` searches the last observation** (C10) and ports the server's algorithm (`find.ts` of
+   `@playwright/mcp` 0.0.78): case-insensitive substring or `/pattern/flags`, 3 context lines, merged windows,
+   ancestor path, `...` off the match paths, `----` between snippets, the same `Found N matches for …` /
+   `No matches found for …` text. On Playwright MCP it searches the fenced YAML of `native_text`. With no last
+   observation it takes one (`Observe`), where the server would snapshot.
+7. **One find tool for both dialects** (O3). Name, description and schema come from
+   `driver_info.native_tools["browser_find"]` when the driver lists it (Playwright MCP: byte-identical golden
+   entry), else the 857239db browser-use schema (byte-identical to the browser-use golden). The browser-dialect
+   form (`query`, `regex: bool`, `limit`, `generation_id`) is decoded into the same search; `limit` caps the matches.
+8. **`NativeTool.build` is optional** (O3). The Playwright MCP driver lists `browser_find` with `build=None`; no tool
+   spec is named `browser_find`, so the factory never reaches it.
+9. **Runner view = factory tools minus the probes.** The factory appends every extra tool to every build; the worker
+   removes the helpers after the build today, so the `runner` golden is compared with the probes removed.
+
+### Rejected options
+
+- **Refactoring `probes.py` into separate page-function constants.** The interactive probe is a 600-line f-string
+  with doubled braces; extracting it touches old code the runtime still uses. Cutting the function out of the
+  builder output keeps the old helpers byte-identical.
+- **Re-reading URL, title and tabs inside the metadata script.** The design takes them from the last
+  `BrowserContext`; only position and semantic state need the page.
+- **A fresh observation on every find**, as the server does: C10 searches the last observation and saves a snapshot
+  per call.
+- **Not recording `SwitchContext`** to keep the generation: a real tab change must advance it, and the policy
+  probes after activating anyway.
+- **The 857239db error for find without a snapshot** ("call browser_snapshot first"): costs the model a turn the
+  server never costs.
+
+### Golden comparison (factory alone, `image_support=False`)
+
+| View | Result |
+|---|---|
+| MCP `runner` | 14 / 14 byte for byte (factory tools with the two probes removed, as the worker does) |
+| MCP `core` | 16 / 18 byte for byte: the 13 command tools, `browser_find`, both probes; `browser_batch_interact` and `browser_recall_offload` not built yet |
+| MCP other views | equal minus `browser_batch_interact`, `browser_recall_offload` and the tools with no command (C7, C20, C25) |
+| browser-use, every view | as before, plus both probes (C7), and `browser_find` identical; `browser_recall_offload` not yet |
+
+### `browser_find` result shape
+
+Live on the scene with `@playwright/mcp` 0.0.78, the tool's text equals the server's `### Result` section for
+`text`, a `/regex/i` and a query with no match. Remaining differences: the server's answer also carries its page
+header sections (not part of this tool's text); it searches a fresh snapshot, this tool the last observation (a page
+changed by a script since is not seen); JavaScript regex syntax is read by Python `re` (flags `i`, `m`, `s`; `u`,
+`y`, `d`, `v` ignored); a `/` inside a pattern is shown unescaped. On browser-use the text replaces the 857239db JSON
+(`matches` with `target_id/ref`, `count`, `page_state`), and the search runs over browser-use's own snapshot text,
+indented with tabs.
+
+### Verification
+
+- `surfaces/test_browser_helpers.py` (29, FakeDriver): probe cards equal the runtime helper cards; each probe sends
+  one `RunScript` with the page function and the clamped params, retries once on a malformed value, reports an
+  unparsable value, a refused script and a `DriverError`; a new address advances the generation; cards register
+  primary links; `probe_for_policy` sends the source and params verbatim and registers targets, failure envelopes;
+  `activate_page` picks the tab by URL, falls back to the current tab, observes first, returns `False` on errors;
+  page metadata sends one script and builds the tab list (with and without `current_tab`); find: card from the
+  driver or the browser-dialect schema, snippet with ancestor path, last observation reused, merged windows, no
+  match, four refused argument sets that send nothing, the `query` form with `limit`.
+- `surfaces/test_browser_helpers_live.py` (3, `live`, gated like the suites): the interactive probe finds the scene's
+  save button on Playwright MCP and on browser-use; on Playwright MCP find equals the server's own answer for three
+  queries.
+- `snapshots/test_tool_factory_golden.py` (38): `runner` 14 / 14 and `core` 16 / 18 byte for byte, the other views
+  with the listed differences. `drivers/playwright_mcp/test_driver.py` (+1): `browser_find` is a native tool with
+  no decoder. `surfaces/test_browser_profile.py`: `extra_tools`. `contract/test_tool_types.py` (+1).
+- `pytest tests/unit_tests/harness/tools/browser_move`: **2237 passed, 116 skipped** (the old helper, policy-probe
+  and runtime tests untouched and green).
+- Live: Playwright MCP conformance **51 passed**, browser-use conformance **45 passed**, helpers **3 passed**.
+
+### Known leftovers
+
+1. `browser_batch_interact` and `browser_recall_offload` are not extra tools yet, so `core` is 16 / 18. The batch tool
+   is the second helpers task; the recall tool needs the workspace, which `ToolContext` does not carry.
+2. The helper tools return no `CommandRecord`, so nothing gives their tool messages metadata; the rails treat a
+   message without a record as a call that sent nothing (O6). A probe is a `RunScript` (`Effect.SCRIPT`), which
+   `message_metadata` would count as state-changing.
+3. The design's per-tool `effect`, `exempt_from_budget` and `progress` flags for extra tools are not declared yet.
+4. The factory does not check `NativeTool.build is None` itself; it is safe only because no spec is named
+   `browser_find`.
+5. The probe page functions are cut out of the builder output by a regex; the switch can move them into their own
+   constants when the old runtime helpers are deleted.
+6. browser-use still does not fill `tab_urls` / `current_tab`; `page_metadata` and `activate_page` fall back to the
+   page state's current context there (a tab cannot be picked by URL on browser-use).

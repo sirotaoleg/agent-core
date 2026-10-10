@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `helpers/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
 | Last revised | 2026-10-10 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -145,9 +145,10 @@ Every constructor accepts an explicit `dispatched=` to override the default.
   commands without refs). `surfaces` lists the surfaces the driver serves; the composition root refuses a driver
   that does not list the selected one. `observes` names the `Observation` fields the driver fills. `tool_hints` are
   optional per-command descriptions. `native_tools` (default empty) maps a tool spec name to a
-  `NativeTool(description, schema, build)`: a tool the driver offers in its own format, with
-  `build(args, resolver) -> Action` decoding its arguments. The model sees `tool_name_prefix` (default `""`) +
-  the spec name. No built-in driver fills them yet.
+  `NativeTool(description, schema, build=None)`: a tool the driver offers in its own format, with
+  `build(args, resolver) -> Action` decoding its arguments; `build` is `None` for a driver tool no command backs,
+  which the tool factory never emits itself (a surface extra tool may take its description and schema). The model
+  sees `tool_name_prefix` (default `""`) + the spec name. The Playwright MCP driver fills them after `start()`.
 - `@handles(Command, refs={DriverRef, ...})` marks a method as the handler of a command; marks stack.
   `refs` accepts only element ref kinds.
 - `HandlerDriver(Driver)`: `execute` dispatches by `type(action)` to the marked method. `info` is
@@ -544,7 +545,8 @@ called with; `DriverSession` provisions again from it.
 | `capability_catalog`, `capability_tools` | `capabilities.py` |
 | `timeouts` | 240 s for every `Effect` |
 | `messages` | `driver_restarted`: "the browser restarted; take a fresh observation"; `driver_lost`: "the browser connection was lost again; the task cannot continue"; `context_changed`: "Call browser_snapshot again and use refs from generation {generation}." (a format string) |
-| `policy_rules`, `rails`, `extra_tools`, `native_tools` | empty |
+| `extra_tools` | `helpers.EXTRA_TOOLS`: `ProbeInteractivesTool`, `ProbeCardsTool`, `FindTool` (see "Helpers") |
+| `policy_rules`, `rails`, `native_tools` | empty |
 | `scene` | `None` (the conformance suite takes `browser_scene()` directly) |
 
 `BrowserContext` also carries `tab_urls` (parallel to `tabs`) and `current_tab` (index of the focused tab); both are
@@ -585,8 +587,8 @@ Invalid arguments raise `ValueError` with the wording of the tools they replace 
 outside `contexts` and a close with no current context are `ValueError` too. Seven specs have no schema and no
 decoder: `browser_mouse_click_xy` (`Click`), `browser_mouse_move_xy` (`Hover`), `browser_mouse_drag_xy` (`Drag`),
 `browser_mouse_wheel` (`Scroll`), `browser_pdf_save` (`GetPdf`), `browser_console_messages` (`GetConsole`),
-`browser_network_requests` (`GetNetwork`). `browser_find` is not a spec (it becomes an extra tool over the last
-observation).
+`browser_network_requests` (`GetNetwork`). `browser_find` is not a spec: it is the `FindTool` extra tool over the
+last observation (see "Helpers").
 
 ### Renderer (`renderer.py`)
 
@@ -614,6 +616,39 @@ unchanged public API) to those of its tool names that a spec or the `browser_fin
 `unsafe_dev`, `config`, `storage`, `testing` are empty. `CAPABILITY_CATALOG` gives each entry the
 `(command, ref kind)` pairs of its specs: element tools take `DriverRef` and `Locator`, `browser_file_upload` and
 `browser_evaluate` also `None`, the three `xy` tools `PointRef`, all others `None`.
+
+### Helpers (`surfaces/browser/helpers/`)
+
+Browser tools and functions built on the driver session through a `ToolContext` (see "Tool factory"); every command
+they send is recorded in the page state with `page_state.record`. The runtime's own helpers (MCP code runner) still
+serve the agent; nothing calls these yet except the factory, which appends the three tools to every build.
+
+| Helper | Commands | Contract |
+|---|---|---|
+| `ProbeInteractivesTool` (`browser_probe_interactives`) | `RunScript(code=<page function>, args=<params>)`, a second time if the value is not a JSON object | card equals the runtime helper's; `max_items` 1–30 (default 30); the probe page function of `playwright_runtime/probes.py` without its `async (page) => page.evaluate(...)` wrapper; result dict as the runtime helper's (`ok`, `error`, `url`, `title`, `generation_id`, `count`, `elements`, `page_state`, `diagnostics`, `audit`) |
+| `ProbeCardsTool` (`browser_probe_cards`) | same | card equals the runtime helper's; `max_cards` 1–12 (default 12); selector cache records go in and out as before; primary links registered in `selector_primary_links` |
+| `FindTool` (`browser_find`) | none, or one `Observe` when the page state has no last observation | see below |
+| `probe_for_policy(context, source, params)` | `RunScript(code=source, args=params)`, up to two | the F_05 result: elements become targets, `generation_id` added; failure envelope `{"ok": False, "error", "elements": [], "page_state"}` on a `DriverError`, a refused script or a result with `ok: false` |
+| `activate_page(context, url) -> bool` | `Observe` when no context is known, then `SwitchContext(<tab whose URL is url, else the current context>)` | `False` on a `DriverError` or no context; the switch is recorded, so the generation advances |
+| `page_metadata(context) -> (dict, error)` | one `RunScript` (the page-measure function of the metadata script, no arguments) | `url`, `title` from the page state; `tabs` (`index`, `current`, `url`, `title`) from the last `BrowserContext` (current tab from `current_tab`, else the page state's current context; a tab URL from `tab_urls`, else the surface URL for the current tab); `page_position`, `semantic_state` from the script; `({}, error)` on a `DriverError` or an unparsable value |
+
+A probe result whose `url` differs from the page state's (non-empty) URL resets the page state (new generation, no
+contexts) before its targets are registered: a script result does not report the address on every driver. Every
+dict in the result with `selector_hint` or `generation_id` gets the current generation id. A `DriverError` becomes
+the failure envelope (`browser_probe_* failed: <message>`); a task failure from the session propagates.
+
+`FindTool`: name `driver_info.tool_name_prefix + "browser_find"`; description and schema from
+`driver_info.native_tools["browser_find"]` when present (Playwright MCP: the server's, byte for byte), else the
+browser-dialect schema (`query`, `regex: bool`, `limit` 1–100 default 20, `generation_id`). Arguments: `text`
+(case-insensitive substring) or `regex` (a pattern, or `/pattern/flags` with `i`, `m`, `s`; `g` dropped), exactly
+one; in the browser-dialect form `query` is the text, or the pattern when `regex` is `true`, and a stale
+`generation_id` is refused. A bad argument is `### Error
+<message>` and sends nothing. The search runs over the last
+observation's `native_text`, inside its fenced `yaml` block when it has one. The answer is `### Result
+` + the
+server's text: `No matches found for <query>.`, or `Found N match(es) for <query>:` and one snippet per group of
+matches (each match with 3 lines of context, merged when they touch, under the lines of its ancestors, `...` where
+lines are skipped off the match paths), snippets separated by `----`; `<query>` is `"text"` or `/pattern/flags`.
 
 ## Runtime state and recovery (`playwright_runtime/`)
 
@@ -899,7 +934,9 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   `streamable-http`) and calls it directly, never through `ToolMgr`; it reads `tools/list` once and keeps each
   mapped tool's description as `DriverInfo.tool_hints`, and every listed tool that has a decoder (`tools.py`) as
   `DriverInfo.native_tools[name] = NativeTool(description, schema, build)`: the description verbatim, the schema
-  as the client lists it (`inputSchema` through `utils/parsing.sanitize_json_schema`, so without `$schema`). Before
+  as the client lists it (`inputSchema` through `utils/parsing.sanitize_json_schema`, so without `$schema`);
+  `browser_find` is listed the same way with `build=None` (no command backs it; the surface's `FindTool` takes its
+  description and schema). Before
   `start()` `native_tools` is empty. `tool_name_prefix` is `mcp_model_tool_prefix(server_name)`
   (`mcp_playwright-official_`), the prefix the ability manager gives MCP tools; an instance key never changes it.
   `health()` pings the session.
@@ -964,8 +1001,8 @@ driver's handler: decoding a call the driver sent and sending the command again 
 Arguments that do not change the command are accepted and ignored: `element` (every tool), `filename`, the
 snapshot's `target`, `depth`, `boxes`, the screenshot's `target`, `element`, `type`, `scale`, and the click's
 `delay`. A missing required argument, a wrong type, an unknown field type or tab action, a `select` without index
-and an index outside `contexts` raise `ValueError`. `browser_find` (an extra tool over the last observation) and
-`browser_wait_for` (not model-facing) have no decoder and so no native tool.
+and an index outside `contexts` raise `ValueError`. `browser_find` (served by the surface's `FindTool`) and
+`browser_wait_for` (not model-facing) have no decoder.
 
 ## Relation to other specs
 
