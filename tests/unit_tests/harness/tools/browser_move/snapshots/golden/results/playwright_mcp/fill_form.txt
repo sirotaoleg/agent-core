@@ -1,0 +1,6 @@
+### Ran Playwright code
+```js
+await page.getByRole('textbox', { name: 'Full name' }).fill('Ada');
+await page.getByRole('checkbox', { name: 'Gift wrap' }).setChecked(true);
+await page.getByLabel('Size').selectOption('Medium');
+```

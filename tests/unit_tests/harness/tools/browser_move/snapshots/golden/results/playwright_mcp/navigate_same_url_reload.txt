@@ -1,0 +1,7 @@
+### Ran Playwright code
+```js
+await page.goto('http://127.0.0.1:<PORT>/index.html');
+```
+### Page
+- Page URL: http://127.0.0.1:<PORT>/index.html
+- Page Title: Fixture form page

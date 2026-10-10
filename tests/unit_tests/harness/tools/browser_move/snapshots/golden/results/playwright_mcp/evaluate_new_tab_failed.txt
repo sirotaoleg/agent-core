@@ -1,0 +1,2 @@
+### Error
+Error: browserBackend.callTool: Protocol error (Target.createTarget): Failed to open a new tab

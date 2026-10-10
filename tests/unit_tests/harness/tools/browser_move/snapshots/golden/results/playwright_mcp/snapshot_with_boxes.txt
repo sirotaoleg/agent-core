@@ -1,0 +1,37 @@
+### Page
+- Page URL: http://127.0.0.1:<PORT>/index.html
+- Page Title: Fixture form page
+### Snapshot
+```yaml
+- generic [active] [ref=f7e1]:
+  - heading "Fixture form page" [level=1] [ref=f7e2]
+  - navigation [ref=f7e3]:
+    - link "Second page" [ref=f7e4] [cursor=pointer]:
+      - /url: second.html
+    - link "Blocked page" [ref=f7e5] [cursor=pointer]:
+      - /url: blocked.html
+    - link "Download report" [ref=f7e6] [cursor=pointer]:
+      - /url: report.csv
+  - generic [ref=f7e7]:
+    - text: Full name
+    - textbox "Full name" [ref=f7e8]:
+      - /placeholder: Your name
+    - text: Size
+    - combobox "Size" [ref=f7e9]:
+      - option "Small" [selected]
+      - option "Medium"
+      - option "Large"
+    - generic [ref=f7e10]:
+      - checkbox "Gift wrap" [ref=f7e11]
+      - text: Gift wrap
+    - button "Save" [ref=f7e12]
+  - paragraph [ref=f7e13]: Not saved
+  - button "Show alert" [ref=f7e14]
+  - button "Delete order" [ref=f7e15]
+  - paragraph [ref=f7e16]: No answer
+  - button "Log to console" [ref=f7e17]
+  - iframe [ref=f7e18]:
+    - generic [ref=f8e1]:
+      - paragraph [ref=f8e2]: Inside the frame
+      - button "Frame button" [ref=f8e3]
+```

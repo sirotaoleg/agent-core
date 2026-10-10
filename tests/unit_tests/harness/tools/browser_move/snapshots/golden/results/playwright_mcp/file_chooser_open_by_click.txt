@@ -1,0 +1,8 @@
+### Ran Playwright code
+```js
+await page.getByRole('button', { name: 'Attachment' }).click();
+```
+### Page
+- Page URL: http://127.0.0.1:<PORT>/upload.html
+### Modal state
+- [File chooser]: can be handled by browser_file_upload

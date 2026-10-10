@@ -1,0 +1,10 @@
+### Ran Playwright code
+```js
+await page.getByRole('link', { name: 'Go to second page' }).click();
+```
+### Open tabs
+- 0: (current) [Fixture second page](http://127.0.0.1:<PORT>/second.html)
+- 1: [Fixture second page](http://127.0.0.1:<PORT>/second.html)
+### Page
+- Page URL: http://127.0.0.1:<PORT>/second.html
+- Page Title: Fixture second page

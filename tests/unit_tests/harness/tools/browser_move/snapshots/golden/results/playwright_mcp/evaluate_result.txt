@@ -1,0 +1,9 @@
+### Result
+{
+  "name": "Ada",
+  "size": "l"
+}
+### Ran Playwright code
+```js
+await page.evaluate('() => ({ name: document.getElementById(\'name\').value, size: document.getElementById(\'size\').value })');
+```

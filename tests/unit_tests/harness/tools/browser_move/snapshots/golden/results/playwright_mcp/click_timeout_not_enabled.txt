@@ -1,0 +1,18 @@
+### Error
+TimeoutError: browserBackend.callTool: Timeout 5000ms exceeded.
+Call log:
+  - waiting for locator('aria-ref=f5e4')
+    - locator resolved to <button disabled id="disabled" type="button">Disabled button</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is not enabled
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is not enabled
+    - retrying click action
+      - waiting 100ms
+    10 × waiting for element to be visible, enabled and stable
+       - element is not enabled
+     - retrying click action
+       - waiting 500ms

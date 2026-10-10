@@ -1,0 +1,10 @@
+### Ran Playwright code
+```js
+// Screenshot Page heading and save it as .playwright-mcp\element-<TS>.png
+await page.getByRole('heading', { name: 'Fixture form page' }).screenshot({
+  path: '.playwright-mcp\\element-<TS>.png',
+  scale: 'css',
+  type: 'png'
+});
+```
+[image: 1264x38 png]

@@ -1,0 +1,6 @@
+### Error
+Error: fixture failure
+    at eval (eval at <anonymous> (eval at evaluate (:303:30)), <anonymous>:1:16)
+    at eval (eval at evaluate (:303:30), <anonymous>:4:50)
+    at UtilityScript.evaluate (<anonymous>:305:16)
+    at UtilityScript.<anonymous> (<anonymous>:1:44)

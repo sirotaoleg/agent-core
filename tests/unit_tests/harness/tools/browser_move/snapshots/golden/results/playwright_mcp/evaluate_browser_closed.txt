@@ -1,0 +1,2 @@
+### Error
+Error: browserBackend.callTool: Target page, context or browser has been closed

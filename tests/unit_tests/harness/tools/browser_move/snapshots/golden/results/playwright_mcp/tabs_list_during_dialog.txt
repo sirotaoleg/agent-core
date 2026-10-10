@@ -1,0 +1,4 @@
+### Result
+- 0: (current) [](http://127.0.0.1:<PORT>/index.html)
+### Modal state
+- ["confirm" dialog with message "Delete order?"]: can be handled by browser_handle_dialog

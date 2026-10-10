@@ -1,0 +1,7 @@
+### Ran Playwright code
+```js
+await fileChooser.setFiles(["<TMP>\\attachment.csv"])
+```
+### Page
+- Page URL: http://127.0.0.1:<PORT>/upload.html
+- Page Title: Fixture upload page

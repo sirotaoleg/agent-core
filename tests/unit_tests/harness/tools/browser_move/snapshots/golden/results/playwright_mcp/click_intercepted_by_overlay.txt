@@ -1,0 +1,27 @@
+### Error
+TimeoutError: browserBackend.callTool: Timeout 5000ms exceeded.
+Call log:
+  - waiting for locator('aria-ref=f5e3')
+    - locator resolved to <button id="covered" type="button">Covered button</button>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div id="consent-backdrop" class="consent-dark-filter"></div> intercepts pointer events
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div id="consent-backdrop" class="consent-dark-filter"></div> intercepts pointer events
+    - retrying click action
+      - waiting 100ms
+    10 × waiting for element to be visible, enabled and stable
+       - element is visible, enabled and stable
+       - scrolling into view if needed
+       - done scrolling
+       - <div id="consent-backdrop" class="consent-dark-filter"></div> intercepts pointer events
+     - retrying click action
+       - waiting 500ms

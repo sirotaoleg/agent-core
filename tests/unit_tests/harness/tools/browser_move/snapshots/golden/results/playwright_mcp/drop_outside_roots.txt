@@ -1,0 +1,2 @@
+### Error
+Error: File access denied: <OUTSIDE>\outside.csv is outside allowed roots. Allowed roots: <TMP>\.playwright-mcp, <TMP>
