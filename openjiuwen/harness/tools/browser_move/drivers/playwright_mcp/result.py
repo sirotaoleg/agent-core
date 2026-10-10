@@ -47,6 +47,7 @@ _FILE_LINK = re.compile(r"^- \[[^\]]*\]\((?P<path>[^)]+)\)$", re.MULTILINE)
 _DIALOG = re.compile(r'^- \["(?P<type>[^"]+)" dialog with message "(?P<message>.*?)"\]: can be handled by', re.M | re.S)
 _MODAL_REFUSAL = re.compile(r'Tool "[\w-]+" does not handle the modal state')
 _STALE_REF = re.compile(r"Ref \S+ not found in the current page snapshot")
+_FILE_ACCESS_DENIED = re.compile(r"File access denied: .+ is outside allowed roots")
 # After the browser dies the server first fails to open a new tab, then reports the closed target.
 _CLOSED = re.compile(r"Target page, context or browser has been closed|Failed to open a new tab")
 _TIMEOUT = re.compile(r"TimeoutError:|Timeout \d+ms exceeded")
@@ -183,6 +184,9 @@ def _read_linked_snapshot(section: str, output_dir: Path) -> str | None:
 def _error(tool_name: str, message: str) -> DriverError:
     if _STALE_REF.search(message):
         return StaleRef(message, dispatched=False)
+    # The server checks file paths before it touches the page.
+    if _FILE_ACCESS_DENIED.search(message):
+        return DriverError(message, dispatched=False)
     if _CLOSED.search(message):
         return ConnectionLost(message, dispatched=True)
     head, _, call_log = message.partition("Call log:")
