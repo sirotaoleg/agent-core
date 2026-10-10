@@ -17,7 +17,14 @@ from urllib.parse import urlparse
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.runner import Runner
 
-from .config import RuntimeServerSettings, process_environ, resolve_playwright_mcp_cwd, runtime_server_child_env
+from .browser_logging import configure_browser_agent_logging
+from .config import (
+    CoreSettings,
+    RuntimeServerSettings,
+    process_environ,
+    resolve_playwright_mcp_cwd,
+    runtime_server_child_env,
+)
 
 _SUPPORTED_CLIENT_TYPES = {"stdio", "sse", "streamable-http", "streamable_http", "http"}
 _LOCAL_SERVER_PROCESS: subprocess.Popen[str] | None = None
@@ -438,6 +445,7 @@ async def register_browser_runtime_mcp_server(
     """Register browser runtime MCP server on an OpenJiuWen agent with fallbacks."""
     _ensure_openjiuwen_client_patch()
     environ = process_environ() if environ is None else environ
+    configure_browser_agent_logging(CoreSettings.from_env(environ))
     settings = settings or RuntimeServerSettings.from_env(environ)
     cfg = build_browser_runtime_mcp_config(settings, environ=environ)
     if cfg is None:

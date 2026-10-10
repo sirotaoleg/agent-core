@@ -7,119 +7,88 @@ import gzip
 import hashlib
 import json
 import logging
-import os
-from pathlib import Path
 import re
+from pathlib import Path
 from threading import Lock
 from typing import Any
 
 from openjiuwen.core.common.logging import logger as common_logger
 from openjiuwen.core.common.logging.browser_context import is_browser_agent_log_context
+from openjiuwen.core.common.logging.tool_call import register_tool_call_logger
 
+from .config import CoreSettings
 
 _BROWSER_LOGGER_NAME = "openjiuwen.browser_agent"
 _BROWSER_HANDLER_MARKER = "_openjiuwen_browser_agent_file_handler"
 _BROWSER_LOG_ANNOUNCED_MARKER = "_openjiuwen_browser_agent_file_announced"
-_FALSE_VALUES = {"0", "false", "no", "off", ""}
-_DISABLE_VALUES = {"0", "false", "no", "off", "none", "null", "-"}
+# The browser logger is process-wide (stdlib registry), so the settings it was configured with live on it.
+_AUDIT_RAW_ATTR = "_openjiuwen_browser_agent_audit_raw"
 _LOCK = Lock()
 _AUDIT_LOCK = Lock()
 
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() not in _FALSE_VALUES
+def _is_browser_tool_name(tool_name: str) -> bool:
+    lowered_name = tool_name.lower()
+    return "browser_" in lowered_name or lowered_name.startswith("mcp_playwright")
 
 
-def _get_level() -> int:
-    level_name = os.getenv("OPENJIUWEN_BROWSER_AGENT_LOG_LEVEL", "INFO")
-    return getattr(logging, level_name.strip().upper(), logging.INFO)
-
-
-def _default_log_path() -> Path:
-    return Path.cwd() / "logs" / "browser_agent.log"
-
-
-def get_browser_agent_log_path() -> Path | None:
-    """Return the configured browser-agent log path.
-
-    Browser-agent file logging is enabled by default so users running
-    jiuwenswarm-start get a separate browser log without extra environment
-    setup. Set OPENJIUWEN_BROWSER_AGENT_LOG_FILE to one of
-    0/false/no/off/none/null/- to disable the dedicated file.
-    """
-    configured = os.getenv("OPENJIUWEN_BROWSER_AGENT_LOG_FILE")
-    if configured is None:
-        return _default_log_path().resolve()
-
-    configured = configured.strip()
-    if configured.lower() in _DISABLE_VALUES:
-        return None
-
-    return Path(configured).expanduser().resolve()
+def configure_browser_agent_logging(settings: CoreSettings) -> logging.Logger:
+    """Apply the logging part of ``settings`` and send browser tool-call lines to the browser-agent log."""
+    browser_logger = _apply_settings(settings)
+    register_tool_call_logger(_is_browser_tool_name, browser_agent_log_info)
+    return browser_logger
 
 
 def get_browser_agent_logger() -> logging.Logger:
-    """Return the dedicated browser-agent logger.
-
-    By default, browser-agent logs are written to ./logs/browser_agent.log in
-    UTF-8 and are not propagated to the combined application log. Override the
-    target path with OPENJIUWEN_BROWSER_AGENT_LOG_FILE. Set
-    OPENJIUWEN_BROWSER_AGENT_LOG_MIRROR_COMMON=1 to also mirror browser logs
-    to the normal combined logger.
-    """
+    """Return the dedicated browser-agent logger, configured from the process settings until configured explicitly."""
     browser_logger = logging.getLogger(_BROWSER_LOGGER_NAME)
-    browser_logger.setLevel(_get_level())
-
-    mirror_common = _env_bool(
-        "OPENJIUWEN_BROWSER_AGENT_LOG_MIRROR_COMMON",
-        default=False,
-    )
-    browser_logger.propagate = mirror_common
-
-    log_path = get_browser_agent_log_path()
-    if log_path is None:
-        return browser_logger
-
-    with _LOCK:
-        for handler in browser_logger.handlers:
-            if getattr(handler, _BROWSER_HANDLER_MARKER, False):
-                if getattr(handler, "baseFilename", None) == str(log_path):
-                    return browser_logger
-
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-
-        file_handler = logging.FileHandler(
-            log_path,
-            mode="w",
-            encoding="utf-8",
-        )
-        setattr(file_handler, _BROWSER_HANDLER_MARKER, True)
-        file_handler.setLevel(_get_level())
-        file_handler.setFormatter(
-            logging.Formatter(
-                "%(asctime)s | browser_agent | %(levelname)s | %(message)s"
-            )
-        )
-        browser_logger.addHandler(file_handler)
-
-        if not getattr(browser_logger, _BROWSER_LOG_ANNOUNCED_MARKER, False):
-            common_logger.info(
-                "[BROWSER_AGENT_LOG] dedicated browser log file enabled: %s",
-                str(log_path),
-            )
-            setattr(browser_logger, _BROWSER_LOG_ANNOUNCED_MARKER, True)
-
+    if not hasattr(browser_logger, _AUDIT_RAW_ATTR):
+        _apply_settings(CoreSettings.from_process_env())
     return browser_logger
+
+
+def _apply_settings(settings: CoreSettings) -> logging.Logger:
+    browser_logger = logging.getLogger(_BROWSER_LOGGER_NAME)
+    log_path = None if settings.log_file is None else settings.log_file.expanduser().resolve()
+    with _LOCK:
+        browser_logger.setLevel(settings.log_level)
+        browser_logger.propagate = settings.log_mirror_common
+        kept = False
+        for handler in list(browser_logger.handlers):
+            if not getattr(handler, _BROWSER_HANDLER_MARKER, False):
+                continue
+            if log_path is not None and getattr(handler, "baseFilename", None) == str(log_path):
+                handler.setLevel(settings.log_level)
+                kept = True
+                continue
+            browser_logger.removeHandler(handler)
+            handler.close()
+        if log_path is not None and not kept:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            file_handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+            setattr(file_handler, _BROWSER_HANDLER_MARKER, True)
+            file_handler.setLevel(settings.log_level)
+            file_handler.setFormatter(logging.Formatter("%(asctime)s | browser_agent | %(levelname)s | %(message)s"))
+            browser_logger.addHandler(file_handler)
+            if not getattr(browser_logger, _BROWSER_LOG_ANNOUNCED_MARKER, False):
+                common_logger.info("[BROWSER_AGENT_LOG] dedicated browser log file enabled: %s", str(log_path))
+                setattr(browser_logger, _BROWSER_LOG_ANNOUNCED_MARKER, True)
+        setattr(browser_logger, _AUDIT_RAW_ATTR, settings.log_audit_raw)
+    return browser_logger
+
+
+def _log_path(browser_logger: logging.Logger) -> Path | None:
+    for handler in browser_logger.handlers:
+        if getattr(handler, _BROWSER_HANDLER_MARKER, False):
+            return Path(handler.baseFilename)
+    return None
 
 
 def browser_agent_log_info(message: str, *args: Any) -> None:
     browser_logger = get_browser_agent_logger()
     browser_logger.info(message, *args)
 
-    if get_browser_agent_log_path() is None:
+    if _log_path(browser_logger) is None:
         common_logger.info(message, *args)
 
 
@@ -127,7 +96,7 @@ def browser_agent_log_warning(message: str, *args: Any) -> None:
     browser_logger = get_browser_agent_logger()
     browser_logger.warning(message, *args)
 
-    if get_browser_agent_log_path() is None:
+    if _log_path(browser_logger) is None:
         common_logger.warning(message, *args)
 
 
@@ -135,7 +104,7 @@ def browser_agent_log_error(message: str, *args: Any) -> None:
     browser_logger = get_browser_agent_logger()
     browser_logger.error(message, *args)
 
-    if get_browser_agent_log_path() is None:
+    if _log_path(browser_logger) is None:
         common_logger.error(message, *args)
 
 
@@ -152,13 +121,11 @@ def write_browser_agent_audit_artifact(kind: str, raw: Any) -> dict[str, Any]:
         "raw_sha256": digest[:16],
         "stored": False,
     }
-    if not is_browser_agent_log_context() or not _env_bool(
-        "OPENJIUWEN_BROWSER_AGENT_AUDIT_RAW",
-        default=False,
-    ):
+    browser_logger = get_browser_agent_logger()
+    if not is_browser_agent_log_context() or not getattr(browser_logger, _AUDIT_RAW_ATTR):
         return audit
 
-    log_path = get_browser_agent_log_path()
+    log_path = _log_path(browser_logger)
     if log_path is None:
         return audit
     safe_kind = re.sub(r"[^a-z0-9_-]+", "_", str(kind or "observation").lower()).strip("_")
@@ -177,7 +144,7 @@ def write_browser_agent_audit_artifact(kind: str, raw: Any) -> dict[str, Any]:
                         separators=(",", ":"),
                     )
         audit["stored"] = True
-        get_browser_agent_logger().info(
+        browser_logger.info(
             "[BROWSER_AUDIT] kind=%s sha256=%s size=%s artifact=%s",
             safe_kind,
             digest[:16],
@@ -185,7 +152,7 @@ def write_browser_agent_audit_artifact(kind: str, raw: Any) -> dict[str, Any]:
             artifact_name,
         )
     except OSError as exc:
-        get_browser_agent_logger().warning(
+        browser_logger.warning(
             "[BROWSER_AUDIT_ERROR] kind=%s sha256=%s error=%s",
             safe_kind,
             digest[:16],

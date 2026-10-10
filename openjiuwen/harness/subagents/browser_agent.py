@@ -28,8 +28,10 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_working_co
     BrowserWorkingContextProcessorConfig,
 )
 from openjiuwen.harness.tools.browser_move.offload_recall import BrowserOffloadRecallTool
+from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging import configure_browser_agent_logging
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserInstanceConfig,
+    CoreSettings,
     RuntimeSettings,
     build_browser_guardrails,
     build_playwright_mcp_config,
@@ -331,6 +333,7 @@ def create_browser_agent(
     policy_model = model if isinstance(model, DecisionPolicyModel) else None
     browser_model = model if policy_model is not None else _browser_model_with_temperature(model, temperature)
     resolved_settings = _resolve_runtime_settings(browser_model, settings, instance)
+    configure_browser_agent_logging(CoreSettings.from_process_env())
 
     final_card = card or AgentCard(
         id=BROWSER_AGENT_CARD_ID,

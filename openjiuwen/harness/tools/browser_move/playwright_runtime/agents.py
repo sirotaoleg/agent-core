@@ -20,6 +20,7 @@ from openjiuwen.core.single_agent.agents.react_agent import ReActAgent, ReActAge
 from openjiuwen.core.single_agent.schema.agent_card import AgentCard
 
 from .browser_capabilities import CORE_BROWSER_TOOL_NAMES
+from .browser_logging import configure_browser_agent_logging
 from .config import CoreSettings
 
 ToolResultObserver = Callable[[str, Any], Awaitable[None]]
@@ -393,6 +394,7 @@ def build_browser_worker_agent(
         )
     )
     settings = settings or CoreSettings.from_process_env()
+    configure_browser_agent_logging(settings)
     if config.model_config_obj is not None:
         config.model_config_obj.temperature = settings.worker_temperature
         config.model_config_obj.top_p = settings.worker_top_p
