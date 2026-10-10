@@ -29,11 +29,12 @@ class Registries:
 
 @dataclass(frozen=True)
 class DriverAssembly:
-    """A started driver stack and the device under it."""
+    """A started driver stack, the device under it and the settings that device was provisioned from."""
 
     stack: Driver
     device: ProvisionedDevice
     provisioner: Provisioner
+    surface_settings: Any
 
     async def close(self) -> None:
         try:
@@ -67,7 +68,7 @@ async def assemble_driver(
     except BaseException:
         await asyncio.to_thread(provisioner.release, device)
         raise
-    assembly = DriverAssembly(stack, device, provisioner)
+    assembly = DriverAssembly(stack, device, provisioner, surface.settings)
     try:
         await stack.start()
     except BaseException:

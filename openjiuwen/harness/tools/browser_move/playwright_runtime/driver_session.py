@@ -1,0 +1,75 @@
+# coding: utf-8
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
+"""Runs commands on the assembled driver stack and recovers from one lost connection per task."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import dataclasses
+from collections.abc import Mapping
+from typing import NoReturn
+
+from openjiuwen.core.common.exception.codes import StatusCode
+from openjiuwen.core.common.exception.errors import build_error
+
+from ..contract import Action, ActionResult, ConnectionLost, DriverError, Observation, Observe
+from .assembly import DriverAssembly
+from .page_state import BrowserPageState
+
+
+class DriverSession:
+    """Forwards commands to the stack; restarts it once per task on ``ConnectionLost`` and never re-sends the call."""
+
+    def __init__(self, assembly: DriverAssembly, page_state: BrowserPageState, messages: Mapping[str, str]) -> None:
+        self.assembly = assembly
+        self._page_state = page_state
+        self._restarted = messages["driver_restarted"]
+        self._lost = messages["driver_lost"]
+        self._losses = 0
+
+    def begin_task(self) -> None:
+        self._losses = 0
+
+    async def execute(self, action: Action) -> ActionResult:
+        try:
+            return await self.assembly.stack.execute(action)
+        except ConnectionLost as error:
+            await self._recover(error)
+
+    async def observe(self, command: Observe) -> Observation:
+        try:
+            return await self.assembly.stack.observe(command)
+        except ConnectionLost as error:
+            await self._recover(error)
+
+    async def close(self) -> None:
+        await self.assembly.close()
+
+    async def _recover(self, error: ConnectionLost) -> NoReturn:
+        self._losses += 1
+        if self._losses > 1:
+            raise build_error(StatusCode.DEEPAGENT_RUNTIME_ERROR, error_msg=self._lost, cause=error) from error
+        try:
+            await self._restart()
+        except Exception as restart_error:
+            raise build_error(StatusCode.DEEPAGENT_RUNTIME_ERROR, error_msg=self._lost, cause=restart_error) from error
+        self._page_state.reset()
+        raise ConnectionLost(self._restarted, dispatched=error.dispatched) from error
+
+    async def _restart(self) -> None:
+        stack = self.assembly.stack
+        with contextlib.suppress(DriverError):
+            await stack.stop()
+        try:
+            await stack.start()
+        except DriverError:
+            provisioner = self.assembly.provisioner
+            await asyncio.to_thread(provisioner.release, self.assembly.device)
+            device = await asyncio.to_thread(provisioner.provision, self.assembly.surface_settings)
+            self.assembly = dataclasses.replace(self.assembly, device=device)
+            await stack.start()
+
+
+__all__ = ["DriverSession"]
