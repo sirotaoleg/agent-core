@@ -341,6 +341,31 @@ async def test_a_stale_ref_never_reaches_the_driver_and_answers_with_one_fresh_o
 
 
 @pytest.mark.asyncio
+async def test_a_point_on_a_screenshot_of_an_older_generation_never_reaches_the_driver() -> None:
+    driver = FakeDriver(observations=[_observation(screenshot=SHOT), _observation()])
+    built, page_state = _build(driver, ("vision",), image_support=True)
+    await _tool(built, "toy_shot").invoke({})
+    page_state.reset()
+
+    output = await _tool(built, "toy_point").invoke({"x": 3, "y": 4})
+
+    assert driver.kinds() == ["observe", "observe"]
+    assert output.error.startswith("### Error\nStale PointRef belongs to g0; current generation is g1.")
+
+
+@pytest.mark.asyncio
+async def test_a_dispatched_failure_outdates_the_last_observation() -> None:
+    driver = FakeDriver(observations=[_observation()])
+    built, page_state = _build(driver)
+    page_state.record(Observe(), await driver.observe(Observe()))
+    driver.fail_next(ActionTimeout("slow", dispatched=True))
+
+    await _tool(built, "toy_click").invoke({"ref": "e1"})
+
+    assert page_state.last_observation is not None and page_state.fresh_observation is None
+
+
+@pytest.mark.asyncio
 async def test_the_free_observation_of_a_result_is_recorded_but_not_rendered() -> None:
     free = _observation('- heading "Next" [ref=e9]')
     driver = FakeDriver(results=[ActionResult(ok=True, detail="done", context_changed=True, observation=free)])

@@ -50,6 +50,7 @@ class _Resolver:
     contexts: tuple[ContextRef, ...] = (TAB_0, TAB_1)
     current_context: ContextRef | None = TAB_0
     generation: str = "g3"
+    screenshot_generation: str = ""
 
     def resolve(self, model_id: str, generation: str) -> Ref:
         raise ValueError(f"unknown target_id {model_id}")
@@ -129,10 +130,17 @@ def test_cosmetic_and_dropped_arguments_do_not_change_the_command(tool: str, arg
     assert _decode(tool, arguments) == action
 
 
-def test_points_take_rounded_screenshot_pixels_and_no_generation() -> None:
+def test_points_take_rounded_screenshot_pixels_and_no_generation_before_a_screenshot() -> None:
     assert _decode("browser_mouse_move_xy", {"x": 10.6, "y": 20.2}) == Hover(PointRef(11, 20, ""))
     dragged = _decode("browser_mouse_drag_xy", {"startX": 1, "startY": 2, "endX": 3, "endY": 4})
     assert dragged == Drag(PointRef(1, 2, ""), PointRef(3, 4, ""))
+
+
+def test_points_take_the_generation_of_the_last_screenshot() -> None:
+    shot = _Resolver(screenshot_generation="g2")
+    assert _decode("browser_mouse_click_xy", {"x": 1, "y": 2}, shot) == Click(PointRef(1, 2, "g2"))
+    dragged = _decode("browser_mouse_drag_xy", {"startX": 1, "startY": 2, "endX": 3, "endY": 4}, shot)
+    assert dragged == Drag(PointRef(1, 2, "g2"), PointRef(3, 4, "g2"))
 
 
 def test_wheel_scrolls_the_whole_view() -> None:

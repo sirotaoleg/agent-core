@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from openjiuwen.harness.tools.browser_move.contract import (
@@ -17,6 +19,8 @@ from openjiuwen.harness.tools.browser_move.contract import (
     Observe,
     PointRef,
     RefResolver,
+    RunScript,
+    Screenshot,
     StaleRef,
     SwitchContext,
 )
@@ -245,3 +249,45 @@ def test_reset_starts_a_new_generation_and_forgets_contexts() -> None:
     assert state.generation_id == "g1"
     assert state.generation_of("e1") == "g0"
     assert (state.contexts, state.current_context, state.last_observation) == ((), None, None)
+
+
+SHOT = Screenshot(b"\x89PNG-fake", 2, 2)
+
+
+def test_the_last_observation_is_fresh_until_a_command_is_sent_without_one() -> None:
+    state = _state("e1")
+    observed = state.last_observation
+
+    assert state.fresh_observation is observed
+    state.record(RunScript(code="() => 1"), ActionResult(ok=True, value=1))
+    assert state.fresh_observation is None
+    state.record(Click(DriverRef("e1", "g0")), ActionResult(ok=True, observation=_observation("e1")))
+    assert state.fresh_observation is state.last_observation is not None
+
+
+def test_a_dispatched_failure_outdates_the_last_observation() -> None:
+    state = _state("e1")
+
+    state.note_dispatched()
+
+    assert state.fresh_observation is None and state.last_observation is not None
+
+
+def test_an_observation_of_an_older_generation_is_not_fresh() -> None:
+    state = _state("e1")
+
+    state.advance()
+
+    assert state.last_observation is not None and state.fresh_observation is None
+
+
+def test_a_screenshot_records_its_generation_for_points() -> None:
+    state = _state("e1")
+    assert state.screenshot_generation == ""
+
+    state.record(Observe(include_screenshot=True), dataclasses.replace(_observation("e1"), screenshot=SHOT))
+    state.record(Navigate("https://shop.test/a"), ActionResult(ok=True, context_changed=True))
+
+    assert (state.screenshot_generation, state.generation_id) == ("g0", "g1")
+    with pytest.raises(StaleRef):
+        state.check(Click(PointRef(1, 2, state.screenshot_generation)))

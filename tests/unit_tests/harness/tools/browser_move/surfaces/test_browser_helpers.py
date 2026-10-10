@@ -458,6 +458,29 @@ def test_find_searches_the_last_observation_without_observing_again() -> None:
     assert '    - link "Go to second" [ref=e4]' in output.data["content"]
 
 
+def test_find_observes_again_after_a_command_sent_without_an_observation() -> None:
+    driver = FakeDriver(observations=[_observation('- button "Old" [ref=e1]'), _observation()])
+    context = _find_context(driver)
+    context.page_state.record(Observe(), _run(driver.observe(Observe())))
+    context.page_state.record(RunScript(code="() => 1"), _script(1))
+
+    output = _found(context, {"text": "save order"})
+
+    assert driver.kinds() == ["observe", "observe"]
+    assert output.data["content"].startswith('### Result\nFound 1 match for "save order":')
+
+
+def test_find_observes_again_when_the_generation_moved_on() -> None:
+    driver = FakeDriver(observations=[_observation(), _observation()])
+    context = _find_context(driver)
+    context.page_state.record(Observe(), _run(driver.observe(Observe())))
+    context.page_state.advance()
+
+    _found(context, {"text": "save order"})
+
+    assert driver.kinds() == ["observe", "observe"]
+
+
 def test_find_records_the_observation_it_took_as_a_read() -> None:
     output = _found(_find_context(FakeDriver(observations=[_observation()])), {"text": "save"})
 
