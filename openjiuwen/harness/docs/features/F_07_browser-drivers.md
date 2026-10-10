@@ -5,7 +5,7 @@
 | Item | Value |
 |---|---|
 | Type | feature |
-| Date | 2026-10-10 |
+| Date | 2026-10-11 |
 | Scope | `openjiuwen/harness/tools/browser_move/` (`contract/`, `drivers/`, `provisioning/`, `surfaces/browser/`, `playwright_runtime/`, `controllers/action.py`, `utils/`, `playwright_runtime_mcp_server.py`), `openjiuwen/harness/subagents/browser_agent.py`, `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/single_agent/agents/react_agent.py`, `tests/unit_tests/harness/tools/browser_move/` |
 | Test baseline | see "Verification" in each section |
 | Related spec | [[S_20_browser-driver-contract]] |
@@ -1232,12 +1232,12 @@ nothing in `runtime.py`, `service.py`, `agents.py` or `browser_agent.py` changed
 ### Known leftovers
 
 1. `browser_find` and the helper tools (probes, batch, recall) come as extra tools with the helpers task; the factory
-   goldens then compare all 14 / 18 tools.
+   goldens then compare all 14 / 18 tools. (Done except batch: `core` 17 / 18; see "Helper infrastructure".)
 2. Nothing copies `CommandRecord.message_metadata` onto the tool message yet (the switch's rail work).
 3. A screenshot tool renders through `observe()`: on MCP that is the snapshot text and the image (two server calls);
    today the model gets the image and a file link. Only vision with image support sees it. (Rendering done: a
    screenshot-only tool now shows the image only; see "Rails on command records".)
-4. browser-use does not fill `tab_urls` / `current_tab` yet (helpers task).
+4. browser-use does not fill `tab_urls` / `current_tab` yet (helpers task). (Done; see "Helper infrastructure".)
 5. `profile.rails` factories are not called by the factory; the rails task registers them with the `ToolContext`.
 6. The browser-use tool-result golden needs the browser-use wire fixtures (helpers task).
 
@@ -1338,17 +1338,19 @@ indented with tabs.
 ### Known leftovers
 
 1. `browser_batch_interact` and `browser_recall_offload` are not extra tools yet, so `core` is 16 / 18. The batch tool
-   is the second helpers task; the recall tool needs the workspace, which `ToolContext` does not carry.
+   is the second helpers task; the recall tool needs the workspace, which `ToolContext` does not carry. (Recall done,
+   `core` 17 / 18; see "Helper infrastructure".)
 2. The helper tools return no `CommandRecord`, so nothing gives their tool messages metadata; the rails treat a
    message without a record as a call that sent nothing (O6). A probe is a `RunScript` (`Effect.SCRIPT`), which
-   `message_metadata` would count as state-changing.
+   `message_metadata` would count as state-changing. (Done: records with the declared `READ` effect.)
 3. The design's per-tool `effect`, `exempt_from_budget` and `progress` flags for extra tools are not declared yet.
+   (Done: `ToolFlags`.)
 4. The factory does not check `NativeTool.build is None` itself; it is safe only because no spec is named
    `browser_find`.
 5. The probe page functions are cut out of the builder output by a regex; the switch can move them into their own
    constants when the old runtime helpers are deleted.
 6. browser-use still does not fill `tab_urls` / `current_tab`; `page_metadata` and `activate_page` fall back to the
-   page state's current context there (a tab cannot be picked by URL on browser-use).
+   page state's current context there (a tab cannot be picked by URL on browser-use). (Done; live test.)
 
 ## Rails on command records
 
@@ -1437,4 +1439,109 @@ gives the new ones the old names.
    surface-provided wording would remove it.
 3. The hint verb is the command type name (`TypeText not delivered`); a surface may want friendlier verbs.
 4. Helper tools (probes, find) return no record, so the guard compares their calls by tool name and arguments.
+   (Done: they return records; see "Helper infrastructure".)
 5. F1 (same-turn batches counted as a loop) is unchanged, as decided; a fix belongs to the benchmark phase.
+
+## Helper infrastructure (records, workspace, tabs, fresh observation, points, upload staging)
+
+Phase 4 helpers, the infrastructure the batch tool builds on (wave-4 review P4–P7, P9, P11; wave-1 L3; Q9): helper
+results carry command records, one shared step runs and records a command, the recall tool joins the extra tools,
+browser-use reports tab addresses and dialogs after navigation, `browser_find` searches a current observation,
+points carry the generation of their screenshot, and the Playwright MCP driver stages upload files. The old agent
+path is unchanged.
+
+### Decisions
+
+1. **`ToolFlags(effect, exempt_from_budget, progress)`** (P4, design §6) in `tool_factory.py`, declared by each extra
+   tool as its `flags` class attribute: probes and find `READ`, not exempt, progress (today's
+   `_is_browser_progress_tool` counts every `browser_*` helper); recall `exempt_from_budget=True` (today's
+   `_is_replan_exempt_tool`). The flags stay on the tools; the record carries only the effect.
+2. **Helper results carry a `CommandRecord` with the declared effect** (P4). A probe is a `RunScript`
+   (`Effect.SCRIPT`), but its record says `READ`, so `message_metadata` does not count it as a state change. The
+   payload moved under `data["content"]`; `render_payload_text` renders a non-string `content` as the JSON it
+   rendered before, so the model reads the same text. Find's record is an `Observe` with `dispatched` = whether it
+   observed and `value` = its answer; an argument error leaves no record (nothing was sent).
+3. **One shared step** (P7): `ToolContext.execute(action)` / `observe(command)` run through the session and record in
+   the page state. `CommandTool`, the probes and the page helpers use them; the batch tool will. `CommandRecord.of` /
+   `failed` build the records for `CommandTool` and the helpers alike.
+4. **`ToolContext.workspace` and `language`** (P5), keyword arguments of `ToolFactory.build` with defaults, so the
+   existing callers keep working. `language` is not in the review's wording; the recall tool's description is
+   language-dependent and the goldens are English, and `build_agent_parts` takes a `language` already. The default
+   `"cn"` is the recall tool's and `resolve_language`'s.
+5. **The recall tool is a subclass** (`RecallOffloadTool(BrowserOffloadRecallTool)`) taking the `ToolContext`; the old
+   tool and its module are untouched. It sends no command, so it has no record. The worker's golden has no recall
+   tool: the runner removes it with the probes.
+6. **browser-use tab fields from the tab rows the sidecar already sends** (P6): `tab_urls` from each row's `url`,
+   `current_tab` = the first row marked active (the sidecar's URL heuristic). No wire change for tabs. `OpenContext`
+   already listed the tabs; `SwitchContext` and `CloseContext` now list them too (one more request), so every tab
+   command reports the new tab list. A failure of that list after the switch is `dispatched=True`: the switch ran.
+7. **Navigation replies carry the open dialog** (L3): the sidecar's `_nav_result` adds `dialog` (the same
+   `_open_dialog()` the act replies use, cached target info only), the driver puts it in the result surface. Wire
+   version 3 → 4.
+8. **Fresh observation** (P9): `PageState.fresh_observation` is the last observation while it is of the current
+   generation and no command was recorded after it without a free observation, nor noted as dispatched and failed
+   (`note_dispatched`, called by `ToolContext.execute`). Any command counts, a `READ` one too: a probe is page
+   JavaScript whatever it declares. `browser_find` searches the fresh observation and observes when there is none.
+9. **Points carry the generation of the last screenshot** (P11 / O7): the page state records it whenever an
+   observation with a screenshot is recorded and keeps it across generations; `RefResolver.screenshot_generation`
+   hands it to the decoders (MCP point tools, generated point schemas). `PageState.check` then refuses a point on an
+   older screenshot like a stale element ref. Before the first screenshot the generation is empty and nothing is
+   checked, as before.
+10. **Upload staging inside the MCP driver** (Q9): `UploadFile` / `Drop` copy an existing file outside the server's
+    working directory to `output_dir/uploads/<12 hex>/<name>` (a directory per file keeps the original name the page
+    sees) and send the copy. Files inside, missing files and directories go as given: the server's refusal
+    (`DriverError(dispatched=False)`, K2) stays for them. The live suite runs without
+    `--allow-unrestricted-file-access`, so its upload and drop cases go through staging.
+
+### Rejected options
+
+- **Flags in `AgentTools` or in `CommandRecord`**: a map in `AgentTools` duplicates what the tools carry; record
+  fields would be defaults on every command tool, and the recall tool has no record.
+- **The record inside the probe payload dict**: the JSON the model reads would then contain it.
+- **Stamping points in `CommandTool` after decoding**: the policy rail and the batch tool decode too; the resolver is
+  the one place every decoder asks.
+- **Only non-`READ` commands outdating the observation**: probes run page JavaScript though declared `READ`; P9
+  speaks of any dispatched command.
+- **A new wire field for tab URLs**: the sidecar's tab rows already carry `url` and `active`.
+- **Staging into the server's `.playwright-mcp` output directory**: the driver's `output_dir` is the server's working
+  directory, an allowed root on every configuration; `uploads/` under it needs no knowledge of `--output-dir`.
+- **Deleting staged copies after the call**: a drop or file chooser may still read them; they live in the driver's
+  own output directory.
+- **A server flag** (`--allow-unrestricted-file-access`): Q9 keeps the server's file check.
+
+### Golden comparison (factory alone, `image_support=False`, `language="en"`)
+
+| View | Result |
+|---|---|
+| MCP `runner` | 14 / 14 byte for byte (factory tools with the probes and recall removed, as the worker does) |
+| MCP `core` | **17 / 18** byte for byte: only `browser_batch_interact` missing |
+| MCP other views | equal minus `browser_batch_interact` and the tools with no command (C7, C20, C25) |
+| browser-use, every view | as before plus both probes (C7); `browser_find` and `browser_recall_offload` identical |
+
+### Verification
+
+- Fail-before: each new test was run against the code before its feature commit in a separate worktree (no
+  stash): items 1–3 26 failures (the helper test module did not import), item 4 17, items 5–6 9, item 7 2 unit
+  failures and, live, the three upload / drop conformance cases refused with `File access denied`.
+- `surfaces/test_browser_helpers.py` (+11): flags, `ToolContext.execute` / `observe`, probe records (result,
+  failure, unchanged model text), recall over the context's workspace and language, find records (observed, reused,
+  failed), find observing again after a command without an observation and after a new generation.
+- `test_tool_factory.py` (+3): workspace and language reach extra tools; a point on an older screenshot never
+  reaches the driver; a dispatched failure outdates the observation.
+- `test_browser_page_state_record.py` (+4): freshness, `note_dispatched`, older generation, screenshot generation.
+- `drivers/playwright_mcp/test_tools.py` (+1), `drivers/playwright_mcp/test_driver.py` (+3),
+  `drivers/test_browser_use_driver.py` (+3, 6 updated), `drivers/test_browser_use_sidecar.py` (+8: every navigation
+  reply with and without a dialog), `snapshots/test_tool_factory_golden.py` (core 17 / 18).
+- `pytest tests/unit_tests/harness/tools/browser_move`: **2372 passed, 117 skipped, 2 xfailed**.
+- Live: Playwright MCP conformance **51 passed** (without unrestricted file access), browser-use conformance
+  **45 passed**, helpers **4 passed** (new: `activate_page` fronts a tab by its address on browser-use).
+
+### Known leftovers
+
+1. `browser_batch_interact` (next helpers task) makes `core` 18 / 18; it should run its steps through
+   `ToolContext.execute` and declare its flags.
+2. No rail reads `ToolFlags` yet; the switch moves `_is_browser_progress_tool`, `_is_replan_exempt_tool` and the
+   state-change checks onto them.
+3. The recall tool leaves no record; a rail sees its message as a call that sent nothing.
+4. Staged upload copies stay under `output_dir/uploads/`.
+5. browser-use's `current_tab` is the first tab whose URL is the page URL; two tabs at one URL are not told apart.

@@ -9,8 +9,8 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `helpers/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
-| Last revised | 2026-10-10 |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `helpers/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
+| Last revised | 2026-10-11 |
 | Related feature | [[F_07_browser-drivers]] |
 
 ## Scope
@@ -67,9 +67,12 @@ ref kinds (one `Click`, not `ClickElement` / `ClickPoint`); which kinds a driver
 `DriverInfo.actions`.
 
 `RefResolver` (protocol) is what a tool's argument decoder asks the runtime: `contexts` (the open contexts, in
-order), `current_context` (`None` when unknown), `resolve(model_id, generation) -> Ref` (the ref behind a
-runtime-minted element id; `ValueError` for an id it does not know) and `generation_of(ref) -> str` (the generation
-a driver ref was last seen in; the current one for a ref never seen). The page state implements it.
+order), `current_context` (`None` when unknown), `screenshot_generation` (the generation of the last screenshot,
+whose pixels a `PointRef` addresses; empty before the first), `resolve(model_id, generation) -> Ref` (the ref behind
+a runtime-minted element id; `ValueError` for an id it does not know) and `generation_of(ref) -> str` (the generation
+a driver ref was last seen in; the current one for a ref never seen). The page state implements it. A decoder builds
+every `PointRef` with `screenshot_generation` (the model sends no generation for a point), so a point taken on an
+older screenshot is stale like an element ref; an empty generation is never stale.
 
 ### Commands (`actions.py`, `surfaces/<name>/commands.py`)
 
@@ -593,7 +596,7 @@ outside `contexts` and a close with no current context are `ValueError` too. Sev
 decoder: `browser_mouse_click_xy` (`Click`), `browser_mouse_move_xy` (`Hover`), `browser_mouse_drag_xy` (`Drag`),
 `browser_mouse_wheel` (`Scroll`), `browser_pdf_save` (`GetPdf`), `browser_console_messages` (`GetConsole`),
 `browser_network_requests` (`GetNetwork`). `browser_find` is not a spec: it is the `FindTool` extra tool over the
-last observation (see "Helpers").
+current observation (see "Helpers").
 
 ### Renderer (`renderer.py`)
 
@@ -625,14 +628,23 @@ unchanged public API) to those of its tool names that a spec or the `browser_fin
 ### Helpers (`surfaces/browser/helpers/`)
 
 Browser tools and functions built on the driver session through a `ToolContext` (see "Tool factory"); every command
-they send is recorded in the page state with `page_state.record`. The runtime's own helpers (MCP code runner) still
-serve the agent; nothing calls these yet except the factory, which appends the three tools to every build.
+they send goes through `context.execute` / `context.observe`, which record it in the page state. The runtime's own
+helpers (MCP code runner) still serve the agent; nothing calls these yet except the factory, which appends the four
+tools (`EXTRA_TOOLS`) to every build.
+
+Each helper tool declares `flags: ToolFlags` (class attribute): the probes and find `ToolFlags()` (`READ`, not exempt
+from budgets, progress), the recall tool `ToolFlags(exempt_from_budget=True)`. A probe or find result is
+`ToolOutput(success, data={"content": <payload>, "command": CommandRecord}, error)`: the model reads `content` as
+before (a probe's payload dict is rendered as JSON, find's text as is), and `command_record` finds the record. The
+record's `effect` is the declared one (`READ`), not the command's: a probe runs `RunScript` but changes nothing the
+rails count.
 
 | Helper | Commands | Contract |
 |---|---|---|
 | `ProbeInteractivesTool` (`browser_probe_interactives`) | `RunScript(code=<page function>, args=<params>)`, a second time if the value is not a JSON object | card equals the runtime helper's; `max_items` 1–30 (default 30); the probe page function of `playwright_runtime/probes.py` without its `async (page) => page.evaluate(...)` wrapper; result dict as the runtime helper's (`ok`, `error`, `url`, `title`, `generation_id`, `count`, `elements`, `page_state`, `diagnostics`, `audit`) |
 | `ProbeCardsTool` (`browser_probe_cards`) | same | card equals the runtime helper's; `max_cards` 1–12 (default 12); selector cache records go in and out as before; primary links registered in `selector_primary_links` |
-| `FindTool` (`browser_find`) | none, or one `Observe` when the page state has no last observation | see below |
+| `FindTool` (`browser_find`) | none, or one `Observe` when the page state has no fresh observation | see below |
+| `RecallOffloadTool` (`browser_recall_offload`) | none | `BrowserOffloadRecallTool(context.workspace, language=context.language)`: card and behaviour of `offload_recall.py`; no record |
 | `probe_for_policy(context, source, params)` | `RunScript(code=source, args=params)`, up to two | the F_05 result: elements become targets, `generation_id` added; failure envelope `{"ok": False, "error", "elements": [], "page_state"}` on a `DriverError`, a refused script or a result with `ok: false` |
 | `activate_page(context, url) -> bool` | `Observe` when no context is known, then `SwitchContext(<tab whose URL is url, else the current context>)` | `False` on a `DriverError` or no context; the switch is recorded, so the generation advances |
 | `page_metadata(context) -> (dict, error)` | one `RunScript` (the page-measure function of the metadata script, no arguments) | `url`, `title` from the page state; `tabs` (`index`, `current`, `url`, `title`) from the last `BrowserContext` (current tab from `current_tab`, else the page state's current context; a tab URL from `tab_urls`, else the surface URL for the current tab); `page_position`, `semantic_state` from the script; `({}, error)` on a `DriverError` or an unparsable value |
@@ -640,20 +652,22 @@ serve the agent; nothing calls these yet except the factory, which appends the t
 A probe result whose `url` differs from the page state's (non-empty) URL resets the page state (new generation, no
 contexts) before its targets are registered: a script result does not report the address on every driver. Every
 dict in the result with `selector_hint` or `generation_id` gets the current generation id. A `DriverError` becomes
-the failure envelope (`browser_probe_* failed: <message>`); a task failure from the session propagates.
+the failure envelope (`browser_probe_* failed: <message>`) with `CommandRecord.failed` of the script; a task failure
+from the session propagates. The record of a result describes the last script sent (`value` = its raw value).
 
 `FindTool`: name `driver_info.tool_name_prefix + "browser_find"`; description and schema from
 `driver_info.native_tools["browser_find"]` when present (Playwright MCP: the server's, byte for byte), else the
 browser-dialect schema (`query`, `regex: bool`, `limit` 1–100 default 20, `generation_id`). Arguments: `text`
 (case-insensitive substring) or `regex` (a pattern, or `/pattern/flags` with `i`, `m`, `s`; `g` dropped), exactly
 one; in the browser-dialect form `query` is the text, or the pattern when `regex` is `true`, and a stale
-`generation_id` is refused. A bad argument is `### Error
-<message>` and sends nothing. The search runs over the last
-observation's `native_text`, inside its fenced `yaml` block when it has one. The answer is `### Result
-` + the
+`generation_id` is refused. A bad argument is `### Error`, a newline and the message, and sends nothing (no
+record). The search runs over `page_state.fresh_observation`, or a new `Observe` when there is none, over its
+`native_text`, inside its fenced `yaml` block when it has one. The answer is `### Result`, a newline and the
 server's text: `No matches found for <query>.`, or `Found N match(es) for <query>:` and one snippet per group of
 matches (each match with 3 lines of context, merged when they touch, under the lines of its ancestors, `...` where
 lines are skipped off the match paths), snippets separated by `----`; `<query>` is `"text"` or `/pattern/flags`.
+The record: `command=Observe`, `effect=READ`, `ok=True`, `dispatched` = whether it observed, `value` = the answer
+text; a `DriverError` while observing is the same error text with `CommandRecord.failed`.
 
 ## Runtime state and recovery (`playwright_runtime/`)
 
@@ -675,12 +689,18 @@ one counter; the text-snapshot methods (`register_ax_snapshot`, `replace_ax_snap
   elements replace the current generation's AX targets (same targets as a complete text snapshot). The surface
   context's `tabs` become `contexts`; `observation.context` becomes `current_context`.
 - `free_observations` counts observations that came with an `ActionResult` of a command other than `Observe`.
+- `fresh_observation`: `last_observation` while it is of the current generation and no command was recorded after
+  it without an observation, nor noted with `note_dispatched()` (a command that reached the surface and failed);
+  else `None`. A recorded observation (from `observe()` or free with a result) makes it fresh again.
+- `screenshot_generation`: the generation of the last recorded observation with a screenshot (`""` before the first);
+  kept across generations, so `check` refuses a point on an older screenshot.
 - `check(action)`: every ref in `iter_refs(action)` whose generation is older than the current one →
   `StaleRef(dispatched=False)`, one message per stale ref (`Stale AX ref e1 belongs to g0; current generation is
   g1.`). Refs with an empty generation and unknown refs of the current generation pass; the driver decides.
-- `RefResolver`: `contexts`, `current_context`, `generation_of(ref)` (the generation the ref was last registered in,
-  the current one for a ref never seen) and `resolve(target_id, generation)` (`resolve_target`, then `DriverRef` for
-  an AX target, `Locator(css)` for a probe target with a validated selector, `ValueError` otherwise).
+- `RefResolver`: `contexts`, `current_context`, `screenshot_generation`, `generation_of(ref)` (the generation the ref
+  was last registered in, the current one for a ref never seen) and `resolve(target_id, generation)`
+  (`resolve_target`, then `DriverRef` for an AX target, `Locator(css)` for a probe target with a validated selector,
+  `ValueError` otherwise).
 - `reset()`: a new generation and no contexts or last observation.
 
 ### Driver session (`driver_session.py`, `DriverSession`)
@@ -715,10 +735,11 @@ Tools without a decoder pass unchecked.
 
 ## Tool factory (`playwright_runtime/tool_factory.py`)
 
-`ToolFactory(profile, driver_info).build(capabilities, *, image_support, session, page_state) -> AgentTools`
-turns the selected tool specs into one `CommandTool` each. `capabilities` are resolved entry names (the caller
-adds `core`, as `resolve_browser_capabilities` does). The module names no surface, driver or tool (architecture
-tests). No agent uses it yet.
+`ToolFactory(profile, driver_info).build(capabilities, *, image_support, session, page_state, workspace=None,
+language="cn") -> AgentTools` turns the selected tool specs into one `CommandTool` each; `workspace` and `language`
+only reach the `ToolContext`. `capabilities` are resolved entry names (the caller adds `core`, as
+`resolve_browser_capabilities` does). The module names no surface, driver or tool (architecture tests). No agent
+uses it yet.
 
 ### Selection and the four rules
 
@@ -732,8 +753,9 @@ For each entry, `profile.capability_tools[entry]` gives the spec names in order 
 3. **Profile form.** Else `spec.schema` and `spec.build`, with `spec.description`, else the first
    `driver_info.tool_hints` entry of the spec's commands, else the command's docstring.
 4. **Generated.** Else, for a spec with one command and ref kinds the driver accepts: a schema with `ref: string`
-   (`DriverRef`), `x`, `y: integer` (`PointRef`), `css: string` (`Locator`), and a decoder that builds the command
-   from the one given. A spec with no ref kinds to generate from is skipped.
+   (`DriverRef`), `x`, `y: integer` (`PointRef`, with the resolver's `screenshot_generation`), `css: string`
+   (`Locator`), and a decoder that builds the command from the one given. A spec with no ref kinds to generate from
+   is skipped.
 
 The tool name is `driver_info.tool_name_prefix + spec.name`. Without `image_support`, a spec whose only command is
 `Observe` and whose decoder, called with no arguments, asks for a screenshot is not emitted (today's rule for
@@ -754,8 +776,8 @@ One instance per emitted tool, a core `Tool` (`ToolCard(id=name, name, descripti
 1. `action = build(args, page_state)`; a `ValueError` returns the failure `### Error\n<message>` and nothing is sent;
 2. `page_state.check(action)`; a `StaleRef` makes one `session.observe(Observe())`, recorded, and the error is
    rendered with that fresh observation; the driver never sees the stale command;
-3. `session.execute(action)`, or `session.observe(action)` for an `Observe`;
-4. `page_state.record(action, outcome)`;
+3. `context.execute(action)`, or `context.observe(action)` for an `Observe` (see `ToolContext`): the session runs it;
+4. the same call records it with `page_state.record(action, outcome)`;
 5. render: an `ActionResult` with `renderer.result`; an observation with `renderer.observation` when the tool's only
    command is `Observe` and it is not a screenshot-only tool, else with `renderer.result` on `ActionResult(ok=True,
    value=<screenshot>, observation, surface)` (the tab list of `browser_tabs list`; the image alone for a
@@ -774,7 +796,7 @@ Frozen; never parsed from text.
 | Field | Value |
 |---|---|
 | `command` | the command type |
-| `effect` | its `Effect` |
+| `effect` | its `Effect`; an extra tool may give its declared one instead |
 | `ok` | `ActionResult.ok`; `False` for an error |
 | `dispatched` | `True` for a result; `error.dispatched` for an error |
 | `context_changed` | `ActionResult.context_changed` |
@@ -790,15 +812,25 @@ dispatched`, `state_changed = context_changed or (effect != READ and (ok or erro
 False` (denials come from `ActionPolicy`). A tool cannot set `ToolMessage.metadata` (core builds the message from
 `render_for_llm` after `invoke`); a rail copies `message_metadata` onto it in `after_tool_call`.
 
-`command_record(tool_result)` returns the record from a tool output (`ToolCallInputs.tool_result` in a rail), or
-`None`: arguments that decoded to no command, or a tool that is not a `CommandTool`. A rail treats a tool message
-without a record as a failed call that sent nothing.
+`CommandRecord.of(action, result, *, effect=None, value=None)` builds the record of a result,
+`CommandRecord.failed(action, error, page_state, *, effect=None)` the record of a `DriverError`; `CommandTool` and the
+helpers use both. `command_record(tool_result)` returns the record from a tool output (`ToolCallInputs.tool_result`
+in a rail), or `None`: arguments that decoded to no command, a tool that sends no command (recall), or a tool that
+leaves no record. A rail treats a tool message without a record as a failed call that sent nothing.
 
 ### `ToolContext`
 
-`ToolContext(driver, page_state, renderer, driver_info, settings, image_support)`: what `profile.extra_tools` and
-`profile.rails` factories receive; `driver` is the `DriverSession`. The factory builds it from its arguments,
-`profile.renderer` and `profile.settings`.
+`ToolContext(driver, page_state, renderer, driver_info, settings, image_support, workspace=None, language="cn")`:
+what `profile.extra_tools` and `profile.rails` factories receive; `driver` is the `DriverSession`. The factory builds
+it from its arguments, `profile.renderer` and `profile.settings`.
+
+- `await context.execute(action)`: `driver.execute`, then `page_state.record`; a `DriverError` with
+  `dispatched=True` is noted (`page_state.note_dispatched()`) before it propagates. The one way a tool or helper runs
+  a command (the batch tool too).
+- `await context.observe(command)`: `driver.observe`, then `page_state.record`.
+
+`ToolFlags(effect=READ, exempt_from_budget=False, progress=True)`: what an extra tool declares, as its `flags`
+attribute, for the rails that today decide by tool name (state change, replan budgets, progress).
 
 ## Rails on command records
 
@@ -869,12 +901,14 @@ native_text, surface}`, `versions` from the sidecar's `connect` reply.
   `Unsupported(dispatched=False)` (for `FillForm`, before any field is filled). The sidecar's index refs
   (`IndexRef`) stay internal; no handler accepts them.
 - `observe()` fills `elements`, `native_text` (browser-use's own page text), `screenshot` (a separate full-page
-  capture when `full_page`) and `BrowserContext` (url, title, tabs, PDF viewer, scroll pixels). The title is read
-  from `document.title`, because browser-use's own title lags behind it; the sidecar's title is kept when the
-  page runs no script. While a dialog is open the sidecar answers `observe` from browser-use's cached target info
-  only (URL, title, tabs) with `dialog` and no elements; the driver then runs no script and takes no screenshot.
-  The focused context is the first tab whose URL is the page URL. `generation` stays empty.
-- Element and keyboard commands run in the sidecar as one action each (wire version 3). The action resolves its
+  capture when `full_page`) and `BrowserContext` (url, title, tabs, `tab_urls`, `current_tab`, PDF viewer, scroll
+  pixels). The title is read from `document.title`, because browser-use's own title lags behind it; the sidecar's
+  title is kept when the page runs no script. While a dialog is open the sidecar answers `observe` from
+  browser-use's cached target info only (URL, title, tabs) with `dialog` and no elements; the driver then runs no
+  script and takes no screenshot.
+  The focused context (`current_tab`) is the first tab whose URL is the page URL; with none, `current_tab` is
+  `None` and the context has an empty id. `generation` stays empty.
+- Element and keyboard commands run in the sidecar as one action each (wire version 4). The action resolves its
   ref, then sends its input as a task and watches the page while it runs:
   - Dialogs. The sidecar owns `Page.javascriptDialogOpening` (it takes it back from browser-use's auto-accepting
     popups watchdog before every action and observation). When a dialog opens that `HandleDialog` did not arm,
@@ -898,6 +932,11 @@ native_text, surface}`, `versions` from the sidecar's `connect` reply.
   `CloseContext` always; other commands when the sidecar reports `document_changed`, a dialog, or new pages (which
   become `opened_contexts`). `detail` names an opened dialog. `surface` is `BrowserContext(url, dialog)` when a
   dialog is open after the command (one it opened, or one that refused it), else `None`.
+- Navigation replies (`Navigate`, `Back`, and the sidecar's `go_forward` / `reload`) carry `dialog`, the dialog open
+  when the reply is built; `surface` is `BrowserContext(url, title, dialog)`. `OpenContext`, `SwitchContext` and
+  `CloseContext` list the tabs after the command (`list_tabs`, one more request) and report `tabs`, `tab_urls` and
+  `current_tab` in `surface` (switch and close: the title of the active tab); a failure of that list after a switch
+  or close is `dispatched=True`, since the tab command already ran.
 - Errors: each sidecar error code maps to one typed error. `dispatched=False` only for errors the sidecar raises
   before any input reaches the page: `StaleIndexError` and `StaleNodeError` (→ `StaleRef`; a node the CDP says is
   not in the document, "does not belong to the document" / "No node with given id"), `ElementNotFound`,
@@ -1005,9 +1044,12 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
 - **Sensitive commands.** `TypeText(sensitive=True)`, `RunScript(sensitive=True)` and a `FillForm` with a sensitive
   field are decoded with `sensitive=True`, so their `detail` has no echoed code; the error message of a failed
   sensitive call can still quote it, and `Tracing` does not record that message.
-- **Files.** The server reads upload and drop files only under its working directory and its output directory;
-  any other path is refused with `File access denied: … is outside allowed roots` (decoded as
-  `DriverError(dispatched=False)`), unless the server runs with `--allow-unrestricted-file-access`.
+- **Files.** The server reads upload and drop files only under its working directory and its output directory.
+  `UploadFile` and `Drop` stage each path that is an existing file outside the working directory (`output_dir`,
+  relative paths resolved against it): it is copied to `output_dir/uploads/<12 hex>/<file name>` (the page sees the
+  original name) and the copy's path is sent. Paths inside the working directory, missing files and directories go
+  as given; the server refuses those outside with `File access denied: … is outside allowed roots` (decoded as
+  `DriverError(dispatched=False)`). Staged copies are not removed.
 - Every handler sends one tool call and decodes it with `decode(..., before=<last BrowserContext>)` in a worker
   thread (the decoder may read the linked snapshot file). Commands and tools: Click → `browser_click` /
   `browser_mouse_click_xy`; TypeText → `browser_type`; PressKey → `browser_press_key`; Hover → `browser_hover` /
@@ -1025,7 +1067,7 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
 driver's handler: decoding a call the driver sent and sending the command again gives the same arguments. A
 `target` that matches `ARIA_REF` becomes `DriverRef(target, resolver.generation_of(target))`, any other target
 `Locator(css=target, text=None, generation=resolver.generation_of(target))`; coordinates become
-`PointRef(round(x), round(y), "")` (the model sends no generation for a point).
+`PointRef(round(x), round(y), resolver.screenshot_generation)` (the model sends no generation for a point).
 
 | Server tool | Command |
 |---|---|
