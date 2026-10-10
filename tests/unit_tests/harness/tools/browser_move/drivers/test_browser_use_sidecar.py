@@ -10,7 +10,7 @@ import inspect
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -321,6 +321,50 @@ def test_an_armed_dialog_is_handled_and_still_reported():
         assert reply["dialog_opened"] == {"type": "confirm", "message": "Proceed?"}
         assert reply["dialog"] is None, "the armed dialog is already handled"
         assert page.dialog_closed.result() is False
+
+    asyncio.run(scenario())
+
+
+class _DoneEvent:
+    def __await__(self) -> Any:
+        return iter(())
+
+    async def event_result(self, **_kwargs: Any) -> None:
+        return None
+
+
+@pytest.fixture
+def browser_use_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    events = ModuleType("browser_use.browser.events")
+    for name in ("NavigateToUrlEvent", "GoBackEvent", "GoForwardEvent", "RefreshEvent"):
+        setattr(events, name, lambda **_fields: _DoneEvent())
+    monkeypatch.setitem(sys.modules, "browser_use", ModuleType("browser_use"))
+    monkeypatch.setitem(sys.modules, "browser_use.browser", ModuleType("browser_use.browser"))
+    monkeypatch.setitem(sys.modules, "browser_use.browser.events", events)
+
+
+@pytest.mark.parametrize("dialog", [None, {"type": "alert", "message": "Welcome"}])
+@pytest.mark.parametrize("navigation", ["navigate", "go_back", "go_forward", "reload"])
+def test_navigation_replies_carry_the_dialog_the_loaded_page_opened(browser_use_events, navigation, dialog):
+    async def scenario() -> None:
+        client = FakeCdp()
+        Page(client)
+        adapter = _adapter(client)
+        await _quick(adapter.click(BUTTON))  # the dialog listener is ours from the first action on
+
+        def dispatch(event: _DoneEvent) -> _DoneEvent:
+            if dialog is not None:
+                client.emit("Page.javascriptDialogOpening", dialog)
+            return event
+
+        adapter._session.event_bus = SimpleNamespace(dispatch=dispatch)
+        adapter._session.get_current_page_title = AsyncMock(return_value="Scene")
+        call = (
+            adapter.navigate(url="http://x/next.html") if navigation == "navigate" else getattr(adapter, navigation)()
+        )
+        reply = await _quick(call)
+        assert reply["dialog"] == dialog
+        await adapter.close()
 
     asyncio.run(scenario())
 

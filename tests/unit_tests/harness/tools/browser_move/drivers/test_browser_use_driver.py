@@ -188,8 +188,6 @@ WIRE_CASES = [
     (Drag(E1, E2), "drag", {"source": WIRE_E1, "target": WIRE_E2, "steps": 10, "delay_ms": 0}),
     (SelectOption(E1, ("Blue",)), "select_option", {"ref": WIRE_E1, "value": "Blue", "label": None}),
     (HandleDialog(accept=False, prompt_text="x"), "handle_dialog", {"accept": False, "prompt_text": "x"}),
-    (SwitchContext(TAB_2), "switch_tab", {"tab": WIRE_TAB_2}),
-    (CloseContext(TAB_2), "close_tab", {"tab": WIRE_TAB_2}),
 ]
 
 
@@ -220,6 +218,13 @@ def test_navigation_handler_sends_one_wire_request(action, method, params):
     assert _calls(request) == [(method, params)]
     assert result.ok is True
     assert result.surface == BrowserContext(url="http://x/", title="X")
+
+
+@pytest.mark.parametrize("action", [Navigate("http://x/"), Back()])
+def test_a_dialog_the_loaded_page_opened_is_in_the_navigation_result(action):
+    driver, _request = _driver({**NAV_SAME_URL, "dialog": {"type": "alert", "message": "Welcome"}})
+    result = asyncio.run(driver.execute(action))
+    assert result.surface == BrowserContext(url="http://x/", title="X", dialog="alert: Welcome")
 
 
 @pytest.mark.parametrize(
@@ -311,6 +316,13 @@ def test_open_context_reports_the_new_tab():
     assert result.opened_contexts == (opened,)
     assert result.value == opened
     assert result.context_changed is True
+    assert result.surface == BrowserContext(
+        url="http://y/",
+        title="Y",
+        tabs=(ContextRef(id="T1", kind="tab", title="X"), opened),
+        tab_urls=("http://x/", "http://y/"),
+        current_tab=0,
+    )
 
 
 def test_open_context_without_url_opens_a_blank_tab():
@@ -512,16 +524,44 @@ def test_pages_opened_by_the_command_are_opened_contexts():
     assert result.context_changed is True
 
 
+TABS_ON_2 = [
+    {"target_id": "T1", "url": "http://x/", "title": "X", "active": False},
+    {"target_id": "T2", "url": "http://y/", "title": "Second", "active": True},
+]
+
+
 def test_switch_context_always_changes_context():
-    driver, _request = _driver(dict(ACT_OK))
+    driver, _request = _driver(dict(ACT_OK), TABS_ON_2)
     assert asyncio.run(driver.execute(SwitchContext(TAB_2))).context_changed is True
 
 
+def test_switch_context_reports_the_tabs_after_the_switch():
+    driver, request = _driver({**ACT_OK, "url": "http://y/"}, TABS_ON_2)
+    result = asyncio.run(driver.execute(SwitchContext(TAB_2)))
+    assert _calls(request) == [("switch_tab", {"tab": WIRE_TAB_2}), ("list_tabs", {})]
+    assert result.surface == BrowserContext(
+        url="http://y/",
+        title="Second",
+        tabs=(ContextRef(id="T1", kind="tab", title="X"), TAB_2),
+        tab_urls=("http://x/", "http://y/"),
+        current_tab=1,
+    )
+
+
 def test_close_context_changes_context_and_names_the_closed_one():
-    driver, _request = _driver(dict(ACT_OK))
+    driver, request = _driver(dict(ACT_OK), TABS_ON_2[:1])
     result = asyncio.run(driver.execute(CloseContext(TAB_2)))
+    assert _calls(request) == [("close_tab", {"tab": WIRE_TAB_2}), ("list_tabs", {})]
     assert result.context_changed is True
     assert result.source_context == TAB_2
+    assert result.surface.tab_urls == ("http://x/",) and result.surface.current_tab is None
+
+
+def test_a_tab_list_that_fails_after_the_switch_counts_as_dispatched():
+    driver, _request = _driver(dict(ACT_OK), _sidecar_error("DriverConnectionLost"))
+    with pytest.raises(DriverError) as raised:
+        asyncio.run(driver.execute(SwitchContext(TAB_2)))
+    assert raised.value.dispatched is True
 
 
 TITLE_CALL = (
@@ -593,6 +633,8 @@ def test_observe_maps_the_sidecar_observation():
         url="http://x/",
         title="X",
         tabs=(ContextRef(id="T1", kind="tab", title="X"), ContextRef(id="T2", kind="tab", title="Y")),
+        tab_urls=("http://x/", "http://y/"),
+        current_tab=0,
         is_pdf_viewer=False,
         pixels_above=10,
         pixels_below=900,
@@ -620,7 +662,9 @@ def test_observe_without_screenshot_has_none():
 def test_observe_without_an_active_tab_falls_back_to_the_page():
     tabs = [{"target_id": "T1", "url": "http://other/", "title": "O", "active": False}]
     driver, _request = _driver(_wire_observation(tabs=tabs), "X")
-    assert asyncio.run(driver.observe(Observe())).context == ContextRef(id="", kind="tab", title="X")
+    observation = asyncio.run(driver.observe(Observe()))
+    assert observation.context == ContextRef(id="", kind="tab", title="X")
+    assert (observation.surface.tab_urls, observation.surface.current_tab) == (("http://other/",), None)
 
 
 def test_observe_twice_on_an_unchanged_page_gives_the_same_fingerprint():
@@ -658,7 +702,12 @@ def test_observe_while_a_dialog_is_open_runs_no_script_and_takes_no_screenshot()
     assert (observation.elements, observation.screenshot) == ((), None)
     assert observation.context == ContextRef(id="T1", kind="tab", title="X")
     assert observation.surface == BrowserContext(
-        url="http://x/", title="X", tabs=(ContextRef(id="T1", kind="tab", title="X"),), dialog="alert: Saved"
+        url="http://x/",
+        title="X",
+        tabs=(ContextRef(id="T1", kind="tab", title="X"),),
+        tab_urls=("http://x/",),
+        current_tab=0,
+        dialog="alert: Saved",
     )
 
 

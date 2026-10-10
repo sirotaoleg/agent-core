@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from openjiuwen.harness.tools.browser_move.contract import Driver, Observe
+from openjiuwen.harness.tools.browser_move.contract import CloseContext, Driver, Observe
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import create_browser_use_driver
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.driver import create_playwright_mcp_driver
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.result import result_text
@@ -21,9 +21,14 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session imp
 from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import ToolContext
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
-from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate
+from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate, OpenContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
-from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import FindTool, ProbeInteractivesTool
+from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
+from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import (
+    FindTool,
+    ProbeInteractivesTool,
+    activate_page,
+)
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import MESSAGES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.renderer import BrowserRenderer
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene import PAGES
@@ -124,3 +129,23 @@ class TestHelpersOnBrowserUse:
     ) -> None:
         driver = create_browser_use_driver(chrome_device, BrowserSettings.from_process_env())
         _assert_probe_found_the_save_button(_on_page(driver, scene_url, _probe))
+
+    def test_activate_page_fronts_the_tab_at_an_address(
+        self,
+        chrome_device: ProvisionedDevice,  # noqa: F811
+        scene_url: str,
+    ) -> None:
+        driver = create_browser_use_driver(chrome_device, BrowserSettings.from_process_env())
+        second = scene_url.replace("index.html", "second.html")
+
+        async def front_the_first(context: ToolContext) -> tuple[bool, BrowserContext]:
+            await context.execute(OpenContext(second))
+            listed = (await context.observe(Observe())).surface
+            fronted = await activate_page(context, scene_url)
+            surface = (await context.observe(Observe())).surface
+            await context.execute(CloseContext(listed.tabs[listed.tab_urls.index(second)]))
+            return fronted, surface
+
+        fronted, surface = _on_page(driver, scene_url, front_the_first)
+        assert fronted and surface.url == scene_url
+        assert surface.tab_urls[surface.current_tab] == scene_url
