@@ -1,6 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""``assemble_driver`` live: managed Chrome from the provisioner, the browser-use driver over it, and ``close()``."""
+"""``assemble_driver`` live: managed Chrome from the provisioner, each driver over it, and ``close()``."""
 
 from __future__ import annotations
 
@@ -26,6 +26,15 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.config import Browse
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
 
 _SIDECAR_PYTHON_ENV = "BROWSER_USE_SIDECAR_PYTHON"
+
+
+def _mcp_skip_reason() -> str | None:
+    settings = BrowserSettings.from_process_env()
+    if shutil.which(settings.mcp_command) is None:
+        return f"{settings.mcp_command!r} is not on PATH (it starts @playwright/mcp)"
+    if not _candidate_chrome_binaries(settings.browser_binary_candidates):
+        return "no Chrome binary found"
+    return None
 
 
 def _skip_reason() -> str | None:
@@ -77,6 +86,47 @@ def _chrome_processes(user_data_dir: Path) -> list[str]:
     return [line for line in lines if needle in line.lower().replace("\\", "/")]
 
 
+def _process_table() -> set[tuple[int, int, str]]:
+    """``(pid, parent pid, command line)`` of every running process."""
+    if os.name == "nt":
+        script = (
+            "Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, CommandLine | "
+            "ConvertTo-Json -Compress"
+        )
+        completed = subprocess.run(  # noqa: S603, S607 - fixed read-only query
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        rows = json.loads(completed.stdout or "[]")
+        return {(row["ProcessId"], row["ParentProcessId"], row["CommandLine"] or "") for row in rows}
+    completed = subprocess.run(  # noqa: S603, S607 - fixed read-only query
+        ["ps", "-eo", "pid=,ppid=,args="], capture_output=True, text=True, timeout=30, check=False
+    )
+    table = set()
+    for line in completed.stdout.splitlines():
+        pid, ppid, args = (line.split(None, 2) + [""])[:3]
+        table.add((int(pid), int(ppid), args))
+    return table
+
+
+def _descendants(table: set[tuple[int, int, str]], root: int) -> set[tuple[int, str]]:
+    found: set[tuple[int, str]] = set()
+    parents = {root}
+    while parents:
+        children = {(pid, command) for pid, ppid, command in table if ppid in parents and pid not in parents}
+        children -= found
+        found |= children
+        parents = {pid for pid, _ in children}
+    return found
+
+
+def _alive(processes: set[tuple[int, str]]) -> set[tuple[int, str]]:
+    return processes & {(pid, command) for pid, _, command in _process_table()}
+
+
 def _eventually(condition: Callable[[], bool], timeout_s: float = 15.0) -> bool:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
@@ -118,6 +168,49 @@ def test_managed_chrome_and_browser_use_start_through_assemble_driver_and_close_
         assert isinstance(observation.surface, BrowserContext)
         assert observation.surface.url == "about:blank"
         assert _eventually(lambda: not _cdp_ready(endpoint)), f"{endpoint} still answers after close()"
+        assert _eventually(lambda: not _chrome_processes(user_data_dir)), _chrome_processes(user_data_dir)
+    finally:
+        shutil.rmtree(user_data_dir, ignore_errors=True)
+
+
+@pytest.mark.live
+@pytest.mark.skipif(_mcp_skip_reason() is not None, reason=_mcp_skip_reason() or "")
+def test_managed_chrome_and_playwright_mcp_start_through_assemble_driver_and_close_stops_both(tmp_path: Path) -> None:
+    user_data_dir = tmp_path / "chrome-profile"
+    environ = {
+        **os.environ,
+        "BROWSER_DRIVER": "playwright_mcp",
+        "BROWSER_PROVISIONING": "managed",
+        "BROWSER_MANAGED_PORT": str(_free_port()),
+        "BROWSER_MANAGED_USER_DATA_DIR": str(user_data_dir),
+        "BROWSER_MANAGED_KILL_EXISTING": "false",
+        "BROWSER_MANAGED_ARGS": "--headless=new --window-size=1280,900",
+        "BROWSER_PROFILE_NAME": "assembly-live",
+        "BROWSER_PROFILE_STORE_PATH": str(tmp_path / "profiles.json"),
+        "PLAYWRIGHT_MCP_ARGS": "-y @playwright/mcp@0.0.78",
+        "PLAYWRIGHT_RUNTIME_MCP_CWD": str(tmp_path / "mcp"),
+    }
+    (tmp_path / "mcp").mkdir()
+
+    async def run():
+        assembly = await assemble_driver(CoreSettings.from_env(environ), environ)
+        try:
+            started = _descendants(_process_table(), os.getpid())
+            assert _cdp_ready(assembly.device.endpoint)
+            assert assembly.stack.info.name == "playwright_mcp"
+            assert assembly.stack.info.versions["@playwright/mcp"] == "0.0.78"
+            return assembly.device.endpoint, started, await assembly.stack.observe(Observe())
+        finally:
+            await assembly.close()
+
+    try:
+        endpoint, started, observation = asyncio.run(run())
+
+        assert any("@playwright" in command for _, command in started), started
+        assert isinstance(observation.surface, BrowserContext)
+        assert observation.surface.url == "about:blank"
+        assert _eventually(lambda: not _cdp_ready(endpoint)), f"{endpoint} still answers after close()"
+        assert _eventually(lambda: not _alive(started)), _alive(started)
         assert _eventually(lambda: not _chrome_processes(user_data_dir)), _chrome_processes(user_data_dir)
     finally:
         shutil.rmtree(user_data_dir, ignore_errors=True)
