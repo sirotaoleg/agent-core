@@ -17,6 +17,7 @@ from openjiuwen.core.foundation.tool.schema import ToolOutput
 
 from ..contract import (
     Action,
+    ActionIntercepted,
     ActionResult,
     ActionTimeout,
     ContentBlock,
@@ -38,6 +39,7 @@ from ..contract import (
     SurfaceProfile,
     ToolSpec,
 )
+from ..drivers.middleware import masked
 from .driver_session import DriverSession
 from .page_state import BrowserPageState
 
@@ -60,7 +62,7 @@ class ToolContext:
 
 @dataclass(frozen=True)
 class CommandRecord:
-    """What one tool call did, typed for the rails; ``error`` is the ``DriverError`` type name."""
+    """What one tool call did, for the rails; ``action`` is masked, an ``Observe`` keeps its elements in ``value``."""
 
     command: type[Action]
     effect: Effect
@@ -68,9 +70,11 @@ class CommandRecord:
     dispatched: bool
     context_changed: bool = False
     error: str | None = None
+    blocked_by: str | None = None
     surface: SurfaceContext | None = None
     value: Any = field(default=None, hash=False)
     generation: str = ""
+    action: Action | None = None
 
     @property
     def message_metadata(self) -> dict[str, bool]:
@@ -97,11 +101,14 @@ class AgentTools:
 class CommandTool(Tool):
     """One model-facing tool: its arguments become a command run on the driver session, its outcome rendered text."""
 
-    def __init__(self, card: ToolCard, build: Builder, context: ToolContext, *, renders_observation: bool) -> None:
+    def __init__(
+        self, card: ToolCard, build: Builder, context: ToolContext, *, renders_observation: bool, image_source: str
+    ) -> None:
         super().__init__(card)
         self._build = build
         self._context = context
         self._renders_observation = renders_observation
+        self._image_source = image_source
 
     async def invoke(self, inputs: Mapping[str, Any], **kwargs: Any) -> ToolOutput:
         del kwargs
@@ -121,7 +128,7 @@ class CommandTool(Tool):
             result = page_state.record(action, await self._context.driver.execute(action))
         except DriverError as error:
             return self._failure(action, error, None)
-        return self._output(action, result, self._context.renderer.result(action, result))
+        return self._output(action, result, result.value, self._context.renderer.result(action, result))
 
     async def stream(self, inputs: Mapping[str, Any], **kwargs: Any) -> AsyncIterator[ToolOutput]:
         yield await self.invoke(inputs, **kwargs)
@@ -136,9 +143,9 @@ class CommandTool(Tool):
         )
         renderer = self._context.renderer
         blocks = renderer.observation(observation) if self._renders_observation else renderer.result(action, result)
-        return self._output(action, result, blocks)
+        return self._output(action, result, observation.elements, blocks)
 
-    def _output(self, action: Action, result: ActionResult, blocks: tuple[ContentBlock, ...]) -> ToolOutput:
+    def _output(self, action: Action, result: ActionResult, value: Any, blocks: tuple[ContentBlock, ...]) -> ToolOutput:
         record = CommandRecord(
             command=type(action),
             effect=action.effect,
@@ -146,8 +153,9 @@ class CommandTool(Tool):
             dispatched=True,
             context_changed=result.context_changed,
             surface=result.surface,
-            value=result.value,
+            value=value,
             generation=result.generation,
+            action=masked(action),
         )
         data = self._data(blocks, record)
         return ToolOutput(success=result.ok, data=data, error=None if result.ok else data["content"])
@@ -159,8 +167,10 @@ class CommandTool(Tool):
             ok=False,
             dispatched=error.dispatched,
             error=type(error).__name__,
+            blocked_by=error.by if isinstance(error, ActionIntercepted) else None,
             surface=self._context.page_state.surface_context,
             generation=self._context.page_state.generation_id,
+            action=masked(action),
         )
         data = self._data(self._context.renderer.error(action, error, observation), record)
         return ToolOutput(success=False, data=data, error=data["content"])
@@ -181,11 +191,18 @@ class CommandTool(Tool):
         encoded = base64.b64encode(image.png).decode("ascii")
         return {
             "type": "image",
-            "source": self._context.driver_info.name,
+            "source": self._image_source,
             "source_path": self.card.name,
             "mime_type": "image/png",
             "data_url": f"data:image/png;base64,{encoded}",
         }
+
+
+def command_record(tool_result: Any) -> CommandRecord | None:
+    """The record a ``CommandTool`` left in its output; ``None`` for a call that decoded to no command."""
+    data = getattr(tool_result, "data", None)
+    record = data.get("command") if isinstance(data, Mapping) else None
+    return record if isinstance(record, CommandRecord) else None
 
 
 class ToolFactory:
@@ -216,10 +233,15 @@ class ToolFactory:
             if emitted is None:
                 continue
             card, build = emitted
-            observe_only = spec.commands == (Observe,)
-            if observe_only and not image_support and self._builds_screenshot(build):
+            screenshot_only = spec.commands == (Observe,) and self._builds_screenshot(build)
+            if screenshot_only and not image_support:
                 continue
-            tools.append(CommandTool(card, build, context, renders_observation=observe_only))
+            renders_observation = spec.commands == (Observe,) and not screenshot_only
+            tools.append(
+                CommandTool(
+                    card, build, context, renders_observation=renders_observation, image_source=self._profile.name
+                )
+            )
             builders[card.name] = build
             if spec.prompt_section:
                 sections.append(spec.prompt_section)
@@ -344,4 +366,4 @@ def _generated_build(spec: ToolSpec) -> Builder:
     return build
 
 
-__all__ = ["AgentTools", "CommandRecord", "CommandTool", "ToolContext", "ToolFactory"]
+__all__ = ["AgentTools", "CommandRecord", "CommandTool", "ToolContext", "ToolFactory", "command_record"]

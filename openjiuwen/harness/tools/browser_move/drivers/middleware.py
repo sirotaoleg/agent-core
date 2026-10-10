@@ -99,13 +99,26 @@ def _is_sensitive(command: Any) -> bool:
     return bool(getattr(command, "sensitive", False) and getattr(command, "__sensitive_fields__", ()))
 
 
-def _traced(value: Any) -> Any:
+def masked(value: _T) -> _T:
+    """``value`` with the ``__sensitive_fields__`` of every sensitive command, or part of one, set to ``MASK``."""
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         hidden = value.__sensitive_fields__ if _is_sensitive(value) else ()
-        return {
-            item.name: MASK if item.name in hidden else _traced(getattr(value, item.name))
+        changes = {
+            item.name: MASK if item.name in hidden else masked(getattr(value, item.name))
             for item in dataclasses.fields(value)
+            if item.init
         }
+        return dataclasses.replace(value, **changes)
+    if isinstance(value, (tuple, list)):
+        return type(value)(masked(item) for item in value)
+    if isinstance(value, Mapping):
+        return {key: masked(item) for key, item in value.items()}
+    return value
+
+
+def _traced(value: Any) -> Any:
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {item.name: _traced(getattr(value, item.name)) for item in dataclasses.fields(value)}
     if isinstance(value, (tuple, list)):
         return [_traced(item) for item in value]
     if isinstance(value, Mapping):
@@ -143,7 +156,7 @@ class Tracing(_Wrapper):
 
     @staticmethod
     def _command_record(call: str, command: Action) -> dict[str, Any]:
-        return {"call": call, "command": type(command).__name__, "args": _traced(command)}
+        return {"call": call, "command": type(command).__name__, "args": _traced(masked(command))}
 
     @staticmethod
     def _error_record(error: DriverError, command: Action) -> dict[str, Any]:
@@ -154,4 +167,4 @@ class Tracing(_Wrapper):
         return record
 
 
-__all__ = ["MASK", "RetryOnStale", "Timeouts", "TraceSink", "Tracing"]
+__all__ = ["MASK", "RetryOnStale", "Timeouts", "TraceSink", "Tracing", "masked"]
