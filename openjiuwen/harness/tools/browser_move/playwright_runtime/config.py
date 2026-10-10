@@ -391,6 +391,17 @@ class CoreSettings:
     def from_process_env(cls) -> CoreSettings:
         return cls.from_env(os.environ)
 
+    @classmethod
+    def logging_from_process_env(cls) -> CoreSettings:
+        """Default settings with only the log fields read, so a bad unrelated variable cannot break logging."""
+        environ = os.environ
+        return cls(
+            log_file=_log_file(environ),
+            log_level=_log_level(environ),
+            log_mirror_common=_log_flag(environ, "OPENJIUWEN_BROWSER_AGENT_LOG_MIRROR_COMMON"),
+            log_audit_raw=_log_flag(environ, "OPENJIUWEN_BROWSER_AGENT_AUDIT_RAW"),
+        )
+
 
 def process_environ() -> dict[str, str]:
     """A snapshot of the process environment, for entry points and child-process environments."""

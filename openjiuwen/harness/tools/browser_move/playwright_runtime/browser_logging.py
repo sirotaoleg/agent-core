@@ -43,7 +43,7 @@ def get_browser_agent_logger() -> logging.Logger:
     """Return the dedicated browser-agent logger, configured from the process settings until configured explicitly."""
     browser_logger = logging.getLogger(_BROWSER_LOGGER_NAME)
     if not hasattr(browser_logger, _AUDIT_RAW_ATTR):
-        _apply_settings(CoreSettings.from_process_env())
+        _apply_settings(CoreSettings.logging_from_process_env())
     return browser_logger
 
 
