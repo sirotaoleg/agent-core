@@ -82,7 +82,7 @@ screen:
 | `Scroll` | `target: Ref \| None = None`, `dx=0`, `dy=0` | ACT |
 | `Hover` | `target: Ref` | ACT |
 | `Drag` | `source: Ref`, `destination: Ref` | ACT |
-| `Wait` | `seconds=None`, `until_text=None`, at least one set: `seconds` alone sleeps; `until_text` waits until the text appears, at most `seconds` (`None`: the driver's default), then raises `ActionTimeout` | READ |
+| `Wait` | `seconds=None`, `until_text=None`, at least one set: `seconds` alone sleeps; `until_text` waits until the text appears, at most `seconds` (`None`: the driver's default; a driver whose library has no deadline for a text wait may use its own), then raises `ActionTimeout` | READ |
 | `SwitchContext` / `CloseContext` | `context: ContextRef` | NAVIGATE |
 | `HandleDialog` | `accept`, `prompt_text=None` | ACT |
 | `RunScript` | `code`, `args=None`, `sensitive=False`, `target: Ref \| None = None` | SCRIPT |

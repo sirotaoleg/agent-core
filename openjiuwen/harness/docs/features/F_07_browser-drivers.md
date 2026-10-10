@@ -772,3 +772,10 @@ unchanged.
 8. **`observe()` with boxes costs one box per element** on large pages; measured in the benchmark phase.
 9. **The live MCP test runs wherever `npx` and Chrome exist** (gated on them, not on an environment variable) and
    needs network the first time `npx` fetches the server.
+
+### Live test gating
+
+The live Playwright MCP cases (conformance and assembly) run only with `BROWSER_MOVE_LIVE_MCP=1`, as the browser-use
+live cases need `BROWSER_USE_SIDECAR_PYTHON`. Without the gate they ran in every unit run on a host with `npx` and
+Chrome (about 2.5 minutes, network access for `npx`). `Wait(until_text, seconds)` on this driver uses the server's own
+text-wait deadline (5 s); S_20 allows a driver without a deadline for a text wait to use its own.
