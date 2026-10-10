@@ -1,0 +1,79 @@
+# coding: utf-8
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
+"""The composition root: builds the driver stack from registry names only."""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any
+
+from openjiuwen.core.common.logging import logger
+
+from ..contract import Driver, Effect, Registry, SurfaceBundle
+from ..drivers import DRIVERS
+from ..drivers.middleware import RetryOnStale, Timeouts, Tracing
+from ..provisioning import PROVISIONERS, ProvisionedDevice, Provisioner
+from ..surfaces import SURFACES
+from .config import CoreSettings
+
+
+@dataclass(frozen=True)
+class Registries:
+    drivers: Registry[Driver]
+    surfaces: Registry[SurfaceBundle]
+    provisioners: Registry[Provisioner]
+
+
+@dataclass(frozen=True)
+class DriverAssembly:
+    """A started driver stack and the device under it."""
+
+    stack: Driver
+    device: ProvisionedDevice
+    provisioner: Provisioner
+
+    async def close(self) -> None:
+        try:
+            await self.stack.stop()
+        finally:
+            await asyncio.to_thread(self.provisioner.release, self.device)
+
+
+def _log_trace(record: dict[str, Any]) -> None:
+    logger.debug("driver trace: %s", record)
+
+
+async def assemble_driver(
+    core: CoreSettings,
+    environ: Mapping[str, str],
+    *,
+    registries: Registries | None = None,
+) -> DriverAssembly:
+    """Surface, provisioner, driver and middleware by name from ``core``; returns the started stack."""
+    registries = registries or Registries(DRIVERS, SURFACES, PROVISIONERS)
+    surface = registries.surfaces.create(core.surface, environ)
+    provisioner = registries.provisioners.create(surface.settings.provisioning)
+    device = await asyncio.to_thread(provisioner.provision, surface.settings)
+    try:
+        driver = registries.drivers.create(core.driver, device, surface.settings)
+        if core.surface not in driver.info.surfaces:
+            served = ", ".join(sorted(driver.info.surfaces)) or "none"
+            raise ValueError(f"driver {core.driver!r} does not serve surface {core.surface!r} (it serves: {served})")
+        per_effect = dict.fromkeys(Effect, core.tool_timeout_s)
+        stack = Tracing(RetryOnStale(Timeouts(driver, per_effect)), _log_trace)
+    except BaseException:
+        await asyncio.to_thread(provisioner.release, device)
+        raise
+    assembly = DriverAssembly(stack, device, provisioner)
+    try:
+        await stack.start()
+    except BaseException:
+        await assembly.close()
+        raise
+    return assembly
+
+
+__all__ = ["DriverAssembly", "Registries", "assemble_driver"]
