@@ -265,3 +265,44 @@ def test_a_crashed_managed_chrome_under_playwright_mcp_is_provisioned_again_with
         assert _eventually(lambda: not _chrome_processes(user_data_dir)), _chrome_processes(user_data_dir)
     finally:
         shutil.rmtree(user_data_dir, ignore_errors=True)
+
+
+@pytest.mark.live
+@pytest.mark.skipif(_skip_reason() is not None, reason=_skip_reason() or "")
+def test_a_crashed_managed_chrome_under_browser_use_is_provisioned_again_with_a_new_driver(tmp_path: Path) -> None:
+    user_data_dir = tmp_path / "chrome-profile"
+    environ = {
+        **os.environ,
+        "BROWSER_DRIVER": "browser_use",
+        "BROWSER_PROVISIONING": "managed",
+        "BROWSER_MANAGED_PORT": str(_free_port()),
+        "BROWSER_MANAGED_USER_DATA_DIR": str(user_data_dir),
+        "BROWSER_MANAGED_KILL_EXISTING": "false",
+        "BROWSER_MANAGED_ARGS": "--headless=new --window-size=1280,900",
+        "BROWSER_PROFILE_NAME": "assembly-restart-live",
+        "BROWSER_PROFILE_STORE_PATH": str(tmp_path / "profiles.json"),
+    }
+
+    async def run():
+        assembly = await assemble_driver(CoreSettings.from_env(environ), environ)
+        session = DriverSession(assembly, BrowserPageState(), assembly.surface.profile.messages)
+        try:
+            await session.observe(Observe())
+            assembly.device.cleanup()
+            assert _eventually(lambda: not assembly.provisioner.is_alive(assembly.device))
+            with pytest.raises(ConnectionLost, match="restarted"):
+                await session.observe(Observe())
+            assert session.assembly.stack is not assembly.stack
+            assert _cdp_ready(session.assembly.device.endpoint)
+            return session.assembly.device.endpoint, await session.observe(Observe())
+        finally:
+            await session.close()
+
+    try:
+        endpoint, observation = asyncio.run(run())
+
+        assert observation.surface.url == "about:blank"
+        assert _eventually(lambda: not _cdp_ready(endpoint)), f"{endpoint} still answers after close()"
+        assert _eventually(lambda: not _chrome_processes(user_data_dir)), _chrome_processes(user_data_dir)
+    finally:
+        shutil.rmtree(user_data_dir, ignore_errors=True)

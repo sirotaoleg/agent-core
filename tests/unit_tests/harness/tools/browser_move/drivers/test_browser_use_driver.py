@@ -757,6 +757,25 @@ def test_unclassified_error_is_dispatched_and_logged(monkeypatch, raised):
     assert str(raised) in [str(arg) for arg in logger.warning.call_args.args]
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "[DownloadsWatchdog.on_BrowserStateRequestEvent] Reconnection failed — CDP still not connected",
+        "[ScreenshotWatchdog.on_ScreenshotEvent] Reconnection wait timed out after 30.0s",
+        "Cannot switch tabs - browser not connected",
+    ],
+)
+def test_a_browser_that_went_away_is_a_lost_connection(monkeypatch, message):
+    logger = MagicMock()
+    monkeypatch.setattr(driver_module, "_logger", logger)
+    driver, _request = _driver(_sidecar_error("DriverError", message))
+    with pytest.raises(ConnectionLost) as info:
+        asyncio.run(driver.execute(Hover(E1)))
+    assert info.value.dispatched is True
+    assert message in str(info.value)
+    logger.warning.assert_not_called()
+
+
 def test_intercepted_input_names_the_element_that_would_receive_it():
     driver, _request = _driver(_sidecar_error("ActionIntercepted", "click would reach it", {"by": "span#overlay"}))
     with pytest.raises(ActionIntercepted) as info:
