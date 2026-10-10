@@ -48,6 +48,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.config import Browse
 ENVIRON = {"FAKE_SURFACE_FLAG": "on"}
 CORE = CoreSettings(driver="fake_driver", surface="fake")
 DEVICE = ProvisionedDevice(kind="fake-device", endpoint="fake://1", extras={})
+OTHER_DEVICE = ProvisionedDevice(kind="fake-device", endpoint="fake://2", extras={})
 
 
 @dataclass(frozen=True)
@@ -156,6 +157,27 @@ class TestAssembleDriver:
         assert type(stack.inner) is RetryOnStale
         assert type(stack.inner.inner) is Timeouts
         assert stack.inner.inner.inner is world.driver
+
+    def test_rebuild_makes_a_new_stack_from_the_driver_factory_for_another_device(self) -> None:
+        world = World()
+        assembly = world.assemble()
+        rebuilt_driver = FakeDriver(info=_fake_info())
+        world.driver = rebuilt_driver
+
+        stack = assembly.rebuild(OTHER_DEVICE)
+
+        assert world.log[-1] == ("driver", OTHER_DEVICE, world.settings)
+        assert type(stack) is Tracing
+        assert stack.inner.inner.inner is rebuilt_driver
+        assert rebuilt_driver.kinds() == []
+
+    def test_rebuild_refuses_a_driver_that_does_not_serve_the_surface(self) -> None:
+        world = World()
+        assembly = world.assemble()
+        world.driver = FakeDriver(info=_fake_info("phone"))
+
+        with pytest.raises(ValueError, match="does not serve surface 'fake'"):
+            assembly.rebuild(OTHER_DEVICE)
 
     def test_driver_that_does_not_serve_the_surface_is_refused_and_the_device_released(self) -> None:
         world = World(FakeDriver(info=_fake_info("desktop", "phone")))

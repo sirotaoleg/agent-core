@@ -1,6 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""``DriverSession`` on ``FakeDriver``: one restart per task, re-provisioning, and no re-sent command."""
+"""``DriverSession`` on ``FakeDriver``: one restart per task, a new stack for a dead device, no re-sent command."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from openjiuwen.core.common.exception.errors import BaseError
-from openjiuwen.harness.tools.browser_move.contract import Click, ConnectionLost, DriverRef, Observe
+from openjiuwen.harness.tools.browser_move.contract import ActionResult, Click, ConnectionLost, DriverRef, Observe
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
@@ -30,7 +30,8 @@ class FakeSettings:
 
 
 class FakeProvisioner:
-    def __init__(self) -> None:
+    def __init__(self, *, alive: bool = True) -> None:
+        self.alive = alive
         self.log: list[tuple[str, Any]] = []
 
     def provision(self, surface_settings: Any) -> ProvisionedDevice:
@@ -40,25 +41,35 @@ class FakeProvisioner:
     def release(self, device: ProvisionedDevice) -> None:
         self.log.append(("release", device))
 
+    def is_alive(self, device: ProvisionedDevice) -> bool:
+        return self.alive
+
 
 class StartFailsDriver(FakeDriver):
-    """Fails the first ``fails`` restarts, as a driver does when its device is gone."""
-
-    def __init__(self, fails: int) -> None:
-        super().__init__()
-        self.fails = fails
-
     async def start(self, config: Any = None) -> None:
         await super().start(config)
-        if self.fails:
-            self.fails -= 1
-            raise ConnectionLost("no device", dispatched=False)
+        raise ConnectionLost("no device", dispatched=False)
 
 
-def _session(driver: FakeDriver) -> tuple[DriverSession, FakeProvisioner, BrowserPageState]:
-    provisioner = FakeProvisioner()
+class Rebuilds:
+    """The assembly's ``rebuild``: one new driver per device, from ``make``."""
+
+    def __init__(self, make: Any = FakeDriver) -> None:
+        self.make = make
+        self.drivers: list[tuple[ProvisionedDevice, FakeDriver]] = []
+
+    def __call__(self, device: ProvisionedDevice) -> FakeDriver:
+        driver = self.make()
+        self.drivers.append((device, driver))
+        return driver
+
+
+def _session(
+    driver: FakeDriver, *, alive: bool = True, rebuild: Any = None
+) -> tuple[DriverSession, FakeProvisioner, BrowserPageState]:
+    provisioner = FakeProvisioner(alive=alive)
     page_state = BrowserPageState(page_id="page-test")
-    assembly = DriverAssembly(driver, FIRST, provisioner, FakeSettings())
+    assembly = DriverAssembly(driver, FIRST, provisioner, FakeSettings(), rebuild or Rebuilds())
     return DriverSession(assembly, page_state, MESSAGES), provisioner, page_state
 
 
@@ -123,27 +134,82 @@ def test_begin_task_resets_the_loss_counter() -> None:
     assert page_state.generation_id == "g2"
 
 
-def test_a_driver_that_cannot_start_again_is_re_provisioned() -> None:
-    driver = StartFailsDriver(fails=1)
+def test_a_dead_device_is_released_provisioned_again_and_gets_a_new_stack() -> None:
+    driver = FakeDriver()
     driver.lose_connection_on(1)
-    session, provisioner, page_state = _session(driver)
+    rebuilds = Rebuilds()
+    session, provisioner, page_state = _session(driver, alive=False, rebuild=rebuilds)
 
     with pytest.raises(ConnectionLost, match="restarted; observe again"):
         _execute(session)
 
+    ((device, rebuilt),) = rebuilds.drivers
     assert provisioner.log == [("release", FIRST), ("provision", FakeSettings())]
-    assert session.assembly.device == SECOND
-    assert driver.kinds() == ["execute", "stop", "start", "start"]
+    assert device == SECOND
+    assert (session.assembly.device, session.assembly.stack) == (SECOND, rebuilt)
+    assert driver.kinds() == ["execute", "stop"]
+    assert rebuilt.kinds() == ["start"]
     assert page_state.generation_id == "g1"
 
 
-def test_a_restart_that_fails_after_re_provisioning_fails_the_task() -> None:
-    driver = StartFailsDriver(fails=2)
+def test_a_dead_device_behind_a_driver_that_starts_lazily_does_not_fail_the_task() -> None:
+    driver = FakeDriver()
     driver.lose_connection_on(1)
-    session, _, _ = _session(driver)
+    rebuilds = Rebuilds(lambda: FakeDriver(results=[ActionResult(ok=True)]))
+    session, _, _ = _session(driver, alive=False, rebuild=rebuilds)
+    with pytest.raises(ConnectionLost, match="restarted; observe again"):
+        _execute(session)
+
+    assert _execute(session) == ActionResult(ok=True)
+    assert driver.kinds() == ["execute", "stop"]
+
+
+def test_a_live_device_keeps_its_stack() -> None:
+    driver = FakeDriver(results=[ActionResult(ok=True)])
+    driver.lose_connection_on(1)
+    rebuilds = Rebuilds()
+    session, provisioner, _ = _session(driver, rebuild=rebuilds)
+    with pytest.raises(ConnectionLost):
+        _execute(session)
+
+    assert _execute(session) == ActionResult(ok=True)
+    assert (session.assembly.stack, session.assembly.device) == (driver, FIRST)
+    assert rebuilds.drivers == []
+    assert provisioner.log == []
+
+
+def test_a_restart_that_fails_on_a_live_device_fails_the_task() -> None:
+    driver = StartFailsDriver()
+    driver.lose_connection_on(1)
+    session, provisioner, _ = _session(driver)
 
     with pytest.raises(BaseError, match="the device is gone"):
         _execute(session)
+
+    assert provisioner.log == []
+
+
+def test_a_new_stack_that_fails_to_start_fails_the_task() -> None:
+    driver = FakeDriver()
+    driver.lose_connection_on(1)
+    session, _, _ = _session(driver, alive=False, rebuild=Rebuilds(StartFailsDriver))
+
+    with pytest.raises(BaseError, match="the device is gone"):
+        _execute(session)
+
+
+def test_a_rebuild_that_fails_releases_the_new_device_and_fails_the_task() -> None:
+    def broken(device: ProvisionedDevice) -> FakeDriver:
+        raise ValueError("no driver for this device")
+
+    driver = FakeDriver()
+    driver.lose_connection_on(1)
+    session, provisioner, _ = _session(driver, alive=False, rebuild=broken)
+
+    with pytest.raises(BaseError, match="the device is gone"):
+        _execute(session)
+
+    assert provisioner.log == [("release", FIRST), ("provision", FakeSettings()), ("release", SECOND)]
 
 
 def test_observe_recovers_the_same_way() -> None:
@@ -158,14 +224,16 @@ def test_observe_recovers_the_same_way() -> None:
     assert page_state.generation_id == "g1"
 
 
-def test_close_releases_the_re_provisioned_device() -> None:
-    driver = StartFailsDriver(fails=1)
+def test_close_stops_the_new_stack_and_releases_the_new_device() -> None:
+    driver = FakeDriver()
     driver.lose_connection_on(1)
-    session, provisioner, _ = _session(driver)
+    rebuilds = Rebuilds()
+    session, provisioner, _ = _session(driver, alive=False, rebuild=rebuilds)
     with pytest.raises(ConnectionLost):
         _execute(session)
 
     asyncio.run(session.close())
 
+    ((_, rebuilt),) = rebuilds.drivers
     assert provisioner.log[-1] == ("release", SECOND)
-    assert driver.kinds()[-1] == "stop"
+    assert rebuilt.kinds() == ["start", "stop"]

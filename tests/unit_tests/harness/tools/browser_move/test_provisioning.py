@@ -7,7 +7,11 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
+import json
 import os
+import threading
+from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -211,6 +215,67 @@ def test_release_of_a_device_without_cleanup_does_nothing() -> None:
     device = provisioner.provision(BrowserSettings(provisioning="remote"))
 
     provisioner.release(device)
+
+
+class _CdpVersion(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:  # noqa: N802 - http.server API
+        body = json.dumps({"Browser": "Chrome/140"}).encode() if self.path == "/json/version" else b""
+        self.send_response(200 if body else 404)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args) -> None:
+        pass
+
+
+@pytest.fixture
+def cdp_endpoint() -> Iterator[str]:
+    server = HTTPServer(("127.0.0.1", 0), _CdpVersion)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _closed_endpoint() -> str:
+    server = HTTPServer(("127.0.0.1", 0), _CdpVersion)
+    server.server_close()
+    return f"http://127.0.0.1:{server.server_port}"
+
+
+def test_a_device_whose_endpoint_answers_cdp_is_alive(cdp_endpoint: str) -> None:
+    device = ManagedBrowserProvisioner().provision(BrowserSettings(provisioning="remote", cdp_url=cdp_endpoint))
+
+    assert ManagedBrowserProvisioner().is_alive(device) is True
+
+
+def test_a_device_whose_endpoint_is_gone_is_dead() -> None:
+    device = ManagedBrowserProvisioner().provision(BrowserSettings(provisioning="remote", cdp_url=_closed_endpoint()))
+
+    assert ManagedBrowserProvisioner().is_alive(device) is False
+
+
+def test_a_managed_device_is_alive_while_its_chrome_answers(tmp_path: Path, cdp_endpoint: str) -> None:
+    provisioner = ManagedBrowserProvisioner()
+    with patch.object(ManagedBrowserProvisioner, "start", return_value=cdp_endpoint):
+        device = provisioner.provision(_managed(tmp_path))
+
+    assert provisioner.is_alive(device) is True
+    assert provisioner.is_alive(dataclasses.replace(device, endpoint=_closed_endpoint())) is False
+
+
+@pytest.mark.parametrize(
+    "settings", [BrowserSettings(provisioning="extension"), BrowserSettings(provisioning="remote")]
+)
+def test_a_device_without_an_endpoint_counts_as_alive(settings: BrowserSettings) -> None:
+    provisioner = ManagedBrowserProvisioner()
+    device = provisioner.provision(settings)
+
+    with patch.object(managed_browser, "urlopen", side_effect=AssertionError("must not probe")):
+        assert provisioner.is_alive(device) is True
 
 
 @pytest.mark.skipif(os.name != "nt", reason="install paths come from the environment only on Windows")

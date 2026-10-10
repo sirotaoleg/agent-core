@@ -143,6 +143,11 @@ def _info(**fields: Any) -> DriverInfo:
     return DriverInfo(**values)
 
 
+class _LiveDevice:
+    def is_alive(self, device: ProvisionedDevice) -> bool:
+        return True
+
+
 def _build(
     driver: FakeDriver,
     capabilities: tuple[str, ...] = ("core",),
@@ -152,7 +157,7 @@ def _build(
     page_state: BrowserPageState | None = None,
 ) -> tuple[AgentTools, BrowserPageState]:
     page_state = page_state or BrowserPageState(page_id="page-test")
-    session = DriverSession(DriverAssembly(driver, DEVICE, None, None), page_state, MESSAGES)
+    session = DriverSession(DriverAssembly(driver, DEVICE, _LiveDevice(), None), page_state, MESSAGES)
     built = ToolFactory(profile or _profile(), driver.info).build(
         capabilities, image_support=image_support, session=session, page_state=page_state
     )
