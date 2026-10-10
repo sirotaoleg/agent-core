@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/middleware.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/browser/` (`commands.py` / `context.py` / `config.py` / `scene/`) |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/middleware.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/browser/` (`commands.py` / `context.py` / `config.py` / `scene/`) |
 | Last revised | 2026-10-10 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -96,8 +96,8 @@ where a command class is defined, and a new surface adds its commands (`Tap`, `S
 `contract/`. A command is added only when a driver handles a tool the model uses today.
 
 `sensitive=True` on `TypeText`, `RunScript` and a `FormField` means its text, code or value must never reach traces
-or logs. Each of the three names that field in a class-level `__sensitive_fields__` (`("text",)`, `("code",)`,
-`("value",)`); `Tracing` masks the listed fields of any dataclass whose `sensitive` is true, so a new surface
+or logs. Each of the three names its fields in a class-level `__sensitive_fields__` (`("text",)`,
+`("code", "args")`, `("value",)`); `Tracing` masks the listed fields of any dataclass whose `sensitive` is true, so a new surface
 command opts in by declaring the attribute and a `sensitive` field.
 
 ### ActionResult (`results.py`)
@@ -261,7 +261,9 @@ finally produced, and the re-observe of `RetryOnStale` runs under the READ bound
     whose `sensitive` is true);
   - then `ok`, `detail`, `context_changed` for a result; `context` (id) and `elements` (count) for an observation,
     whose element values and native text may show what a sensitive command typed; or `error` (class name),
-    `message`, `dispatched` for a `DriverError`, which is raised again.
+    `message`, `dispatched` for a `DriverError`, which is raised again. `message` is left out when the command is
+    sensitive (its `sensitive` is true and it lists `__sensitive_fields__`): a driver error can quote the typed text
+    or the script, e.g. a JS exception message.
 
   `ActionResult.value` and observation contents are never traced. Other exceptions (cancellation included) pass
   through without a record.
@@ -278,14 +280,26 @@ listed in [[F_07_browser-drivers]] ("Settings", inventory).
   `driver`: `delegated_worker` for `playwright_mcp`, `direct` for `browser_use`), `provider`, `api_key`,
   `api_base`, `model_name`, `worker_temperature`, `worker_top_p`, `tool_timeout_s`, `guardrails`
   (`BrowserRunGuardrails`), `log_file` (`None` = no dedicated file), `log_level`, `log_mirror_common`,
-  `log_audit_raw`, `status_log`. It has no field that only a browser has.
+  `log_audit_raw`, `status_log`, `runtime_server` (`RuntimeServerSettings`, client side). It has no field that only
+  a browser has.
+- **`RuntimeServerSettings`** (core): the runtime MCP server, i.e. `browser_move` served over MCP
+  (`playwright_runtime_mcp_server.py`) and registered by `browser_tools.py`. Client fields: `enabled`, `server_id`,
+  `server_name`, `client_type` (as given; normalised by the caller), `server_path` (`""` = derived from host, port
+  and path), `command` (default: the current interpreter), `args` (raw string), `timeout_s` (`0` = no timeout, also
+  for a value that is not an integer), `host`, `port` (a string; parsed where it is used), `path`, `log_dir`
+  (`None` = `mcp_cwd/logs`), `auto_http_fallback`. Server fields: `transport`, `log_level`, `stateless_http`
+  (`None` = decided by the transport). Two parsers keep the two old readers apart: `from_env` (client) reads
+  `PLAYWRIGHT_RUNTIME_*` and then the `BROWSER_RUNTIME_*` alias; `server_from_env` (server entry point) reads only
+  `PLAYWRIGHT_RUNTIME_*` with the server's defaults (path `""`, log dir `<cwd>/logs`), except the log dir, which also
+  takes `BROWSER_RUNTIME_LOG_DIR` as before.
 - **`BrowserSettings`** (browser surface): `provisioning`, `cdp_url`, `cdp_headers`, `cdp_timeout`, `managed_host`,
   `managed_port`, `managed_kill_existing`, `managed_args`, `user_data_dir`, `profile_name`, `profile_store_path`,
   `browser_binary`, `browser_binary_candidates` (Chrome install paths under `LOCALAPPDATA`, `ProgramFiles`,
   `ProgramFiles(x86)`, `ProgramW6432` on Windows; empty elsewhere and by default), `launch_args` (Playwright MCP
   arguments; Chrome's own arguments are `managed_args`), `mcp_command`, `mcp_timeout_s`, `mcp_cwd`,
   `mcp_browser`, `mcp_device`, `mcp_extension`, `mcp_extension_token`, `mcp_env` (read-only mapping),
-  `upload_root`, `sidecar_python`, `selector_cache_path` (`None` = the default under the home directory). The module
+  `upload_root`, `sidecar_python`, `selector_cache_path` (`None` = the default under the home directory),
+  `local_app_data` (Windows `LOCALAPPDATA`, for the default Chrome user-data dir). The module
   declares `ENV_PREFIXES = ("BROWSER_", "PLAYWRIGHT_")`. Another surface brings its own `surfaces/<name>/config.py`
   with its own settings class and prefixes; `CoreSettings` does not change.
 
@@ -307,8 +321,9 @@ model from the parent agent and must not fail on it); `build_runtime_settings` r
 
 Public facades; their signatures do not change:
 
-- `RuntimeSettings` keeps its fields; `build_runtime_settings(instance)` builds it from
-  `CoreSettings.from_process_env()` and `BrowserSettings.from_process_env()`. `build_playwright_mcp_config`,
+- `RuntimeSettings` keeps its fields; `build_runtime_settings(instance, *, core_settings=None,
+  browser_settings=None)` builds it from the given objects, each `None` replaced by its `from_process_env()`.
+  `build_playwright_mcp_config`,
   `build_browser_guardrails` and `resolve_playwright_mcp_cwd` read the same two objects.
 - `BrowserInstanceConfig` keeps its eight positional fields and appends `provisioning` and `driver` (`""` = from
   settings). `driver_mode` is an alias of `provisioning`: whichever is given sets both; two different non-empty
@@ -316,8 +331,37 @@ Public facades; their signatures do not change:
   Playwright MCP config a non-blank `launch_args` replaces `BrowserSettings.launch_args` and a non-blank `cdp_url`
   replaces `BrowserSettings.cdp_url`.
 
-Until every caller receives a settings object, modules outside the two config modules still read the environment;
-the env-read architecture test lists them (invariant 9).
+### Environment boundary (invariant 9)
+
+Only the two config modules touch the process environment: `from_process_env()` of each settings class,
+`process_environ()` (a snapshot dict) and `load_repo_dotenv()` (loads the repo `.env`), all in
+`playwright_runtime/config.py` or `surfaces/browser/config.py`. Everything else receives a settings object or a
+value from one.
+
+- `utils/env.py` holds pure parse helpers shared by both config modules (`first_value`, `int_value`,
+  `parse_command_args`, `is_truthy_env` / `is_falsy_env`, `normalize_provider`, `infer_provider_from_api_base`)
+  and defaults; it has no environment access.
+- Environments of child processes are pure functions of a mapping the caller passes:
+  `runtime_server_child_env(environ)` (the runtime MCP server child: the whole mapping, API key and base copied to
+  the provider names, blocked proxies removed) and `runtime_server_environ(environ)` (the server's tool timeout
+  defaults, 600 s) in `playwright_runtime/config.py`; the browser-use sidecar's minimal environment in
+  `drivers/browser_use/transport.py`, built from OS and `BROWSER_USE_*` names of the given mapping plus
+  `BrowserSettings.upload_root`.
+- Entry points build settings once: `playwright_runtime/main.py` from `process_environ()` (its own inputs through
+  `read_demo_inputs(environ)`), `playwright_runtime_mcp_server.py` from `runtime_server_environ(process_environ())`.
+  They pass `core_settings` / `browser_settings` to `BrowserAgentRuntime`, which hands them to `BrowserService` and
+  takes `upload_root` and `selector_cache_path` for its builtin actions and selector cache.
+- Public functions keep their signatures and gain keyword-only settings or values. Where a caller passes none, the
+  function builds them through the config module at the same moment it read the environment before
+  (`build_browser_runtime_mcp_config`, `register_browser_runtime_mcp_server`, `restart_local_browser_runtime_server`,
+  `ensure_execute_signature_compat`, `build_browser_worker_agent`, `is_browser_subagent_status_log_enabled`).
+  Helpers whose value has an obvious "not configured" take the value and treat `None` as not configured:
+  `resolve_upload_file_paths(paths, *, upload_root)`, `register_builtin_actions(controller, *, upload_root)`,
+  `get_selector_cache(path)`, `discover_sidecar_python(override)`.
+- The env-read architecture test allows three exceptions: the browser-use sidecar (a separate process with its own
+  config boundary), `playwright_runtime/browser_logging.py` (a process-global logger fetched at import time; it is
+  configured from settings once the logging hook moves into `openjiuwen.core`) and the three `env_map` accesses in
+  `service.py`, which touch the Playwright MCP child's env mapping, not the process environment.
 
 ## Provisioning (`provisioning/`)
 
@@ -364,8 +408,10 @@ Managed provisioning:
 
 ### The browser service (`playwright_runtime/service.py`)
 
-`BrowserService` takes the keyword `browser_settings: BrowserSettings | None`; `None` means
-`BrowserSettings.from_process_env()`, read once at construction. The service reads no environment variable itself.
+`BrowserService` takes the keywords `browser_settings: BrowserSettings | None` (`None` means
+`BrowserSettings.from_process_env()`, read once at construction) and `core_settings: CoreSettings | None`, which it
+hands to the worker agent (`None`: the worker reads `CoreSettings.from_process_env()` when it is built). The service
+reads no environment variable itself.
 In managed mode, before it registers or refreshes the Playwright MCP server, it:
 
 1. adopts a live Chrome recorded in its profile store (and in the legacy store when no store path is configured)
@@ -392,8 +438,11 @@ extension flags.
 (`transport.py`). `info`: `name="browser_use"`, `surfaces={"browser"}`, `observes={elements, screenshot,
 native_text, surface}`, `versions` from the sidecar's `connect` reply.
 
-- Factory: `create_browser_use_driver(device, surface_settings)` builds `BrowserUseConfig(cdp_url=device.endpoint)`;
-  `start(config=None)` spawns the sidecar and attaches to that CDP endpoint (an explicit config overrides).
+- Factory: `create_browser_use_driver(device, surface_settings)` builds `BrowserUseConfig(cdp_url=device.endpoint,
+  sidecar_python=..., upload_root=...)`, the last two from the `BrowserSettings` (`None` settings: neither);
+  `start(config=None)` spawns the sidecar with that interpreter (`None`: `.venvs/browser-use` in the repo) and
+  attaches to that CDP endpoint (an explicit config overrides). `UploadFile` and `Drop` resolve relative paths
+  against `upload_root`.
 - Handlers with `refs={DriverRef, Locator}`: `Click`, `TypeText` (target required, no `slowly`), `Hover`, `Drag`,
   `SelectOption` (exactly one value), `UploadFile` (target required), `Drop`, `FillForm` (each field's
   `sensitive` goes to the sidecar's `type_text`). With `refs={DriverRef}`: `Scroll` (one axis per command),
@@ -440,8 +489,9 @@ native_text, surface}`, `versions` from the sidecar's `connect` reply.
   driver as a plain `DriverError(dispatched=True)`. Codes it cannot classify become `DriverError(dispatched=True)`
   and are logged raw.
 - Cancellation. One request is in flight at a time; after 30 s without a reply the transport sends the sidecar a
-  `cancel` for it and raises `ActionTimeout`. When the caller cancels instead (`Timeouts`), no `cancel` is sent: the
-  sidecar task runs on, the next request can run alongside it, and its late reply is dropped by id.
+  `cancel` for it and raises `ActionTimeout`. When the caller cancels the request instead (`Timeouts`), the
+  transport sends the same `cancel` and re-raises the cancellation, so the sidecar does not run the action alongside
+  the next one. A late reply is dropped by id.
 
 ## Relation to other specs
 

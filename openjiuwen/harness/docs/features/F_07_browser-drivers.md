@@ -6,7 +6,7 @@
 |---|---|
 | Type | feature |
 | Date | 2026-10-10 |
-| Scope | `openjiuwen/harness/tools/browser_move/` (`contract/`, `drivers/`, `provisioning/`, `surfaces/browser/`, `playwright_runtime/config.py`, `playwright_runtime/service.py`), `tests/unit_tests/harness/tools/browser_move/` |
+| Scope | `openjiuwen/harness/tools/browser_move/` (`contract/`, `drivers/`, `provisioning/`, `surfaces/browser/`, `playwright_runtime/`, `controllers/action.py`, `utils/`, `playwright_runtime_mcp_server.py`), `tests/unit_tests/harness/tools/browser_move/` |
 | Test baseline | see "Verification" in each section |
 | Related spec | [[S_20_browser-driver-contract]] |
 | Refs | #driver-architecture |
@@ -105,11 +105,10 @@ Three wrappers in `drivers/middleware.py`, each a `Driver` around an inner `Driv
 
 ### Known leftovers
 
-1. A timeout cancels the browser-use driver's wait for the sidecar's reply, but the transport sends no `cancel` to
-   the sidecar on cancellation (only on its own 30 s timeout). The sidecar task keeps running, the next command can
-   run alongside it, and its late reply is dropped by id.
-2. `RunScript.args` is traced unmasked even when `sensitive` is true; only `code` is listed.
-3. `DriverError` messages are traced as they are; a driver must not put sensitive values in them.
+1. Settled in "Environment boundary" (G11): the transport now sends `cancel` when the caller cancels the request.
+2. Settled (G10): `RunScript.args` is a sensitive field.
+3. Settled for sensitive commands (G10): their error message is not traced. Messages of other commands are traced
+   as they are.
 4. The fake-surface end-to-end test expects a stale `PointRef` to be retried once; with no remap there is no retry,
    so that expectation needs a remap rule for points first.
 
@@ -149,7 +148,8 @@ environment variables, split by owner (S_20 "Settings"). This step adds the pars
    `log_file` defaults to a relative path the logger resolves: computing `Path.home()` at parse time fails when the
    home variables are absent (the existing tests clear the environment).
 10. **The parsers do not call `utils/env.py`.** Its helpers keep serving the callers not switched yet; the parsing
-    logic is private to each config module. `playwright_runtime/config.py` still re-exports `parse_command_args`,
+    logic is private to each config module. (Superseded by "Environment boundary", decision 2: both parsers now share
+    the pure helpers of `utils/env.py`.) `playwright_runtime/config.py` still re-exports `parse_command_args`,
     `load_repo_dotenv` and the defaults it always exported.
 11. **One allowlisted import.** `playwright_runtime/config.py` imports `surfaces.browser.config`, because the public
     `RuntimeSettings` facade composes `BrowserSettings`; recorded in the import-boundary allowlist as legacy until
@@ -218,12 +218,14 @@ today, relative to `browser_move/`.
 | `BROWSER_USE_SIDECAR_PYTHON` | `drivers/browser_use/transport.py` | sidecar interpreter | `.venvs/browser-use` | browser | `sidecar_python` |
 | `OPENJIUWEN_BROWSER_SELECTOR_CACHE` | `site_profiles.py` | site selector cache | `~/.openjiuwen/browser_selector_cache.json` | browser (prefix: question 5) | `selector_cache_path` |
 | `BROWSER_UPLOAD_ROOT` | `drivers/browser_use/sidecar/session_adapter.py` | upload root inside the sidecar | none | exempt | — |
-| `PLAYWRIGHT_RUNTIME_MCP_*` / `BROWSER_RUNTIME_MCP_*` (`ENABLED`, `SERVER_ID`, `SERVER_NAME`, `CLIENT_TYPE`, `SERVER_PATH`, `HOST`, `PORT`, `PATH`, `COMMAND`, `ARGS`, `TIMEOUT_S`), `PLAYWRIGHT_RUNTIME_MCP_AUTO_HTTP_FALLBACK`, `PLAYWRIGHT_RUNTIME_MCP_TRANSPORT`, `PLAYWRIGHT_RUNTIME_MCP_LOG_LEVEL`, `PLAYWRIGHT_RUNTIME_MCP_STATELESS_HTTP`, `PLAYWRIGHT_RUNTIME_LOG_DIR`, `BROWSER_RUNTIME_LOG_DIR` | `browser_tools.py`, `playwright_runtime_mcp_server.py` | the browser runtime served as an MCP server | various | question 1 | — |
-| whole environment copy; `ALL_PROXY`; `PATH`, `SystemRoot`, `TEMP`, `TMP`, `USERPROFILE`, `HOMEDRIVE`, `HOMEPATH`, `LOCALAPPDATA`, `APPDATA`, `HOME`, `TMPDIR`; every `BROWSER_USE_*` | `browser_tools.py`, `drivers/browser_use/transport.py` | environment handed to child processes | — | question 2 | — |
-| `LOCALAPPDATA`, `ProgramFiles`, `ProgramFiles(x86)`, `ProgramW6432` | `provisioning/managed_browser.py` | where Chrome is installed | — | question 3 | — |
-| `AGENT_QUERY`, `AGENT_SESSION_ID` | `playwright_runtime/main.py` | demo entry point input | `""`, `demo-browser-session` | question 4 | — |
+| `PLAYWRIGHT_RUNTIME_MCP_*` / `BROWSER_RUNTIME_MCP_*` (`ENABLED`, `SERVER_ID`, `SERVER_NAME`, `CLIENT_TYPE`, `SERVER_PATH`, `HOST`, `PORT`, `PATH`, `COMMAND`, `ARGS`, `TIMEOUT_S`), `PLAYWRIGHT_RUNTIME_MCP_AUTO_HTTP_FALLBACK`, `PLAYWRIGHT_RUNTIME_MCP_TRANSPORT`, `PLAYWRIGHT_RUNTIME_MCP_LOG_LEVEL`, `PLAYWRIGHT_RUNTIME_MCP_STATELESS_HTTP`, `PLAYWRIGHT_RUNTIME_LOG_DIR`, `BROWSER_RUNTIME_LOG_DIR` | `browser_tools.py`, `playwright_runtime_mcp_server.py` | the browser runtime served as an MCP server | various | core (G2) | `runtime_server` (`RuntimeServerSettings`) |
+| whole environment copy; `ALL_PROXY`; `PATH`, `SystemRoot`, `TEMP`, `TMP`, `USERPROFILE`, `HOMEDRIVE`, `HOMEPATH`, `LOCALAPPDATA`, `APPDATA`, `HOME`, `TMPDIR`; every `BROWSER_USE_*` | `browser_tools.py`, `drivers/browser_use/transport.py` | environment handed to child processes | — | pure functions of a passed mapping (G3) | — |
+| `LOCALAPPDATA`, `ProgramFiles`, `ProgramFiles(x86)`, `ProgramW6432` | `provisioning/managed_browser.py` | where Chrome is installed; default Chrome user-data dir | — | browser (G4) | `browser_binary_candidates`, `local_app_data` |
+| `AGENT_QUERY`, `AGENT_SESSION_ID` | `playwright_runtime/main.py` | demo entry point input | `""`, `demo-browser-session` | core reader (G5) | `read_demo_inputs()` |
 
-Counts: 37 core names, 33 browser names plus the new `BROWSER_PROVISIONING`, 1 exempt read, 45 names in questions
+"Read in" is the state before the environment boundary step; owners of the former question rows were decided in
+the wave 1 review (G2–G5). Counts at the settings step: 37 core names, 33 browser names plus the new
+`BROWSER_PROVISIONING`, 1 exempt read, 45 names in questions
 (28 runtime-MCP-server, 12 child-process plus the `BROWSER_USE_*` family, 3 more OS install paths, 2 demo). Names
 read by both objects: `BROWSER_DRIVER`, `BROWSER_TIMEOUT_S`, `PLAYWRIGHT_MCP_TIMEOUT_S`.
 
@@ -243,7 +245,7 @@ read by both objects: `BROWSER_DRIVER`, `BROWSER_TIMEOUT_S`, `PLAYWRIGHT_MCP_TIM
 ### Known leftovers
 
 1. Every module outside the two config modules still reads the environment itself; the env-read allowlist is
-   unchanged.
+   unchanged. (Settled by "Environment boundary".)
 2. Facades now fail earlier on some invalid input: an unknown `BROWSER_DRIVER` raises when the guardrails or the
    runtime settings are built (before: when the browser service started, and not at all when the instance carried a
    `driver_mode`); a `BROWSER_MANAGED_PORT` that is not a positive integer raises whenever `BrowserSettings` is
@@ -339,7 +341,8 @@ the same Chrome, flags, ports and profiles.
 ### Known leftovers
 
 1. `provisioning/managed_browser.py` still reads `LOCALAPPDATA` for the default Chrome user-data dir (kill-existing
-   without a user-data dir); G4 covered the install paths only.
+   without a user-data dir); G4 covered the install paths only. (Settled by "Environment boundary":
+   `BrowserSettings.local_app_data`.)
 2. The three `service.py` entries left in the env-read allowlist touch the Playwright MCP child's env mapping. They
    go when the MCP driver owns its config.
 3. The service stops Chrome through the handle API, not `release(device)`: the process registry shares handles
@@ -355,3 +358,96 @@ the same Chrome, flags, ports and profiles.
 7. An invalid instance `driver_mode` still raises "BROWSER_DRIVER must be one of: remote, managed, extension".
 8. Settings leftover 3.3 (Chrome install discovery) is settled by decision 9; Settings leftover 1 no longer applies
    to `service.py`.
+
+## Environment boundary
+
+Only `playwright_runtime/config.py` and `surfaces/browser/config.py` read the process environment (plan invariant
+9); every other module receives settings or values from them (S_20 "Environment boundary"). Wave 1 review decisions
+G2, G3, G5, G7 are implemented here, together with the two middleware follow-ups G10 and G11.
+
+### Decisions
+
+1. **Settings come from the caller; a missing one is built through the config module.** Entry points (`main.py`,
+   the runtime MCP server) build the settings once and pass them down; `BrowserAgentRuntime` and `BrowserService`
+   take them as keywords. Public functions that are called without settings today (tests, the harness subagent
+   factory, `browser_agent.py`) fall back to `X.from_process_env()` at the moment they read the environment before,
+   so the read timing does not move. `browser_agent.py` is not changed in this step.
+2. **`utils/env.py` is pure (G7).** It keeps the defaults and one set of parse helpers used by both config
+   modules; the duplicated `_first` / `_int` / argument split / truthy sets / provider aliases in the config modules
+   are gone. Helpers that read the environment and have no caller left are deleted (`first_non_empty_env`,
+   `resolve_int_env`, `resolve_bool_env`, `resolve_model_name`, `resolve_browser_timeout_s`, `resolve_upload_root`,
+   `resolve_model_settings`); `load_repo_dotenv` and `resolve_repo_dotenv_path` move to
+   `playwright_runtime/config.py`, which already re-exported the former.
+3. **`RuntimeServerSettings` nested in `CoreSettings` (G2)**, with two parsers keeping the client and server
+   readers apart: the client takes the `BROWSER_RUNTIME_*` aliases, the server does not (except the log dir, which
+   it always took). `port` stays a string and `args` a raw string, so an invalid port still fails where it is used,
+   and the client's own argument splitting (`posix` by OS, whitespace fallback) is unchanged.
+4. **Child-process environments are pure functions in the config modules (G3)**: `runtime_server_child_env(environ)`
+   and `runtime_server_environ(environ)`; callers pass `process_environ()`. The old passthrough loop of
+   `_build_child_env` copied each listed variable onto a copy of the same environment and is dropped as a no-op. The
+   sidecar environment stays in `transport.py`: it copies OS and `BROWSER_USE_*` names from the given mapping and
+   takes the upload root from `BrowserSettings.upload_root` (resolved; the sidecar resolves it again).
+5. **The runtime MCP server stops writing `os.environ`.** Its tool timeout defaults (`BROWSER_TIMEOUT_S` and
+   `PLAYWRIGHT_TOOL_TIMEOUT_S` = 600) are applied to the mapping its settings are parsed from, and the settings go
+   to the runtime, the service and the worker; the worker tool timeout under the server stays 600 s. Two
+   module-level slots hold the settings `main()` built, next to the server's existing `_runtime` slot; without
+   `main()` the runtime reads the process environment as before.
+6. **Demo inputs through `read_demo_inputs(environ)` (G5).**
+7. **`browser_logging` stays an allowlisted exception.** Configuring the logger from `CoreSettings` at a composition
+   point needs process-global state (the plan forbids module-level state), and code that never passes a composition
+   point (core `react_agent`, the live driver, tests) would lose `./logs/browser_agent.log`. It moves with the
+   logging hook into `openjiuwen.core` (plan Phase 4).
+8. **`BrowserSettings.local_app_data`** carries `LOCALAPPDATA` for the default Chrome user-data dir, next to the
+   install paths of G4.
+9. **G10**: `RunScript.args` joins `__sensitive_fields__`; `Tracing` leaves `message` out of the error record of a
+   sensitive command.
+10. **G11**: `SidecarTransport.request` sends `cancel` for its id when it is cancelled, then re-raises.
+
+### Rejected options
+
+- **Configuring `browser_logging` from settings now** (decision 7).
+- **Child-environment builders left in `browser_tools.py` / `transport.py` as allowlisted "mapping, not process
+  env" entries.** The names they spell are env names; the config modules are where env names are spelled.
+- **Leaf defaults read from settings inside `controllers/` or `utils/`.** Both are core; they would import the
+  browser surface settings. They take the value; `None` means not configured.
+- **A sentinel to tell "not passed" from "not configured" for the upload root.** Every caller in the package
+  passes the value.
+
+### Verification
+
+- `test_settings_passing.py` (+34): `RuntimeServerSettings` client and server parsing (alias order, defaults,
+  timeout, fallback flag, tri-state stateless flag, nesting); pure environment mappings; `main()` building the
+  settings once and passing them to the runtime; `build_runtime_settings`, the runtime, the runtime MCP config, the
+  worker agent, the status flag, the selector cache, upload paths, the sidecar environment and the browser-use
+  factory using the given values over a conflicting process environment.
+- `drivers/test_middleware.py` (+4, G10), `test_browser_use_transport.py` (+1, G11).
+- Existing tests changed because a patched symbol or a signature moved (no assertion weakened):
+  `test_file_uploads.py` (passes `upload_root` instead of patching `resolve_upload_root`),
+  `test_browser_use_upload_validation.py` (same), `test_config.py` (the runtime log test passes
+  `RuntimeServerSettings` and an empty environ instead of patching `_build_child_env`),
+  `test_browser_probe_cards.py` (the patched `get_selector_cache` takes the path), `test_browser_runtime_rail.py`
+  (the bare runtime gets `_core_settings`), `drivers/test_conformance_browser_use_live.py` (passes
+  `BrowserSettings.from_process_env()` to the factory, which no longer reads `BROWSER_USE_SIDECAR_PYTHON` itself).
+- Architecture allowlists: env reads 14 files / 82 descriptors / 92 reads -> 3 / 9 / 9 (sidecar, `browser_logging`,
+  the `service.py` env mapping); `KEY_TUPLE_ENV_NAMES` removed (every name is now spelled in a config module);
+  browser words `config.py` 8 -> 9 and `main.py` 4 -> 3 (the demo session id moved); module size `runtime.py`
+  6383 -> 6396, `service.py` 1904 -> 1907 (settings keywords).
+- `pytest tests/unit_tests/harness/tools/browser_move -q`: **1399 passed, 60 skipped** (before: 1360 / 60; MCP
+  goldens, tool/prompt snapshots and the runner contract unchanged). Harness tests that build the browser subagent:
+  **248 passed**.
+
+### Known leftovers
+
+1. `browser_logging` reads the environment (decision 7).
+2. The three `env_map` entries of `service.py` (Provisioning leftover 2).
+3. `controllers/action.py` `list_upload_files`: ruff now reports ASYNC240 on its existing `upload_root.exists()`,
+   because the root became a typed parameter; behaviour unchanged.
+4. Invalid input fails earlier in a few places: `ensure_execute_signature_compat`, `build_browser_worker_agent` and
+   `is_browser_subagent_status_log_enabled` without settings build `CoreSettings`, so an unknown `BROWSER_DRIVER`
+   raises there too.
+5. Behaviour for callers outside the package: `register_builtin_actions()`, `resolve_upload_file_paths()` and a
+   `BrowserSelectorCache()` without a path no longer read `BROWSER_UPLOAD_ROOT` / `OPENJIUWEN_BROWSER_SELECTOR_CACHE`;
+   `create_browser_use_driver(device, None)` no longer honours `BROWSER_USE_SIDECAR_PYTHON`. `utils` no longer
+   exports the deleted helpers.
+6. `python -m openjiuwen.harness.tools.browser_move.playwright_runtime_mcp_server` fails before this step's code at
+   `from clients.stdio_client import ...` (relative import beyond the top-level package); not changed here.
