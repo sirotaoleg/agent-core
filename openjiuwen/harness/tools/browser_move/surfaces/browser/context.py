@@ -12,11 +12,16 @@ from openjiuwen.harness.tools.browser_move.contract import ContextRef, SurfaceCo
 
 @dataclass(frozen=True, kw_only=True)
 class BrowserContext(SurfaceContext):
-    """Page URL and title, tabs, PDF viewer flag, scroll position, last HTTP status, open dialog ("type: message")."""
+    """Page URL and title, tabs, PDF viewer flag, scroll position, last HTTP status, open dialog ("type: message").
+
+    ``tab_urls`` runs parallel to ``tabs`` and ``current_tab`` indexes the focused one; both are empty when unknown.
+    """
 
     url: str
     title: str = ""
     tabs: tuple[ContextRef, ...] = ()
+    tab_urls: tuple[str, ...] = ()
+    current_tab: int | None = None
     is_pdf_viewer: bool = False
     pixels_above: int = 0
     pixels_below: int = 0

@@ -97,7 +97,11 @@ class Scene:
 
 @dataclass(frozen=True)
 class SurfaceProfile:
-    """The contract between the core and one surface; the core uses nothing else from a surface."""
+    """The contract between the core and one surface; the core uses nothing else from a surface.
+
+    ``capability_catalog`` maps a catalog entry to its (command, ref kind) pairs, ``None`` for a call without an element
+    ref; ``capability_tools`` maps the same entry to the names of the tools it selects.
+    """
 
     name: str
     commands: tuple[type[Action], ...]
@@ -107,6 +111,7 @@ class SurfaceProfile:
     capability_catalog: Mapping[str, frozenset[tuple[type[Action], type | None]]] = field(
         default_factory=dict, hash=False
     )
+    capability_tools: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
     extra_tools: tuple[Any, ...] = ()
     rails: tuple[Any, ...] = ()
     policy_rules: tuple[PolicyRule, ...] = ()
