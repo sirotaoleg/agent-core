@@ -1113,10 +1113,129 @@ yet.
 
 ### Known leftovers
 
-1. The MCP decoder does not fill `tab_urls`/`current_tab` yet (tool factory task); browser-use `SwitchContext` and
-   `CloseContext` results carry no surface at all, so their tab list is empty until the browser-use helpers task.
-2. No built-in driver fills `DriverInfo.native_tools` yet; the MCP driver does with the tool factory.
+1. MCP part done with the tool factory (the MCP decoder fills `tab_urls`/`current_tab`). Browser-use
+   `SwitchContext` and `CloseContext` results carry no surface at all, so their tab list is empty until the
+   browser-use helpers task.
+2. Done with the tool factory: the MCP driver fills `DriverInfo.native_tools` at `start()`.
 3. `browser_find` has no spec; its description and schema come from the native tool (MCP) or the 857239db text
    (browser-use) when it becomes an extra tool.
 4. Browser-use results have no `detail` for most commands, so many render as no text; the browser-use wire
    fixtures show what the model reads there.
+
+## Tool factory and Playwright MCP native tools
+
+Phase 4 item 1 (the factory half): the Playwright MCP driver offers its server tools as native tools, and
+`ToolFactory` turns the browser profile plus a driver's `DriverInfo` into model-facing `CommandTool`s (S_20 "Tool
+factory", "Native tools"). The tool-list goldens are rebuilt from the factory alone. No agent uses the factory yet;
+nothing in `runtime.py`, `service.py`, `agents.py` or `browser_agent.py` changed.
+
+### Decisions
+
+1. **MCP decoders are the inverse of the handlers.** `drivers/playwright_mcp/tools.py` holds one decoder per server
+   tool a capability can select (24). The test decodes every argument set the driver's handler test sends and checks
+   that the driver sends exactly those arguments again. A `target` matching `ARIA_REF` is a `DriverRef` at the
+   generation the page state last saw it in, anything else a `Locator(css)`; `doubleClick` is `count=2`;
+   `slowly` types without clearing (`clear=not slowly`), which is what the server does.
+2. **Cosmetic and dropped arguments are accepted and ignored** (C11, C12, C16): `element` everywhere, `filename`,
+   the snapshot's `target/depth/boxes`, the screenshot's `target/element/type/scale` (element screenshots are
+   dropped), the click's `delay`. Points carry no generation (`PointRef(x, y, "")`): the model sends none and the
+   page-state check lets an empty generation pass.
+3. **Native tools come from `tools/list` at `start()`.** Only tools with a decoder become `NativeTool`s; the schema
+   is the card the client already lists (`sanitize_json_schema`, the same path the goldens were captured through),
+   the description is verbatim. `tool_name_prefix` is `mcp_model_tool_prefix(server_name)`, the function the
+   ability manager uses (Q2: no instance-key suffix).
+4. **The MCP result decoder fills `tab_urls` and `current_tab`** (Q-B) from every header: `PageHeader` gains
+   `tab_urls`; a page without `### Open tabs` has its own URL as the one entry.
+5. **`build(capabilities, *, image_support, session, page_state)`.** The task wrote `build(capabilities, *,
+   image_support)`; a `CommandTool` needs the session and the page state at call time and the `ToolContext` for
+   extra tools is made of them, so they are arguments of `build`. `ToolFactory(profile, driver_info)` stays as
+   designed and selection does not depend on them.
+6. **`Observe` counts as handled on every driver**: it is `Driver.observe`, never in `info.actions`.
+7. **Rule 4 (generated schema) needs ref kinds.** Without that restriction browser-use got a `browser_mouse_wheel`
+   tool with an empty schema (`Scroll` is handled, the catalog pairs it with `None`), against C21 (no `Scroll` tool
+   on browser-use). A spec with no schema and no ref kinds to generate from is skipped and logged.
+8. **Screenshot gate without tool names.** The core may not name tools (architecture tests). Without image support
+   the factory drops a spec whose only command is `Observe` and whose decoder, called with no arguments, asks for a
+   screenshot: `browser_take_screenshot` on both dialects; `browser_snapshot` and `browser_tabs` are untouched.
+9. **Observe outcomes render by the tool.** A tool whose only command is `Observe` renders `renderer.observation()`
+   (the snapshot text); `browser_tabs` (several commands) renders `renderer.result()`, the tab list.
+10. **`CommandRecord.surface` instead of `url`/`title` fields.** `url` is a browser word, forbidden in the core;
+    the typed `SurfaceContext` carries both, and the browser rail reads `record.surface.url` / `.title`.
+    `command` is the command type, not the instance, so no typed text or script sits in the record.
+11. **The record carries the message metadata** (decided with Aleh, 2026-10-10). A tool cannot set
+    `ToolMessage.metadata`: the ability manager builds the message from `render_for_llm` after `invoke`
+    (`ability_manager.py`, "Build ToolMessage for successful execution"). `CommandRecord.message_metadata` gives
+    `success`, `executed`, `state_changed`, `denied` with today's meaning (`state_changed` for a success that may
+    change the screen, a timeout, or a context change; `executed=False` for anything stopped before the page, which
+    the context processors treat like today's denial); the rail copies it in `after_tool_call`.
+12. **Stale before the driver.** A `StaleRef` from `page_state.check` costs one `observe()`; the observation is
+    recorded and rendered under the error (G9). If that observe fails, its own error is what the model reads.
+13. **`browser_find` stays out of this task** (decided with Aleh, 2026-10-10): it has no command (C10) and becomes
+    an extra tool with the browser helpers. The factory goldens compare the 13 command tools and assert that
+    `browser_find` is the only MCP tool missing.
+14. **Skips are logged once per factory**, keyed by name: an entry that selects no tool, a spec the driver cannot
+    run, a selected name with no spec that no extra tool serves.
+15. **Images** use the multimodal shape MCP tools deliver; `source` is the driver name (today `mcp`).
+16. **Tool-result golden at the renderer level**, as the design states: each recorded answer decoded with the result
+    decoder, the command with the native decoder, rendered with `result()` / `error()`; `browser_snapshot` answers
+    render as the observation the driver makes of them. `regenerate --results` rewrites the files and prints each
+    one's diff against the fixture's recorded `model_text`. The files are `.txt`, which the repository ignores, so
+    they are added with `git add -f`.
+
+### Rejected options
+
+- **A core hook copying tool-output metadata onto the tool message.** Touches `openjiuwen/core`; the record is
+  enough for the rail (Aleh chose the record).
+- **Building `browser_find` now** to make `runner` byte for byte: it is the helpers task's extra tool.
+- **A screenshot flag on `ToolSpec`, or a tool-name list in the factory.** A contract change, or tool names in the
+  core.
+- **Probing every decoder with empty arguments.** Generated decoders raise `TypeError` without a ref; only
+  `Observe`-only specs can be screenshot tools.
+- **`ToolFactory(profile, ToolContext)`.** The context would have to exist before selection, which needs neither
+  the session nor the page state.
+- **Rendering the result golden through `CommandTool` on a fake server.** Snapshot and screenshot answers are
+  consumed inside `observe()`; a per-fixture golden would need invented second answers.
+
+### Golden comparison (factory alone, `image_support=False`)
+
+| View | Result |
+|---|---|
+| MCP `runner` | the 13 command tools equal the golden byte for byte; missing only `browser_find` |
+| MCP `core`, `advanced_code`, `extended_interaction`, `pdf` | equal, minus the 4 helpers and `browser_find` |
+| MCP `vision` | equal minus helpers, `browser_find`, `browser_mouse_down`, `browser_mouse_up` (C20) |
+| MCP `unsafe_dev` | minus helpers, `browser_find`, `browser_run_code_unsafe` (C7) |
+| MCP `devtools` / `network` / `storage` / `testing` / `config` | minus helpers, `browser_find` and the 12 / 5 / 17 / 5 / 1 tools with no command (C25) |
+| browser-use, every view | equal except: `browser_cancel_run`, `browser_clear_cancel` dropped (Q3); `browser_close`, `browser_drag`, `browser_drop` only with `extended_interaction` (Q3); `browser_take_screenshot` only with image support (the MCP rule, now on both drivers); `browser_find`, `browser_recall_offload` not yet (extra tools); `browser_tabs` enum adds `new` (Q6) |
+
+### Verification
+
+- `drivers/playwright_mcp/test_tools.py` (78): round trip over the driver's 35 decodable handler cases, every spec
+  the server offers has a decoder and nothing else does, target and generation rules, ignored arguments, tabs,
+  16 invalid-argument cases.
+- `drivers/playwright_mcp/test_driver.py` (+3): native tools after `start()` (description, sanitized schema,
+  decoder), empty before, prefix. `test_result.py`: surfaces carry `tab_urls` / `current_tab` (expectations
+  updated). `surfaces/test_browser_renderer.py`: tab lists now come straight from the decoder (the helper that
+  filled the fields by hand is gone).
+- `test_tool_factory.py` (32): selection order, ref-kind and command skips, logging once, native over profile form,
+  description fallbacks, generated schema, screenshot gate, extra tools from the `ToolContext`, builders for
+  `ActionPolicy` (a denial through the rail), the pipeline (decode, execute, record, render), stale ref before the
+  driver with one observation, free observation recorded not rendered, observation vs result rendering, image
+  blocks, typed errors, refused results, undecodable arguments, restart message, task failure, metadata table.
+- `snapshots/test_tool_factory_golden.py` (37) and `snapshots/test_tool_result_golden.py` (37; 36 fixtures, 11
+  identical to the recorded model text, the rest differing only by design §4 items 1, 2, 3, 9 and the screenshot
+  link).
+- Fail-before: the changed decoder tests fail on the old decoder (14 failed); the new modules' tests fail at import.
+- `pytest tests/unit_tests/harness/tools/browser_move`: **2205 passed, 113 skipped** (old MCP goldens, runner
+  contract, architecture included).
+- Live: Playwright MCP conformance **51 passed**, browser-use conformance **45 passed**.
+
+### Known leftovers
+
+1. `browser_find` and the helper tools (probes, batch, recall) come as extra tools with the helpers task; the factory
+   goldens then compare all 14 / 18 tools.
+2. Nothing copies `CommandRecord.message_metadata` onto the tool message yet (the switch's rail work).
+3. A screenshot tool renders through `observe()`: on MCP that is the snapshot text and the image (two server calls);
+   today the model gets the image and a file link. Only vision with image support sees it.
+4. browser-use does not fill `tab_urls` / `current_tab` yet (helpers task).
+5. `profile.rails` factories are not called by the factory; the rails task registers them with the `ToolContext`.
+6. The browser-use tool-result golden needs the browser-use wire fixtures (helpers task).

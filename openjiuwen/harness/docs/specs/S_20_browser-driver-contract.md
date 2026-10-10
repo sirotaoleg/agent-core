@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
 | Last revised | 2026-10-10 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -22,7 +22,8 @@ live, the middleware wraps any driver and the composition root builds a started 
 uses them yet.
 
 The browser surface profile (tool specs, renderer, capability catalog) is specified under "Browser surface
-profile"; the tool factory that turns it into model-facing tools gets its own section when it lands.
+profile"; the tool factory that turns it and the driver's native tools into model-facing tools under "Tool
+factory". No agent uses the factory yet.
 
 ## Contract types
 
@@ -547,7 +548,8 @@ called with; `DriverSession` provisions again from it.
 | `scene` | `None` (the conformance suite takes `browser_scene()` directly) |
 
 `BrowserContext` also carries `tab_urls` (parallel to `tabs`) and `current_tab` (index of the focused tab); both are
-empty when the driver does not report them. Neither built-in driver fills them yet.
+empty when the driver does not report them. The Playwright MCP driver fills them from every header; browser-use does
+not yet.
 
 ### Tool specs (`tools.py`)
 
@@ -671,6 +673,85 @@ A reason, or a `ValueError` from parsing or decoding, denies the call:
 
 Tools without a decoder pass unchecked.
 
+## Tool factory (`playwright_runtime/tool_factory.py`)
+
+`ToolFactory(profile, driver_info).build(capabilities, *, image_support, session, page_state) -> AgentTools`
+turns the selected tool specs into one `CommandTool` each. `capabilities` are resolved entry names (the caller
+adds `core`, as `resolve_browser_capabilities` does). The module names no surface, driver or tool (architecture
+tests). No agent uses it yet.
+
+### Selection and the four rules
+
+For each entry, `profile.capability_tools[entry]` gives the spec names in order (a name is emitted once) and
+`profile.capability_catalog[entry]` the `(command, ref kind)` pairs. Per selected spec:
+
+1. **Handled.** Every command of the spec is in `driver_info.actions` (`Observe` always is: every driver
+   observes), and when the entry pairs that command only with ref kinds, the driver accepts at least one of them.
+   Otherwise the spec is skipped.
+2. **Native.** `driver_info.native_tools[spec.name]` exists → its description, schema and `build`.
+3. **Profile form.** Else `spec.schema` and `spec.build`, with `spec.description`, else the first
+   `driver_info.tool_hints` entry of the spec's commands, else the command's docstring.
+4. **Generated.** Else, for a spec with one command and ref kinds the driver accepts: a schema with `ref: string`
+   (`DriverRef`), `x`, `y: integer` (`PointRef`), `css: string` (`Locator`), and a decoder that builds the command
+   from the one given. A spec with no ref kinds to generate from is skipped.
+
+The tool name is `driver_info.tool_name_prefix + spec.name`. Without `image_support`, a spec whose only command is
+`Observe` and whose decoder, called with no arguments, asks for a screenshot is not emitted (today's rule for
+`browser_take_screenshot`, without a tool name in the core). Each emitted spec's `prompt_section` is collected. Then
+each `profile.extra_tools` factory is called with the `ToolContext` and its tool appended. An entry that selects no
+tool, a skipped spec, and a selected name with no spec that no extra tool serves (under its name or the prefixed
+one) are logged once per factory on `tool_logger`.
+
+`AgentTools(tools, prompt_sections, builders)`: `builders` maps each command tool's model-facing name to its
+decoder; it is the map `ActionPolicy` takes.
+
+### `CommandTool`
+
+One instance per emitted tool, a core `Tool` (`ToolCard(id=name, name, description, input_params=schema)`).
+`invoke(args)`:
+
+1. `action = build(args, page_state)`; a `ValueError` returns the failure `### Error\n<message>` and nothing is sent;
+2. `page_state.check(action)`; a `StaleRef` makes one `session.observe(Observe())`, recorded, and the error is
+   rendered with that fresh observation; the driver never sees the stale command;
+3. `session.execute(action)`, or `session.observe(action)` for an `Observe`;
+4. `page_state.record(action, outcome)`;
+5. render: an `ActionResult` with `renderer.result`; an observation with `renderer.observation` when the tool's only
+   command is `Observe`, else with `renderer.result` on `ActionResult(ok=True, value=<screenshot>, observation,
+   surface)` (the tab list of `browser_tabs list`); a `DriverError` with `renderer.error(action, error, None)`.
+
+The output is a `ToolOutput`: `success = ok`; `data = {"content": <text blocks joined by newlines>, "command":
+CommandRecord}`; on failure `error` is the same text. With `image_support`, image blocks go to `data["multimodal"]`
+as `{"type": "image", "source": <driver name>, "source_path": <tool name>, "mime_type": "image/png", "data_url"}`
+and the content gets the note `N image(s) attached as multimodal input.`, the shape MCP tools deliver; without it
+image blocks are dropped. A task failure from the session (`BaseError`, second lost connection) propagates.
+
+### `CommandRecord`
+
+Frozen; never parsed from text.
+
+| Field | Value |
+|---|---|
+| `command` | the command type |
+| `effect` | its `Effect` |
+| `ok` | `ActionResult.ok`; `False` for an error |
+| `dispatched` | `True` for a result; `error.dispatched` for an error |
+| `context_changed` | `ActionResult.context_changed` |
+| `error` | the `DriverError` type name, or `None` |
+| `surface` | the result's surface context; for an error, the page state's |
+| `value` | `ActionResult.value` |
+| `generation` | the generation stamped by `record` (the page state's current one for an error) |
+
+`message_metadata` gives the tool-message metadata keys the context processors read: `success = ok`, `executed =
+dispatched`, `state_changed = context_changed or (effect != READ and (ok or error == "ActionTimeout"))`, `denied =
+False` (denials come from `ActionPolicy`). A tool cannot set `ToolMessage.metadata` (core builds the message from
+`render_for_llm` after `invoke`); a rail copies `message_metadata` onto it in `after_tool_call`.
+
+### `ToolContext`
+
+`ToolContext(driver, page_state, renderer, driver_info, settings, image_support)`: what `profile.extra_tools` and
+`profile.rails` factories receive; `driver` is the `DriverSession`. The factory builds it from its arguments,
+`profile.renderer` and `profile.settings`.
+
 ## Drivers
 
 Both drivers fill `BrowserContext` (`surfaces/browser/context.py`). While a JavaScript dialog blocks the page,
@@ -755,11 +836,11 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   `split_sections` keeps their order.
 - **Boxes.** `without_boxes(text)` removes the ` [box=x,y,width,height]` annotations of a snapshot taken with
   `boxes`; the result is byte for byte the text the server gives without `boxes` (checked live on the scene pages).
-- **Header** (`PageHeader(url, title, tabs, focused)`). From `### Page` (`- Page URL:`, `- Page Title:`; the title
+- **Header** (`PageHeader(url, title, tabs, focused, tab_urls)`). From `### Page` (`- Page URL:`, `- Page Title:`; the title
   is missing while a dialog is open) and `### Open tabs`, or from a `browser_tabs` result list (`parse_tabs`). A
   tab is `ContextRef(id=<index>, kind="tab", title)`; the `(current)` one is `focused`. The server lists tabs only
   when more than one is open, so a `### Page` without `### Open tabs` means one tab, `"0"`. `tabs` always includes
-  the focused tab.
+  the focused tab; `tab_urls` runs parallel to it (the page URL for the single tab).
 - **Elements** (`parse_elements`). One `Element` per YAML node with a ref matching `ARIA_REF` = `(f\d+)?e\d+`
   (iframe refs and the frame-prefixed refs of later pages included); nodes without a ref (`text:`, `option`) are
   not elements. `DriverRef(ref, generation="")`, `role`, `name` (JSON-unescaped), `focused` from `[active]`,
@@ -778,7 +859,8 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
     which goes to `surface`.
   - `detail`: the remaining sections as text, without `### Result`, `### Snapshot` and `### Events`; `None` when
     nothing remains.
-  - `surface`: `BrowserContext(url, title, tabs, dialog)` from the header; `None` when the result has no
+  - `surface`: `BrowserContext(url, title, tabs, tab_urls, current_tab, dialog)` from the header (`current_tab` is
+    the position of the focused tab); `None` when the result has no
     `### Page` and is not a tab list (`browser_fill_form`, `browser_evaluate`, `browser_press_key`). `dialog` is
     `"<type>: <message>"` from a `### Modal state` line `- ["<type>" dialog with message "<message>"]: can be
     handled by …` (the server does not escape the message; it ends at the first `"]: can be handled by`).
@@ -815,7 +897,12 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   `device.endpoint` as the CDP endpoint. The composition root never sees the command line.
 - `start()` owns one MCP client (`BrowserMoveStdioClient`, or `BrowserMoveStreamableHttpClient` for
   `streamable-http`) and calls it directly, never through `ToolMgr`; it reads `tools/list` once and keeps each
-  mapped tool's description as `DriverInfo.tool_hints`. `health()` pings the session.
+  mapped tool's description as `DriverInfo.tool_hints`, and every listed tool that has a decoder (`tools.py`) as
+  `DriverInfo.native_tools[name] = NativeTool(description, schema, build)`: the description verbatim, the schema
+  as the client lists it (`inputSchema` through `utils/parsing.sanitize_json_schema`, so without `$schema`). Before
+  `start()` `native_tools` is empty. `tool_name_prefix` is `mcp_model_tool_prefix(server_name)`
+  (`mcp_playwright-official_`), the prefix the ability manager gives MCP tools; an instance key never changes it.
+  `health()` pings the session.
 - `observe()` calls `browser_snapshot` with `boxes: true` (and `browser_take_screenshot` when asked), so every
   element has `bounds` and a `PointRef` can be built from an observation. `native_text` is the full text of that
   result (header, open tabs, YAML) without the boxes (`without_boxes`): what the model reads today. Tabs come from
@@ -844,6 +931,41 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   coordinate tools.
 - **Context ids are valid until the next context change.** On this driver they are tab positions (`"0"`, `"1"`),
   which shift when an earlier tab closes; every open, switch and close reports `context_changed`.
+
+#### Native tools (`drivers/playwright_mcp/tools.py`)
+
+`DECODERS` maps each server tool a capability can select to the pure decoder of its arguments, the inverse of the
+driver's handler: decoding a call the driver sent and sending the command again gives the same arguments. A
+`target` that matches `ARIA_REF` becomes `DriverRef(target, resolver.generation_of(target))`, any other target
+`Locator(css=target, text=None, generation=resolver.generation_of(target))`; coordinates become
+`PointRef(round(x), round(y), "")` (the model sends no generation for a point).
+
+| Server tool | Command |
+|---|---|
+| `browser_click` | `Click(target, button, modifiers, count=2 if doubleClick else 1)` |
+| `browser_type` | `TypeText(target, text, submit, clear=not slowly, slowly)` |
+| `browser_press_key` | `PressKey(key)` |
+| `browser_hover` / `browser_drag` | `Hover(target)` / `Drag(startTarget, endTarget)` |
+| `browser_select_option` | `SelectOption(target, values)` (at least one) |
+| `browser_fill_form` | `FillForm(fields)`: each `FormField(target, FieldKind(type), value)` |
+| `browser_drop` | `Drop(target, paths, data=<MIME type, value pairs>)` |
+| `browser_file_upload` | `UploadFile(None, paths)` (answers the open file chooser) |
+| `browser_handle_dialog` | `HandleDialog(accept, promptText)` |
+| `browser_evaluate` | `RunScript(function, target=<target or None>)` |
+| `browser_navigate` / `browser_navigate_back` | `Navigate(url)` / `Back()` |
+| `browser_snapshot` | `Observe()` |
+| `browser_take_screenshot` | `Observe(include_screenshot=True, full_page=fullPage)` |
+| `browser_tabs` | `list` → `Observe()`; `new` → `OpenContext(url)`; `select` → `SwitchContext(contexts[index])`; `close` → `CloseContext(contexts[index])`, the current context without `index` |
+| `browser_close` | `CloseContext(current_context)` |
+| `browser_mouse_click_xy` / `_move_xy` / `_drag_xy` | `Click(point, button, count=clickCount)` / `Hover(point)` / `Drag(start, end)` |
+| `browser_mouse_wheel` | `Scroll(None, deltaX, deltaY)` |
+| `browser_pdf_save` / `browser_console_messages` / `browser_network_requests` | `GetPdf(filename)` / `GetConsole(level, all)` / `GetNetwork(static, filter)` |
+
+Arguments that do not change the command are accepted and ignored: `element` (every tool), `filename`, the
+snapshot's `target`, `depth`, `boxes`, the screenshot's `target`, `element`, `type`, `scale`, and the click's
+`delay`. A missing required argument, a wrong type, an unknown field type or tab action, a `select` without index
+and an index outside `contexts` raise `ValueError`. `browser_find` (an extra tool over the last observation) and
+`browser_wait_for` (not model-facing) have no decoder and so no native tool.
 
 ## Relation to other specs
 
