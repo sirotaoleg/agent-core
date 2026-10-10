@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any
@@ -76,6 +77,8 @@ DECODED = {
     "dialog_open_by_click": (FORM, True, True),
     "dialog_handle_accept": (FORM, True, False),
     "click_blocked_by_dialog": (FORM, False, False),
+    "snapshot_during_dialog": (FORM, False, False),
+    "tabs_list_during_dialog": (FORM, True, True),
     "navigate_same_url_reload": (FORM, True, True),
     "navigate_second_page": (FORM, True, True),
     "navigate_back": (POPUP_AND_SECOND, True, True),
@@ -242,7 +245,9 @@ def test_dialog_opened_by_click_changes_the_context(tmp_path: Path) -> None:
     assert result.context_changed is True
     assert result.detail is not None
     assert '["confirm" dialog with message "Delete order?"]' in result.detail
-    assert result.surface == BrowserContext(url=f"{BASE}/index.html", title="", tabs=(_tab(0, ""),))
+    assert result.surface == BrowserContext(
+        url=f"{BASE}/index.html", title="", tabs=(_tab(0, ""),), dialog="confirm: Delete order?"
+    )
 
 
 def test_file_chooser_is_reported_but_keeps_the_context(tmp_path: Path) -> None:
@@ -251,6 +256,7 @@ def test_file_chooser_is_reported_but_keeps_the_context(tmp_path: Path) -> None:
     assert result.context_changed is False
     assert result.detail is not None
     assert "- [File chooser]: can be handled by browser_file_upload" in result.detail
+    assert result.surface is not None and result.surface.dialog is None
 
 
 def test_action_refused_by_an_open_dialog_is_not_ok(tmp_path: Path) -> None:
@@ -261,6 +267,35 @@ def test_action_refused_by_an_open_dialog_is_not_ok(tmp_path: Path) -> None:
         '### Error\nError: Tool "browser_click" does not handle the modal state.\n'
         '### Modal state\n- ["confirm" dialog with message "Delete order?"]: can be handled by browser_handle_dialog'
     )
+    assert result.surface is None
+
+
+def test_action_refused_by_an_open_dialog_shows_it_on_the_page_before(tmp_path: Path) -> None:
+    result = _decode("click_blocked_by_dialog", tmp_path, FORM)
+
+    assert result.surface == dataclasses.replace(FORM, dialog="confirm: Delete order?")
+
+
+def test_tab_list_during_a_dialog_shows_the_page_and_the_dialog(tmp_path: Path) -> None:
+    result = _decode("tabs_list_during_dialog", tmp_path, FORM)
+
+    assert result.surface == BrowserContext(
+        url=f"{BASE}/index.html", title="", tabs=(_tab(0, ""),), dialog="confirm: Delete order?"
+    )
+
+
+def test_dialog_message_keeps_quotes_and_line_breaks(tmp_path: Path) -> None:
+    text = (
+        "### Page\n- Page URL: http://x/\n### Modal state\n"
+        '- ["prompt" dialog with message "Say "hi"\nand go"]: can be handled by browser_handle_dialog\n'
+        "- [File chooser]: can be handled by browser_file_upload"
+    )
+    raw = {"content": [{"type": "text", "text": text}], "isError": False}
+
+    result = decode("browser_click", raw, output_dir=tmp_path)
+
+    assert result.surface is not None
+    assert result.surface.dialog == 'prompt: Say "hi"\nand go'
 
 
 def test_inline_snapshot_becomes_the_observation(tmp_path: Path) -> None:

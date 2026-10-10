@@ -1,0 +1,20 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "snapshot_during_dialog",
+  "request": {
+    "tool": "browser_snapshot",
+    "arguments": {
+      "boxes": true
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Error\nError: Tool \"browser_snapshot\" does not handle the modal state.\n### Modal state\n- [\"confirm\" dialog with message \"Delete order?\"]: can be handled by browser_handle_dialog"
+      }
+    ],
+    "isError": true
+  },
+  "model_text": "{\"result\": \"### Error\\nError: Tool \\\"browser_snapshot\\\" does not handle the modal state.\\n### Modal state\\n- [\\\"confirm\\\" dialog with message \\\"Delete order?\\\"]: can be handled by browser_handle_dialog\"}"
+}

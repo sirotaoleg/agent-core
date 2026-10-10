@@ -46,6 +46,8 @@ CASES = {
     "file_chooser_open_by_click",
     "file_upload",
     "click_timeout_after_action",
+    "snapshot_during_dialog",
+    "tabs_list_during_dialog",
     "evaluate_new_tab_failed",
     "evaluate_browser_closed",
 }

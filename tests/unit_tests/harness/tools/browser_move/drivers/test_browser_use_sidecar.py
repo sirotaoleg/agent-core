@@ -237,11 +237,10 @@ def test_the_dialog_is_handled_on_the_session_that_reported_it():
     ("call", "error"),
     [
         (lambda adapter: adapter.evaluate("() => document.title"), "EvaluateError"),
-        (lambda adapter: adapter.observe(), "ObserveError"),
         (lambda adapter: adapter.screenshot(), "ObserveError"),
         (lambda adapter: adapter.stamp(BUTTON, attribute="data-x", value="1"), "EvaluateError"),
     ],
-    ids=["evaluate", "observe", "screenshot", "stamp"],
+    ids=["evaluate", "screenshot", "stamp"],
 )
 def test_page_reads_fail_at_once_while_a_dialog_is_open(call, error):
     async def scenario() -> None:
@@ -254,6 +253,40 @@ def test_page_reads_fail_at_once_while_a_dialog_is_open(call, error):
             await _quick(call(adapter))
         assert len(client.calls) == sent_before, "nothing reaches the blocked page"
         await adapter.close()
+
+    asyncio.run(scenario())
+
+
+def test_observe_while_a_dialog_is_open_shows_the_page_and_the_dialog_and_sends_nothing():
+    async def scenario() -> None:
+        client = FakeCdp()
+        Page(client, dialog={"type": "alert", "message": "Saved"})
+        adapter = _adapter(client)
+        tab = SimpleNamespace(target_id=TARGET, url="http://x/index.html", title="Scene")
+        adapter._session.get_tabs = AsyncMock(return_value=[tab])
+        await _quick(adapter.click(BUTTON))
+        sent_before = len(client.calls)
+        observed = await _quick(adapter.observe(include_screenshot=True))
+        assert observed["dialog"] == {"type": "alert", "message": "Saved"}
+        assert (observed["url"], observed["title"], observed["elements"]) == ("http://x/index.html", "Scene", [])
+        assert [tab["target_id"] for tab in observed["tabs"]] == [TARGET]
+        assert len(client.calls) == sent_before, "nothing reaches the blocked page"
+        await adapter.close()
+
+    asyncio.run(scenario())
+
+
+def test_act_replies_carry_the_url_and_the_dialog_open_when_they_return():
+    async def scenario() -> None:
+        client = FakeCdp()
+        Page(client, dialog={"type": "confirm", "message": "Proceed?"})
+        adapter = _adapter(client)
+        opened = await _quick(adapter.click(BUTTON))
+        refused = await _quick(adapter.click(BUTTON))
+        handled = await _quick(adapter.handle_dialog(accept=True))
+        assert opened["url"] == "http://x/index.html"
+        assert opened["dialog"] == refused["dialog"] == {"type": "confirm", "message": "Proceed?"}
+        assert handled["dialog"] is None
 
     asyncio.run(scenario())
 
@@ -286,6 +319,7 @@ def test_an_armed_dialog_is_handled_and_still_reported():
         assert reply["ok"] is True
         assert reply["detail"] == "clicked"
         assert reply["dialog_opened"] == {"type": "confirm", "message": "Proceed?"}
+        assert reply["dialog"] is None, "the armed dialog is already handled"
         assert page.dialog_closed.result() is False
 
     asyncio.run(scenario())

@@ -416,6 +416,21 @@ def test_observe_with_a_screenshot_takes_it_at_css_scale(tmp_path: Path, full_pa
     )
 
 
+def test_observe_while_a_dialog_is_open_reads_the_tab_list_and_takes_no_screenshot(tmp_path: Path) -> None:
+    refused = _raw("snapshot_during_dialog")
+    replies = {"browser_snapshot": refused, "browser_tabs": _raw("tabs_list_during_dialog")}
+
+    observation, calls = _run(tmp_path, replies, lambda driver: driver.observe(Observe(include_screenshot=True)))
+
+    assert calls == [("browser_snapshot", {"boxes": True}), ("browser_tabs", {"action": "list"})]
+    assert (observation.elements, observation.screenshot) == ((), None)
+    assert observation.context == _tab(0, "")
+    assert observation.native_text == result_text(refused)
+    assert observation.surface is not None
+    assert observation.surface.url.endswith("/index.html")
+    assert observation.surface.dialog == "confirm: Delete order?"
+
+
 # --- handlers ---------------------------------------------------------------------------------------------------------
 
 SENT = [

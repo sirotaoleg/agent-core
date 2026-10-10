@@ -38,6 +38,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     SceneCase,
     Scroll,
     StaleRef,
+    SurfaceContext,
     SwitchContext,
     TypeText,
     Unsupported,
@@ -69,6 +70,11 @@ NEXT = ("Home",)
 ROW = 10.0
 
 
+@dataclasses.dataclass(frozen=True)
+class FakeScreen(SurfaceContext):
+    dialog_open: bool = False
+
+
 class FakeWorld:
     """What a ``WorldDriver`` acts on. Element ``i`` of a document is ``e<i>`` at ``y = 10 * i``."""
 
@@ -78,6 +84,7 @@ class FakeWorld:
         self.current = "c1"
         self.title = ""
         self.late_waits = 0
+        self.dialog_open = False
         self._opened = 1
 
     def generation(self) -> str:
@@ -92,7 +99,11 @@ class FakeWorld:
             Element(ref=DriverRef(f"e{i}", generation), role="button", name=name, bounds=(0.0, ROW * i, 100.0, ROW))
             for i, name in enumerate(self.names(), start=1)
         )
-        return Observation(context=ContextRef(self.current, "screen", self.title), elements=elements)
+        return Observation(
+            context=ContextRef(self.current, "screen", self.title),
+            elements=elements,
+            surface=FakeScreen(dialog_open=self.dialog_open),
+        )
 
     def resolve(self, ref: Ref) -> str:
         if isinstance(ref, DriverRef):
@@ -120,6 +131,7 @@ class FakeWorld:
         if name == "Home":
             return self._load("home")
         if name == "Alert":
+            self.dialog_open = True
             return ActionResult(ok=True, context_changed=True)
         if name == "Popup":
             self._opened += 1
@@ -160,6 +172,7 @@ class FakeWorld:
         elif isinstance(action, Hover):
             self.title = "hovered"
         elif isinstance(action, HandleDialog):
+            self.dialog_open = False
             self.title = f"dialog:{action.accept}"
         elif isinstance(action, RunScript):
             return ActionResult(ok=True, value="ran")
@@ -241,6 +254,10 @@ def _context_moved(before: Observation, after: Observation, result: ActionResult
     return after.context.id != before.context.id
 
 
+def _shows_dialog(before: Observation, after: Observation, result: ActionResult) -> bool:
+    return isinstance(after.surface, FakeScreen) and after.surface.dialog_open
+
+
 def _click(name: str):
     return lambda seen: Click(target=_ref(seen[-1], name))
 
@@ -300,7 +317,10 @@ def _scene(**overrides) -> Scene:
         context_changes={
             "new-document": lambda actions: SceneCase(steps=(_click("Next"),)),
             "dialog": lambda actions: SceneCase(
-                steps=(_click("Alert"),), observe_between=False, cleanup=(lambda seen: HandleDialog(accept=False),)
+                steps=(_click("Alert"),),
+                check=_shows_dialog,
+                observe_between=False,
+                cleanup=(lambda seen: HandleDialog(accept=False),),
             ),
             "opened": lambda actions: SceneCase(steps=(_click("Popup"),)),
             "switched": lambda actions: SceneCase(
@@ -349,6 +369,11 @@ class StaleAfterDispatch(WorldDriver):
 class NoContextSignal(WorldDriver):
     async def execute(self, action: Action) -> ActionResult:
         return dataclasses.replace(await super().execute(action), context_changed=False)
+
+
+class DialogNotObserved(WorldDriver):
+    async def observe(self, command: Observe) -> Observation:
+        return dataclasses.replace(await super().observe(command), surface=None)
 
 
 class InterceptedAfterDispatch(WorldDriver):
@@ -424,6 +449,9 @@ def _run(check, factory, *args) -> None:
         pytest.param(check_stale_ref, StaleAfterDispatch, (), "before dispatch", id="stale-ref-dispatched"),
         pytest.param(
             check_context_change, NoContextSignal, ("new-document",), "did not report context_changed", id="no-signal"
+        ),
+        pytest.param(
+            check_context_change, DialogNotObserved, ("dialog",), "fails the scene's check", id="dialog-not-observed"
         ),
         pytest.param(check_intercepted, AnonymousIntercept, (), "must describe the element", id="intercept-no-by"),
         pytest.param(

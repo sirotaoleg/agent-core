@@ -480,7 +480,28 @@ def test_a_dialog_opened_by_the_command_changes_the_context_and_is_named():
 def test_no_dialog_leaves_the_detail_alone():
     driver, _request = _driver({**ACT_OK, "dialog_opened": None})
     result = asyncio.run(driver.execute(Click(E1)))
-    assert (result.context_changed, result.detail) == (False, "done")
+    assert (result.context_changed, result.detail, result.surface) == (False, "done", None)
+
+
+def test_a_dialog_open_after_the_command_is_in_the_result_surface():
+    dialog = {"type": "confirm", "message": "Proceed?"}
+    driver, _request = _driver({**ACT_OK, "url": "http://x/", "dialog_opened": dialog, "dialog": dialog})
+    result = asyncio.run(driver.execute(Click(E1)))
+    assert result.surface == BrowserContext(url="http://x/", dialog="confirm: Proceed?")
+
+
+def test_a_command_refused_by_an_open_dialog_shows_it_but_changes_nothing():
+    refused = {
+        **ACT_OK,
+        "ok": False,
+        "detail": "a confirm dialog is open ('Proceed?'); handle it first",
+        "url": "http://x/",
+        "dialog": {"type": "confirm", "message": "Proceed?"},
+    }
+    driver, _request = _driver(refused)
+    result = asyncio.run(driver.execute(Click(E1)))
+    assert (result.ok, result.context_changed) == (False, False)
+    assert result.surface == BrowserContext(url="http://x/", dialog="confirm: Proceed?")
 
 
 def test_pages_opened_by_the_command_are_opened_contexts():
@@ -620,6 +641,25 @@ def test_observe_reports_the_document_title_not_the_sidecar_title():
 def test_observe_keeps_the_sidecar_title_when_the_page_runs_no_script():
     driver, _request = _driver(_wire_observation(title="Viewer"), _sidecar_error("EvaluateError"))
     assert asyncio.run(driver.observe(Observe())).surface.title == "Viewer"
+
+
+def test_observe_while_a_dialog_is_open_runs_no_script_and_takes_no_screenshot():
+    blocked = {
+        "url": "http://x/",
+        "title": "X",
+        "tabs": [{"target_id": "T1", "url": "http://x/", "title": "X", "active": True}],
+        "elements": [],
+        "dialog": {"type": "alert", "message": "Saved"},
+        "driver_generation": 9,
+    }
+    driver, request = _driver(blocked)
+    observation = asyncio.run(driver.observe(Observe(include_screenshot=True, full_page=True)))
+    assert _calls(request) == [("observe", {"include_dom": True, "include_screenshot": False, "cached": False})]
+    assert (observation.elements, observation.screenshot) == ((), None)
+    assert observation.context == ContextRef(id="T1", kind="tab", title="X")
+    assert observation.surface == BrowserContext(
+        url="http://x/", title="X", tabs=(ContextRef(id="T1", kind="tab", title="X"),), dialog="alert: Saved"
+    )
 
 
 ERROR_TABLE = {

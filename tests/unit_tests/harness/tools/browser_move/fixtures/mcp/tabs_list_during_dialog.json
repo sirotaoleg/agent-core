@@ -1,0 +1,20 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "tabs_list_during_dialog",
+  "request": {
+    "tool": "browser_tabs",
+    "arguments": {
+      "action": "list"
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Result\n- 0: (current) [](http://127.0.0.1:<PORT>/index.html)\n### Modal state\n- [\"confirm\" dialog with message \"Delete order?\"]: can be handled by browser_handle_dialog"
+      }
+    ],
+    "isError": false
+  },
+  "model_text": "### Result\n- 0: (current) [](http://127.0.0.1:<PORT>/index.html)\n### Modal state\n- [\"confirm\" dialog with message \"Delete order?\"]: can be handled by browser_handle_dialog"
+}

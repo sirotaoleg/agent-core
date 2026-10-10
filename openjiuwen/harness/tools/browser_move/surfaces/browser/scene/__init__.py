@@ -86,6 +86,7 @@ SECOND_LINK = _Target("Go to second", "second-link")
 # The intercept case covers the button only after observing it (some drivers do not list occluded elements).
 _COVER_SCRIPT = "() => { cover(); return true; }"
 _ABSENT_TEXT = "scene text that never appears"
+_CONFIRM_MESSAGE = "Proceed?"
 _TIMEOUT_S = 2.0
 
 # In order of preference.
@@ -162,6 +163,14 @@ def _other_tab(observation: Observation, not_id: str) -> ContextRef:
 
 def _title_is(expected: str) -> Check:
     return lambda before, after, result: _title(after) == expected
+
+
+def _dialog(context: object) -> str | None:
+    return context.dialog if isinstance(context, BrowserContext) else None
+
+
+def _shows_confirm(before: Observation, after: Observation, result: ActionResult) -> bool:
+    return _dialog(after.surface) == _dialog(result.surface) == f"confirm: {_CONFIRM_MESSAGE}"
 
 
 def _close_extra_tab(seen: Sequence[Observation]) -> Action:
@@ -475,6 +484,7 @@ class _BrowserScene:
                 actions,
                 CONFIRM,
                 _ANY_KINDS,
+                check=_shows_confirm,
                 observe_between=False,
                 cleanup=(lambda seen: HandleDialog(accept=False),),
             ),

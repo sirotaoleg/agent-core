@@ -81,6 +81,8 @@ in brackets.
 | `file_chooser_open_by_click` | `browser_click` on a file input of `upload.html`: `### Modal state` with `[File chooser]` |
 | `file_upload` | `browser_file_upload` of a file in the server's working directory |
 | `click_timeout_after_action` | `browser_click` on a link to `/hang` (the page server answers after 30 s): call log with `performing click action`, `click action done`, then the 5000 ms timeout while waiting for the navigation |
+| `snapshot_during_dialog` | `browser_snapshot` `boxes: true` while a `confirm()` is open: refused like any other page tool (`does not handle the modal state` plus `### Modal state`), no `### Page` |
+| `tabs_list_during_dialog` | `browser_tabs` `list` while the `confirm()` is open: not a page tool, so it answers, with an empty title and `### Modal state` |
 | `evaluate_new_tab_failed` | first `browser_evaluate` after the browser was closed during a call (set up with `browser_run_code_unsafe`): `Failed to open a new tab` |
 | `evaluate_browser_closed` | the next `browser_evaluate`: `Target page, context or browser has been closed` |
 
@@ -101,6 +103,9 @@ in brackets.
   (`\u001b[2m … \u001b[22m`) and folds repeats as `N ×`.
 - The linked snapshot file holds only the YAML. While a dialog is open the
   server writes it empty.
+- While a dialog or a file chooser is open, the server refuses every page
+  tool, `browser_snapshot` and `browser_take_screenshot` included;
+  `browser_tabs` still answers (the title it cannot read is empty).
 - Nothing marks a navigation by click or a new tab: only the URL in
   `### Page` and the `### Open tabs` list (shown only with more than one tab)
   differ from the result before.

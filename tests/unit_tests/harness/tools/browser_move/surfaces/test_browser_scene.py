@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import re
 import urllib.error
 import urllib.request
@@ -15,6 +16,7 @@ import pytest
 import openjiuwen.harness.tools.browser_move.surfaces.browser.scene as scene_module
 from openjiuwen.harness.tools.browser_move.contract import (
     REF_KINDS,
+    ActionResult,
     ContextRef,
     DriverRef,
     Element,
@@ -126,6 +128,18 @@ def test_error_and_context_cases_build(scene):
 def test_same_url_reload_navigates_to_the_entry_address(scene):
     case = scene.context_changes["same-url-reload"](ALL_ACTIONS)
     assert _built(case, _observation(scene)) == [Navigate(url=scene.enter()[0].url)]
+
+
+def test_dialog_case_wants_the_confirm_in_the_result_and_in_the_next_observation(scene):
+    html = (scene_module.PAGES / "index.html").read_text(encoding="utf-8")
+    assert "confirm('Proceed?')" in html
+    check = scene.context_changes["dialog"](ALL_ACTIONS).check
+    before = _observation(scene)
+    shown = dataclasses.replace(before.surface, dialog="confirm: Proceed?")
+    after = dataclasses.replace(before, surface=shown)
+    assert check(before, after, ActionResult(ok=True, surface=shown))
+    assert not check(before, before, ActionResult(ok=True, surface=shown))
+    assert not check(before, after, ActionResult(ok=True))
 
 
 def _without(*commands) -> dict:

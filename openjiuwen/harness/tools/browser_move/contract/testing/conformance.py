@@ -195,15 +195,20 @@ async def check_stale_ref(factory: DriverFactory, scene: Scene) -> None:
 
 
 async def check_context_change(factory: DriverFactory, scene: Scene, name: str) -> None:
-    """The scene's context change ``name`` is reported as ``context_changed``."""
+    """The scene's context change ``name`` is reported as ``context_changed``; an observation then passes its check."""
     async with _session(factory, scene) as driver:
         case = _skip_if_reason(scene, scene.context_changes[name](driver.info.actions))
         prepared = await _prepare(driver, case)
         try:
             result = await driver.execute(prepared.action)
+            after = None if case.check is None else await driver.observe(Observe())
         finally:
             await _cleanup(driver, case, prepared.seen)
     assert result.context_changed, f"{prepared.action!r} ({name}) did not report context_changed: {result!r}"
+    if after is not None:
+        assert case.check(prepared.before, after, result), (
+            f"{prepared.action!r} ({name}) fails the scene's check: result {result!r}, after {_brief(after)}"
+        )
 
 
 async def check_intercepted(factory: DriverFactory, scene: Scene) -> None:

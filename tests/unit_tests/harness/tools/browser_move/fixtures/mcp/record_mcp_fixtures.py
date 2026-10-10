@@ -338,6 +338,13 @@ async def _run_cases(rec: _Recorder, base_url: str, work_dir: Path) -> None:
         {"element": "Slow link", "target": _ref(slow, "link", "Slow link")},
     )
 
+    await rec.call("browser_navigate", {"url": index_url})
+    _, form = await rec.call("browser_snapshot", {})
+    await rec.call("browser_click", {"element": "Delete order button", "target": _ref(form, "button", "Delete order")})
+    await rec.record("snapshot_during_dialog", "browser_snapshot", {"boxes": True})
+    await rec.record("tabs_list_during_dialog", "browser_tabs", {"action": "list"})
+    await rec.call("browser_handle_dialog", {"accept": False})
+
     await rec.call("browser_run_code_unsafe", {"code": _CLOSE_BROWSER_MID_CALL})
     await rec.record("evaluate_new_tab_failed", "browser_evaluate", {"function": "() => document.title"})
     await rec.record("evaluate_browser_closed", "browser_evaluate", {"function": "() => document.title"})
