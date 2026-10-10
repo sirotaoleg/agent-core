@@ -559,3 +559,95 @@ started driver; `create_browser_agent` and the Playwright MCP path keep their wi
    surface and the MCP driver, or earlier if the stored settings are typed `Any`.
 4. A legacy `BROWSER_DRIVER=remote|managed` wins over `PLAYWRIGHT_MCP_EXTENSION=true` (decision 5), so in that
    environment the device and the MCP config still disagree, as before.
+
+## Playwright MCP result decoding
+
+`drivers/playwright_mcp/snapshot.py` parses `@playwright/mcp` text (sections, page header, tab lists, ARIA YAML)
+and `drivers/playwright_mcp/result.py` decodes one tool result into an `ActionResult` or a typed error (S_20
+"Playwright MCP"). They are pure functions; the driver class that calls them comes next. The recorded fixtures
+grew from 14 to 33 cases so that every decoding rule has a real server answer behind it.
+
+### Decisions
+
+1. **`decode` takes `before`, the `BrowserContext` before the call.** The server marks neither a navigation by
+   click nor a popup: the result of a link click differs from a plain click only in the URL under `### Page`, and a
+   new tab only shows up as a longer `### Open tabs` list. A pure decoder cannot see a change without the previous
+   state, so the caller passes it; without it, only navigate, back, tab commands and dialogs set
+   `context_changed`. The task named the signature `decode(tool_name, raw_result, *, output_dir)`; `before` is a
+   keyword-only addition with a `None` default.
+2. **New tabs are the tabs past `len(before.tabs)`.** The server numbers tabs by position and appends new ones;
+   `browser_tabs new` and a `target="_blank"` click both add the last index. A tab list is shown only with more
+   than one tab, so a result with `### Page` and no list means one tab with id `"0"`, and `tabs` always contains
+   the focused tab.
+3. **Every `browser_tabs` result is a context change**, `list` included. The driver uses `browser_tabs` only for
+   open, switch and close (observing reads the tabs from the snapshot), so telling `list` apart would need the
+   arguments for no gain.
+4. **I4: the linked snapshot file is read under `output_dir`**, the server's working directory, because the links
+   are relative to it. The resolved path must stay inside it; a missing, unreadable or empty file gives
+   `observation=None`. The server writes the file empty while a dialog blocks the snapshot, so an empty file is
+   not an empty page.
+5. **I5 on the recorded call logs.** `performing click action` / `click action done` → `ActionTimeout(dispatched=True)`
+   (recorded: a click on a link whose server never answers times out waiting for the navigation). A log of only
+   actionability waits (`waiting for locator(…)`, `locator resolved to`, `attempting/retrying … action`,
+   `waiting for element to be …`, `element is …`, scrolling, `waiting Nms`, `waiting for getBy…(…) to be visible`)
+   → `dispatched=False`; any other line → `True`. "Performed" is checked before "intercepted": a click retried past
+   an overlay and then performed was dispatched.
+6. **`ConnectionLost` on two wordings.** After the browser died during a call, the next call fails with
+   `Protocol error (Target.createTarget): Failed to open a new tab` and the one after with
+   `Target page, context or browser has been closed`. Both mean the browser is gone, and a restart is the recovery.
+7. **A call refused by an open dialog returns `ok=False`** (`Tool "…" does not handle the modal state`, with the
+   `### Modal state` in `detail`). The server sends nothing in that case; browser-use returns `ok=False` for an
+   action while a dialog is open, and the two drivers should agree. Not a listed error rule.
+8. **`detail` drops `### Result`, `### Snapshot` and `### Events`.** The result is in `value` (or `surface` for a
+   tab list), the snapshot in `observation`; events are not reported (the loop guard used to strip them). The
+   remaining text, `### Ran Playwright code`, `### Page`, `### Open tabs` and `### Modal state` included, is what the
+   model sees today.
+9. **A file chooser is not a context change.** It is a modal state but not a dialog: refs stay valid and
+   `HandleDialog` does not answer it. It stays visible in `detail`.
+10. **`ActionIntercepted.by` uses the browser-use form** `tag#id.class "text"`, built from the element preview in
+    the call log, so a rail reads one format from both drivers.
+11. **Element values only for form controls.** `value` is filled for textbox, searchbox, combobox, spinbutton and
+    slider, from the inline text, a child `text:` line (how a filled textbox appears) or the `[selected]` option.
+    A paragraph's text goes to `extra["text"]`, because `value` means a field value on browser-use.
+
+### Rejected options
+
+- **The driver compares the URL and the tabs itself.** It would put part of the decoding rules in the driver;
+  `before` keeps them in one place and testable on fixtures.
+- **Passing the `browser_tabs` arguments to tell `list` from `new`/`select`/`close`.** Not needed (decision 3).
+- **Reading `### Snapshot` file links with any path.** The text comes from a subprocess; the read is confined to
+  `output_dir`.
+- **`DriverError(dispatched=True)` for the modal-state refusal.** Correct by the catch-all rule but it would make
+  the two drivers disagree on the same situation.
+- **Treating every timeout as dispatched.** The recorded logs separate an action that never started from one that
+  ran, and I5 asks for that split.
+
+### Verification
+
+- New fixtures, recorded with the extended `record_mcp_fixtures.py` (three new pages, `popup.html`,
+  `upload.html`, `slow.html`, and a `/hang` route that answers after 30 s): `click_stale_ref`,
+  `snapshot_with_boxes`, `fill_form`, `snapshot_after_fill_form`, `select_option`, `evaluate_result`,
+  `evaluate_error`, `screenshot_element`, `wait_for_timeout`, `click_blocked_by_dialog`, `click_opens_tab`,
+  `snapshot_two_tabs`, `click_navigates`, `navigate_back`, `file_chooser_open_by_click`, `file_upload`,
+  `click_timeout_after_action`, `evaluate_new_tab_failed`, `evaluate_browser_closed`. The new cases run after the
+  old ones, which re-record byte-identical; two full re-recordings produced identical files, the screenshot PNG
+  included.
+- `drivers/playwright_mcp/test_snapshot.py` (13) and `test_result.py` (58): every fixture through the parser or
+  the decoder with its outcome (ok, `context_changed`, or the error class and `dispatched`); the form page refs
+  `e1`–`e18` plus `f1e1`–`f1e3`; boxes, filled values, checked state, YAML quoting, tab lists; `### Events` and file
+  links gone from `detail`; same-URL reload, link click and popup as context changes with `opened_contexts`; a
+  linked snapshot read from a temporary `output_dir`, `None` when missing, empty or outside it; the blocker
+  description; screenshot value and size.
+- `pytest tests/unit_tests/harness/tools/browser_move -q`: **1538 passed, 61 skipped** (before: 1429 / 61; +71
+  parser and decoder tests, +38 fixture well-formedness cases).
+
+### Known leftovers
+
+1. The driver class, its handlers and the factory are not built; nothing calls the decoder yet.
+2. Tabs are identified by position. A command that closes one tab and opens another in the same call keeps the
+   count and is not seen as a change; a tab closed before the focused one shifts the ids.
+3. The decoder reads the linked snapshot file synchronously; the driver should call it off the event loop.
+4. No `ConnectionLost` wording for a dead MCP server process: that is a transport error, not text, and belongs to
+   the driver. A browser closed by a tool call between calls is not an error at all: the server starts a new
+   browser on the next call (a stale ref is what the model then sees).
+5. `last_status` and the scroll pixels of `BrowserContext` stay at their defaults: the server reports neither.

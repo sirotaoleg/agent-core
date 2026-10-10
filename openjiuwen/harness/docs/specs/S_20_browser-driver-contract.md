@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `scene/`) |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `scene/`) |
 | Last revised | 2026-10-10 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -18,7 +18,8 @@
 The contract is the only thing the agent core and a driver both know. The core sends commands and reads typed
 results and errors; a driver translates commands for one library and declares which commands it handles. As of
 this revision the browser-use driver implements the contract, the middleware wraps any driver and the composition
-root builds a started driver stack by name; no agent code uses them yet.
+root builds a started driver stack by name; no agent code uses them yet. For Playwright MCP only the text parser
+and the result decoder exist; the driver class does not.
 
 Out of scope here: rendering and the model-facing tool schemas. They consume these types and get their own
 sections.
@@ -542,6 +543,62 @@ native_text, surface}`, `versions` from the sidecar's `connect` reply.
   `cancel` for it and raises `ActionTimeout`. When the caller cancels the request instead (`Timeouts`), the
   transport sends the same `cancel` and re-raises the cancellation, so the sidecar does not run the action alongside
   the next one. A late reply is dropped by id.
+
+### Playwright MCP (`drivers/playwright_mcp/`)
+
+`snapshot.py` and `result.py` are the only code that reads `@playwright/mcp` text. Both are pure functions over
+one tool result; they were written against `@playwright/mcp@0.0.78` and its recorded answers
+(`tests/unit_tests/harness/tools/browser_move/fixtures/mcp/`).
+
+- **Sections.** A result is one or more `text` blocks (plus an `image` block for screenshots) made of `### Name`
+  sections: `Ran Playwright code`, `Open tabs`, `Page`, `Modal state`, `Snapshot`, `Result`, `Events`, `Error`.
+  `split_sections` keeps their order.
+- **Header** (`PageHeader(url, title, tabs, focused)`). From `### Page` (`- Page URL:`, `- Page Title:`; the title
+  is missing while a dialog is open) and `### Open tabs`, or from a `browser_tabs` result list (`parse_tabs`). A
+  tab is `ContextRef(id=<index>, kind="tab", title)`; the `(current)` one is `focused`. The server lists tabs only
+  when more than one is open, so a `### Page` without `### Open tabs` means one tab, `"0"`. `tabs` always includes
+  the focused tab.
+- **Elements** (`parse_elements`). One `Element` per YAML node with a ref matching `ARIA_REF` = `(f\d+)?e\d+`
+  (iframe refs and the frame-prefixed refs of later pages included); nodes without a ref (`text:`, `option`) are
+  not elements. `DriverRef(ref, generation="")`, `role`, `name` (JSON-unescaped), `focused` from `[active]`,
+  `enabled` unless `[disabled]`, `bounds` from `[box=x,y,width,height]` (only when the snapshot was taken with
+  `boxes`). `value` only for `textbox`, `searchbox`, `combobox`, `spinbutton`, `slider`: the inline text, a child
+  `text:` line or, for a combobox, the `[selected]` option. Everything else goes to `extra`: the remaining
+  attributes (`level`, `cursor`, `checked`, …; flags as `True`), `/key: value` property lines (`url`,
+  `placeholder`) and other nodes' inline text (`text`). YAML-quoted lines (`'button "Note: read me" [ref=…]'`,
+  `: "42"`) are unquoted.
+- **`decode(tool_name, raw_result, *, output_dir, before=None) -> ActionResult`.** `raw_result` is the
+  `CallToolResult` as JSON (`content`, `isError`). `output_dir` is the server's working directory: file links in
+  the text are relative to it. `before` is the `BrowserContext` before the call.
+  - `value`: the screenshot from an `image` block (`Screenshot`, size from the PNG header); else `### Result`
+    parsed as JSON when it is JSON (`undefined` → `None`), the text otherwise; `None` for a `browser_tabs` list,
+    which goes to `surface`.
+  - `detail`: the remaining sections as text, without `### Result`, `### Snapshot` and `### Events`; `None` when
+    nothing remains.
+  - `surface`: `BrowserContext(url, title, tabs)` from the header; `None` when the result has no `### Page` and
+    is not a tab list (`browser_fill_form`, `browser_evaluate`, `browser_press_key`).
+  - `observation`: from the inline `### Snapshot` YAML, or from the linked `page-*.yml` read under `output_dir`.
+    A link that resolves outside `output_dir`, a missing or unreadable file and an empty file (the server writes
+    one while a dialog blocks the snapshot) give `None`; the runtime then observes. `native_text` is the YAML
+    verbatim, `context` the focused tab, `surface` as above, `generation` empty.
+  - `context_changed`: always for `browser_navigate`, `browser_navigate_back` and `browser_tabs` (a same-URL
+    reload included); when `### Modal state` reports a dialog (a file chooser is not one); and, with `before`,
+    when the URL differs or the number of tabs changed. `opened_contexts`: the tabs past `len(before.tabs)`.
+    Without `before`, a click that navigates or opens a tab reports no change.
+- **Errors.** `decode` raises; the message is the `### Error` text without ANSI escapes. Checked in this order:
+
+  | Signal | Raised | `dispatched` |
+  |---|---|---|
+  | `Ref … not found in the current page snapshot` | `StaleRef` | `False` |
+  | `Target page, context or browser has been closed`, `Failed to open a new tab` | `ConnectionLost` | `True` |
+  | call log shows `performing <x> action` or `<x> action done` | `ActionTimeout` on a timeout, else `DriverError` | `True` |
+  | call log has `… intercepts pointer events` | `ActionIntercepted(by=tag#id.class "text")` of the last blocker (`… in <container>` for a `from … subtree` blocker) | `False` |
+  | `TimeoutError:` / `Timeout Nms exceeded` | `ActionTimeout` | `False` if every call-log line is an actionability wait, else `True` |
+  | anything else | `DriverError` | `True` |
+
+  Call-log lines are read without ANSI escapes and without the `N ×` fold. A call refused because a dialog is open
+  (`Tool "<name>" does not handle the modal state`) is not raised: it returns `ok=False` with the error and the
+  modal state in `detail`, as browser-use does for an action while a dialog is open.
 
 ## Relation to other specs
 
