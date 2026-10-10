@@ -506,14 +506,15 @@ def build_playwright_mcp_config(
     instance: Optional[BrowserInstanceConfig] = None,
     required_capability: Optional[list[str]] = None,
 ) -> McpServerConfig:
-    return _playwright_mcp_config(browser_surface_settings(), instance, required_capability)
+    return playwright_mcp_config(browser_surface_settings(), instance, required_capability)
 
 
-def _playwright_mcp_config(
+def playwright_mcp_config(
     settings: Any,
     instance: Optional[BrowserInstanceConfig] = None,
     required_capability: Optional[list[str]] = None,
 ) -> McpServerConfig:
+    """The ``@playwright/mcp`` server config from the surface settings; ``instance.cdp_url`` wins over them."""
     capabilities_to_enable = (
         *PLAYWRIGHT_MCP_CAPABILITY_NAMES,
         *(required_capability or ()),
@@ -594,7 +595,7 @@ def build_runtime_settings(
         api_key=core.api_key,
         api_base=core.api_base,
         model_name=core.model_name,
-        mcp_cfg=_playwright_mcp_config(browser_settings or browser_surface_settings(), instance),
+        mcp_cfg=playwright_mcp_config(browser_settings or browser_surface_settings(), instance),
         guardrails=core.guardrails,
         instance=instance,
     )

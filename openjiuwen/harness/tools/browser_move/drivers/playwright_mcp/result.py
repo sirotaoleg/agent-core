@@ -76,7 +76,7 @@ def decode(
 ) -> ActionResult:
     """``raw_result`` is the ``CallToolResult`` as JSON; ``before`` is the context before the call."""
     blocks = raw_result.get("content") or ()
-    text = "\n".join(str(block.get("text", "")) for block in blocks if block.get("type") == "text")
+    text = result_text(raw_result)
     parts = split_sections(text)
     if raw_result.get("isError") or "Error" in parts:
         if _MODAL_REFUSAL.search(parts.get("Error", "")):
@@ -108,6 +108,12 @@ def decode(
         opened_contexts=opened,
         surface=surface,
     )
+
+
+def result_text(raw_result: Mapping[str, Any]) -> str:
+    """The text blocks of a result, joined: what the model reads today."""
+    blocks = raw_result.get("content") or ()
+    return "\n".join(str(block.get("text", "")) for block in blocks if block.get("type") == "text")
 
 
 def _detail(parts: dict[str, str]) -> str | None:

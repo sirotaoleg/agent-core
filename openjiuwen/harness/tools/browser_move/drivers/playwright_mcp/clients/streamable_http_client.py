@@ -145,8 +145,8 @@ class BrowserMoveStreamableHttpClient(StreamableHttpClient):
                 logger.error(f"Failed to list tools via Streamable HTTP: {e}")
                 raise
 
-    async def call_tool(self, tool_name: str, arguments: dict, *, timeout: float = NO_TIMEOUT) -> Any:
-        """Call tool via Streamable HTTP, with auto-reconnect on transport errors."""
+    async def call_tool_result(self, tool_name: str, arguments: dict, *, timeout: float = NO_TIMEOUT) -> Any:
+        """The ``CallToolResult`` of one call via Streamable HTTP, with auto-reconnect on transport errors."""
         if not self._session:
             connected = await self._reconnect(timeout=timeout)
             if not connected:
@@ -159,36 +159,8 @@ class BrowserMoveStreamableHttpClient(StreamableHttpClient):
                     f"{summarize_tool_arguments_for_log(tool_name, arguments)}"
                 )
                 tool_result = await self._session.call_tool(tool_name, arguments=arguments)
-                result_content = None
-                if tool_result.content and len(tool_result.content) > 0:
-                    chunks = []
-                    for item in tool_result.content:
-                        text = getattr(item, "text", None)
-                        if text:
-                            chunks.append(text)
-                            continue
-
-                        uri = getattr(item, "uri", None)
-                        if uri:
-                            chunks.append(str(uri))
-                            continue
-
-                        data = getattr(item, "data", None)
-                        if data is not None:
-                            mime = (
-                                getattr(item, "mimeType", None)
-                                or getattr(item, "mime_type", None)
-                                or "application/octet-stream"
-                            )
-                            chunks.append(f"[binary content: {mime}]")
-                            continue
-
-                        chunks.append(str(item))
-
-                    if chunks:
-                        result_content = "\n".join(chunks)
                 browser_agent_log_info(f"Tool '{tool_name}' call completed via Streamable HTTP")
-                return result_content
+                return tool_result
             except Exception as e:
                 if attempt == 0 and self._is_retryable_transport_error(e):
                     browser_agent_log_warning(
@@ -200,6 +172,39 @@ class BrowserMoveStreamableHttpClient(StreamableHttpClient):
                 logger.error(f"Tool call failed via Streamable HTTP: {e}")
                 raise
 
+    async def call_tool(self, tool_name: str, arguments: dict, *, timeout: float = NO_TIMEOUT) -> Any:
+        """Call tool via Streamable HTTP, with auto-reconnect and multi-content extraction."""
+        tool_result = await self.call_tool_result(tool_name, arguments, timeout=timeout)
+        result_content = None
+        if tool_result.content and len(tool_result.content) > 0:
+            chunks = []
+            for item in tool_result.content:
+                text = getattr(item, "text", None)
+                if text:
+                    chunks.append(text)
+                    continue
+
+                uri = getattr(item, "uri", None)
+                if uri:
+                    chunks.append(str(uri))
+                    continue
+
+                data = getattr(item, "data", None)
+                if data is not None:
+                    mime = (
+                        getattr(item, "mimeType", None)
+                        or getattr(item, "mime_type", None)
+                        or "application/octet-stream"
+                    )
+                    chunks.append(f"[binary content: {mime}]")
+                    continue
+
+                chunks.append(str(item))
+
+            if chunks:
+                result_content = "\n".join(chunks)
+        return result_content
+
     async def get_tool_info(self, tool_name: str, *, timeout: float = NO_TIMEOUT) -> Optional[Any]:
         """Get specific tool info via Streamable HTTP."""
         tools = await self.list_tools(timeout=timeout)
@@ -209,3 +214,13 @@ class BrowserMoveStreamableHttpClient(StreamableHttpClient):
                 return tool
         logger.warning(f"Tool '{tool_name}' not found via Streamable HTTP")
         return None
+
+    async def ping(self, *, timeout: float = 5.0) -> bool:
+        """Return True if the server still answers."""
+        if not self._session:
+            return False
+        try:
+            await asyncio.wait_for(self._session.list_tools(), timeout=timeout)
+            return True
+        except Exception:
+            return False

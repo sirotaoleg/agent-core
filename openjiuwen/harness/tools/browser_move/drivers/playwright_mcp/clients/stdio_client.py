@@ -308,8 +308,8 @@ class BrowserMoveStdioClient(StdioClient):
                 logger.error(f"Failed to list tools via Stdio: {e}")
                 raise
 
-    async def call_tool(self, tool_name: str, arguments: dict, *, timeout: float = NO_TIMEOUT) -> Any:
-        """Call tool via Stdio, with auto-reconnect, timeout, and multi-content extraction."""
+    async def call_tool_result(self, tool_name: str, arguments: dict, *, timeout: float = NO_TIMEOUT) -> Any:
+        """The ``CallToolResult`` of one call via Stdio, with auto-reconnect and timeout."""
         if not self._session:
             connected = await self._reconnect(timeout=timeout)
             if not connected:
@@ -326,36 +326,8 @@ class BrowserMoveStdioClient(StdioClient):
                     self._session.call_tool(tool_name, arguments=arguments),
                     timeout=effective_timeout,
                 )
-                result_content = None
-                if tool_result.content and len(tool_result.content) > 0:
-                    chunks = []
-                    for item in tool_result.content:
-                        text = getattr(item, "text", None)
-                        if text:
-                            chunks.append(text)
-                            continue
-
-                        uri = getattr(item, "uri", None)
-                        if uri:
-                            chunks.append(str(uri))
-                            continue
-
-                        data = getattr(item, "data", None)
-                        if data is not None:
-                            mime = (
-                                getattr(item, "mimeType", None)
-                                or getattr(item, "mime_type", None)
-                                or "application/octet-stream"
-                            )
-                            chunks.append(f"[binary content: {mime}]")
-                            continue
-
-                        chunks.append(str(item))
-
-                    if chunks:
-                        result_content = "\n".join(chunks)
                 browser_agent_log_info(f"Tool '{tool_name}' call completed via Stdio")
-                return preserve_mcp_tool_result_status(tool_result, result_content)
+                return tool_result
             except asyncio.TimeoutError as e:
                 if attempt == 0:
                     browser_agent_log_warning(
@@ -386,6 +358,39 @@ class BrowserMoveStdioClient(StdioClient):
                 raise RuntimeError(
                     f"Stdio tool call failed for '{tool_name}': {type(e).__name__}: {e!r}"
                 ) from e
+
+    async def call_tool(self, tool_name: str, arguments: dict, *, timeout: float = NO_TIMEOUT) -> Any:
+        """Call tool via Stdio, with auto-reconnect and multi-content extraction."""
+        tool_result = await self.call_tool_result(tool_name, arguments, timeout=timeout)
+        result_content = None
+        if tool_result.content and len(tool_result.content) > 0:
+            chunks = []
+            for item in tool_result.content:
+                text = getattr(item, "text", None)
+                if text:
+                    chunks.append(text)
+                    continue
+
+                uri = getattr(item, "uri", None)
+                if uri:
+                    chunks.append(str(uri))
+                    continue
+
+                data = getattr(item, "data", None)
+                if data is not None:
+                    mime = (
+                        getattr(item, "mimeType", None)
+                        or getattr(item, "mime_type", None)
+                        or "application/octet-stream"
+                    )
+                    chunks.append(f"[binary content: {mime}]")
+                    continue
+
+                chunks.append(str(item))
+
+            if chunks:
+                result_content = "\n".join(chunks)
+        return preserve_mcp_tool_result_status(tool_result, result_content)
 
     async def get_tool_info(self, tool_name: str, *, timeout: float = NO_TIMEOUT) -> Optional[Any]:
         """Get specific tool info via Stdio."""
