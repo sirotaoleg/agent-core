@@ -18,9 +18,11 @@ from urllib.request import urlopen
 
 import pytest
 
-from openjiuwen.harness.tools.browser_move.contract import Observe
+from openjiuwen.harness.tools.browser_move.contract import ConnectionLost, Observe
 from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import assemble_driver
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import CoreSettings
+from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
+from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import _candidate_chrome_binaries
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
@@ -216,6 +218,50 @@ def test_managed_chrome_and_playwright_mcp_start_through_assemble_driver_and_clo
         assert observation.surface.url == "about:blank"
         assert _eventually(lambda: not _cdp_ready(endpoint)), f"{endpoint} still answers after close()"
         assert _eventually(lambda: not _alive(started)), _alive(started)
+        assert _eventually(lambda: not _chrome_processes(user_data_dir)), _chrome_processes(user_data_dir)
+    finally:
+        shutil.rmtree(user_data_dir, ignore_errors=True)
+
+
+@pytest.mark.live
+@pytest.mark.skipif(_mcp_skip_reason() is not None, reason=_mcp_skip_reason() or "")
+def test_a_crashed_managed_chrome_under_playwright_mcp_is_provisioned_again_with_a_new_driver(tmp_path: Path) -> None:
+    user_data_dir = tmp_path / "chrome-profile"
+    environ = {
+        **os.environ,
+        "BROWSER_DRIVER": "playwright_mcp",
+        "BROWSER_PROVISIONING": "managed",
+        "BROWSER_MANAGED_PORT": str(_free_port()),
+        "BROWSER_MANAGED_USER_DATA_DIR": str(user_data_dir),
+        "BROWSER_MANAGED_KILL_EXISTING": "false",
+        "BROWSER_MANAGED_ARGS": "--headless=new --window-size=1280,900",
+        "BROWSER_PROFILE_NAME": "assembly-restart-live",
+        "BROWSER_PROFILE_STORE_PATH": str(tmp_path / "profiles.json"),
+        "PLAYWRIGHT_MCP_ARGS": "-y @playwright/mcp@0.0.78",
+        "PLAYWRIGHT_RUNTIME_MCP_CWD": str(tmp_path / "mcp"),
+    }
+    (tmp_path / "mcp").mkdir()
+
+    async def run():
+        assembly = await assemble_driver(CoreSettings.from_env(environ), environ)
+        session = DriverSession(assembly, BrowserPageState(), assembly.surface.profile.messages)
+        try:
+            await session.observe(Observe())
+            assembly.device.cleanup()
+            assert _eventually(lambda: not assembly.provisioner.is_alive(assembly.device))
+            with pytest.raises(ConnectionLost, match="restarted"):
+                await session.observe(Observe())
+            assert session.assembly.stack is not assembly.stack
+            assert _cdp_ready(session.assembly.device.endpoint)
+            return session.assembly.device.endpoint, await session.observe(Observe())
+        finally:
+            await session.close()
+
+    try:
+        endpoint, observation = asyncio.run(run())
+
+        assert observation.surface.url == "about:blank"
+        assert _eventually(lambda: not _cdp_ready(endpoint)), f"{endpoint} still answers after close()"
         assert _eventually(lambda: not _chrome_processes(user_data_dir)), _chrome_processes(user_data_dir)
     finally:
         shutil.rmtree(user_data_dir, ignore_errors=True)

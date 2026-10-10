@@ -7,10 +7,13 @@ from __future__ import annotations
 import os
 import warnings
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 
+from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserInstanceConfig
+from openjiuwen.harness.tools.browser_move.provisioning import managed_browser
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import ENV_PREFIXES, BrowserSettings
 
 
@@ -304,3 +307,62 @@ def test_no_chrome_install_paths_come_from_the_environment_outside_windows() -> 
 
 def test_chrome_install_paths_default_to_none() -> None:
     assert BrowserSettings().browser_binary_candidates == ()
+
+
+def _instance(**fields: Any) -> BrowserInstanceConfig:
+    return BrowserInstanceConfig(**fields)
+
+
+def test_an_empty_instance_leaves_the_settings_alone() -> None:
+    settings = _browser(BROWSER_PROVISIONING="managed", BROWSER_MANAGED_PORT="9444")
+
+    assert settings.with_instance(_instance()) == settings
+
+
+def test_a_keyed_instance_takes_its_own_profile_and_a_free_port() -> None:
+    settings = _browser(BROWSER_MANAGED_PORT="9333").with_instance(_instance(key="usd/sgd", driver_mode="managed"))
+
+    assert (settings.provisioning, settings.profile_name, settings.managed_port) == ("managed", "usd-sgd", 0)
+
+
+def test_distinct_keys_get_distinct_profiles_and_ports() -> None:
+    base = _browser()
+    with patch.object(managed_browser, "_allocate_free_port", side_effect=[40001, 40002]):
+        first = managed_browser._build_profile(base.with_instance(_instance(key="A", provisioning="managed")))
+        second = managed_browser._build_profile(base.with_instance(_instance(key="B", provisioning="managed")))
+
+    assert (first.debug_port, second.debug_port) == (40001, 40002)
+    assert first.user_data_dir != second.user_data_dir
+
+
+def test_an_explicit_instance_port_and_profile_name_win() -> None:
+    settings = _browser().with_instance(_instance(key="pinned", managed_port=9501, profile_name="custom"))
+
+    assert (settings.managed_port, settings.profile_name) == (9501, "custom")
+
+
+def test_an_unkeyed_instance_keeps_the_environment_port_and_profile() -> None:
+    settings = _browser(BROWSER_MANAGED_PORT="9444").with_instance(_instance(provisioning="managed"))
+
+    assert (settings.managed_port, settings.profile_name) == (9444, "jiuwenclaw")
+
+
+def test_instance_endpoint_paths_binary_and_launch_args_win() -> None:
+    settings = _browser(PLAYWRIGHT_MCP_CDP_ENDPOINT="http://env:9222").with_instance(
+        _instance(
+            provisioning="remote",
+            cdp_url="http://host:9222",
+            user_data_dir="C:/profiles/a",
+            browser_binary="C:/chrome/chrome.exe",
+            launch_args="--headless --isolated",
+        )
+    )
+
+    assert settings.cdp_url == "http://host:9222"
+    assert (settings.user_data_dir, settings.browser_binary) == ("C:/profiles/a", "C:/chrome/chrome.exe")
+    assert settings.launch_args == ("--headless", "--isolated")
+
+
+def test_an_unknown_instance_provisioning_is_a_clear_error() -> None:
+    with pytest.raises(ValueError, match="provisioning must be one of: remote, managed, extension"):
+        _browser().with_instance(_instance(provisioning="cloud"))

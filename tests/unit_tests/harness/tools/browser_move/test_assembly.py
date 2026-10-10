@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import subprocess
 import sys
@@ -29,6 +30,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     Registry,
     RunScript,
     SurfaceBundle,
+    SurfaceProfile,
     SwitchContext,
 )
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
@@ -40,7 +42,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import (
     Registries,
     assemble_driver,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import CoreSettings
+from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserInstanceConfig, CoreSettings
 from openjiuwen.harness.tools.browser_move.provisioning import PROVISIONERS, ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.surfaces import SURFACES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
@@ -54,6 +56,10 @@ OTHER_DEVICE = ProvisionedDevice(kind="fake-device", endpoint="fake://2", extras
 @dataclass(frozen=True)
 class FakeSettings:
     provisioning: str = "fake_provisioning"
+    owner: str = ""
+
+    def with_instance(self, instance: Any) -> FakeSettings:
+        return dataclasses.replace(self, provisioning=instance["provisioning"], owner=instance["owner"])
 
 
 class FakeProvisioner:
@@ -97,9 +103,18 @@ def _fake_info(*surfaces: str) -> DriverInfo:
 class World:
     """Fake registries that record every factory and provisioner call in one log."""
 
-    def __init__(self, driver: FakeDriver | None = None, *, driver_error: BaseException | None = None) -> None:
+    def __init__(
+        self,
+        driver: FakeDriver | None = None,
+        *,
+        driver_error: BaseException | None = None,
+        timeouts: dict[Effect, float] | None = None,
+    ) -> None:
         self.log: list[tuple[Any, ...]] = []
         self.settings = FakeSettings()
+        self.profile = SurfaceProfile(
+            name="fake", commands=(), renderer=None, timeouts=timeouts or {}, settings=self.settings
+        )
         self.driver = driver if driver is not None else FakeDriver(info=_fake_info())
         self.provisioner = FakeProvisioner(self.log)
         self._driver_error = driver_error
@@ -114,7 +129,7 @@ class World:
 
     def _surface(self, environ: Any) -> SurfaceBundle:
         self.log.append(("surface", environ))
-        return SurfaceBundle(settings=self.settings)
+        return SurfaceBundle(settings=self.settings, profile=self.profile)
 
     def _provisioner_factory(self, name: str):
         def create() -> FakeProvisioner:
@@ -129,8 +144,8 @@ class World:
             raise self._driver_error
         return self.driver
 
-    def assemble(self, core: CoreSettings = CORE) -> DriverAssembly:
-        return asyncio.run(assemble_driver(core, ENVIRON, registries=self.registries))
+    def assemble(self, core: CoreSettings = CORE, *, instance: Any = None) -> DriverAssembly:
+        return asyncio.run(assemble_driver(core, ENVIRON, instance=instance, registries=self.registries))
 
 
 class TestAssembleDriver:
@@ -147,6 +162,20 @@ class TestAssembleDriver:
         ]
         assert world.driver.kinds() == ["start"]
         assert (assembly.device, assembly.provisioner) == (DEVICE, world.provisioner)
+        assert assembly.surface == SurfaceBundle(world.settings, world.profile)
+
+    def test_an_instance_applies_to_the_surface_settings_before_provisioning_and_the_driver(self) -> None:
+        world = World()
+        applied = FakeSettings(provisioning="other_provisioning", owner="agent-a")
+
+        assembly = world.assemble(instance={"provisioning": "other_provisioning", "owner": "agent-a"})
+
+        assert world.log[1:] == [
+            ("provisioner", "other_provisioning"),
+            ("provision", applied),
+            ("driver", DEVICE, applied),
+        ]
+        assert assembly.surface.settings == assembly.surface.profile.settings == assembly.surface_settings == applied
 
     def test_stack_is_tracing_over_stale_retry_over_timeouts_over_the_driver(self) -> None:
         world = World()
@@ -225,11 +254,11 @@ class TestAssembleDriver:
         [Observe(), Click(DriverRef("e1", "g1")), SwitchContext(ContextRef("w2", "window")), RunScript("1")],
         ids=lambda command: command.effect.value,
     )
-    def test_every_effect_is_bounded_by_the_tool_timeout(self, command: Action) -> None:
-        world = World(HangingDriver(info=_fake_info()))
+    def test_every_effect_is_bounded_by_the_profile_timeout(self, command: Action) -> None:
+        world = World(HangingDriver(info=_fake_info()), timeouts={command.effect: 0.05})
 
         async def run() -> None:
-            core = CoreSettings(driver="fake_driver", surface="fake", tool_timeout_s=0.05)
+            core = CoreSettings(driver="fake_driver", surface="fake", tool_timeout_s=3600)
             stack = (await assemble_driver(core, ENVIRON, registries=world.registries)).stack
             if isinstance(command, Observe):
                 await stack.observe(command)
@@ -282,6 +311,14 @@ class TestDriverAssemblyClose:
 class TestBuiltInRegistrations:
     def test_drivers_register_browser_use_and_playwright_mcp(self) -> None:
         assert {"browser_use", "playwright_mcp"} <= set(DRIVERS.names())
+
+    def test_a_keyed_instance_keeps_the_plain_playwright_mcp_tool_prefix(self) -> None:
+        settings = BrowserSettings().with_instance(BrowserInstanceConfig(key="agent-a", launch_args="--headless"))
+
+        driver = DRIVERS.create("playwright_mcp", DEVICE, settings)
+
+        assert driver.info.tool_name_prefix == "mcp_playwright-official_"
+        assert driver.config.server.params["args"][0] == "--headless"
 
     def test_playwright_mcp_driver_is_built_from_its_registry_name(self) -> None:
         driver = DRIVERS.create("playwright_mcp", DEVICE, BrowserSettings())
