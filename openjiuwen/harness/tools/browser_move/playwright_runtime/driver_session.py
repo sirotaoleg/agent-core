@@ -9,14 +9,16 @@ import asyncio
 import contextlib
 import dataclasses
 from collections.abc import Mapping
-from typing import NoReturn
+from typing import TYPE_CHECKING, NoReturn
 
 from openjiuwen.core.common.exception.codes import StatusCode
 from openjiuwen.core.common.exception.errors import build_error
 
 from ..contract import Action, ActionResult, ConnectionLost, DriverError, Observation, Observe
-from .assembly import DriverAssembly
 from .page_state import BrowserPageState
+
+if TYPE_CHECKING:
+    from .assembly import DriverAssembly
 
 
 class DriverSession:
@@ -31,6 +33,10 @@ class DriverSession:
         self._restarted = messages["driver_restarted"]
         self._lost = messages["driver_lost"]
         self._losses = 0
+
+    @property
+    def page_state(self) -> BrowserPageState:
+        return self._page_state
 
     def begin_task(self) -> None:
         self._losses = 0

@@ -7,10 +7,10 @@ from __future__ import annotations
 import json
 import os
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
-from typing import Mapping
+from typing import TYPE_CHECKING, Mapping
 
 from ...utils.env import (
     DEFAULT_PLAYWRIGHT_MCP_ARGS,
@@ -21,6 +21,9 @@ from ...utils.env import (
     is_truthy_env,
     parse_command_args,
 )
+
+if TYPE_CHECKING:
+    from ...playwright_runtime.config import BrowserInstanceConfig
 
 ENV_PREFIXES = ("BROWSER_", "PLAYWRIGHT_")
 PROVISIONINGS = ("remote", "managed", "extension")
@@ -161,3 +164,30 @@ class BrowserSettings:
     @classmethod
     def from_process_env(cls) -> BrowserSettings:
         return cls.from_env(os.environ)
+
+    def with_instance(self, instance: BrowserInstanceConfig) -> BrowserSettings:
+        """These settings for one isolated browser: the instance's non-empty fields win."""
+        provisioning = instance.provisioning.strip().lower() or self.provisioning
+        if provisioning not in PROVISIONINGS:
+            raise ValueError(
+                f"BrowserInstanceConfig.provisioning must be one of: {', '.join(PROVISIONINGS)} (got {provisioning!r})"
+            )
+        if instance.managed_port > 0:
+            managed_port = instance.managed_port
+        elif instance.key:
+            # 0 = a free port: one shared port cannot serve several keys without them landing on one browser.
+            managed_port = 0
+        else:
+            managed_port = self.managed_port
+        return replace(
+            self,
+            provisioning=provisioning,
+            cdp_url=instance.cdp_url.strip() or self.cdp_url,
+            managed_port=managed_port,
+            user_data_dir=instance.user_data_dir.strip() or self.user_data_dir,
+            profile_name=(instance.profile_name or instance.sanitized_key()).strip() or self.profile_name,
+            browser_binary=instance.browser_binary.strip() or self.browser_binary,
+            launch_args=tuple(parse_command_args(instance.launch_args))
+            if instance.launch_args.strip()
+            else self.launch_args,
+        )
