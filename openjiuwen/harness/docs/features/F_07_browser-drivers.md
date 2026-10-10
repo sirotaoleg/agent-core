@@ -5,8 +5,8 @@
 | Item | Value |
 |---|---|
 | Type | feature |
-| Date | 2026-10-09 |
-| Scope | `openjiuwen/harness/tools/browser_move/` (`contract/`, `drivers/`, `provisioning/`, `surfaces/browser/`, `playwright_runtime/config.py`), `tests/unit_tests/harness/tools/browser_move/` |
+| Date | 2026-10-10 |
+| Scope | `openjiuwen/harness/tools/browser_move/` (`contract/`, `drivers/`, `provisioning/`, `surfaces/browser/`, `playwright_runtime/config.py`, `playwright_runtime/service.py`), `tests/unit_tests/harness/tools/browser_move/` |
 | Test baseline | see "Verification" in each section |
 | Related spec | [[S_20_browser-driver-contract]] |
 | Refs | #driver-architecture |
@@ -260,3 +260,98 @@ read by both objects: `BROWSER_DRIVER`, `BROWSER_TIMEOUT_S`, `PLAYWRIGHT_MCP_TIM
    4. `AGENT_QUERY` / `AGENT_SESSION_ID` are inputs of the demo entry point, not settings.
    5. `OPENJIUWEN_BROWSER_SELECTOR_CACHE` is browser by meaning but outside `ENV_PREFIXES`; core names also start
       with `BROWSER_` (`BROWSER_DRIVER`, guardrails, timeouts), so the prefixes declare a namespace, not ownership.
+
+## Provisioning
+
+`provisioning/__init__.py` defines the `Provisioner` protocol and registers `managed`, `remote` and `extension`;
+`ManagedBrowserProvisioner` implements all three (S_20 "Provisioning"). `BrowserService` no longer builds the
+managed profile, resolves the port or starts Chrome: it takes a provisioner from the registry. The MCP path keeps
+the same Chrome, flags, ports and profiles.
+
+### Decisions
+
+1. **One class, three registered names.** `ManagedBrowserProvisioner` already exists and keeps the Chrome-handle
+   API that the process registry, the heartbeat and reset use (`stop`, `is_endpoint_ready`, `clear`,
+   `owns_process`); the deprecated `ManagedBrowserDriver` alias keeps pointing at a class whose old constructor
+   still works. Remote and extension are a few lines each.
+2. **Synchronous protocol.** The Chrome start is synchronous; the service calls `provision` in a worker thread, as
+   it called `start` before.
+3. **The provisioner instance is the Chrome handle**, one instance per device. The service keeps it as its managed
+   driver, so the process registry still holds the same kind of object. `release(device)` runs the cleanup and is
+   what the composition root will call.
+4. **Adopting a live Chrome and the healthy-driver check stay in the service**, before provisioning, in the old
+   order. The order is observable: an unkeyed service adopts the store's selected live Chrome even while its own
+   Chrome is healthy, and stops its own. `provision(settings)` cannot see the service's current driver; moving both
+   steps would need the current device as an extra argument (not the protocol) or per-service state in the
+   provisioner.
+5. **The service passes its profile store** (`create(name, profile_store=...)`). The store caches the file; two
+   store objects in one service would overwrite each other's writes. Without a store the provisioner opens
+   `profile_store_path` or `mcp_cwd/.browser/profiles.json`, which is what the composition root needs.
+6. **Instance overrides are mapped onto `BrowserSettings` in the service** (`dataclasses.replace`). A keyed
+   instance without a port gets `managed_port=0`, which the provisioner turns into a free port. The environment
+   parser refuses 0, so only this mapping produces it; no `key` field is needed.
+7. **Device shapes.** `kind="chrome"` for all three, as in the plan. Extension: no endpoint, `extension=True` and
+   the token in `extras`. Remote: the CDP url plus headers and timeout. All three carry `launch_args` (Playwright MCP
+   arguments); Chrome's arguments are `managed_args`, following the settings naming.
+8. **The service receives `BrowserSettings`** through the new keyword `browser_settings`; when it is absent the
+   service builds them once with `from_process_env()` at construction. `mcp_cwd` also comes from them instead of the
+   `resolve_playwright_mcp_cwd` facade. The type is imported from `playwright_runtime/config.py`, which already
+   imports it (allowlisted), so the core gains no import of the surface.
+9. **Chrome install paths from the environment move to settings** (review decision G4):
+   `BrowserSettings.browser_binary_candidates` holds the `chrome.exe` paths under `LOCALAPPDATA`, `ProgramFiles`,
+   `ProgramFiles(x86)` and `ProgramW6432`, computed in `from_env` (Windows only). The home-based path and the fixed
+   macOS / Linux paths stay in the provisioner: `Path.home()` at parse time fails when the home variables are absent
+   (Settings decision 9). The lookup order is unchanged.
+
+### Rejected options
+
+- **Three small classes.** More code, and `ManagedBrowserProvisioner` would still be needed as the Chrome handle.
+- **Adoption and health check inside `provision`.** Changes the order above, or needs the current device.
+- **`provision(settings, current_device)`.** Not the protocol of the plan.
+- **A `key` field in `BrowserSettings`.** A setting with no variable behind it; port 0 covers the one keyed rule the
+  provisioner needs. The other keyed rule (adopt only the own profile) stays with adoption in the service.
+- **Provisioning `remote` / `extension` in the service.** Nothing to start; writing the endpoint again would differ
+  from the MCP config builder (device check, browser default).
+- **Renaming the `env_map` reads in the service** so the env-read scanner stops seeing them. They touch the MCP
+  child's env mapping, not the process environment; hiding them from the scanner proves nothing.
+
+### Verification
+
+- `test_provisioning.py` (+17): registered names; remote and extension devices without a Chrome start; managed
+  device, profile reuse and rebuild, free port, kill-existing user-data dir, store fallbacks, release, install paths
+  from the settings. `surfaces/test_browser_settings.py` (+3, one skipped per OS): `browser_binary_candidates`.
+  `test_service.py` (+8): registry call with the service store, instance overrides, port precedence, no
+  provisioning for remote / extension, given settings winning over the environment, environment read once.
+- Tests changed because the code they patched or called moved (no assertion weakened): `test_service.py` (three
+  tests patch `PROVISIONERS.create` instead of `service.ManagedBrowserProvisioner`; two profile-building tests call
+  `_build_profile(service._provisioning_settings())`; the stored-binary test runs the real provisioner with `start`
+  patched and builds the service under the cleared environment); `test_browser_instance_isolation.py` (six tests
+  patch `managed_browser._allocate_free_port` and call `_build_profile(...)` instead of
+  `BrowserService._build_managed_profile`); `drivers/test_conformance_browser_use_live.py` (passes the settings'
+  install paths to `_candidate_chrome_binaries`).
+- Architecture allowlists: core imports of concrete modules 2 entries -> 1 (`service.py ->
+  provisioning.managed_browser` removed); env reads in `service.py` 13 descriptors / 22 reads -> 3 / 3, in
+  `provisioning/managed_browser.py` 4 / 5 -> 1 / 1; `service.py` browser words 93 -> 92, driver names 16 -> 14,
+  lines 1977 -> 1904.
+- `pytest tests/unit_tests/harness/tools/browser_move -q`: **1360 passed, 60 skipped** (before: 1333 / 59; MCP
+  goldens and runner contract unchanged). Harness tests that build the browser subagent: **262 passed**.
+
+### Known leftovers
+
+1. `provisioning/managed_browser.py` still reads `LOCALAPPDATA` for the default Chrome user-data dir (kill-existing
+   without a user-data dir); G4 covered the install paths only.
+2. The three `service.py` entries left in the env-read allowlist touch the Playwright MCP child's env mapping. They
+   go when the MCP driver owns its config.
+3. The service stops Chrome through the handle API, not `release(device)`: the process registry shares handles
+   among services and calls `stop` itself.
+4. `service.py` imports `BrowserSettings` through `playwright_runtime/config.py`; when that module stops importing
+   the surface (review decision G1), the service needs another way to the type.
+5. Visible differences, all from reading settings once: the browser variables are read at service construction,
+   not at Chrome start; a legacy `BROWSER_DRIVER` also warns when the service is built; `BROWSER_DRIVER` set to a
+   driver name no longer raises in the service; an invalid `BROWSER_MANAGED_PORT` raises at service construction in
+   every mode; the profile-store writes around a start run in the worker thread.
+6. `PLAYWRIGHT_MCP_EXTENSION=true` with `remote` or `managed` puts Playwright MCP into extension mode (config
+   builder), while the provisioner is chosen by `provisioning` alone and hands out a remote or managed device.
+7. An invalid instance `driver_mode` still raises "BROWSER_DRIVER must be one of: remote, managed, extension".
+8. Settings leftover 3.3 (Chrome install discovery) is settled by decision 9; Settings leftover 1 no longer applies
+   to `service.py`.

@@ -9,8 +9,8 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/middleware.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/surfaces/browser/` (`commands.py` / `context.py` / `config.py` / `scene/`) |
-| Last revised | 2026-10-09 |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/middleware.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/browser/` (`commands.py` / `context.py` / `config.py` / `scene/`) |
+| Last revised | 2026-10-10 |
 | Related feature | [[F_07_browser-drivers]] |
 
 ## Scope
@@ -20,7 +20,7 @@ results and errors; a driver translates commands for one library and declares wh
 this revision the browser-use driver implements the contract and the middleware wraps any driver; no agent code
 uses them yet.
 
-Out of scope here: the composition root, provisioning, rendering and the model-facing tool schemas. They consume
+Out of scope here: the composition root, rendering and the model-facing tool schemas. They consume
 these types and get their own sections.
 
 ## Contract types
@@ -281,7 +281,9 @@ listed in [[F_07_browser-drivers]] ("Settings", inventory).
   `log_audit_raw`, `status_log`. It has no field that only a browser has.
 - **`BrowserSettings`** (browser surface): `provisioning`, `cdp_url`, `cdp_headers`, `cdp_timeout`, `managed_host`,
   `managed_port`, `managed_kill_existing`, `managed_args`, `user_data_dir`, `profile_name`, `profile_store_path`,
-  `browser_binary`, `launch_args` (Playwright MCP arguments), `mcp_command`, `mcp_timeout_s`, `mcp_cwd`,
+  `browser_binary`, `browser_binary_candidates` (Chrome install paths under `LOCALAPPDATA`, `ProgramFiles`,
+  `ProgramFiles(x86)`, `ProgramW6432` on Windows; empty elsewhere and by default), `launch_args` (Playwright MCP
+  arguments; Chrome's own arguments are `managed_args`), `mcp_command`, `mcp_timeout_s`, `mcp_cwd`,
   `mcp_browser`, `mcp_device`, `mcp_extension`, `mcp_extension_token`, `mcp_env` (read-only mapping),
   `upload_root`, `sidecar_python`, `selector_cache_path` (`None` = the default under the home directory). The module
   declares `ENV_PREFIXES = ("BROWSER_", "PLAYWRIGHT_")`. Another surface brings its own `surfaces/<name>/config.py`
@@ -316,6 +318,70 @@ Public facades; their signatures do not change:
 
 Until every caller receives a settings object, modules outside the two config modules still read the environment;
 the env-read architecture test lists them (invariant 9).
+
+## Provisioning (`provisioning/`)
+
+A provisioner makes one device ready for a driver. It is picked by name, so the code that builds the agent never
+handles a CDP url or a Chrome process itself.
+
+- `ProvisionedDevice(kind, endpoint, extras, cleanup=None)`: frozen; `cleanup` is a no-argument callable, `None`
+  when there is nothing to stop.
+- `Provisioner` (protocol): `provision(surface_settings) -> ProvisionedDevice` and `release(device)`, which runs
+  `device.cleanup` if there is one. Both are synchronous; async callers run them in a worker thread.
+- `provisioning/__init__.py` registers `managed`, `remote` and `extension` on `PROVISIONERS` as lazy import
+  strings. The registry name is the value of `BrowserSettings.provisioning`; `PROVISIONERS.create(name, **kwargs)`
+  returns a new provisioner.
+
+### `ManagedBrowserProvisioner` (`provisioning/managed_browser.py`)
+
+All three names resolve to this class; `provision` branches on `settings.provisioning`. `kind` is `"chrome"`.
+
+| `provisioning` | Starts Chrome | `endpoint` | `extras` | `cleanup` |
+|---|---|---|---|---|
+| `managed` | yes, unless a Chrome already answers on the port | `http://<managed_host>:<port>` | `profile` (`BrowserProfile`), `port`, `user_data_dir`, `managed_args`, `launch_args` | `stop` |
+| `remote` | no | `cdp_url` (`""`: Playwright MCP launches its own browser) | `cdp_headers`, `cdp_timeout`, `launch_args` | `None` |
+| `extension` | no | `""` | `extension=True`, `extension_token`, `launch_args` | `None` |
+
+Managed provisioning:
+
+1. Profile store: the one given to the constructor (`profile_store=`), else `profile_store_path`, else
+   `mcp_cwd/.browser/profiles.json`.
+2. The stored profile named `profile_name` is reused if it is managed, has a port above 0, a user-data dir and the
+   same Chrome arguments (`managed_args`). Otherwise a profile is built: port `managed_port`, where 0 means a free
+   port (bind to port 0); user-data dir `user_data_dir`, else the OS default Chrome profile when
+   `managed_kill_existing`, else `mcp_cwd/.browser-profiles/<profile_name>`.
+3. `browser_binary` replaces the stored binary. `""` means auto-detect: `chrome`, `google-chrome`,
+   `google-chrome-stable` on `PATH`, then `browser_binary_candidates`, then the per-user and fixed install paths of
+   the OS. A configured binary that is not Chrome or does not exist is an error, with no fallback.
+4. The profile is stored and selected before the start and stored again with the endpoint after it. With
+   `managed_kill_existing`, Chrome processes using the user-data dir are killed first. The start waits up to 30 s
+   for `/json/version`; a Chrome that already answers on the port is used without being owned (`stop` leaves it
+   running).
+5. The instance that provisioned a managed device owns its Chrome: `stop`, `is_endpoint_ready`, `clear` and
+   `owns_process` act on it. One instance per device.
+
+`ManagedBrowserDriver` stays a deprecated alias of the class.
+
+### The browser service (`playwright_runtime/service.py`)
+
+`BrowserService` takes the keyword `browser_settings: BrowserSettings | None`; `None` means
+`BrowserSettings.from_process_env()`, read once at construction. The service reads no environment variable itself.
+In managed mode, before it registers or refreshes the Playwright MCP server, it:
+
+1. adopts a live Chrome recorded in its profile store (and in the legacy store when no store path is configured)
+   whose arguments and binary match the settings: the selected profile first, then the one with its own name; a
+   keyed instance adopts only the profile with its own name;
+2. otherwise keeps its managed driver while that driver's endpoint answers;
+3. otherwise calls `PROVISIONERS.create("managed", profile_store=<its store>).provision(settings)`, writes the
+   endpoint into the Playwright MCP config, keeps the provisioner as its managed driver and registers it with the
+   process registry.
+
+The settings handed to the provisioner are the service settings with the instance overrides applied:
+`provisioning` (instance `provisioning` / `driver_mode`), `profile_name` (instance profile name, else the key),
+`managed_port` (instance port; a keyed instance without one gets 0; else the settings port), `user_data_dir` and
+`browser_binary` (instance first), `mcp_cwd` (the MCP server config's `cwd`, else the settings). With `remote` and
+`extension` the service provisions nothing: the Playwright MCP config already carries the CDP endpoint or the
+extension flags.
 
 ## Drivers
 
