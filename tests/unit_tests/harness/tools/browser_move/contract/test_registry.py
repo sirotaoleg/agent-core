@@ -85,6 +85,24 @@ def test_non_callable_factory_is_refused() -> None:
         Registry("driver").register("bad", 42)  # type: ignore[arg-type]
 
 
+def test_lazy_import_string_of_a_missing_module_says_not_built_yet() -> None:
+    registry: Registry[object] = Registry("driver")
+    registry.register("later", f"{LAZY_MODULE}_not_written_yet:create")
+
+    with pytest.raises(ModuleNotFoundError, match="driver 'later' is registered but not built yet"):
+        registry.create("later")
+
+
+def test_missing_dependency_inside_a_lazy_module_is_raised_as_it_is(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "lazy_with_missing_dependency.py").write_text("import not_installed_dependency_xyz\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    registry: Registry[object] = Registry("driver")
+    registry.register("broken", "lazy_with_missing_dependency:create")
+
+    with pytest.raises(ModuleNotFoundError, match="No module named 'not_installed_dependency_xyz'"):
+        registry.create("broken")
+
+
 @pytest.mark.parametrize(
     ("registry", "kind"), [(DRIVERS, "driver"), (SURFACES, "surface"), (PROVISIONERS, "provisioner")]
 )

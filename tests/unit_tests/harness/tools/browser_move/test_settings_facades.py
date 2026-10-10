@@ -12,6 +12,8 @@ from unittest.mock import patch
 
 import pytest
 
+from openjiuwen.harness.tools.browser_move.contract import Registry, SurfaceBundle
+from openjiuwen.harness.tools.browser_move.playwright_runtime import config as config_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserInstanceConfig,
     CoreSettings,
@@ -127,3 +129,24 @@ def test_unknown_browser_driver_fails_when_the_runtime_settings_are_built() -> N
 def test_resolve_playwright_mcp_cwd_comes_from_the_browser_settings(tmp_path: Path) -> None:
     with patch.dict(os.environ, {"BROWSER_RUNTIME_WORKDIR": str(tmp_path)}, clear=True):
         assert resolve_playwright_mcp_cwd() == str(tmp_path.resolve())
+
+
+def test_the_facades_take_the_browser_settings_from_the_surface_registry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[dict[str, str]] = []
+
+    def browser_surface(environ):
+        seen.append(dict(environ))
+        return SurfaceBundle(settings=BrowserSettings(mcp_cwd=tmp_path))
+
+    surfaces: Registry[SurfaceBundle] = Registry("surface")
+    surfaces.register("browser", browser_surface)
+    monkeypatch.setattr(config_module, "SURFACES", surfaces)
+
+    with patch.dict(os.environ, {"PLAYWRIGHT_MCP_COMMAND": "from-env"}, clear=True):
+        assert resolve_playwright_mcp_cwd() == str(tmp_path)
+        assert build_playwright_mcp_config().params["cwd"] == str(tmp_path)
+        assert build_runtime_settings(core_settings=CoreSettings()).mcp_cfg.params["cwd"] == str(tmp_path)
+
+    assert seen == [{"PLAYWRIGHT_MCP_COMMAND": "from-env"}] * 3

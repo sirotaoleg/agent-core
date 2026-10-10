@@ -71,6 +71,29 @@ def test_explicit_browser_provisioning_wins_over_a_legacy_browser_driver() -> No
     assert settings.provisioning == "extension"
 
 
+def test_the_extension_flag_selects_extension_provisioning_when_none_is_given() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert _browser(PLAYWRIGHT_MCP_EXTENSION="true").provisioning == "extension"
+        assert _browser(PLAYWRIGHT_MCP_EXTENSION="false").provisioning == "remote"
+
+
+@pytest.mark.parametrize(
+    ("environ", "expected"),
+    [
+        ({"BROWSER_PROVISIONING": "managed"}, "managed"),
+        ({"BROWSER_PROVISIONING": "remote"}, "remote"),
+        ({"BROWSER_DRIVER": "managed"}, "managed"),
+    ],
+)
+def test_explicit_or_legacy_provisioning_wins_over_the_extension_flag(environ: dict[str, str], expected: str) -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        settings = _browser(PLAYWRIGHT_MCP_EXTENSION="true", **environ)
+
+    assert settings.provisioning == expected
+
+
 @pytest.mark.parametrize("driver", ["playwright_mcp", "browser_use", "anything-else"])
 def test_a_driver_name_in_browser_driver_leaves_provisioning_alone(driver: str) -> None:
     with warnings.catch_warnings():

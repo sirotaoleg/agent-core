@@ -852,6 +852,15 @@ def test_without_browser_settings_the_service_reads_them_once_from_the_environme
     assert service._provisioning_settings().profile_name == "from-env"
 
 
+def test_unknown_instance_provisioning_names_the_instance_field_and_browser_provisioning() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"BrowserInstanceConfig\.provisioning \(driver_mode\) must be one of: remote, managed, extension "
+        r"\(got 'cloud'\); leave it empty to use BROWSER_PROVISIONING",
+    ):
+        _make_service(instance=BrowserInstanceConfig(driver_mode="cloud"), browser_settings=BrowserSettings())
+
+
 def test_reset_stops_browser_without_eager_restart() -> None:
     async def _test():
         service = _make_service()
