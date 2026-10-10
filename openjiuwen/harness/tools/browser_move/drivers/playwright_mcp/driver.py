@@ -9,6 +9,9 @@ import asyncio
 import dataclasses
 import json
 import re
+import shutil
+import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -140,6 +143,23 @@ def _aim(ref: DriverRef | Locator, what: str) -> dict[str, Any]:
 def _point(ref: PointRef) -> dict[str, int]:
     # Screenshots are taken at CSS scale, so a screenshot pixel is a viewport pixel (Screenshot.scale is 1).
     return {"x": ref.x, "y": ref.y}
+
+
+def _staged(paths: Iterable[str], root: Path) -> list[str]:
+    # The server reads files only under its working directory: a file elsewhere is copied in first. Anything else
+    # (a missing file, a directory) goes as given and the server refuses it before touching the page.
+    root = root.resolve()
+    staged = []
+    for path in paths:
+        source = (root / path).resolve()
+        if source.is_relative_to(root) or not source.is_file():
+            staged.append(path)
+            continue
+        target = root / "uploads" / uuid.uuid4().hex[:12] / source.name
+        target.parent.mkdir(parents=True)
+        shutil.copy2(source, target)
+        staged.append(str(target))
+    return staged
 
 
 class PlaywrightMcpDriver(HandlerDriver):
@@ -332,14 +352,14 @@ class PlaywrightMcpDriver(HandlerDriver):
     async def _drop(self, action: Drop) -> ActionResult:
         args = _aim(action.target, "drop on")
         if action.paths:
-            args["paths"] = list(action.paths)
+            args["paths"] = await asyncio.to_thread(_staged, action.paths, self._output_dir())
         if action.data:
             args["data"] = dict(action.data)
         return await self._run("browser_drop", args)
 
     @handles(UploadFile)
     async def _upload_file(self, action: UploadFile) -> ActionResult:
-        args = {"paths": list(action.paths)} if action.paths else {}
+        args = {"paths": await asyncio.to_thread(_staged, action.paths, self._output_dir())} if action.paths else {}
         return await self._run("browser_file_upload", args)
 
     @handles(HandleDialog)
@@ -431,13 +451,15 @@ class PlaywrightMcpDriver(HandlerDriver):
         return result.model_dump(mode="json", by_alias=True, exclude_none=True)
 
     async def _decode(self, tool: str, raw: dict[str, Any], *, sensitive: bool = False) -> ActionResult:
-        output_dir = self._config.output_dir if self._config is not None else Path.cwd()
         result = await asyncio.to_thread(
-            decode, tool, raw, output_dir=output_dir, before=self._context, sensitive=sensitive
+            decode, tool, raw, output_dir=self._output_dir(), before=self._context, sensitive=sensitive
         )
         if isinstance(result.surface, BrowserContext):
             self._context = result.surface
         return result
+
+    def _output_dir(self) -> Path:
+        return self._config.output_dir if self._config is not None else Path.cwd()
 
 
 def create_playwright_mcp_driver(device: ProvisionedDevice, surface_settings: Any) -> PlaywrightMcpDriver:
