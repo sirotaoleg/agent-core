@@ -35,7 +35,7 @@ async def page_metadata(context: ToolContext) -> tuple[dict[str, Any], str | Non
     page_state = context.page_state
     action = RunScript(code=_METADATA_FUNCTION)
     try:
-        result = page_state.record(action, await context.driver.execute(action))
+        result = await context.execute(action)
     except DriverError as error:
         tool_logger.warning("page metadata capture failed: %s", error)
         return {}, f"browser state metadata capture failed: {error}"
@@ -59,14 +59,14 @@ async def activate_page(context: ToolContext, url: str) -> bool:
     page_state = context.page_state
     try:
         if page_state.current_context is None:
-            page_state.record(Observe(), await context.driver.observe(Observe()))
+            await context.observe(Observe())
         surface = page_state.surface_context
         by_address = dict(zip(surface.tab_urls, surface.tabs)) if isinstance(surface, BrowserContext) else {}
         wanted = by_address.get(str(url or "")) or page_state.current_context
         if wanted is None:
             return False
         action = SwitchContext(wanted)
-        result = page_state.record(action, await context.driver.execute(action))
+        result = await context.execute(action)
     except DriverError as error:
         tool_logger.warning("activate_page failed: %s", error)
         return False

@@ -58,6 +58,25 @@ class ToolContext:
     driver_info: DriverInfo
     settings: Any
     image_support: bool
+    workspace: Any = None
+    language: str = "cn"
+
+    async def execute(self, action: Action) -> ActionResult:
+        """Run ``action`` on the driver session and record it in ``page_state``."""
+        return self.page_state.record(action, await self.driver.execute(action))
+
+    async def observe(self, command: Observe) -> Observation:
+        """Observe through the driver session and record the observation in ``page_state``."""
+        return self.page_state.record(command, await self.driver.observe(command))
+
+
+@dataclass(frozen=True)
+class ToolFlags:
+    """What an extra tool declares for the rails in place of its name."""
+
+    effect: Effect = Effect.READ
+    exempt_from_budget: bool = False
+    progress: bool = True
 
 
 @dataclass(frozen=True)
@@ -75,6 +94,40 @@ class CommandRecord:
     value: Any = field(default=None, hash=False)
     generation: str = ""
     action: Action | None = None
+
+    @classmethod
+    def of(
+        cls, action: Action, result: ActionResult, *, effect: Effect | None = None, value: Any = None
+    ) -> CommandRecord:
+        """The record of a command the driver ran; ``effect`` overrides the command's own."""
+        return cls(
+            command=type(action),
+            effect=action.effect if effect is None else effect,
+            ok=result.ok,
+            dispatched=True,
+            context_changed=result.context_changed,
+            surface=result.surface,
+            value=value,
+            generation=result.generation,
+            action=masked(action),
+        )
+
+    @classmethod
+    def failed(
+        cls, action: Action, error: DriverError, page_state: BrowserPageState, *, effect: Effect | None = None
+    ) -> CommandRecord:
+        """The record of a command the driver refused or failed."""
+        return cls(
+            command=type(action),
+            effect=action.effect if effect is None else effect,
+            ok=False,
+            dispatched=error.dispatched,
+            error=type(error).__name__,
+            blocked_by=error.by if isinstance(error, ActionIntercepted) else None,
+            surface=page_state.surface_context,
+            generation=page_state.generation_id,
+            action=masked(action),
+        )
 
     @property
     def message_metadata(self) -> dict[str, bool]:
@@ -121,11 +174,10 @@ class CommandTool(Tool):
             try:
                 page_state.check(action)
             except StaleRef as stale:
-                fresh = page_state.record(Observe(), await self._context.driver.observe(Observe()))
-                return self._failure(action, stale, fresh)
+                return self._failure(action, stale, await self._context.observe(Observe()))
             if isinstance(action, Observe):
-                return self._observed(action, page_state.record(action, await self._context.driver.observe(action)))
-            result = page_state.record(action, await self._context.driver.execute(action))
+                return self._observed(action, await self._context.observe(action))
+            result = await self._context.execute(action)
         except DriverError as error:
             return self._failure(action, error, None)
         return self._output(action, result, result.value, self._context.renderer.result(action, result))
@@ -146,32 +198,11 @@ class CommandTool(Tool):
         return self._output(action, result, observation.elements, blocks)
 
     def _output(self, action: Action, result: ActionResult, value: Any, blocks: tuple[ContentBlock, ...]) -> ToolOutput:
-        record = CommandRecord(
-            command=type(action),
-            effect=action.effect,
-            ok=result.ok,
-            dispatched=True,
-            context_changed=result.context_changed,
-            surface=result.surface,
-            value=value,
-            generation=result.generation,
-            action=masked(action),
-        )
-        data = self._data(blocks, record)
+        data = self._data(blocks, CommandRecord.of(action, result, value=value))
         return ToolOutput(success=result.ok, data=data, error=None if result.ok else data["content"])
 
     def _failure(self, action: Action, error: DriverError, observation: Observation | None) -> ToolOutput:
-        record = CommandRecord(
-            command=type(action),
-            effect=action.effect,
-            ok=False,
-            dispatched=error.dispatched,
-            error=type(error).__name__,
-            blocked_by=error.by if isinstance(error, ActionIntercepted) else None,
-            surface=self._context.page_state.surface_context,
-            generation=self._context.page_state.generation_id,
-            action=masked(action),
-        )
+        record = CommandRecord.failed(action, error, self._context.page_state)
         data = self._data(self._context.renderer.error(action, error, observation), record)
         return ToolOutput(success=False, data=data, error=data["content"])
 
@@ -221,9 +252,18 @@ class ToolFactory:
         image_support: bool,
         session: DriverSession,
         page_state: BrowserPageState,
+        workspace: Any = None,
+        language: str = "cn",
     ) -> AgentTools:
         context = ToolContext(
-            session, page_state, self._profile.renderer, self._info, self._profile.settings, image_support
+            session,
+            page_state,
+            self._profile.renderer,
+            self._info,
+            self._profile.settings,
+            image_support,
+            workspace,
+            language,
         )
         tools: list[Tool] = []
         sections: list[str] = []
@@ -366,4 +406,4 @@ def _generated_build(spec: ToolSpec) -> Builder:
     return build
 
 
-__all__ = ["AgentTools", "CommandRecord", "CommandTool", "ToolContext", "ToolFactory", "command_record"]
+__all__ = ["AgentTools", "CommandRecord", "CommandTool", "ToolContext", "ToolFactory", "ToolFlags", "command_record"]

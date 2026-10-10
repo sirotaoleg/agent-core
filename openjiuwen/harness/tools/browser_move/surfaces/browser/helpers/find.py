@@ -7,14 +7,12 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any, AsyncIterator
+from typing import Any, AsyncIterator
 
 from openjiuwen.core.foundation.tool import Tool, ToolCard
 from openjiuwen.core.foundation.tool.schema import ToolOutput
 from openjiuwen.harness.tools.browser_move.contract import DriverError, Observe
-
-if TYPE_CHECKING:
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import ToolContext
+from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import CommandRecord, ToolContext, ToolFlags
 
 _FIND = "browser_find"
 _FIND_DESC = (
@@ -54,6 +52,8 @@ _REGEX_FLAGS = {"i": re.IGNORECASE, "m": re.MULTILINE, "s": re.DOTALL}
 class FindTool(Tool):
     """Searches the last observation's text like the server's own find: matches in context, under their path."""
 
+    flags = ToolFlags()
+
     def __init__(self, context: ToolContext) -> None:
         native = context.driver_info.native_tools.get(_FIND)
         description, schema = (native.description, native.schema) if native is not None else (_FIND_DESC, _FIND_PARAMS)
@@ -69,13 +69,29 @@ class FindTool(Tool):
             if inputs.get("generation_id"):
                 page_state.validate_generation(str(inputs["generation_id"]))
             query, matches, limit = _search(inputs)
-            observation = page_state.last_observation
-            if observation is None:
-                observation = page_state.record(Observe(), await self._context.driver.observe(Observe()))
-        except (ValueError, DriverError) as error:
+        except ValueError as error:
             return ToolOutput(success=False, error=f"{_ERROR}\n{error}")
-        found = _find(_snapshot(observation.native_text or ""), matches, limit)
-        return ToolOutput(success=True, data={"content": f"### Result\n{_answer(query, found)}"})
+        observation = page_state.last_observation
+        observed = observation is None
+        if observation is None:
+            try:
+                observation = await self._context.observe(Observe())
+            except DriverError as error:
+                text = f"{_ERROR}\n{error}"
+                record = CommandRecord.failed(Observe(), error, page_state, effect=self.flags.effect)
+                return ToolOutput(success=False, data={"content": text, "command": record}, error=text)
+        text = f"### Result\n{_answer(query, _find(_snapshot(observation.native_text or ''), matches, limit))}"
+        record = CommandRecord(
+            command=Observe,
+            effect=self.flags.effect,
+            ok=True,
+            dispatched=observed,
+            surface=page_state.surface_context,
+            value=text,
+            generation=page_state.generation_id,
+            action=Observe(),
+        )
+        return ToolOutput(success=True, data={"content": text, "command": record})
 
     async def stream(self, inputs: Mapping[str, Any], **kwargs: Any) -> AsyncIterator[ToolOutput]:
         yield await self.invoke(inputs, **kwargs)

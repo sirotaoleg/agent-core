@@ -8,12 +8,12 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, AsyncIterator
+from typing import Any, AsyncIterator
 
 from openjiuwen.core.common.logging import tool_logger
 from openjiuwen.core.foundation.tool import Tool, ToolCard
 from openjiuwen.core.foundation.tool.schema import ToolOutput
-from openjiuwen.harness.tools.browser_move.contract import DriverError, RunScript
+from openjiuwen.harness.tools.browser_move.contract import ActionResult, DriverError, RunScript
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging import (
     write_browser_agent_audit_artifact,
 )
@@ -27,10 +27,8 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.site_profiles impo
     get_selector_cache,
     site_profiles_for_url,
 )
+from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import CommandRecord, ToolContext, ToolFlags
 from openjiuwen.harness.tools.browser_move.utils.parsing import extract_json_object
-
-if TYPE_CHECKING:
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import ToolContext
 
 _PROBE_INTERACTIVES_DESC = (
     "Return a compact list of visible, high-value interactive elements on the current page. "
@@ -112,29 +110,26 @@ _WRAPPED_PROBE = re.compile(
 _FALSE_WORDS = frozenset({"0", "false", "no"})
 
 
-def _page_function(wrapped: str) -> tuple[str, dict[str, Any]]:
+def _page_script(wrapped: str) -> RunScript:
     match = _WRAPPED_PROBE.match(wrapped)
     if match is None:
         raise ValueError("not a wrapped page probe")
-    return match.group("function"), json.loads(match.group("params"))
+    return RunScript(code=match.group("function"), args=json.loads(match.group("params")))
 
 
 async def _run_probe(
-    context: ToolContext, code: str, params: Mapping[str, Any], audit_kind: str
-) -> tuple[dict[str, Any], dict[str, Any], int]:
-    page_state = context.page_state
-    value: Any = None
+    context: ToolContext, action: RunScript, audit_kind: str
+) -> tuple[dict[str, Any], dict[str, Any], int, ActionResult]:
     for attempt in range(2):
-        action = RunScript(code=code, args=dict(params))
-        result = page_state.record(action, await context.driver.execute(action))
-        value = result.value
+        result = await context.execute(action)
+        audit = write_browser_agent_audit_artifact(audit_kind, result.value)
         if not result.ok:
             error = str(result.detail or "the page script did not run")[:1_000]
-            return {"ok": False, "error": error}, write_browser_agent_audit_artifact(audit_kind, value), attempt
-        parsed = extract_json_object(value)
+            return {"ok": False, "error": error}, audit, attempt, result
+        parsed = extract_json_object(result.value)
         if parsed:
-            return parsed, write_browser_agent_audit_artifact(audit_kind, value), attempt
-    return {}, write_browser_agent_audit_artifact(audit_kind, value), 1
+            return parsed, audit, attempt, result
+    return {}, audit, 1, result
 
 
 def _register_probe(page_state: BrowserPageState, payload: dict[str, Any]) -> None:
@@ -146,7 +141,8 @@ async def probe_for_policy(context: ToolContext, source: str, params: Mapping[st
     """Run a decision policy's ``(params) => ...`` page function and register its elements as targets."""
     page_state = context.page_state
     try:
-        parsed, _audit, _retries = await _run_probe(context, source, params, "policy_probe")
+        action = RunScript(code=source, args=dict(params))
+        parsed, _audit, _retries, _result = await _run_probe(context, action, "policy_probe")
     except DriverError as error:
         tool_logger.warning("policy probe failed: %s", error)
         return _policy_failure(page_state, f"policy probe failed: {error}")
@@ -161,6 +157,8 @@ async def probe_for_policy(context: ToolContext, source: str, params: Mapping[st
 
 class ProbeInteractivesTool(Tool):
     """``browser_probe_interactives`` as one page script."""
+
+    flags = ToolFlags()
 
     def __init__(self, context: ToolContext) -> None:
         super().__init__(
@@ -177,7 +175,7 @@ class ProbeInteractivesTool(Tool):
         inputs = inputs or {}
         page_state = self._context.page_state
         query = str(inputs.get("query") or "").strip()
-        code, params = _page_function(
+        action = _page_script(
             build_interactive_probe_js(
                 max_items=_count(inputs.get("max_items"), default=30, maximum=30),
                 viewport_only=_flag(inputs.get("viewport_only", True)),
@@ -187,12 +185,14 @@ class ProbeInteractivesTool(Tool):
             )
         )
         try:
-            parsed, audit, retries = await _run_probe(self._context, code, params, "interactive_probe")
+            parsed, audit, retries, result = await _run_probe(self._context, action, "interactive_probe")
         except DriverError as error:
-            return _output(_failure(f"browser_probe_interactives failed: {error}", "elements", page_state.export()))
+            failure = _failure(f"browser_probe_interactives failed: {error}", "elements", page_state.export())
+            return _output(failure, CommandRecord.failed(action, error, page_state, effect=self.flags.effect))
+        record = CommandRecord.of(action, result, effect=self.flags.effect, value=result.value)
         if not parsed or parsed.get("ok") is False:
             reason = parsed.get("error") or "Could not parse browser_probe_interactives result JSON"
-            return _output({**_failure(reason, "elements", page_state.export_summary()), "audit": audit})
+            return _output({**_failure(reason, "elements", page_state.export_summary()), "audit": audit}, record)
         parsed.setdefault("ok", True)
         parsed.setdefault("error", None)
         parsed.setdefault("elements", [])
@@ -215,7 +215,8 @@ class ProbeInteractivesTool(Tool):
                     "parse_retry_count": retries,
                 },
                 "audit": audit,
-            }
+            },
+            record,
         )
 
     async def stream(self, inputs: Mapping[str, Any], **kwargs: Any) -> AsyncIterator[ToolOutput]:
@@ -224,6 +225,8 @@ class ProbeInteractivesTool(Tool):
 
 class ProbeCardsTool(Tool):
     """``browser_probe_cards`` as one page script; results feed the selector cache as before."""
+
+    flags = ToolFlags()
 
     def __init__(self, context: ToolContext) -> None:
         super().__init__(
@@ -236,7 +239,7 @@ class ProbeCardsTool(Tool):
         inputs = inputs or {}
         page_state = self._context.page_state
         selector_cache = get_selector_cache(self._context.settings.selector_cache_path)
-        code, params = _page_function(
+        action = _page_script(
             build_card_probe_js(
                 max_cards=_count(inputs.get("max_cards"), default=12, maximum=12),
                 viewport_only=_flag(inputs.get("viewport_only", True)),
@@ -248,12 +251,14 @@ class ProbeCardsTool(Tool):
             )
         )
         try:
-            parsed, audit, retries = await _run_probe(self._context, code, params, "card_probe")
+            parsed, audit, retries, result = await _run_probe(self._context, action, "card_probe")
         except DriverError as error:
-            return _output(_failure(f"browser_probe_cards failed: {error}", "cards", page_state.export()))
+            failure = _failure(f"browser_probe_cards failed: {error}", "cards", page_state.export())
+            return _output(failure, CommandRecord.failed(action, error, page_state, effect=self.flags.effect))
+        record = CommandRecord.of(action, result, effect=self.flags.effect, value=result.value)
         if not parsed or parsed.get("ok") is False:
             reason = parsed.get("error") or "Could not parse browser_probe_cards result JSON"
-            return _output({**_failure(reason, "cards", page_state.export_summary()), "audit": audit})
+            return _output({**_failure(reason, "cards", page_state.export_summary()), "audit": audit}, record)
         parsed.setdefault("ok", True)
         parsed.setdefault("error", None)
         parsed.setdefault("cards", [])
@@ -280,7 +285,8 @@ class ProbeCardsTool(Tool):
                     "parse_retry_count": retries,
                 },
                 "audit": audit,
-            }
+            },
+            record,
         )
 
     async def stream(self, inputs: Mapping[str, Any], **kwargs: Any) -> AsyncIterator[ToolOutput]:
@@ -339,8 +345,9 @@ def _failure(error: Any, items: str, page_state: dict[str, Any]) -> dict[str, An
     return {"ok": False, "error": error, items: [], "page_state": page_state}
 
 
-def _output(data: dict[str, Any]) -> ToolOutput:
-    return ToolOutput(success=bool(data.get("ok", True)), data=data, error=data.get("error"))
+def _output(payload: dict[str, Any], record: CommandRecord) -> ToolOutput:
+    data = {"content": payload, "command": record}
+    return ToolOutput(success=bool(payload.get("ok", True)), data=data, error=payload.get("error"))
 
 
 def _count(value: Any, *, default: int, maximum: int) -> int:
