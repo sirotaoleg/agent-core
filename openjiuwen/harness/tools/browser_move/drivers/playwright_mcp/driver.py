@@ -101,6 +101,8 @@ _TOOL_OF: dict[type[Action], str] = {
     GetConsole: "browser_console_messages",
     GetNetwork: "browser_network_requests",
 }
+# Server tools no command backs; the surface offers its own tool under the server's description and schema.
+_UNBACKED_TOOLS = frozenset({"browser_find"})
 
 
 @dataclass(frozen=True)
@@ -188,9 +190,9 @@ class PlaywrightMcpDriver(HandlerDriver):
         descriptions = {card.name: card.description for card in cards}
         self._tool_hints = {command: descriptions[tool] for command, tool in _TOOL_OF.items() if descriptions.get(tool)}
         self._native_tools = {
-            card.name: NativeTool(card.description, card.input_params, DECODERS[card.name])
+            card.name: NativeTool(card.description, card.input_params, DECODERS.get(card.name))
             for card in cards
-            if card.name in DECODERS
+            if card.name in DECODERS or card.name in _UNBACKED_TOOLS
         }
         self._config = config
         self._client = client

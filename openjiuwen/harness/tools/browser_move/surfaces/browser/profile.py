@@ -23,6 +23,7 @@ from .commands import (
     UploadFile,
 )
 from .config import BrowserSettings
+from .helpers import EXTRA_TOOLS
 from .renderer import BrowserRenderer
 from .tools import BROWSER_TOOL_SPECS
 
@@ -45,6 +46,7 @@ def create_browser_surface(environ: Mapping[str, str]) -> SurfaceBundle:
         tool_specs=BROWSER_TOOL_SPECS,
         capability_catalog=CAPABILITY_CATALOG,
         capability_tools=CAPABILITY_TOOLS,
+        extra_tools=EXTRA_TOOLS,
         timeouts={effect: _EFFECT_TIMEOUT_S for effect in Effect},
         messages=MESSAGES,
         settings=settings,

@@ -27,11 +27,11 @@ class Health:
 
 @dataclass(frozen=True)
 class NativeTool:
-    """A tool the driver offers in its own format: description, JSON schema and the decoder of its arguments."""
+    """A tool the driver offers in its own format; ``build`` decodes its arguments (``None``: no command backs it)."""
 
     description: str
     schema: Mapping[str, Any] = field(hash=False)
-    build: Callable[[Mapping[str, Any], RefResolver], Action] = field(hash=False)
+    build: Callable[[Mapping[str, Any], RefResolver], Action] | None = field(default=None, hash=False)
 
 
 @dataclass(frozen=True)
