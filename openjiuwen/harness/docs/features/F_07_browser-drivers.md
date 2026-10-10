@@ -435,6 +435,10 @@ G2, G3, G5, G7 are implemented here, together with the two middleware follow-ups
 - `pytest tests/unit_tests/harness/tools/browser_move -q`: **1399 passed, 60 skipped** (before: 1360 / 60; MCP
   goldens, tool/prompt snapshots and the runner contract unchanged). Harness tests that build the browser subagent:
   **248 passed**.
+- Fix after review: on Windows a `dict` snapshot of `os.environ` keeps only upper-case names, so the sidecar lost
+  `SystemRoot` (it exited before its hello; every live browser-use case failed) and the Chrome install roots lost
+  `ProgramFiles*`. `utils.env.env_value` looks a name up as given and upper-cased; the env-read rule now counts only
+  `utils/env.py` helpers that read the process environment. Live browser-use conformance: **45 passed**.
 
 ### Known leftovers
 
