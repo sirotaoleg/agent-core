@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import re
 import struct
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -100,6 +101,8 @@ _SIDECAR_ERRORS: dict[str, tuple[type[DriverError], bool]] = {
     "DriverUnsupported": (Unsupported, False),
     "ActionIntercepted": (ActionIntercepted, False),
 }
+# A dead browser reaches the driver as a plain error once browser-use gives up reconnecting to it.
+_DISCONNECTED = re.compile(r"\bnot connected\b|Reconnection wait timed out", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -115,6 +118,8 @@ class BrowserUseConfig:
 def _translate_error(method: str, exc: Exception) -> DriverError:
     code = type(exc).__name__
     known = _SIDECAR_ERRORS.get(code)
+    if known is None and _DISCONNECTED.search(str(exc)):
+        return ConnectionLost(f"{method}: {exc}", dispatched=True)
     if known is None:
         _logger.warning("browser-use sidecar error on %s not classified: %s: %s", method, code, exc)
         return DriverError(f"{method}: {exc}", dispatched=True)
