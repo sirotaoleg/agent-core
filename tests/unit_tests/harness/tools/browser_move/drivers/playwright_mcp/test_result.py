@@ -164,6 +164,16 @@ def test_detail_drops_events_and_the_snapshot_link(tmp_path: Path) -> None:
     )
 
 
+def test_a_sensitive_call_leaves_the_code_out_of_the_detail(tmp_path: Path) -> None:
+    raw = _raw("click_success")
+
+    sensitive = decode("browser_click", raw, output_dir=tmp_path, sensitive=True)
+    plain = decode("browser_click", raw, output_dir=tmp_path)
+
+    assert plain.detail is not None and "### Ran Playwright code" in plain.detail
+    assert sensitive.detail == f"### Page\n- Page URL: {BASE}/index.html\n- Page Title: Fixture form page"
+
+
 @pytest.mark.parametrize("case", ["events_console_message", "click_success", "navigate_second_page"])
 def test_detail_has_no_events_or_file_links(case: str, tmp_path: Path) -> None:
     detail = _decode(case, tmp_path).detail

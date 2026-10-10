@@ -531,6 +531,38 @@ def test_unsupported_commands_send_nothing(tmp_path: Path, action: Any) -> None:
 # --- results and context tracking -------------------------------------------------------------------------------------
 
 
+SECRET = "s3cret-value"
+ECHOED = {
+    "content": [
+        {
+            "type": "text",
+            "text": f"### Ran Playwright code\n```js\nawait page.x('{SECRET}');\n```\n### Page\n- Page URL: http://x/",
+        }
+    ],
+    "isError": False,
+}
+
+
+@pytest.mark.parametrize(
+    ("action", "tool"),
+    [
+        (TypeText(E12, SECRET, sensitive=True), "browser_type"),
+        (FillForm((FormField(E12, FieldKind.TEXTBOX, SECRET, sensitive=True),)), "browser_fill_form"),
+        (RunScript(f"() => '{SECRET}'", sensitive=True), "browser_evaluate"),
+    ],
+)
+def test_a_sensitive_command_keeps_the_echoed_code_out_of_the_detail(tmp_path: Path, action: Any, tool: str) -> None:
+    (result,), _calls = _execute(tmp_path, {tool: ECHOED}, action)
+
+    assert SECRET not in (result.detail or "")
+
+
+def test_a_plain_command_keeps_the_echoed_code(tmp_path: Path) -> None:
+    (result,), _calls = _execute(tmp_path, {"browser_type": ECHOED}, TypeText(E12, SECRET))
+
+    assert SECRET in result.detail
+
+
 def test_open_context_value_is_the_new_tab(tmp_path: Path) -> None:
     replies = {"browser_navigate": _raw("navigate_second_page"), "browser_tabs": _raw("tabs_new")}
 
