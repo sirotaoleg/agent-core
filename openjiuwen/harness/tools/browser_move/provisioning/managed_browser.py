@@ -171,6 +171,17 @@ def _is_chrome_identifier(value: str) -> bool:
     return "chrome" in Path(lowered).name
 
 
+def _answers_cdp(endpoint: str) -> bool:
+    try:
+        with urlopen(f"{endpoint}/json/version", timeout=1.5) as response:  # nosec B310
+            payload = json.loads(response.read().decode("utf-8", errors="ignore"))
+            if isinstance(payload, dict):
+                return bool(payload.get("webSocketDebuggerUrl") or payload.get("Browser"))
+    except (OSError, ValueError):
+        return False
+    return False
+
+
 class ManagedBrowserProvisioner:
     """Provisions Chrome for the managed, remote and extension modes; a managed instance owns the Chrome it starts."""
 
@@ -250,6 +261,11 @@ class ManagedBrowserProvisioner:
         if device.cleanup is not None:
             device.cleanup()
 
+    def is_alive(self, device: ProvisionedDevice) -> bool:
+        # Without an endpoint (extension, or a driver that launches its own browser) there is nothing to probe or
+        # re-provision.
+        return not device.endpoint or _answers_cdp(device.endpoint)
+
     @property
     def cdp_endpoint(self) -> str:
         host = self.profile.host or "127.0.0.1"
@@ -310,15 +326,7 @@ class ManagedBrowserProvisioner:
         return args
 
     def _is_endpoint_ready(self) -> bool:
-        endpoint = f"{self.cdp_endpoint}/json/version"
-        try:
-            with urlopen(endpoint, timeout=1.5) as response:  # nosec B310
-                payload = json.loads(response.read().decode("utf-8", errors="ignore"))
-                if isinstance(payload, dict):
-                    return bool(payload.get("webSocketDebuggerUrl") or payload.get("Browser"))
-        except (OSError, ValueError):
-            return False
-        return False
+        return _answers_cdp(self.cdp_endpoint)
 
     def start(self, timeout_s: float = 30.0, kill_existing: bool = False) -> str:
         if self._process is not None and self._process.poll() is None:

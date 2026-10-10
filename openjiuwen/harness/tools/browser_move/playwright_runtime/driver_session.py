@@ -20,7 +20,10 @@ from .page_state import BrowserPageState
 
 
 class DriverSession:
-    """Forwards commands to the stack; restarts it once per task on ``ConnectionLost`` and never re-sends the call."""
+    """Forwards commands to the stack; restarts it once per task on ``ConnectionLost`` and never re-sends the call.
+
+    A live device gets the same stack restarted; a dead one is released, provisioned again and gets a new stack.
+    """
 
     def __init__(self, assembly: DriverAssembly, page_state: BrowserPageState, messages: Mapping[str, str]) -> None:
         self.assembly = assembly
@@ -59,17 +62,23 @@ class DriverSession:
         raise ConnectionLost(self._restarted, dispatched=error.dispatched) from error
 
     async def _restart(self) -> None:
-        stack = self.assembly.stack
+        assembly = self.assembly
         with contextlib.suppress(DriverError):
-            await stack.stop()
+            await assembly.stack.stop()
+        # A driver may start without touching its device (lazy connect), so a clean start does not prove it alive.
+        if await asyncio.to_thread(assembly.provisioner.is_alive, assembly.device):
+            await assembly.stack.start()
+            return
+        provisioner = assembly.provisioner
+        await asyncio.to_thread(provisioner.release, assembly.device)
+        device = await asyncio.to_thread(provisioner.provision, assembly.surface_settings)
         try:
-            await stack.start()
-        except DriverError:
-            provisioner = self.assembly.provisioner
-            await asyncio.to_thread(provisioner.release, self.assembly.device)
-            device = await asyncio.to_thread(provisioner.provision, self.assembly.surface_settings)
-            self.assembly = dataclasses.replace(self.assembly, device=device)
-            await stack.start()
+            stack = assembly.rebuild(device)
+        except BaseException:
+            await asyncio.to_thread(provisioner.release, device)
+            raise
+        self.assembly = dataclasses.replace(assembly, stack=stack, device=device)
+        await stack.start()
 
 
 __all__ = ["DriverSession"]

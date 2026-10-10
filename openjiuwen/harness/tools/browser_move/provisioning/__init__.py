@@ -27,6 +27,9 @@ class Provisioner(Protocol):
 
     def release(self, device: ProvisionedDevice) -> None: ...
 
+    def is_alive(self, device: ProvisionedDevice) -> bool:
+        """Whether the device still answers; a dead one is released and provisioned again."""
+
 
 for _name in ("managed", "remote", "extension"):
     register_provisioner(_name, f"{__name__}.managed_browser:ManagedBrowserProvisioner")
