@@ -133,10 +133,10 @@ class HandleDialog(Action):
 
 @dataclass(frozen=True)
 class RunScript(Action):
-    """Run ``code`` in the focused context, scoped to ``target`` when given. ``sensitive`` masks ``code`` in traces."""
+    """Run ``code`` in the focused context, scoped to ``target`` if set. ``sensitive`` masks ``code`` and ``args``."""
 
     effect: ClassVar[Effect] = Effect.SCRIPT
-    __sensitive_fields__: ClassVar[tuple[str, ...]] = ("code",)
+    __sensitive_fields__: ClassVar[tuple[str, ...]] = ("code", "args")
 
     code: str
     args: Any = field(default=None, hash=False)

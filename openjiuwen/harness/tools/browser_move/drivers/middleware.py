@@ -95,9 +95,13 @@ class RetryOnStale(_Wrapper):
             raise StaleRef(str(error), dispatched=False, observation=fresh) from error
 
 
+def _is_sensitive(command: Any) -> bool:
+    return bool(getattr(command, "sensitive", False) and getattr(command, "__sensitive_fields__", ()))
+
+
 def _traced(value: Any) -> Any:
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        hidden = getattr(value, "__sensitive_fields__", ()) if getattr(value, "sensitive", False) else ()
+        hidden = value.__sensitive_fields__ if _is_sensitive(value) else ()
         return {
             item.name: MASK if item.name in hidden else _traced(getattr(value, item.name))
             for item in dataclasses.fields(value)
@@ -121,7 +125,7 @@ class Tracing(_Wrapper):
         try:
             observation = await self.inner.observe(command)
         except DriverError as error:
-            self._sink(record | self._error_record(error))
+            self._sink(record | self._error_record(error, command))
             raise
         # Elements and native text may show what a sensitive command typed, so only their shape is traced.
         self._sink(record | {"context": observation.context.id, "elements": len(observation.elements)})
@@ -132,7 +136,7 @@ class Tracing(_Wrapper):
         try:
             result = await self.inner.execute(action)
         except DriverError as error:
-            self._sink(record | self._error_record(error))
+            self._sink(record | self._error_record(error, action))
             raise
         self._sink(record | {"ok": result.ok, "detail": result.detail, "context_changed": result.context_changed})
         return result
@@ -142,8 +146,12 @@ class Tracing(_Wrapper):
         return {"call": call, "command": type(command).__name__, "args": _traced(command)}
 
     @staticmethod
-    def _error_record(error: DriverError) -> dict[str, Any]:
-        return {"error": type(error).__name__, "message": str(error), "dispatched": error.dispatched}
+    def _error_record(error: DriverError, command: Action) -> dict[str, Any]:
+        record = {"error": type(error).__name__, "dispatched": error.dispatched}
+        # Driver errors may quote the typed text or the script, e.g. a JS exception message.
+        if not _is_sensitive(command):
+            record["message"] = str(error)
+        return record
 
 
 __all__ = ["MASK", "RetryOnStale", "Timeouts", "TraceSink", "Tracing"]
