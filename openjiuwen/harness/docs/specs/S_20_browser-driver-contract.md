@@ -18,12 +18,17 @@
 The contract is the only thing the agent core and a driver both know. The core sends commands and reads typed
 results and errors; a driver translates commands for one library and declares which commands it handles. As of
 this revision the browser-use and Playwright MCP drivers implement the contract and pass the conformance suite
-live, the middleware wraps any driver and the composition root builds a started driver stack by name; no agent code
-uses them yet.
+live, the middleware wraps any driver and the composition root builds a started driver stack, and an agent over
+it, by name; the browser agent does not build through it yet.
 
 The browser surface profile (tool specs, renderer, capability catalog) is specified under "Browser surface
 profile"; the tool factory that turns it and the driver's native tools into model-facing tools under "Tool
-factory". No agent uses the factory yet.
+factory".
+
+A surface, driver or provisioner is added with new code and registry entries only. The fake-surface test
+(`tests/unit_tests/harness/tools/browser_move/architecture/fake_surface/`) holds this: a screen surface with its own
+command, renderer and policy rule, a driver and a provisioner, all defined in the test and registered in
+test-scoped registries, run a scripted task through `build_agent` on a real deep agent.
 
 ## Contract types
 
@@ -390,6 +395,14 @@ Public facades; their signatures do not change:
   values raise `ValueError`. `cdp_url` stays: the input for `remote`; for `managed` the endpoint comes from the Chrome that was started. In the
   Playwright MCP config a non-blank `launch_args` replaces `BrowserSettings.launch_args` and a non-blank `cdp_url`
   replaces `BrowserSettings.cdp_url`.
+- `BrowserSettings.with_instance(instance)` returns the settings for one isolated browser, the rules the browser
+  service applies (below) in one place: `provisioning` = the instance's (lower-cased), else the settings'; any other
+  value than `remote`, `managed`, `extension` raises `ValueError` naming `BrowserInstanceConfig.provisioning`;
+  `managed_port` = the instance port when above 0, else 0 (a free port) for a keyed instance, else the settings
+  port; `profile_name` = the instance profile name, else the sanitized key, else the settings'; `cdp_url`,
+  `user_data_dir`, `browser_binary` = the instance's when not blank; `launch_args` = the instance's parsed
+  `PLAYWRIGHT_MCP_ARGS`-style string when not blank. `instance.driver` is not read. An empty instance returns equal
+  settings.
 
 ### Environment boundary (invariant 9)
 
@@ -456,8 +469,9 @@ handles a CDP url or a Chrome process itself.
 
 - `ProvisionedDevice(kind, endpoint, extras, cleanup=None)`: frozen; `cleanup` is a no-argument callable, `None`
   when there is nothing to stop.
-- `Provisioner` (protocol): `provision(surface_settings) -> ProvisionedDevice` and `release(device)`, which runs
-  `device.cleanup` if there is one. Both are synchronous; async callers run them in a worker thread.
+- `Provisioner` (protocol): `provision(surface_settings) -> ProvisionedDevice`, `release(device)`, which runs
+  `device.cleanup` if there is one, and `is_alive(device) -> bool`, whether the device still answers (the driver
+  session re-provisions a dead one). All three are synchronous; async callers run them in a worker thread.
 - `provisioning/__init__.py` registers `managed`, `remote` and `extension` on `PROVISIONERS` as lazy import
   strings. The registry name is the value of `BrowserSettings.provisioning`; `PROVISIONERS.create(name, **kwargs)`
   returns a new provisioner.
@@ -490,6 +504,11 @@ Managed provisioning:
 5. The instance that provisioned a managed device owns its Chrome: `stop`, `is_endpoint_ready`, `clear` and
    `owns_process` act on it. One instance per device.
 
+`is_alive(device)`: a device with an endpoint (managed, remote) is alive while `<endpoint>/json/version` answers
+with a `webSocketDebuggerUrl` or `Browser` field (1.5 s timeout, the same check as `is_endpoint_ready`); a device
+without one (extension, or remote without `cdp_url`, where the driver launches its own browser) is always alive:
+there is nothing to probe or to provision again.
+
 `ManagedBrowserDriver` stays a deprecated alias of the class.
 
 ### The browser service (`playwright_runtime/service.py`)
@@ -518,27 +537,58 @@ extension flags. An instance `provisioning` / `driver_mode` other than `remote`,
 
 ## Composition root (`playwright_runtime/assembly.py`)
 
-`assemble_driver(core: CoreSettings, environ, *, registries=None) -> DriverAssembly` builds the driver stack from
-names only and returns it started. `registries` is `Registries(drivers, surfaces, provisioners)`; `None` means the
-three default registries with the built-ins. The module imports no concrete driver, surface or provisioner and
-holds no state. `create_browser_agent` and the Playwright MCP path do not call it yet.
+`assemble_driver(core: CoreSettings, environ, *, instance=None, registries=None) -> DriverAssembly` builds the driver
+stack from names only and returns it started. `registries` is `Registries(drivers, surfaces, provisioners)`; `None`
+means the three default registries with the built-ins. The module imports no concrete driver, surface or
+provisioner, names none, and holds no state. `create_browser_agent` and the Playwright MCP path do not call it yet.
 
 1. `surface = registries.surfaces.create(core.surface, environ)`, a `SurfaceBundle`.
-2. `provisioner = registries.provisioners.create(surface.settings.provisioning)`.
-3. `device = provisioner.provision(surface.settings)`, run in a worker thread.
-4. `driver = registries.drivers.create(core.driver, device, surface.settings)`.
-5. When `core.surface not in driver.info.surfaces`: `ValueError` naming the driver, the surface and the surfaces
-   the driver serves.
-6. `stack = Tracing(RetryOnStale(Timeouts(driver, per_effect)), sink)`: every `Effect` is bounded by
-   `core.tool_timeout_s` (the per-tool-call timeout); the sink writes each trace record to the debug log.
-7. `await stack.start()`.
+2. With an `instance` (the surface's per-agent identity, `BrowserInstanceConfig` for the browser):
+   `settings = surface.settings.with_instance(instance)`, and the bundle is replaced by
+   `SurfaceBundle(settings, replace(profile, settings=settings))`, so provisioning, the driver factory and the tool
+   context all see the instance. `with_instance` is not part of the `SurfaceSettings` protocol; a surface without it
+   cannot take an instance.
+3. `provisioner = registries.provisioners.create(surface.settings.provisioning)`.
+4. `device = provisioner.provision(surface.settings)`, run in a worker thread.
+5. The stack for the device: `driver = registries.drivers.create(core.driver, device, surface.settings)`; when
+   `core.surface not in driver.info.surfaces`, `ValueError` naming the driver, the surface and the surfaces the
+   driver serves; `stack = Tracing(RetryOnStale(Timeouts(driver, profile.timeouts)), sink)`. An effect missing from
+   `profile.timeouts` runs unbounded; the sink writes each trace record to the debug log.
+6. `await stack.start()`.
 
-A failure in steps 4–6 releases the device; a failure in `start` calls `close()`. A failure in `provision` leaves
+A failure in step 5 releases the device; a failure in `start` calls `close()`. A failure in `provision` leaves
 nothing to release.
 
-`DriverAssembly(stack, device, provisioner, surface_settings)`: `close()` stops the stack, then releases the device
-with `provisioner.release` in a worker thread, also when `stop` raises. `surface_settings` is what `provision` was
-called with; `DriverSession` provisions again from it.
+`DriverAssembly(stack, device, provisioner, surface_settings, rebuild=None, surface=None)`: `close()` stops the stack,
+then releases the device with `provisioner.release` in a worker thread, also when `stop` raises.
+`surface_settings` is what `provision` was called with; `rebuild(device)` is step 5 for another device (same driver
+factory, surface check and middleware), not started; `surface` is the bundle of step 2. `DriverSession` provisions
+again from `surface_settings` and builds the new stack with `rebuild`. Assemblies built by hand (tests) may leave
+`rebuild` and `surface` out.
+
+### Agent construction
+
+`build_agent_parts(session, bundle, *, capabilities, image_support, language, workspace=None) -> AgentParts`:
+
+- `tools`, `prompt_sections`: `ToolFactory(bundle.profile, session.assembly.stack.info).build(capabilities,
+  image_support=, session=, page_state=session.page_state, workspace=, language=)`.
+- `rails`, in this order: `ActionPolicy(<the factory's builders>, profile.policy_rules, session.page_state)`,
+  `CommandRepeatGuardRail()`, `CommandInterceptedHintRail()`, then `factory(context)` for each `profile.rails`
+  entry, `context` being the `ToolContext` of the same session, profile, driver info, image support, workspace and
+  language.
+
+`build_agent(core, environ, *, model, capabilities, image_support, language, system_prompt="", workspace=None,
+instance=None, registries=None, **agent_options) -> (DeepAgent, DriverSession)`:
+
+1. `assemble_driver(core, environ, instance=, registries=)`;
+2. `DriverSession(assembly, BrowserPageState(), profile.messages)`;
+3. `build_agent_parts(session, assembly.surface, ...)`;
+4. `create_deep_agent(model, system_prompt=<system_prompt and the prompt sections, blank-line separated>,
+   tools=, rails=, workspace=, language=, **agent_options)`.
+
+The driver is started before the agent exists (the Playwright MCP native tools exist only after `start()`). A
+failure in steps 2–4 closes the session (stop, release). The caller owns the session: `begin_task()` per task,
+`close()` when the agent is done. Neither function names a driver, a surface or a provisioner.
 
 ## Browser surface profile (`surfaces/browser/`)
 
@@ -706,17 +756,18 @@ one counter; the text-snapshot methods (`register_ax_snapshot`, `replace_ax_snap
 ### Driver session (`driver_session.py`, `DriverSession`)
 
 `DriverSession(assembly, page_state, messages)` forwards `execute` and `observe` to `assembly.stack`; `messages` must
-hold `driver_restarted` and `driver_lost` (read at construction).
+hold `driver_restarted` and `driver_lost` (read at construction). `page_state` is readable.
 
 | Event | Behaviour |
 |---|---|
-| first `ConnectionLost` in a task (any `dispatched`) | `stop()` (driver errors ignored); `start()`; if `start()` raises a `DriverError`: `provisioner.release(device)`, `provisioner.provision(surface_settings)`, `start()`; then `page_state.reset()` and the call raises `ConnectionLost(driver_restarted, dispatched=<original>)` |
-| restart fails | task failure: `BaseError` `DEEPAGENT_RUNTIME_ERROR` with `driver_lost`, the restart error as cause |
+| first `ConnectionLost` in a task (any `dispatched`) | `stop()` (driver errors ignored); then `provisioner.is_alive(device)`: alive → `start()` the same stack; dead → `provisioner.release(device)`, `provisioner.provision(surface_settings)`, `assembly.rebuild(new device)` (a failure here releases the new device), the session's assembly takes the new stack and device, `start()` the new stack; then `page_state.reset()` and the call raises `ConnectionLost(driver_restarted, dispatched=<original>)` |
+| restart fails (`start`, `provision`, `rebuild`) | task failure: `BaseError` `DEEPAGENT_RUNTIME_ERROR` with `driver_lost`, the restart error as cause |
 | second `ConnectionLost` in the same task | task failure, no restart |
 | `begin_task()` | resets the loss counter |
-| `close()` | `assembly.close()` with the current (possibly re-provisioned) device |
+| `close()` | `assembly.close()` with the current (possibly rebuilt) stack and device |
 
-The failed command is never sent again. `health()` is not polled.
+The failed command is never sent again. `health()` is not polled. Liveness is asked of the provisioner, not of
+the driver: a driver may start without touching its device (Playwright MCP connects over CDP lazily).
 
 ### Policy rail (`action_policy.py`, `ActionPolicy`)
 

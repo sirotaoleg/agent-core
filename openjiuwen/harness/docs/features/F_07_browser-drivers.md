@@ -552,7 +552,8 @@ started driver; `create_browser_agent` and the Playwright MCP path keep their wi
 1. `create_browser_agent`, the browser service and the runtime MCP server do not build through the root yet. The
    service still provisions managed Chrome itself and adopts a live Chrome from the profile store (H1); the root
    does not adopt.
-2. Per-effect timeouts come from `CoreSettings.tool_timeout_s` until the surface profile supplies them.
+2. Per-effect timeouts come from `CoreSettings.tool_timeout_s` until the surface profile supplies them. Done: see
+   "Agent construction, instance settings and restart on a dead device".
 3. `mypy` on `config.py`, `service.py` and `runtime.py` reports 13 more errors than before (26 instead of 13). They
    are `attr-defined` (and one `type-var` on `dataclasses.replace`) where browser code in the core reads browser
    fields on a `SurfaceSettings`. `make type-check` is advisory. The errors go away when that code moves to the
@@ -1022,7 +1023,8 @@ agent switch wires them.
    actions, so the saved observations are counted only once the tools use `record`.
 2. The address backstop and `contexts` read `url`, `title` and `tabs` from the surface context by attribute name:
    the core cannot import `BrowserContext`. They move with `page_state.py` into the browser surface (Phase 9).
-3. A re-provisioned device with a different endpoint would need a rebuilt driver (decision 9).
+3. A re-provisioned device with a different endpoint would need a rebuilt driver (decision 9). Done: see "Agent
+   construction, instance settings and restart on a dead device" (decisions 1–3 replace decisions 9 and 10).
 4. The browser profile's `messages` (`driver_restarted`, `driver_lost`) and `policy_rules` come with the profile
    task; the session reads the two messages at construction. Done: see "Browser surface profile".
 
@@ -1545,3 +1547,125 @@ path is unchanged.
 3. The recall tool leaves no record; a rail sees its message as a call that sent nothing.
 4. Staged upload copies stay under `output_dir/uploads/`.
 5. browser-use's `current_tab` is the first tab whose URL is the page URL; two tabs at one URL are not told apart.
+
+## Agent construction, instance settings and restart on a dead device
+
+Phase 4 item 6 and the composition-root part of plan section 3 ("One composition root"): `build_agent_parts` and
+`build_agent` in `assembly.py`, `BrowserInstanceConfig` applied to the surface settings before anything is built,
+per-effect timeouts from the profile, and the two restart follow-ups of the wave-2 review (N1 liveness before a
+restart, N2 a new driver for a re-provisioned device). The fake-surface end-to-end test of plan section 4.3 runs
+on it. Only tests reach `build_agent`; `create_browser_agent`, the service and the runtime are unchanged.
+
+### Decisions
+
+1. **The provisioner answers liveness** (N1): `Provisioner.is_alive(device)`. Managed and remote probe
+   `<endpoint>/json/version` (the check `is_endpoint_ready` already did, now one module function); a device without
+   an endpoint (extension; remote without `cdp_url`, where the driver launches its own browser) is always alive,
+   because provisioning it again returns the same empty device.
+2. **Restart order:** `stop()` the old stack in every case, then ask the provisioner. Alive → `start()` the same
+   stack. Dead → release, provision, rebuild, start the new stack. A live device whose stack cannot start is a task
+   failure: the former fallback "re-provision when `start()` fails" is gone, since a new Chrome does not fix a driver
+   that cannot start, and on Playwright MCP `start()` succeeds over a dead Chrome anyway.
+3. **The assembly rebuilds** (N2): `DriverAssembly.rebuild(device)` is the same closure that built the first stack
+   (driver factory, surface check, middleware with the profile timeouts), so stacks are built in one place and the
+   session holds no registry. The session swaps stack and device in its assembly; `close()` stops and releases the
+   new ones. A failing rebuild releases the new device before the task fails.
+4. **`DriverAssembly` grows by appended defaults** (`rebuild=None`, `surface=None`); `surface_settings` stays.
+   Assemblies built by hand in the factory, helper and golden tests keep their four positional arguments. The tool
+   factory tests' hand-built assembly now has a provisioner that answers alive (decided with Aleh in-session); the
+   other hand-built assemblies never restart.
+5. **The instance is applied before provisioning and the driver factory:** `assemble_driver(..., instance=)` calls
+   `surface.settings.with_instance(instance)` and puts the result into the bundle and into `profile.settings` (the
+   tool context reads the profile's). `BrowserSettings.with_instance` holds the rules of the browser service's
+   `_provisioning_settings` plus the two Playwright MCP overrides (`launch_args`, `cdp_url`), so
+   `test_browser_instance_isolation.py` semantics hold on the new path (distinct keys → distinct free ports and
+   profiles, explicit port and profile name win, no instance → environment values).
+6. **The core passes the instance through untyped** (`Any`); `with_instance` is a method of the browser settings,
+   not of the `SurfaceSettings` protocol, so `contract/` is unchanged.
+7. **No key in the MCP server name** (Q2): the Playwright MCP driver factory hands `playwright_mcp_config` only the
+   device endpoint, never the instance, so the server name and the tool prefix stay `mcp_playwright-official_` for
+   keyed instances. The old path's `build_playwright_mcp_config(instance)` still suffixes, until the switch.
+8. **Per-effect timeouts from `profile.timeouts`** (I2's one line, now inside the stack builder). The browser
+   profile says 240 s for every effect, today's default; `PLAYWRIGHT_TOOL_TIMEOUT_S` no longer bounds driver calls
+   made through the root (it still bounds the worker's tool calls on the old path). An effect the profile leaves out
+   runs unbounded.
+9. **`build_agent_parts(session, bundle, *, capabilities, image_support, language, workspace=None)`**: tools and
+   prompt sections from `ToolFactory.build` (workspace and language go to the tool context); rails = `ActionPolicy`
+   (the factory's builders, `profile.policy_rules`, the session's page state), `CommandRepeatGuardRail`,
+   `CommandInterceptedHintRail`, then each `profile.rails` factory called with the `ToolContext` of the same session.
+   The factory does not return its context, so the root builds an equal one.
+10. **`build_agent` is async and returns `(agent, session)`.** It starts the driver before the agent exists (the MCP
+    native tools appear at `start()`); the caller owns `begin_task()` and `close()`. A failing construction closes
+    the session. The system prompt is the caller's text followed by the prompt sections, blank-line separated;
+    every other keyword goes to `create_deep_agent`.
+11. **`DriverSession.page_state`** is readable, so the parts can be built from a session alone. `driver_session.py`
+    imports `DriverAssembly` for annotations only (the root now imports the session through the tool factory).
+12. **The fake surface writes its own driver** (a `HandlerDriver` with `@handles(Click / Poke, refs={PointRef})`), not
+    `contract.testing.FakeDriver`: the plan derives the handled commands from the marks, and per-command scripted
+    outcomes make the scenario readable. The model is a `Model` subclass with a scripted `invoke`; the agent is a real
+    `DeepAgent` from `create_deep_agent`. The stale point comes from the page state: a click whose result changes
+    the context advances the generation, and the next point still carries the generation of the earlier screenshot.
+
+### Rejected options
+
+- **Liveness from `driver.health()`**: the MCP server answers with Chrome gone; the provisioner knows the device.
+- **Rebuilding from the registries inside the session**: a second composition root (the reason it was rejected in
+  "Page state, driver session and policy rail"); the closure keeps one.
+- **Keeping "re-provision when `start()` fails" next to the probe**: two triggers for one decision, and the probe
+  already covers the case.
+- **Treating an assembly without a provisioner as alive** (to leave the tool factory test untouched): a branch for a
+  state only hand-built tests create.
+- **`with_instance` on the `SurfaceSettings` protocol**: a contract change for one surface's identity type.
+- **Registering `session.close` as the deep agent's task-resource cleanup**: that runs after every subagent task and
+  would stop the browser between tasks.
+- **Returning only the agent**: the caller could neither close the device nor start a task.
+- **The Phase 3 per-effect bound `core.tool_timeout_s`**: the plan puts timeouts in the profile so a slower surface
+  needs no core edit.
+
+### Fake-surface end-to-end test
+
+Six assertions on one scripted run (`look`, an off-board `poke`, `click`, a `poke` on the old screenshot, `look`,
+`click` with a lost connection, then an answer):
+
+| Plan item | What the test sees |
+|---|---|
+| tool list | the model is offered `look`, `click` and `poke`; `click` and `poke` take `x, y` integers (schemas generated from `refs={PointRef}`) |
+| image block | the request after `look` carries the screenshot as an `image_url` (the renderer's `Screenshot` block) |
+| policy | `poke(500, 5)`: tool result `PolicyDenied`, the model reads `### Error\n(500, 5) is off the board`, no `Poke` reaches the driver |
+| stale point | `poke(10, 10)` on the g0 screenshot after the generation moved to g1: exactly one `Observe()` and no `Poke` on the driver, record error `StaleRef`, the model reads the error with the fresh observation |
+| lost connection | the driver sees `stop`, `start` once after the failing `click` (the device is alive, nothing provisioned again), the model reads `driver_restarted` |
+| registries only | surface, driver and provisioner are registered in test-scoped `Registry` objects; no package file was changed for the test |
+
+**No seam needed a change:** nothing in `playwright_runtime/` besides the two files of this task, nothing in
+`contract/` or `drivers/middleware.py`.
+
+### Verification
+
+- Fail-before (old `driver_session.py` in a separate worktree, new assembly and tests): 6 of the 12 session tests
+  fail, among them the lazily starting driver over a dead device.
+- `test_driver_session.py` (12, rewritten around `is_alive` and `rebuild`), `test_assembly.py` (+4: rebuild, a
+  rebuild that does not serve the surface, the instance before provisioning and the driver, the plain MCP prefix for
+  a keyed instance; the timeout cases now come from the profile), `test_provisioning.py` (+4 functions, 5 cases:
+  liveness against a local CDP stub, a closed port, a managed device, devices without an endpoint),
+  `surfaces/test_browser_settings.py` (+7: `with_instance`), `test_build_agent.py` (6),
+  `architecture/fake_surface/` (6), `test_tool_factory.py` (hand-built assembly with a live provisioner).
+- `pytest tests/unit_tests/harness/tools/browser_move`: **2393 passed, 117 skipped, 2 xfailed** (architecture,
+  old goldens, factory goldens and the runner contract included); the 12 harness test files outside it that use the
+  browser agent: **262 passed**.
+- Live: `test_assembly_live.py` **3 passed** (managed Chrome with browser-use and with Playwright MCP through the
+  root, and new: a managed Chrome killed under Playwright MCP is detected dead, provisioned again, and the next
+  observation runs on a rebuilt driver); browser-use conformance **45 passed**.
+
+### Known leftovers
+
+1. **browser-use does not report a dead Chrome as `ConnectionLost`.** Killing the managed Chrome under browser-use
+   makes the next `observe` fail with a plain `DriverError` ("CDP still not connected"), so the session never
+   restarts. The driver's error mapping needs the connection case (checked live, not in a test).
+2. A `StaleRef` raised by a driver reaches `CommandTool` with the fresh observation on the error
+   (`RetryOnStale`); the tool passes `observation=None` to `renderer.error` and does not record that observation in
+   the page state. The fake surface goes through the page-state path, which records it.
+3. `build_agent` registers no task hook: `begin_task()` and `close()` are the caller's until the switch wires the
+   facade's acquire/release.
+4. `BrowserInstanceConfig.driver` is not read by the root; `core.driver` picks the driver.
+5. `DriverAssembly.surface_settings` duplicates `surface.settings`; it stays while hand-built assemblies pass it
+   positionally.
