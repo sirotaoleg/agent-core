@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import platform
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -280,6 +281,12 @@ class TestBrowserUseSidecar:
         assert env["BROWSER_USE_LOGGING_LEVEL"] == "debug"
         assert env["BROWSER_UPLOAD_ROOT"] == str(Path("/uploads"))
         assert {"BROWSER_USE_SIDECAR_PYTHON", "BROWSER_USE_FROM_PROCESS", "API_KEY"}.isdisjoint(env)
+
+    @pytest.mark.skipif(platform.system() != "Windows", reason="the sidecar gets SystemRoot only on Windows")
+    def test_sidecar_env_keeps_systemroot_from_an_upper_case_snapshot(self) -> None:
+        env = transport_module._sidecar_env({"PATH": "C:/bin", "SYSTEMROOT": "C:/Windows"}, None)
+
+        assert env["SystemRoot"] == "C:/Windows"
 
     def test_missing_sidecar_python_override_is_unsupported(self, tmp_path: Path) -> None:
         with pytest.raises(DriverUnsupported, match="BROWSER_USE_SIDECAR_PYTHON"):

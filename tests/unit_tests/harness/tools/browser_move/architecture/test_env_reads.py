@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Environment variables are read only in the config modules: directly, via ``utils/env.py`` or by a known name."""
+"""Environment variables are read only in the config modules: directly, via an env-reading ``utils/env.py`` helper
+or by a known name."""
 
 from __future__ import annotations
 
@@ -46,10 +47,25 @@ def _module_file(parts: tuple[str, ...]) -> str | None:
     return None
 
 
+def _reads_process_env(function: ast.AST) -> bool:
+    return any(
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "os"
+        and node.attr in ("getenv", "environ")
+        for node in ast.walk(function)
+    )
+
+
 @lru_cache(maxsize=None)
 def _env_functions() -> frozenset[str]:
+    """``utils/env.py`` functions that read the process environment; pure helpers over a given mapping do not count."""
     tree = _scan.parse(_module_file(ENV_MODULE))
-    return frozenset(n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))
+    return frozenset(
+        n.name
+        for n in tree.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and _reads_process_env(n)
+    )
 
 
 @lru_cache(maxsize=None)

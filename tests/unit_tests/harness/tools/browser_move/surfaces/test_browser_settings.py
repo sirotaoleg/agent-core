@@ -267,6 +267,13 @@ def test_chrome_install_paths_follow_the_windows_install_roots_in_order() -> Non
     assert settings.browser_binary_candidates == tuple(str(Path(root, *tail)) for root in ("C:/la", "C:/pf", "D:/w64"))
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Chrome install roots come from the environment only on Windows")
+def test_chrome_install_paths_are_found_in_an_upper_case_snapshot() -> None:
+    settings = BrowserSettings.from_env({"PROGRAMFILES": "C:/pf"})
+
+    assert settings.browser_binary_candidates == (str(Path("C:/pf", "Google", "Chrome", "Application", "chrome.exe")),)
+
+
 @pytest.mark.skipif(os.name == "nt", reason="outside Windows no install path comes from the environment")
 def test_no_chrome_install_paths_come_from_the_environment_outside_windows() -> None:
     assert BrowserSettings.from_env({"ProgramFiles": "C:/pf"}).browser_binary_candidates == ()
