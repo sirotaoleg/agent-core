@@ -149,3 +149,13 @@ def test_raw_browser_observation_audit_is_disabled_by_default(browser_logger, tm
 
     assert audit["stored"] is False
     assert not (tmp_path / "browser_agent_audit").exists()
+
+
+def test_first_use_reads_only_the_log_settings(browser_logger, monkeypatch, tmp_path):
+    monkeypatch.setenv("BROWSER_DRIVER", "not-a-driver")
+    monkeypatch.setenv("OPENJIUWEN_BROWSER_AGENT_LOG_FILE", str(tmp_path / "browser.log"))
+    monkeypatch.setenv("OPENJIUWEN_BROWSER_AGENT_LOG_LEVEL", "WARNING")
+
+    assert get_browser_agent_logger() is browser_logger
+    assert browser_logger.level == logging.WARNING
+    assert _file_handlers(browser_logger) == [str((tmp_path / "browser.log").resolve())]
