@@ -8,15 +8,19 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
 import warnings
 from pathlib import Path
+from types import MappingProxyType
 from typing import Optional
 from urllib.request import urlopen
 
-from ..playwright_runtime.profiles import BrowserProfile
+from ..playwright_runtime.profiles import BrowserProfile, BrowserProfileStore
+from ..surfaces.browser.config import BrowserSettings
+from . import ProvisionedDevice
 
 
 def _default_chrome_user_data_dir() -> str:
@@ -160,6 +164,14 @@ def _candidate_chrome_binaries() -> list[str]:
     return unique
 
 
+def _allocate_free_port() -> int:
+    # bind-to-0 so concurrent instances never pick the same port; Chrome starts on it right away and
+    # the endpoint-ready check absorbs the small window between closing the socket and the launch.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
 def _is_chrome_identifier(value: str) -> bool:
     lowered = (value or "").strip().replace("\\", "/").lower()
     if not lowered:
@@ -168,12 +180,81 @@ def _is_chrome_identifier(value: str) -> bool:
 
 
 class ManagedBrowserProvisioner:
-    """Launch and manage a dedicated local Chrome process."""
+    """Provisions Chrome for the managed, remote and extension modes; a managed instance owns the Chrome it starts."""
 
-    def __init__(self, profile: BrowserProfile) -> None:
+    def __init__(
+        self,
+        profile: Optional[BrowserProfile] = None,
+        profile_store: Optional[BrowserProfileStore] = None,
+    ) -> None:
         self.profile = profile
+        self._profile_store = profile_store
         self._process: Optional[subprocess.Popen] = None
         self._owns_process: bool = False
+
+    def provision(self, surface_settings: BrowserSettings) -> ProvisionedDevice:
+        settings = surface_settings
+        if settings.provisioning == "remote":
+            return ProvisionedDevice(
+                kind="chrome",
+                endpoint=settings.cdp_url,
+                extras=MappingProxyType(
+                    {
+                        "cdp_headers": settings.cdp_headers,
+                        "cdp_timeout": settings.cdp_timeout,
+                        "launch_args": settings.launch_args,
+                    }
+                ),
+            )
+        if settings.provisioning == "extension":
+            return ProvisionedDevice(
+                kind="chrome",
+                endpoint="",
+                extras=MappingProxyType(
+                    {
+                        "extension": True,
+                        "extension_token": settings.mcp_extension_token,
+                        "launch_args": settings.launch_args,
+                    }
+                ),
+            )
+        store = self._profile_store or BrowserProfileStore(
+            settings.profile_store_path or settings.mcp_cwd / ".browser" / "profiles.json"
+        )
+        profile = store.get_profile(settings.profile_name)
+        if (
+            profile is None
+            or profile.driver_type != "managed"
+            or profile.debug_port <= 0
+            or not str(profile.user_data_dir).strip()
+            or profile.extra_args != list(settings.managed_args)
+        ):
+            profile = _build_profile(settings)
+        profile.browser_binary = settings.browser_binary
+        store.upsert_profile(profile, select=True)
+        self.profile = profile
+
+        endpoint = self.start(30.0, settings.managed_kill_existing)
+        profile.cdp_url = endpoint
+        store.upsert_profile(profile, select=True)
+        return ProvisionedDevice(
+            kind="chrome",
+            endpoint=endpoint,
+            extras=MappingProxyType(
+                {
+                    "profile": profile,
+                    "port": profile.debug_port,
+                    "user_data_dir": profile.user_data_dir,
+                    "managed_args": tuple(profile.extra_args),
+                    "launch_args": settings.launch_args,
+                }
+            ),
+            cleanup=self.stop,
+        )
+
+    def release(self, device: ProvisionedDevice) -> None:
+        if device.cleanup is not None:
+            device.cleanup()
 
     @property
     def cdp_endpoint(self) -> str:
@@ -320,6 +401,28 @@ class ManagedBrowserProvisioner:
         from openjiuwen.core.common.logging import logger as _logger
         _logger.info("ManagedBrowser: clear handle process")
         process.poll()
+
+
+def _build_profile(settings: BrowserSettings) -> BrowserProfile:
+    # managed_port 0: pick a free port (an isolated instance must not share one fixed port).
+    port = settings.managed_port or _allocate_free_port()
+    if settings.user_data_dir:
+        user_data_dir = settings.user_data_dir
+    elif settings.managed_kill_existing:
+        user_data_dir = _default_chrome_user_data_dir()
+    else:
+        user_data_dir = str(settings.mcp_cwd / ".browser-profiles" / settings.profile_name)
+    host = settings.managed_host
+    return BrowserProfile(
+        name=settings.profile_name,
+        driver_type="managed",
+        cdp_url=f"http://{host}:{port}",
+        browser_binary=settings.browser_binary,
+        user_data_dir=user_data_dir,
+        debug_port=port,
+        host=host,
+        extra_args=list(settings.managed_args),
+    )
 
 
 def __getattr__(name: str):

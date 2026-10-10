@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional, Protocol
+
+from ..contract.registry import register_provisioner
 
 
 @dataclass(frozen=True)
@@ -15,7 +17,19 @@ class ProvisionedDevice:
     kind: str
     endpoint: str
     extras: Mapping[str, Any]
-    cleanup: Optional[Callable] = None
+    cleanup: Optional[Callable[[], None]] = None
 
 
-__all__ = ["ProvisionedDevice"]
+class Provisioner(Protocol):
+    """Makes one device ready from the surface settings and releases it."""
+
+    def provision(self, surface_settings: Any) -> ProvisionedDevice: ...
+
+    def release(self, device: ProvisionedDevice) -> None: ...
+
+
+for _name in ("managed", "remote", "extension"):
+    register_provisioner(_name, f"{__name__}.managed_browser:ManagedBrowserProvisioner")
+
+
+__all__ = ["ProvisionedDevice", "Provisioner"]
