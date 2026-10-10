@@ -12,12 +12,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from openjiuwen.harness.tools.browser_move.contract.registry import PROVISIONERS
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserInstanceConfig,
     BrowserRunGuardrails,
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.profiles import BrowserProfile
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
+from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import (
+    ManagedBrowserProvisioner,
+    _build_profile,
+)
 
 from openjiuwen.core.foundation.tool import McpServerConfig
 
@@ -511,13 +517,11 @@ def test_ensure_managed_driver_started_reuses_healthy_existing_driver() -> None:
         healthy_driver.is_endpoint_ready.return_value = True
         setattr(service, "_managed_driver", healthy_driver)
 
-        with patch(
-            "openjiuwen.harness.tools.browser_move.playwright_runtime.service.ManagedBrowserProvisioner"
-        ) as mock_cls:
+        with patch.object(PROVISIONERS, "create") as create:
             await getattr(service, "_ensure_managed_driver_started")()
 
         assert getattr(service, "_managed_driver") is healthy_driver
-        mock_cls.assert_not_called()
+        create.assert_not_called()
 
     _run(_test())
 
@@ -539,21 +543,15 @@ def test_ensure_managed_driver_started_replaces_stale_driver() -> None:
             host="127.0.0.1",
         )
         new_driver = MagicMock()
-        new_driver.start.return_value = "http://127.0.0.1:9333"
-        profile_store = getattr(service, "_profile_store")
+        new_driver.provision.return_value = ProvisionedDevice(
+            kind="chrome", endpoint="http://127.0.0.1:9333", extras={"profile": profile}
+        )
 
-        with patch.object(profile_store, "get_profile", return_value=profile), patch.object(
-            profile_store,
-            "upsert_profile",
-            side_effect=lambda browser_profile, select=False: browser_profile,
-        ), patch(
-            "openjiuwen.harness.tools.browser_move.playwright_runtime.service.ManagedBrowserProvisioner",
-            return_value=new_driver,
-        ):
+        with patch.object(PROVISIONERS, "create", return_value=new_driver):
             await getattr(service, "_ensure_managed_driver_started")()
 
         assert getattr(service, "_managed_driver") is new_driver
-        new_driver.start.assert_called_once()
+        new_driver.provision.assert_called_once()
 
     _run(_test())
 
@@ -580,17 +578,13 @@ def test_ensure_runtime_ready_refreshes_mcp_binding_after_managed_browser_restar
             host="127.0.0.1",
         )
         new_driver = MagicMock()
-        new_driver.start.return_value = "http://127.0.0.1:9333"
-        profile_store = getattr(service, "_profile_store")
+        new_driver.provision.return_value = ProvisionedDevice(
+            kind="chrome", endpoint="http://127.0.0.1:9333", extras={"profile": profile}
+        )
 
-        with patch.object(profile_store, "get_profile", return_value=profile), patch.object(
-            profile_store,
-            "upsert_profile",
-            side_effect=lambda browser_profile, select=False: browser_profile,
-        ), patch(
-            "openjiuwen.harness.tools.browser_move.playwright_runtime.service.ManagedBrowserProvisioner",
-            return_value=new_driver,
-        ), patch.object(service, "_refresh_mcp_server_binding", AsyncMock()) as refresh_binding:
+        with patch.object(PROVISIONERS, "create", return_value=new_driver), patch.object(
+            service, "_refresh_mcp_server_binding", AsyncMock()
+        ) as refresh_binding:
             await service.ensure_runtime_ready()
 
         refresh_binding.assert_awaited_once()
@@ -688,7 +682,7 @@ def test_build_managed_profile_defaults_user_data_dir_to_runtime_workspace() -> 
     with patch.dict(os.environ, {"BROWSER_DRIVER": "managed"}, clear=False):
         expected_root = (Path.cwd() / "tmp-runtime-root").resolve()
         service = _make_service(runtime_cwd=str(expected_root))
-    profile = getattr(service, "_build_managed_profile")()
+    profile = _build_profile(service._provisioning_settings())
     expected = expected_root / ".browser-profiles" / getattr(service, "_profile_name")
     assert Path(profile.user_data_dir).resolve() == expected
 
@@ -719,14 +713,15 @@ def test_build_managed_profile_prefers_instance_browser_binary() -> None:
             guardrails=BrowserRunGuardrails(),
             instance=instance,
         )
-        profile = service._build_managed_profile()
+        profile = _build_profile(service._provisioning_settings())
 
     assert profile.browser_binary == "C:/configured/chrome.exe"
 
 
 def test_existing_profile_browser_binary_is_cleared_for_auto_detection() -> None:
     async def _test():
-        service = _make_service()
+        with patch.dict(os.environ, {}, clear=True):
+            service = _make_service()
         setattr(service, "_driver_mode", "managed")
         profile = BrowserProfile(
             name="jiuwenclaw",
@@ -737,11 +732,9 @@ def test_existing_profile_browser_binary_is_cleared_for_auto_detection() -> None
             debug_port=9333,
             host="127.0.0.1",
         )
-        new_driver = MagicMock()
-        new_driver.start.return_value = "http://127.0.0.1:9333"
         profile_store = getattr(service, "_profile_store")
 
-        with patch.dict(os.environ, {}, clear=True), patch.object(
+        with patch.object(
             service,
             "_resolve_existing_cdp_profile",
             return_value=None,
@@ -753,14 +746,11 @@ def test_existing_profile_browser_binary_is_cleared_for_auto_detection() -> None
             profile_store,
             "upsert_profile",
             side_effect=lambda browser_profile, select=False: browser_profile,
-        ), patch(
-            "openjiuwen.harness.tools.browser_move.playwright_runtime.service.ManagedBrowserProvisioner",
-            return_value=new_driver,
-        ):
+        ), patch.object(ManagedBrowserProvisioner, "start", return_value="http://127.0.0.1:9333") as start:
             await service._ensure_managed_driver_started()
 
         assert profile.browser_binary == ""
-        new_driver.start.assert_called_once()
+        start.assert_called_once()
 
     _run(_test())
 

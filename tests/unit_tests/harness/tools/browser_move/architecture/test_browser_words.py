@@ -38,7 +38,7 @@ KNOWN_BROWSER_WORDS: dict[str, int] = {
     "playwright_runtime/runtime.py": 148,
     "playwright_runtime/runtime_tools.py": 33,
     "playwright_runtime/semantic_state.py": 8,
-    "playwright_runtime/service.py": 93,
+    "playwright_runtime/service.py": 92,
     "playwright_runtime/service_registry.py": 4,
     "playwright_runtime/site_profiles.py": 22,
     "playwright_runtime/status_logging.py": 19,

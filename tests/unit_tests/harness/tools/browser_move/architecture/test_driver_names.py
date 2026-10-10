@@ -108,7 +108,7 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
     "playwright_runtime/repeated_call_guard.py": 1,
     "playwright_runtime/runtime.py": 20,
     "playwright_runtime/runtime_tools.py": 3,
-    "playwright_runtime/service.py": 16,
+    "playwright_runtime/service.py": 14,
     "playwright_runtime/service_registry.py": 2,
     "playwright_runtime/status_logging.py": 1,
     "utils/__init__.py": 4,

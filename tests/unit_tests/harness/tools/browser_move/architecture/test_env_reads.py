@@ -66,10 +66,7 @@ KNOWN_ENV_READS: dict[str, dict[str, int]] = {
         "utils.env.resolve_upload_root()": 1,
     },
     "provisioning/managed_browser.py": {
-        "os.getenv(LOCALAPPDATA)": 2,
-        "os.getenv(ProgramFiles(x86))": 1,
-        "os.getenv(ProgramFiles)": 1,
-        "os.getenv(ProgramW6432)": 1,
+        "os.getenv(LOCALAPPDATA)": 1,
     },
     "playwright_runtime/agents.py": {
         (
@@ -116,20 +113,11 @@ KNOWN_ENV_READS: dict[str, dict[str, int]] = {
         "os.getenv(AGENT_SESSION_ID)": 1,
         "utils.env.load_repo_dotenv()": 1,
     },
+    # not the process environment: the env mapping of the Playwright MCP child in the MCP server config
     "playwright_runtime/service.py": {
         "env_map.get(PLAYWRIGHT_MCP_CDP_ENDPOINT)": 1,
         "env_map.pop(PLAYWRIGHT_MCP_DEVICE)": 1,
         "env_map.setdefault(PLAYWRIGHT_MCP_BROWSER)": 1,
-        "os.getenv(BROWSER_DRIVER)": 1,
-        "os.getenv(BROWSER_MANAGED_ARGS)": 4,
-        "os.getenv(BROWSER_MANAGED_BINARY)": 1,
-        "os.getenv(BROWSER_MANAGED_HOST)": 1,
-        "os.getenv(BROWSER_MANAGED_KILL_EXISTING)": 2,
-        "os.getenv(BROWSER_MANAGED_PORT)": 1,
-        "os.getenv(BROWSER_MANAGED_USER_DATA_DIR)": 2,
-        "os.getenv(BROWSER_PROFILE_NAME)": 1,
-        "os.getenv(BROWSER_PROFILE_STORE_PATH)": 2,
-        "utils.env.parse_command_args()": 4,
     },
     "playwright_runtime/site_profiles.py": {
         "os.environ.get(OPENJIUWEN_BROWSER_SELECTOR_CACHE)": 1,

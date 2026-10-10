@@ -26,6 +26,7 @@ from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import (
 from openjiuwen.harness.tools.browser_move.drivers.middleware import Tracing
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import _candidate_chrome_binaries
+from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene import browser_scene
 
 pytest_plugins = ["openjiuwen.harness.tools.browser_move.contract.testing.conformance"]
@@ -34,13 +35,17 @@ _SIDECAR_PYTHON_ENV = "BROWSER_USE_SIDECAR_PYTHON"
 _CHROME_READY_TIMEOUT_S = 30.0
 
 
+def _chrome_binaries() -> list[str]:
+    return _candidate_chrome_binaries(BrowserSettings.from_process_env().browser_binary_candidates)
+
+
 def _skip_reason() -> str | None:
     sidecar_python = os.getenv(_SIDECAR_PYTHON_ENV, "")
     if not sidecar_python:
         return f"{_SIDECAR_PYTHON_ENV} is not set (the browser-use sidecar interpreter)"
     if not Path(sidecar_python).is_file():
         return f"{_SIDECAR_PYTHON_ENV}={sidecar_python!r} is not an existing interpreter"
-    if not _candidate_chrome_binaries():
+    if not _chrome_binaries():
         return "no Chrome binary found"
     return None
 
@@ -83,7 +88,7 @@ def chrome_device() -> Iterator[ProvisionedDevice]:
     profile = Path(tempfile.mkdtemp(prefix="bu-conformance-chrome-"))
     process = subprocess.Popen(  # noqa: S603 - our own Chrome binary and fixed flags
         [
-            _candidate_chrome_binaries()[0],
+            _chrome_binaries()[0],
             "--headless=new",
             "--remote-debugging-address=127.0.0.1",
             f"--remote-debugging-port={port}",

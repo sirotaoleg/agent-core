@@ -100,6 +100,18 @@ def _optional_path(raw: str) -> Path | None:
     return Path(raw).expanduser() if raw else None
 
 
+def _chrome_install_paths(environ: Mapping[str, str]) -> tuple[str, ...]:
+    if os.name != "nt":
+        return ()
+    roots = (
+        environ.get("LOCALAPPDATA"),
+        environ.get("ProgramFiles"),
+        environ.get("ProgramFiles(x86)"),
+        environ.get("ProgramW6432"),
+    )
+    return tuple(str(Path(root) / "Google" / "Chrome" / "Application" / "chrome.exe") for root in roots if root)
+
+
 @dataclass(frozen=True)
 class BrowserSettings:
     """Where the browser comes from and how Playwright MCP and browser-use reach it."""
@@ -116,6 +128,7 @@ class BrowserSettings:
     profile_name: str = DEFAULT_PROFILE_NAME
     profile_store_path: Path | None = None
     browser_binary: str = ""
+    browser_binary_candidates: tuple[str, ...] = ()
     launch_args: tuple[str, ...] = _split_args(DEFAULT_PLAYWRIGHT_MCP_ARGS)
     mcp_command: str = DEFAULT_PLAYWRIGHT_MCP_COMMAND
     mcp_timeout_s: int = DEFAULT_MCP_TIMEOUT_S
@@ -153,6 +166,7 @@ class BrowserSettings:
             profile_name=_first(environ, "BROWSER_PROFILE_NAME", default=DEFAULT_PROFILE_NAME),
             profile_store_path=_optional_path(_first(environ, "BROWSER_PROFILE_STORE_PATH")),
             browser_binary=_first(environ, "BROWSER_MANAGED_BINARY"),
+            browser_binary_candidates=_chrome_install_paths(environ),
             launch_args=_split_args(environ.get("PLAYWRIGHT_MCP_ARGS", DEFAULT_PLAYWRIGHT_MCP_ARGS)),
             mcp_command=_first(environ, "PLAYWRIGHT_MCP_COMMAND", default=DEFAULT_PLAYWRIGHT_MCP_COMMAND),
             mcp_timeout_s=_int(

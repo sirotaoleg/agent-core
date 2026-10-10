@@ -12,9 +12,8 @@ import json
 import mimetypes
 import os
 import shutil
-import socket
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 from urllib.request import urlopen
@@ -26,10 +25,11 @@ from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.runner import Runner
 from openjiuwen.core.single_agent.agents.react_agent import ReActAgent
 
-from ..provisioning.managed_browser import ManagedBrowserProvisioner, _default_chrome_user_data_dir
+from ..contract.registry import PROVISIONERS
+from ..provisioning import ProvisionedDevice  # importing the package registers the built-in provisioners
 from ..utils.parsing import extract_json_object
 from .agents import build_browser_worker_agent, refresh_browser_worker_system_prompt
-from .config import BrowserInstanceConfig, BrowserRunGuardrails, parse_command_args, resolve_playwright_mcp_cwd
+from .config import BrowserInstanceConfig, BrowserRunGuardrails, BrowserSettings
 from .final_answer_recovery import (
     FinalAnswerRecoveryRail,
     final_answer_recovery,
@@ -227,6 +227,7 @@ class BrowserService:
         cancel_store: Optional[BaseKVStore] = None,
         instance: Optional[BrowserInstanceConfig] = None,
         allowed_tool_names: Optional[Iterable[str]] = None,
+        browser_settings: Optional[BrowserSettings] = None,
     ) -> None:
         self.provider = provider
         self.api_key = api_key
@@ -235,6 +236,7 @@ class BrowserService:
         self.mcp_cfg = mcp_cfg
         self.guardrails = guardrails
         self._instance = instance or BrowserInstanceConfig()
+        self._settings = browser_settings or BrowserSettings.from_process_env()
         self._allowed_tool_names = (
             None
             if allowed_tool_names is None
@@ -256,7 +258,7 @@ class BrowserService:
         self._profile_name = self._resolve_profile_name()
         self._driver_mode = self._resolve_driver_mode()
         self._active_profile: Optional[BrowserProfile] = None
-        self._managed_driver: Optional[ManagedBrowserProvisioner] = None
+        self._managed_driver: Optional[Any] = None
         self._registered_cdp_endpoint: str = ""
         self._failure_context_by_session: Dict[str, str] = {}
         self._progress_by_session: Dict[str, BrowserTaskProgressState] = {}
@@ -294,10 +296,7 @@ class BrowserService:
         return self._last_heartbeat_ok
 
     def _resolve_profile_store_path(self) -> Path:
-        configured = (os.getenv("BROWSER_PROFILE_STORE_PATH") or "").strip()
-        if configured:
-            return Path(configured).expanduser()
-        return self._mcp_cwd / ".browser" / "profiles.json"
+        return self._settings.profile_store_path or self._mcp_cwd / ".browser" / "profiles.json"
 
     @staticmethod
     def _legacy_profile_store_path() -> Path:
@@ -306,8 +305,7 @@ class BrowserService:
     def _iter_profile_store_paths(self) -> list[Path]:
         primary = self._resolve_profile_store_path()
         paths = [primary]
-        configured = (os.getenv("BROWSER_PROFILE_STORE_PATH") or "").strip()
-        if not configured:
+        if self._settings.profile_store_path is None:
             legacy = self._legacy_profile_store_path()
             if legacy.resolve() != primary.resolve():
                 paths.append(legacy)
@@ -323,25 +321,21 @@ class BrowserService:
         name = ""
         if instance:
             name = (instance.profile_name or instance.sanitized_key() or "").strip()
-        if not name:
-            name = (os.getenv("BROWSER_PROFILE_NAME") or "").strip()
-        return name or "jiuwenclaw"
+        return name or self._settings.profile_name
 
     def _resolve_driver_mode(self) -> str:
         explicit = (self._instance.driver_mode or "").strip().lower() if self._instance else ""
         if not explicit:
-            explicit = (os.getenv("BROWSER_DRIVER") or "").strip().lower()
-        if explicit:
-            if explicit not in {"remote", "managed", "extension"}:
-                raise ValueError("BROWSER_DRIVER must be one of: remote, managed, extension")
-            return explicit
-        return "remote"
+            return self._settings.provisioning
+        if explicit not in {"remote", "managed", "extension"}:
+            raise ValueError("BROWSER_DRIVER must be one of: remote, managed, extension")
+        return explicit
 
     def _build_lifecycle_identity(self) -> BrowserServiceIdentity:
         """Build the process resource identity for this browser instance."""
         instance = self._instance
         browser_key = instance.sanitized_key() if instance else ""
-        managed_args = tuple(parse_command_args(os.getenv("BROWSER_MANAGED_ARGS") or ""))
+        managed_args = self._settings.managed_args
         headless = any(
             arg == "--headless" or arg.startswith("--headless=")
             for arg in managed_args
@@ -352,9 +346,7 @@ class BrowserService:
             display_mode = self._driver_mode
 
         explicit_user_data_dir = str(
-            (instance.user_data_dir if instance else "")
-            or os.getenv("BROWSER_MANAGED_USER_DATA_DIR")
-            or ""
+            (instance.user_data_dir if instance else "") or self._settings.user_data_dir
         ).strip()
         normalized_user_data_dir = (
             os.path.normcase(
@@ -394,19 +386,6 @@ class BrowserService:
         self._acquire_registry_lease()
 
     @staticmethod
-    def _allocate_free_port() -> int:
-        """Reserve an OS-assigned free TCP port for a managed Chrome launch.
-
-        Uses bind-to-0 so concurrent BrowserService instances never pick the
-        same port. The socket is closed immediately and the port handed to the
-        managed driver, which launches Chrome on it right away; the driver's
-        endpoint-ready check absorbs the small TOCTOU window.
-        """
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.bind(("127.0.0.1", 0))
-            return int(sock.getsockname()[1])
-
-    @staticmethod
     def _cancel_key(session_id: str, request_id: Optional[str] = None) -> str:
         rid = (request_id or "").strip() or "*"
         return f"playwright_runtime:cancel:{session_id}:{rid}"
@@ -436,7 +415,7 @@ class BrowserService:
         raw = str(params.get("cwd", "")).strip()
         if raw:
             return Path(raw).expanduser()
-        return Path(resolve_playwright_mcp_cwd()).expanduser()
+        return self._settings.mcp_cwd
 
     @staticmethod
     def _is_cdp_endpoint_ready(endpoint: str) -> bool:
@@ -469,7 +448,7 @@ class BrowserService:
             if named is not None and all(named.name != item.name for item in candidates):
                 candidates.append(named)
 
-        _expected_extra_args = parse_command_args(os.getenv("BROWSER_MANAGED_ARGS") or "")
+        _expected_extra_args = list(self._settings.managed_args)
         expected_binary = self.normalize_browser_binary(self._configured_browser_binary())
         for profile in candidates:
             endpoint = str(profile.cdp_url or "").strip()
@@ -506,7 +485,7 @@ class BrowserService:
 
     def _configured_browser_binary(self) -> str:
         instance_binary = self._instance.browser_binary if self._instance else ""
-        return str(instance_binary or os.getenv("BROWSER_MANAGED_BINARY") or "").strip()
+        return str(instance_binary or self._settings.browser_binary).strip()
 
     @staticmethod
     def normalize_browser_binary(value: str) -> str:
@@ -515,56 +494,23 @@ class BrowserService:
             return ""
         return os.path.normcase(os.path.normpath(str(Path(raw).expanduser())))
 
-    def _resolve_managed_port(self) -> int:
-        """Resolve the managed Chrome debug port.
-
-        Precedence: explicit per-instance port > (keyed: auto-allocate a free
-        port; legacy/unkeyed: env BROWSER_MANAGED_PORT, else 9333). A global env
-        port cannot serve multiple keys, so keyed instances ignore it in favor of
-        auto-allocation to avoid silently colliding on one browser.
-        """
+    def _provisioning_settings(self) -> BrowserSettings:
         instance = self._instance
         if instance and instance.managed_port > 0:
-            return instance.managed_port
-        if instance and instance.key:
-            return self._allocate_free_port()
-        port_raw = (os.getenv("BROWSER_MANAGED_PORT") or "9333").strip()
-        try:
-            port = int(port_raw)
-            if port <= 0:
-                raise ValueError
-        except ValueError as exc:
-            raise ValueError(f"Invalid BROWSER_MANAGED_PORT: {port_raw}") from exc
-        return port
-
-    def _build_managed_profile(self) -> BrowserProfile:
-        instance = self._instance
-        host = (os.getenv("BROWSER_MANAGED_HOST") or "127.0.0.1").strip() or "127.0.0.1"
-        port = self._resolve_managed_port()
-
-        kill_existing_raw = (os.getenv("BROWSER_MANAGED_KILL_EXISTING") or "").strip().lower()
-        kill_existing = kill_existing_raw in {"1", "true", "yes", "on"}
-        explicit_user_data_dir = (
-            (instance.user_data_dir if instance else "") or (os.getenv("BROWSER_MANAGED_USER_DATA_DIR") or "")
-        ).strip()
-        if explicit_user_data_dir:
-            user_data_dir = explicit_user_data_dir
-        elif kill_existing:
-            user_data_dir = _default_chrome_user_data_dir()
+            port = instance.managed_port
+        elif instance and instance.key:
+            # 0 = a free port: one env port cannot serve several keys without them colliding on one browser.
+            port = 0
         else:
-            user_data_dir = str(self._mcp_cwd / ".browser-profiles" / self._profile_name)
-        browser_binary = self._configured_browser_binary()
-        extra_args = parse_command_args(os.getenv("BROWSER_MANAGED_ARGS") or "")
-        cdp_url = f"http://{host}:{port}"
-        return BrowserProfile(
-            name=self._profile_name,
-            driver_type="managed",
-            cdp_url=cdp_url,
-            browser_binary=browser_binary,
-            user_data_dir=user_data_dir,
-            debug_port=port,
-            host=host,
-            extra_args=extra_args,
+            port = self._settings.managed_port
+        return replace(
+            self._settings,
+            provisioning=self._driver_mode,
+            profile_name=self._profile_name,
+            managed_port=port,
+            user_data_dir=str((instance.user_data_dir if instance else "") or self._settings.user_data_dir).strip(),
+            browser_binary=self._configured_browser_binary(),
+            mcp_cwd=self._mcp_cwd,
         )
 
     def _inject_cdp_endpoint(self, endpoint: str) -> None:
@@ -597,34 +543,15 @@ class BrowserService:
                 return False
             await self._stop_managed_driver()
 
-        profile = self._profile_store.get_profile(self._profile_name)
-        _expected_extra_args = parse_command_args(os.getenv("BROWSER_MANAGED_ARGS") or "")
-        if (
-            profile is None
-            or profile.driver_type != "managed"
-            or profile.debug_port <= 0
-            or not str(profile.user_data_dir).strip()
-            or profile.extra_args != _expected_extra_args
-        ):
-            profile = self._build_managed_profile()
-        configured_binary = self._configured_browser_binary()
-        profile.browser_binary = configured_binary
-        self._profile_store.upsert_profile(profile, select=True)
-        self._active_profile = profile
-
-        kill_existing_raw = (os.getenv("BROWSER_MANAGED_KILL_EXISTING") or "").strip().lower()
-        kill_existing = kill_existing_raw in {"1", "true", "yes", "on"}
-
-        driver = ManagedBrowserProvisioner(profile=profile)
-        endpoint = await asyncio.to_thread(driver.start, 30.0, kill_existing)
-        self._inject_cdp_endpoint(endpoint)
-        profile.cdp_url = endpoint
-        self._profile_store.upsert_profile(profile, select=True)
-        self._managed_driver = driver
+        provisioner = PROVISIONERS.create(self._driver_mode, profile_store=self._profile_store)
+        device: ProvisionedDevice = await asyncio.to_thread(provisioner.provision, self._provisioning_settings())
+        self._active_profile = device.extras["profile"]
+        self._inject_cdp_endpoint(device.endpoint)
+        self._managed_driver = provisioner
         BROWSER_SERVICE_REGISTRY.register_managed_driver(
             self._lifecycle_identity,
             self,
-            driver,
+            provisioner,
         )
         return True
 
@@ -1057,7 +984,7 @@ class BrowserService:
         return True
 
     @property
-    def managed_driver(self) -> Optional[ManagedBrowserProvisioner]:
+    def managed_driver(self) -> Optional[Any]:
         """Return the managed driver coordinated by the process registry."""
         return self._managed_driver
 
@@ -1066,7 +993,7 @@ class BrowserService:
         if self.started:
             self._start_heartbeat()
 
-    async def detach_lifecycle_resources(self) -> Optional[ManagedBrowserProvisioner]:
+    async def detach_lifecycle_resources(self) -> Optional[Any]:
         """Detach this task binding while preserving the driver for reset."""
         driver = self._managed_driver
         await self._stop_heartbeat()

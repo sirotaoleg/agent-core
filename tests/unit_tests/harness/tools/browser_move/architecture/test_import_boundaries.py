@@ -13,8 +13,6 @@ from . import _scan
 
 # (file relative to the package, imported module relative to the package) -> count.
 KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {
-    # legacy: service.py still starts Chrome itself until provisioners take over
-    ("playwright_runtime/service.py", "provisioning.managed_browser"): 2,
     # legacy: the public RuntimeSettings facade composes BrowserSettings until it can take them from the
     # surface registry
     ("playwright_runtime/config.py", "surfaces.browser.config"): 1,

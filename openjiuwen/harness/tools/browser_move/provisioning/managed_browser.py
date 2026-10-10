@@ -115,7 +115,7 @@ def _cleanup_chrome_singleton_files(user_data_dir: str) -> None:
             pass
 
 
-def _candidate_chrome_binaries() -> list[str]:
+def _candidate_chrome_binaries(env_install_paths: tuple[str, ...]) -> list[str]:
     names = [
         "chrome",
         "google-chrome",
@@ -125,18 +125,10 @@ def _candidate_chrome_binaries() -> list[str]:
     binaries = [item for item in resolved if item]
 
     if os.name == "nt":
-        windows_roots = [
-            os.getenv("LOCALAPPDATA"),
-            os.getenv("ProgramFiles"),
-            os.getenv("ProgramFiles(x86)"),
-            os.getenv("ProgramW6432"),
-            str(Path.home() / "AppData" / "Local"),
+        install_paths = [
+            *env_install_paths,
+            str(Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "Application" / "chrome.exe"),
         ]
-        install_paths = []
-        for root in windows_roots:
-            if not root:
-                continue
-            install_paths.append(str(Path(root) / "Google" / "Chrome" / "Application" / "chrome.exe"))
     elif sys.platform == "darwin":
         install_paths = [
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -189,6 +181,7 @@ class ManagedBrowserProvisioner:
     ) -> None:
         self.profile = profile
         self._profile_store = profile_store
+        self._binary_candidates: tuple[str, ...] = ()
         self._process: Optional[subprocess.Popen] = None
         self._owns_process: bool = False
 
@@ -233,6 +226,7 @@ class ManagedBrowserProvisioner:
         profile.browser_binary = settings.browser_binary
         store.upsert_profile(profile, select=True)
         self.profile = profile
+        self._binary_candidates = settings.browser_binary_candidates
 
         endpoint = self.start(30.0, settings.managed_kill_existing)
         profile.cdp_url = endpoint
@@ -284,7 +278,7 @@ class ManagedBrowserProvisioner:
                 "Set BROWSER_MANAGED_BINARY to a Chrome executable."
             )
 
-        candidates = _candidate_chrome_binaries()
+        candidates = _candidate_chrome_binaries(self._binary_candidates)
         if not candidates:
             raise RuntimeError(
                 "Chrome needs to be installed. No Chrome binary was found on this machine."

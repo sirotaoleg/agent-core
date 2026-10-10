@@ -25,6 +25,9 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.profiles import BrowserProfile
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
+from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import _build_profile
+
+_ALLOCATE_FREE_PORT = "openjiuwen.harness.tools.browser_move.provisioning.managed_browser._allocate_free_port"
 
 
 def _seed_live_profile(svc: BrowserService, *, port: int = 63668) -> None:
@@ -62,7 +65,7 @@ def _isolated_env():
 
 
 def test_distinct_keys_get_distinct_profiles_and_ports() -> None:
-    with _isolated_env(), patch.object(BrowserService, "_allocate_free_port", side_effect=[40001, 40002]):
+    with _isolated_env(), patch(_ALLOCATE_FREE_PORT, side_effect=[40001, 40002]):
         a = _make_service(BrowserInstanceConfig(key="A", driver_mode="managed"))
         b = _make_service(BrowserInstanceConfig(key="B", driver_mode="managed"))
 
@@ -70,8 +73,8 @@ def test_distinct_keys_get_distinct_profiles_and_ports() -> None:
         assert b._profile_name == "B"
         assert a._driver_mode == "managed"
 
-        pa = a._build_managed_profile()
-        pb = b._build_managed_profile()
+        pa = _build_profile(a._provisioning_settings())
+        pb = _build_profile(b._provisioning_settings())
 
     assert pa.debug_port == 40001
     assert pb.debug_port == 40002
@@ -82,16 +85,16 @@ def test_distinct_keys_get_distinct_profiles_and_ports() -> None:
 def test_explicit_port_is_honored_without_allocation() -> None:
     with (
         _isolated_env(),
-        patch.object(BrowserService, "_allocate_free_port", side_effect=AssertionError("must not allocate")),
+        patch(_ALLOCATE_FREE_PORT, side_effect=AssertionError("must not allocate")),
     ):
         svc = _make_service(BrowserInstanceConfig(key="pinned", driver_mode="managed", managed_port=9501))
-        profile = svc._build_managed_profile()
+        profile = _build_profile(svc._provisioning_settings())
 
     assert profile.debug_port == 9501
 
 
 def test_instance_profile_name_overrides_key() -> None:
-    with _isolated_env(), patch.object(BrowserService, "_allocate_free_port", return_value=40010):
+    with _isolated_env(), patch(_ALLOCATE_FREE_PORT, return_value=40010):
         svc = _make_service(BrowserInstanceConfig(key="raw", driver_mode="managed", profile_name="custom-profile"))
         assert svc._profile_name == "custom-profile"
 
@@ -110,7 +113,7 @@ def test_legacy_no_instance_preserves_env_defaults() -> None:
     with _isolated_env():
         svc = _make_service(None)
         assert svc._profile_name == "jiuwenclaw"
-        profile = svc._build_managed_profile()
+        profile = _build_profile(svc._provisioning_settings())
 
     assert profile.debug_port == 9333
 
@@ -123,19 +126,19 @@ def test_keyed_auto_allocation_ignores_global_env_port() -> None:
             {"BROWSER_MANAGED_PORT": "9333", "BROWSER_PROFILE_STORE_PATH": tempfile.mktemp(suffix=".json")},
             clear=True,
         ),
-        patch.object(BrowserService, "_allocate_free_port", return_value=45000),
+        patch(_ALLOCATE_FREE_PORT, return_value=45000),
     ):
         svc = _make_service(BrowserInstanceConfig(key="keyed", driver_mode="managed"))
-        profile = svc._build_managed_profile()
+        profile = _build_profile(svc._provisioning_settings())
 
     assert profile.debug_port == 45000
 
 
 def test_allocated_port_persists_for_reuse() -> None:
     """The managed profile (with its port) is persisted so a restart reattaches."""
-    with _isolated_env(), patch.object(BrowserService, "_allocate_free_port", return_value=46000):
+    with _isolated_env(), patch(_ALLOCATE_FREE_PORT, return_value=46000):
         svc = _make_service(BrowserInstanceConfig(key="persist", driver_mode="managed"))
-        profile = svc._build_managed_profile()
+        profile = _build_profile(svc._provisioning_settings())
         svc._profile_store.upsert_profile(profile, select=True)
 
         reloaded = svc._profile_store.get_profile("persist")
