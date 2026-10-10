@@ -8,7 +8,8 @@ from __future__ import annotations
 import asyncio
 import base64
 import struct
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -170,15 +171,21 @@ def _screenshot_from_b64(data: str) -> Screenshot:
     return Screenshot(png=png, width=width, height=height)
 
 
-def _observation_from_wire(data: dict[str, Any], screenshot_b64: str | None) -> Observation:
-    raw_tabs = list(data.get("tabs") or ())
-    tabs = tuple(_context_from_wire(tab) for tab in raw_tabs)
-    title = str(data.get("title", ""))
+def _tab_fields(raw_tabs: Sequence[dict[str, Any]]) -> dict[str, Any]:
     # The sidecar marks a tab active when its URL equals the page URL; the first such tab is the focused one.
-    focused = next(
-        (context for context, raw in zip(tabs, raw_tabs) if raw.get("active")),
-        ContextRef(id="", kind=_CONTEXT_KIND, title=title),
-    )
+    active = [index for index, raw in enumerate(raw_tabs) if raw.get("active")]
+    return {
+        "tabs": tuple(_context_from_wire(tab) for tab in raw_tabs),
+        "tab_urls": tuple(str(tab.get("url", "")) for tab in raw_tabs),
+        "current_tab": active[0] if active else None,
+    }
+
+
+def _observation_from_wire(data: dict[str, Any], screenshot_b64: str | None) -> Observation:
+    tab_fields = _tab_fields(data.get("tabs") or ())
+    title = str(data.get("title", ""))
+    current = tab_fields["current_tab"]
+    focused = ContextRef(id="", kind=_CONTEXT_KIND, title=title) if current is None else tab_fields["tabs"][current]
     return Observation(
         context=focused,
         elements=tuple(_element_from_wire(element) for element in data.get("elements") or ()),
@@ -187,7 +194,7 @@ def _observation_from_wire(data: dict[str, Any], screenshot_b64: str | None) -> 
         surface=BrowserContext(
             url=str(data["url"]),
             title=title,
-            tabs=tabs,
+            **tab_fields,
             is_pdf_viewer=bool(data.get("is_pdf_viewer", False)),
             pixels_above=int(data.get("pixels_above", 0)),
             pixels_below=int(data.get("pixels_below", 0)),
@@ -444,17 +451,17 @@ class BrowserUseDriver(HandlerDriver):
         data = await self._navigate_wire(action.url or "about:blank", new_tab=True)
         after = await self._request("list_tabs", {})
         opened = tuple(_context_from_wire(tab) for tab in after if str(tab["target_id"]) not in before)
-        return self._nav_result(data, value=opened[0] if opened else None, opened_contexts=opened)
+        return self._nav_result(data, raw_tabs=after, value=opened[0] if opened else None, opened_contexts=opened)
 
     @handles(SwitchContext)
     async def _switch_context(self, action: SwitchContext) -> ActionResult:
         data = await self._request("switch_tab", {"tab": _context_to_wire(action.context)})
-        return self._act_result(data, context_changed=True)
+        return await self._tab_result(data)
 
     @handles(CloseContext)
     async def _close_context(self, action: CloseContext) -> ActionResult:
         data = await self._request("close_tab", {"tab": _context_to_wire(action.context)})
-        return self._act_result(data, context_changed=True, source_context=action.context)
+        return await self._tab_result(data, source_context=action.context)
 
     async def _request(self, method: str, params: dict[str, Any]) -> Any:
         if self._transport is None:
@@ -500,12 +507,32 @@ class BrowserUseDriver(HandlerDriver):
             **fields,
         )
 
-    def _nav_result(self, data: dict[str, Any], **fields: Any) -> ActionResult:
+    async def _tab_result(self, data: dict[str, Any], **fields: Any) -> ActionResult:
+        result = self._act_result(data, context_changed=True, **fields)
+        try:
+            raw_tabs = await self._request("list_tabs", {})
+        except DriverError as exc:
+            exc.dispatched = True  # the tab command itself already ran
+            raise
+        title = next((str(tab.get("title", "")) for tab in raw_tabs if tab.get("active")), "")
+        surface = BrowserContext(
+            url=str(data.get("url", "")), title=title, **_tab_fields(raw_tabs), dialog=_dialog_text(data.get("dialog"))
+        )
+        return replace(result, surface=surface)
+
+    def _nav_result(
+        self, data: dict[str, Any], *, raw_tabs: Sequence[dict[str, Any]] = (), **fields: Any
+    ) -> ActionResult:
         self._driver_generation = int(data.get("driver_generation", self._driver_generation))
         return ActionResult(
             ok=True,
             context_changed=True,  # a navigation always loads a document, even at the same URL
-            surface=BrowserContext(url=str(data["url"]), title=str(data.get("title", ""))),
+            surface=BrowserContext(
+                url=str(data["url"]),
+                title=str(data.get("title", "")),
+                **_tab_fields(raw_tabs),
+                dialog=_dialog_text(data.get("dialog")),
+            ),
             **fields,
         )
 

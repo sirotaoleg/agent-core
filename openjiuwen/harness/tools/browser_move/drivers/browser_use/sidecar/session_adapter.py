@@ -932,6 +932,7 @@ class SessionAdapter:
             "title": title,
             "changed_document": url != before_url,
             "driver_generation": self._driver_generation,
+            "dialog": self._open_dialog(),
         }
 
     async def _act_result(self, before_url: str, *, ok: bool, detail: str, act: _Act | None = None) -> dict[str, Any]:

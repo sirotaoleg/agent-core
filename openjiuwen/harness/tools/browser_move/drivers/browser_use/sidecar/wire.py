@@ -16,7 +16,8 @@ from __future__ import annotations
 # 2: act replies add ``dialog_opened`` and ``new_targets``; new error code ``ActionIntercepted`` with ``data.by``.
 # 3: ``observe`` while a dialog is open returns the page with ``dialog`` and no elements instead of ``ObserveError``;
 #    act replies add ``url`` and ``dialog`` (the dialog open when the reply is built).
-WIRE_VERSION = 3
+# 4: navigation replies (``navigate``, ``go_back``, ``go_forward``, ``reload``) add ``dialog`` too.
+WIRE_VERSION = 4
 
 # SessionAdapter method names (main.py dispatches requests to them by name), then the two control methods.
 DRIVER_METHOD_NAMES: tuple[str, ...] = (
