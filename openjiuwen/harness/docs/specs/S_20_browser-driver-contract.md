@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
 | Last revised | 2026-10-10 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -21,8 +21,8 @@ this revision the browser-use and Playwright MCP drivers implement the contract 
 live, the middleware wraps any driver and the composition root builds a started driver stack by name; no agent code
 uses them yet.
 
-Out of scope here: rendering and the model-facing tool schemas. They consume these types and get their own
-sections.
+The browser surface profile (tool specs, renderer, capability catalog) is specified under "Browser surface
+profile"; the tool factory that turns it into model-facing tools gets its own section when it lands.
 
 ## Contract types
 
@@ -64,6 +64,11 @@ What `Driver.observe()` returns: a snapshot of the focused context.
 `Ref` is the union of the four element ref kinds; `REF_KINDS` is the same set as a tuple. One command takes several
 ref kinds (one `Click`, not `ClickElement` / `ClickPoint`); which kinds a driver accepts is part of its
 `DriverInfo.actions`.
+
+`RefResolver` (protocol) is what a tool's argument decoder asks the runtime: `contexts` (the open contexts, in
+order), `current_context` (`None` when unknown), `resolve(model_id, generation) -> Ref` (the ref behind a
+runtime-minted element id; `ValueError` for an id it does not know) and `generation_of(ref) -> str` (the generation
+a driver ref was last seen in; the current one for a ref never seen). The page state implements it.
 
 ### Commands (`actions.py`, `surfaces/<name>/commands.py`)
 
@@ -134,10 +139,14 @@ Every constructor accepts an explicit `dispatched=` to override the default.
 - `Driver` (ABC): `info -> DriverInfo`, and async `start(config)`, `stop()`, `health() -> Health`,
   `observe(Observe) -> Observation`, `execute(action) -> ActionResult`. The type of `config` belongs to the driver;
   its factory builds it.
-- `DriverInfo(name, surfaces: frozenset[str], versions, actions, observes, tool_hints)`. `actions` maps each handled
-  command type to the element ref kinds it accepts (empty for commands without refs). `surfaces` lists the
-  surfaces the driver serves; the composition root refuses a driver that does not list the selected one.
-  `observes` names the `Observation` fields the driver fills. `tool_hints` are optional per-command descriptions.
+- `DriverInfo(name, surfaces: frozenset[str], versions, actions, observes, tool_hints, native_tools,
+  tool_name_prefix)`. `actions` maps each handled command type to the element ref kinds it accepts (empty for
+  commands without refs). `surfaces` lists the surfaces the driver serves; the composition root refuses a driver
+  that does not list the selected one. `observes` names the `Observation` fields the driver fills. `tool_hints` are
+  optional per-command descriptions. `native_tools` (default empty) maps a tool spec name to a
+  `NativeTool(description, schema, build)`: a tool the driver offers in its own format, with
+  `build(args, resolver) -> Action` decoding its arguments. The model sees `tool_name_prefix` (default `""`) +
+  the spec name. No built-in driver fills them yet.
 - `@handles(Command, refs={DriverRef, ...})` marks a method as the handler of a command; marks stack.
   `refs` accepts only element ref kinds.
 - `HandlerDriver(Driver)`: `execute` dispatches by `type(action)` to the marked method. `info` is
@@ -177,14 +186,21 @@ Data types only; their use is specified with the composition root and the tool f
 - `SurfaceSettings` (protocol): the settings a surface parses from its own variables. The core reads one attribute,
   `provisioning` (a provisioner registry name), and passes the object on to the provisioner and the driver factory
   unchanged. The core types surface settings with it and never imports a surface's settings class.
-- `SurfaceBundle(settings, profile=None)`: what a surface factory returns. A surface without a profile yet returns
-  its settings only; the profile is added to the same bundle, so callers of the factory do not change.
+- `SurfaceBundle(settings, profile=None)`: what a surface factory returns. A surface without a profile returns its
+  settings only; the browser surface returns both.
 
-- `SurfaceProfile`: `name`, `commands`, `renderer`, `tool_specs`, `native_tools`, `capability_catalog`
-  (entry -> `(command, ref kind | None)` pairs), `extra_tools`, `rails`, `policy_rules`, `timeouts` (per
-  `Effect`), `messages`, `settings`, `scene`.
-- `ToolSpec(name, commands, description, prompt_section)`: one model-facing tool; it may cover several commands.
-- `PolicyRule(command_type, check)`: `check(action)` returns the reason to deny, or `None`.
+- `SurfaceProfile`: `name`, `commands`, `renderer: Renderer`, `tool_specs`, `native_tools`, `capability_catalog`
+  (entry -> `(command, ref kind | None)` pairs; `None` is a call without an element ref), `capability_tools`
+  (the same entries -> the names of the tools they select), `extra_tools`, `rails`, `policy_rules`, `timeouts`
+  (per `Effect`), `messages`, `settings`, `scene`.
+- `ToolSpec(name, commands, description, prompt_section, schema=None, build=None)`: one model-facing tool; it may
+  cover several commands. `schema` is the JSON schema of its arguments; `build(args, resolver) -> Action` is the
+  pure decoder (raises `ValueError` for invalid arguments). A spec without either is served only by a driver's
+  native tool or a generated schema.
+- `Renderer` (protocol): `observation(obs)`, `result(action, result)`, `error(action, error, observation)`, each
+  returning a tuple of `ContentBlock`s; `ContentBlock` is `str` (text) or `Screenshot` (an image).
+- `PolicyRule(command_type, check)`: `check(action, context)` returns the reason to deny, or `None`; `context` is
+  the current surface context, `None` before the first observation.
 - `Scene`: what the conformance suite runs a driver in — `surface`, `start` / `stop`, `enter()` (commands into the
   initial state) and the case builders `happy(command, ref_kind, actions)`, `stale(actions)`,
   `intercepted(actions)`, `timeout(actions)`, `context_changes` (name -> builder) and `sensitive` (name ->
@@ -513,6 +529,89 @@ nothing to release.
 `DriverAssembly(stack, device, provisioner, surface_settings)`: `close()` stops the stack, then releases the device
 with `provisioner.release` in a worker thread, also when `stop` raises. `surface_settings` is what `provision` was
 called with; `DriverSession` provisions again from it.
+
+## Browser surface profile (`surfaces/browser/`)
+
+`create_browser_surface(environ)` returns `SurfaceBundle(settings, profile)`; `profile.settings` is the same
+`BrowserSettings`. No driver name appears in `surfaces/` (architecture test); tool names do.
+
+| Field | Value |
+|---|---|
+| `commands` | `Navigate`, `Back`, `OpenContext`, `SelectOption`, `UploadFile`, `FillForm`, `Drop`, `GetPdf`, `GetConsole`, `GetNetwork` |
+| `renderer` | `BrowserRenderer` |
+| `tool_specs` | `BROWSER_TOOL_SPECS` (`tools.py`) |
+| `capability_catalog`, `capability_tools` | `capabilities.py` |
+| `timeouts` | 240 s for every `Effect` |
+| `messages` | `driver_restarted`: "the browser restarted; take a fresh observation"; `driver_lost`: "the browser connection was lost again; the task cannot continue"; `context_changed`: "Call browser_snapshot again and use refs from generation {generation}." (a format string) |
+| `policy_rules`, `rails`, `extra_tools`, `native_tools` | empty |
+| `scene` | `None` (the conformance suite takes `browser_scene()` directly) |
+
+`BrowserContext` also carries `tab_urls` (parallel to `tabs`) and `current_tab` (index of the focused tab); both are
+empty when the driver does not report them. Neither built-in driver fills them yet.
+
+### Tool specs (`tools.py`)
+
+The browser dialect: 17 specs whose name, description and schema equal the browser-use golden
+(`snapshots/golden/browser_use/*.json`), except `browser_tabs`, whose `action` enum adds `new`. Element arguments
+are `generation_id` (required) plus one of `target_id` (page-state target, through `RefResolver.resolve`), `ref`
+(`DriverRef(ref, generation_id)`) or `selector` (`Locator(css, None, generation_id)`), in that precedence;
+`browser_drag` uses the `source_` / `target_` prefixed forms. Boolean arguments accept booleans and the strings
+`1/true/yes` and `0/false/no`.
+
+| Tool | Command |
+|---|---|
+| `browser_navigate` | `Navigate(url)`; `wait_until`, `timeout_ms` accepted and ignored |
+| `browser_navigate_back` | `Back` |
+| `browser_click` | `Click(target, button, count=max(1, click_count))` |
+| `browser_type` | `TypeText(target, text, submit=press_enter, sensitive, clear)` |
+| `browser_press_key` | `PressKey(key)` |
+| `browser_take_screenshot` | `Observe(include_screenshot=True, full_page)` |
+| `browser_snapshot` | `Observe(include_screenshot)` |
+| `browser_tabs` | `list` (default) → `Observe()`; `new` → `OpenContext()`; `select` → `SwitchContext(contexts[index])`; `close` → `CloseContext(contexts[index])`, or the current context without `index` |
+| `browser_close` | `CloseContext(current_context)` |
+| `browser_select_option` | `SelectOption(target, (value or label,))` |
+| `browser_evaluate` | `RunScript(function, args)` |
+| `browser_drag` | `Drag(source, destination)`; `steps` checked and ignored |
+| `browser_file_upload` | `UploadFile(target, paths)` |
+| `browser_hover` | `Hover(target)` |
+| `browser_handle_dialog` | `HandleDialog(accept, promptText or prompt_text)` |
+| `browser_drop` | `Drop(target, paths, data=((mimeType or mime_type, data), ...))` |
+| `browser_fill_form` | `FillForm(fields)`: `textbox`/`spinbutton`/`searchbox` → textbox, `slider`, `combobox`/`listbox`/`select` (value, else label), `checkbox`/`switch` → checkbox, `radio`; checked values `1/true/yes/on/checked` → `"true"` |
+
+Invalid arguments raise `ValueError` with the wording of the tools they replace (`'generation_id' is required`,
+`exactly one of target_id, ref, or selector is required`, `'click_count' must be an integer`, ...); a tab index
+outside `contexts` and a close with no current context are `ValueError` too. Seven specs have no schema and no
+decoder: `browser_mouse_click_xy` (`Click`), `browser_mouse_move_xy` (`Hover`), `browser_mouse_drag_xy` (`Drag`),
+`browser_mouse_wheel` (`Scroll`), `browser_pdf_save` (`GetPdf`), `browser_console_messages` (`GetConsole`),
+`browser_network_requests` (`GetNetwork`). `browser_find` is not a spec (it becomes an extra tool over the last
+observation).
+
+### Renderer (`renderer.py`)
+
+| Method | Output |
+|---|---|
+| `observation(obs)` | `native_text` verbatim, then the screenshot as an image block |
+| `result(action, result)` with `ok=False` | `detail`, prefixed with `### Error` and a newline unless it starts with it |
+| `result(RunScript, …)` | `### Result`, the value, then `detail`; a string as is, `None` as `undefined`, anything else `json.dumps(indent=2, ensure_ascii=False)` |
+| `result(Observe() without screenshot, …)` | `### Result` and the tab list, then `detail` |
+| `result(OpenContext / SwitchContext / CloseContext, …)` | `detail`; the tab list when `detail` is empty |
+| `result(other, …)` | `detail` |
+| `error(action, error, observation)` | `### Error` and the message; with an observation (the argument, or the one a `StaleRef` carries) a blank line and its text, then its image |
+
+The tab list is one line per tab of the result's surface context (or its observation's): `- <i>: ` + `(current) `
+for `current_tab` + `[<title>]` + `(<url>)` when known (`tab_urls[i]`, or the surface URL for the current tab).
+A screenshot in `result.value` becomes an image block; free observations in a result are not rendered. Empty
+text produces no block.
+
+### Capability catalog (`capabilities.py`)
+
+`CAPABILITY_TOOLS` maps every entry of `DEFAULT_BROWSER_CAPABILITIES` (`playwright_runtime/browser_capabilities.py`,
+unchanged public API) to those of its tool names that a spec or the `browser_find` extra tool serves: `core` equals
+`CORE_BROWSER_TOOL_NAMES`; `vision` keeps the screenshot and the four `xy`/wheel tools; `extended_interaction` keeps
+`browser_close`, `browser_drag`, `browser_drop`; `pdf`, `devtools`, `network` keep one tool each; `advanced_code`,
+`unsafe_dev`, `config`, `storage`, `testing` are empty. `CAPABILITY_CATALOG` gives each entry the
+`(command, ref kind)` pairs of its specs: element tools take `DriverRef` and `Locator`, `browser_file_upload` and
+`browser_evaluate` also `None`, the three `xy` tools `PointRef`, all others `None`.
 
 ## Runtime state and recovery (`playwright_runtime/`)
 

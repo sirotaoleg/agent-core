@@ -1024,4 +1024,99 @@ agent switch wires them.
    the core cannot import `BrowserContext`. They move with `page_state.py` into the browser surface (Phase 9).
 3. A re-provisioned device with a different endpoint would need a rebuilt driver (decision 9).
 4. The browser profile's `messages` (`driver_restarted`, `driver_lost`) and `policy_rules` come with the profile
-   task; the session reads the two messages at construction.
+   task; the session reads the two messages at construction. Done: see "Browser surface profile".
+
+## Browser surface profile
+
+Phase 4 item 1 (the profile half): the contract gains what a model-facing tool needs (native tools, tool specs with
+a schema and a decoder, a ref resolver, a renderer, contextual policy rules), and `create_browser_surface` returns a
+filled `SurfaceProfile` (S_20 "Surface types", "Browser surface profile"). The tool factory that turns the profile
+into tools comes next; nothing in `runtime.py`, `service.py`, `agents.py` or `browser_agent.py` reads the profile
+yet.
+
+### Decisions
+
+1. **Native tools live in `DriverInfo`, not in the profile (Q1).** `native_tools` (spec name → `NativeTool`) and
+   `tool_name_prefix` come from the driver, so `surfaces/` never names a driver and the MCP schemas follow the
+   server version. `SurfaceProfile.native_tools` stays as the plan's extension point for surface-level formats
+   (a computer-use tool) and is empty for the browser.
+2. **`RefResolver` sits in `contract/refs.py`** next to the ref types it returns, so `driver.py` (`NativeTool`)
+   and `surface.py` (`ToolSpec`) can both use it without importing each other. It names `contexts` and
+   `current_context` as well as `resolve` and `generation_of`: `browser_close` and a close without an index need
+   the focused context.
+3. **`ContentBlock` is `str | Screenshot`.** The only image a browser tool returns is a screenshot; a separate
+   image type would duplicate `Screenshot`.
+4. **`PolicyRule.check(action, context)` (D15)** stays a dataclass field holding a callable, so `rule.check(...)`
+   reads the same as a method.
+5. **`SurfaceProfile.capability_tools` next to `capability_catalog`** (decided with Aleh, 2026-10-10). The pairs
+   (C26) cannot say which tools an entry selects (`browser_click` and `browser_mouse_click_xy` are both `Click`),
+   and the factory in the core cannot import `surfaces/browser/capabilities.py`. The factory reads the names from
+   `capability_tools` and a spec's ref kinds from the entry's pairs.
+6. **`BrowserContext.tab_urls` and `current_tab`** (decided with Aleh, 2026-10-10). The tab list the design asks
+   for (`- i: (current) [title](url)`) needs every tab's URL and the focused tab; `ContextRef` carries neither and
+   the MCP decoder drops both. The renderer uses the fields now; the drivers fill them later. Until then a line
+   shows a URL and `(current)` only when known.
+7. **One tool spec module for the browser dialect.** The 17 browser-use schemas are copied verbatim from
+   857239db; the golden is the oracle. `browser_tabs` adds `new` to its enum (Q6) and keeps the description. The
+   vision, pdf, console and network tools get specs without schema or decoder: the catalog needs their commands,
+   and only a driver's native tool serves them today.
+8. **Decoders map ids without asking the driver.** `target_id` goes through `RefResolver.resolve`, `ref` becomes
+   `DriverRef(ref, generation_id)`, `selector` becomes `Locator(css)`, in that precedence and at the generation the
+   model sent; staleness is the page state's `check`. Ignored arguments (`wait_until`, `timeout_ms`, drag `steps`)
+   are accepted (C16, C30); `steps` and `timeout_ms`-like integers are still validated where today's tool did.
+   Error texts keep today's wording.
+9. **A close without an index closes the current tab** (design §2, MCP semantics); 857239db required an index.
+   A select needs an index; one outside `contexts` is a `ValueError` (J8).
+10. **`renderer.result(Observe(), r)` is the tab list.** `browser_snapshot` renders through `observation()`;
+    `result()` with a plain `Observe` only answers `browser_tabs list`, so the renderer needs no flag. An `Observe`
+    with a screenshot renders the detail and the image.
+11. **A failed result renders as an error.** `ActionResult(ok=False)` shows `detail`, prefixed with `### Error`
+    unless it already starts with it (the MCP modal refusal does; browser-use failure details do not).
+12. **Messages:** `driver_restarted` is the plan's wording; `context_changed` is today's stale-ref sentence
+    (`runtime.py`, as a format string with `{generation}`); `driver_lost` has no wording today and is new.
+13. **The catalog keeps only served names.** An entry lists the public tool names that a spec or the
+    `browser_find` extra tool serves; entries with no command (`advanced_code`, `unsafe_dev`, `config`, `storage`,
+    `testing`) stay as keys with no names and no pairs, so the factory can log them once (C25).
+14. **`scene` stays `None`.** The conformance suite takes `browser_scene()` directly; importing the scene's HTTP
+    server with every profile is not needed yet.
+
+### Rejected options
+
+- **Copying the MCP schemas into the profile keyed by driver name.** Needs a driver name in `surfaces/` and drifts
+  with the server.
+- **Replacing the catalog pairs by names and adding ref kinds to `ToolSpec`.** A larger contract change, and C26
+  pairs are what the skip-and-log rule reads.
+- **Choosing the current tab by title.** Ambiguous (two tabs with the same title in the fixtures) and loses the
+  other tabs' URLs.
+- **A tab-list flag on `Observe`.** A model-facing detail in a shared command; the renderer method already tells
+  the two cases apart.
+- **Rendering the free observation of a result.** Q14: kept for the page state, not shown.
+
+### Verification
+
+- Contract: `contract/test_tool_types.py` (9): native tools and prefix defaults, `HandlerDriver.info` keeping them,
+  decoders with a resolver, the renderer protocol on a profile, `PolicyRule.check` with the context,
+  `capability_tools` default.
+- `surfaces/test_browser_tools.py` (252): each of the 17 dialect specs equals its entry in all 11 browser_use
+  golden views (187 comparisons), the golden tools without a spec are exactly cancel, clear-cancel, find and
+  recall, 33 decoder cases, 25 invalid-argument cases.
+- `surfaces/test_browser_renderer.py` (57): the recorded MCP answers through the result decoder (14 action
+  results, 5 tab lists, 9 errors, 2 refusals, 3 snapshots) and FakeDriver results; one test name per expected
+  difference of design §4 (snapshot link, Events, plain error, stale ref with observation, intercepted message,
+  RunScript values, tab lists, element description, boxes, modal refusal).
+- `surfaces/test_browser_profile.py` (13): fields, timeouts, messages, no driver names, catalog entries and
+  pairs, `core` equal to `CORE_BROWSER_TOOL_NAMES`.
+- `test_assembly.py`: the browser surface now returns its profile (one assertion changed).
+- `pytest tests/unit_tests/harness/tools/browser_move`: **2018 passed, 113 skipped** (architecture, goldens and
+  runner contract included).
+- Live: browser-use conformance **45 passed**, Playwright MCP conformance **51 passed**.
+
+### Known leftovers
+
+1. The MCP decoder does not fill `tab_urls`/`current_tab` yet (tool factory task); browser-use `SwitchContext` and
+   `CloseContext` results carry no surface at all, so their tab list is empty until the browser-use helpers task.
+2. No built-in driver fills `DriverInfo.native_tools` yet; the MCP driver does with the tool factory.
+3. `browser_find` has no spec; its description and schema come from the native tool (MCP) or the 857239db text
+   (browser-use) when it becomes an extra tool.
+4. Browser-use results have no `detail` for most commands, so many render as no text; the browser-use wire
+   fixtures show what the model reads there.
