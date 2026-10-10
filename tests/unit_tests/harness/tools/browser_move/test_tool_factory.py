@@ -39,10 +39,12 @@ from openjiuwen.harness.tools.browser_move.contract import (
     SurfaceProfile,
     SwitchContext,
     ToolSpec,
+    TypeText,
     Unsupported,
 )
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.contract.testing.fake import DEFAULT_ACTIONS
+from openjiuwen.harness.tools.browser_move.drivers.middleware import MASK, Tracing
 from openjiuwen.harness.tools.browser_move.playwright_runtime import tool_factory
 from openjiuwen.harness.tools.browser_move.playwright_runtime.action_policy import ActionPolicy
 from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
@@ -53,6 +55,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory impor
     CommandRecord,
     ToolContext,
     ToolFactory,
+    command_record,
 )
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
@@ -292,7 +295,14 @@ async def test_a_call_decodes_executes_records_and_renders_in_order() -> None:
     assert output.success is True
     assert output.data["content"] == "### Page\n- clicked"
     record = output.data["command"]
-    assert record == CommandRecord(command=Click, effect=Effect.ACT, ok=True, dispatched=True, generation="g0")
+    assert record == CommandRecord(
+        command=Click,
+        effect=Effect.ACT,
+        ok=True,
+        dispatched=True,
+        generation="g0",
+        action=Click(DriverRef("e1", "g0")),
+    )
 
 
 @pytest.mark.asyncio
@@ -343,6 +353,25 @@ async def test_a_single_observe_tool_renders_the_observation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_screenshot_only_tool_renders_the_image_only() -> None:
+    built, _ = _build(FakeDriver(observations=[_observation(screenshot=SHOT)]), ("vision",), image_support=True)
+
+    output = await _tool(built, "toy_shot").invoke({})
+
+    assert output.data["content"] == "1 image(s) attached as multimodal input."
+    assert len(output.data["multimodal"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_an_observe_record_keeps_the_observed_elements_as_its_value() -> None:
+    built, _ = _build(FakeDriver(observations=[_observation()]))
+
+    output = await _tool(built, "toy_look").invoke({})
+
+    assert output.data["command"].value == (Element(ref=DriverRef("e1", "g0"), role="button", name="Save"),)
+
+
+@pytest.mark.asyncio
 async def test_an_observe_inside_a_multi_command_tool_renders_the_result() -> None:
     built, _ = _build(FakeDriver(observations=[_observation()]))
 
@@ -364,7 +393,7 @@ async def test_image_blocks_go_to_multimodal_only_with_image_support() -> None:
     assert shown.data["multimodal"] == [
         {
             "type": "image",
-            "source": "fake",
+            "source": "toy",
             "source_path": "toy_look",
             "mime_type": "image/png",
             "data_url": f"data:image/png;base64,{encoded}",
@@ -387,6 +416,7 @@ async def test_a_driver_error_is_a_failure_with_the_rendered_error() -> None:
     assert output.data["content"] == output.error
     record = output.data["command"]
     assert (record.error, record.dispatched, record.surface) == ("ActionIntercepted", False, SURFACE)
+    assert (record.blocked_by, record.action) == ("div#overlay", Click(DriverRef("e1", "g0")))
 
 
 @pytest.mark.asyncio
@@ -432,6 +462,42 @@ async def test_a_second_lost_connection_fails_the_task() -> None:
 
     with pytest.raises(BaseError):
         await tool.invoke({"code": "1"})
+
+
+def _type(args: Mapping[str, Any], resolver: RefResolver) -> Action:
+    return TypeText(None, str(args["text"]), sensitive=True)
+
+
+@pytest.mark.asyncio
+async def test_the_record_and_the_trace_mask_sensitive_fields_with_one_helper() -> None:
+    traced: list[dict[str, Any]] = []
+    driver = Tracing(FakeDriver(results=[ActionResult(ok=True)]), traced.append)
+    spec = ToolSpec("toy_type", (TypeText,), "Type.", schema={"type": "object"}, build=_type)
+    profile = _profile(tool_specs=(*SPECS, spec), capability_tools={"core": ("toy_type",)})
+    page_state = BrowserPageState(page_id="page-test")
+    session = DriverSession(DriverAssembly(driver, DEVICE, None, None), page_state, MESSAGES)
+    built = ToolFactory(profile, driver.info).build(
+        ("core",), image_support=False, session=session, page_state=page_state
+    )
+
+    output = await _tool(built, "toy_type").invoke({"text": "hunter2"})
+
+    record = output.data["command"]
+    assert record.action == TypeText(None, MASK, sensitive=True)
+    assert traced[0]["args"]["text"] == MASK
+    assert "hunter2" not in repr(record) + repr(traced)
+
+
+@pytest.mark.asyncio
+async def test_command_record_reads_the_record_and_is_none_for_a_call_that_sent_nothing() -> None:
+    built, _ = _build(FakeDriver(results=[ActionResult(ok=True)]))
+    tool = _tool(built, "toy_script")
+
+    sent = await tool.invoke({"code": "1"})
+    undecoded = await _tool(built, "toy_tabs").invoke({"action": "select", "index": 3})
+
+    assert command_record(sent) is sent.data["command"]
+    assert command_record(undecoded) is None
 
 
 # --- the message metadata the context processors read -------------------------------------------------------------
