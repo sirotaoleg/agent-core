@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Mapping
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -253,6 +254,21 @@ def test_extra_tools_are_built_from_the_tool_context() -> None:
     assert len(built.tools) == 5
     assert (seen[0].page_state, seen[0].settings, seen[0].image_support) == (page_state, "toy-settings", False)
     assert isinstance(seen[0].driver, DriverSession)
+
+
+def test_extra_tools_get_the_workspace_and_language_the_agent_is_built_with(tmp_path: Path) -> None:
+    seen: list[ToolContext] = []
+
+    def extra(context: ToolContext) -> Any:
+        seen.append(context)
+        return _tool(_build(FakeDriver())[0], "toy_look")
+
+    driver, page_state = FakeDriver(), BrowserPageState()
+    session = DriverSession(DriverAssembly(driver, DEVICE, None, None), page_state, MESSAGES)
+    ToolFactory(_profile(extra_tools=(extra,)), driver.info).build(
+        ("core",), image_support=False, session=session, page_state=page_state, workspace=tmp_path, language="en"
+    )
+    assert (seen[0].workspace, seen[0].language) == (tmp_path, "en")
 
 
 def test_builders_map_model_facing_names_to_decoders_for_the_policy_rail() -> None:

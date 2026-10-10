@@ -5,15 +5,20 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
+import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from openjiuwen.core.foundation.tool.base import render_tool_output
 from openjiuwen.harness.tools.browser_move.contract import (
     ActionResult,
     ContextRef,
     DriverInfo,
+    Effect,
     NativeTool,
     Observation,
     Observe,
@@ -21,6 +26,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     SwitchContext,
 )
 from openjiuwen.harness.tools.browser_move.contract.testing.fake import DEFAULT_ACTIONS, FakeDriver
+from openjiuwen.harness.tools.browser_move.offload_recall import BrowserOffloadRecallTool
 from openjiuwen.harness.tools.browser_move.playwright_runtime import site_profiles
 from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
@@ -29,7 +35,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime_tools impo
     BrowserProbeCardsTool,
     BrowserProbeInteractivesTool,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import ToolContext
+from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import ToolContext, ToolFlags, command_record
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
@@ -38,6 +44,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import (
     FindTool,
     ProbeCardsTool,
     ProbeInteractivesTool,
+    RecallOffloadTool,
     activate_page,
     page_metadata,
     probe_for_policy,
@@ -123,8 +130,74 @@ def test_probe_cards_equal_the_old_helper_cards() -> None:
     assert [tool.card.tool_info() for tool in new] == [tool.card.tool_info() for tool in old]
 
 
-def test_the_extra_tools_are_the_probes_and_find() -> None:
-    assert EXTRA_TOOLS == (ProbeInteractivesTool, ProbeCardsTool, FindTool)
+def test_the_extra_tools_are_the_probes_find_and_recall() -> None:
+    assert EXTRA_TOOLS == (ProbeInteractivesTool, ProbeCardsTool, FindTool, RecallOffloadTool)
+
+
+def test_the_helpers_declare_read_progress_and_only_recall_is_exempt_from_budgets() -> None:
+    assert ToolFlags() == ToolFlags(effect=Effect.READ, exempt_from_budget=False, progress=True)
+    assert [tool.flags for tool in EXTRA_TOOLS] == [ToolFlags()] * 3 + [ToolFlags(exempt_from_budget=True)]
+
+
+# --- the shared command step and records -----------------------------------------------------------------------------
+
+
+def test_the_tool_context_runs_commands_through_the_session_and_records_them() -> None:
+    driver = FakeDriver(observations=[_observation()], results=[ActionResult(ok=True, context_changed=True)])
+    context = _context(driver)
+
+    observation = _run(context.observe(Observe()))
+    result = _run(context.execute(RunScript(code="() => 1")))
+
+    assert driver.kinds() == ["observe", "execute"]
+    assert (observation.generation, result.generation, context.page_state.generation_id) == ("g0", "g1", "g1")
+
+
+def test_a_probe_result_carries_a_read_record_of_its_page_script() -> None:
+    driver = FakeDriver(results=[_script({"url": START, "elements": [dict(SAVE)]})])
+
+    output = _run(ProbeInteractivesTool(_context(driver)).invoke({}))
+
+    record = command_record(output)
+    [script] = _scripts(driver)
+    assert (record.command, record.effect, record.ok, record.dispatched) == (RunScript, Effect.READ, True, True)
+    assert (record.action, record.generation) == (script, "g0")
+    assert record.message_metadata["state_changed"] is False
+
+
+def test_a_probe_the_driver_failed_carries_the_failed_record() -> None:
+    driver = FakeDriver()
+    driver.fail_next(dispatched=True)
+
+    record = command_record(_run(ProbeInteractivesTool(_context(driver)).invoke({})))
+
+    assert (record.command, record.effect, record.ok, record.dispatched) == (RunScript, Effect.READ, False, True)
+    assert record.error == "DriverError"
+
+
+def test_the_model_reads_the_probe_payload_as_before() -> None:
+    driver = FakeDriver(results=[_script({"url": START, "elements": [dict(SAVE)]})])
+
+    output = _run(ProbeInteractivesTool(_context(driver)).invoke({}))
+
+    assert render_tool_output(output) == json.dumps(output.data["content"], ensure_ascii=False)
+
+
+# --- recall ----------------------------------------------------------------------------------------------------------
+
+
+def test_recall_reads_the_workspace_in_the_language_of_the_tool_context(tmp_path: Path) -> None:
+    handle = "a" * 32
+    offload = tmp_path / "context" / "s1_context" / "offload"
+    offload.mkdir(parents=True)
+    payload = {"offload_handle": handle, "messages": [{"name": "browser_snapshot", "content": "hello world"}]}
+    (offload / f"ToolResultWindowProcessor_{handle}.json").write_text(json.dumps(payload), encoding="utf-8")
+    tool = RecallOffloadTool(dataclasses.replace(_context(FakeDriver()), workspace=tmp_path, language="en"))
+
+    output = _run(tool.invoke({"handle": handle}, session=SimpleNamespace(get_session_id=lambda: "s1")))
+
+    assert tool.card.tool_info() == BrowserOffloadRecallTool(tmp_path, language="en").card.tool_info()
+    assert output.success and output.data["content"] == "hello world"
 
 
 # --- probes ----------------------------------------------------------------------------------------------------------
@@ -141,10 +214,10 @@ def test_probe_interactives_runs_the_page_function_once_with_its_params() -> Non
     assert script.code.startswith("(params) => {") and "page.evaluate" not in script.code
     assert script.args["max_items"] == 30 and script.args["query"] == "save"
     assert script.args["viewport_only"] is False and script.args["generation_id"] == "g0"
-    assert output.success and output.data["count"] == 1
-    element = output.data["elements"][0]
+    assert output.success and output.data["content"]["count"] == 1
+    element = output.data["content"]["elements"][0]
     assert context.page_state.get_target(element["target_id"]).locator == {"selector": "#save"}
-    assert output.data["diagnostics"]["parse_retry_count"] == 0
+    assert output.data["content"]["diagnostics"]["parse_retry_count"] == 0
 
 
 def test_probe_runs_a_second_time_after_a_malformed_result() -> None:
@@ -153,7 +226,7 @@ def test_probe_runs_a_second_time_after_a_malformed_result() -> None:
     output = _run(ProbeInteractivesTool(_context(driver)).invoke({}))
 
     assert len(_scripts(driver)) == 2
-    assert output.success and output.data["diagnostics"]["parse_retry_count"] == 1
+    assert output.success and output.data["content"]["diagnostics"]["parse_retry_count"] == 1
 
 
 def test_probe_reports_a_result_it_cannot_parse_twice() -> None:
@@ -163,7 +236,7 @@ def test_probe_reports_a_result_it_cannot_parse_twice() -> None:
 
     assert not output.success
     assert output.error == "Could not parse browser_probe_interactives result JSON"
-    assert output.data["elements"] == [] and "audit" in output.data
+    assert output.data["content"]["elements"] == [] and "audit" in output.data["content"]
 
 
 def test_probe_reports_a_script_the_page_refused() -> None:
@@ -182,7 +255,7 @@ def test_probe_turns_a_driver_error_into_a_failure_envelope() -> None:
     output = _run(ProbeInteractivesTool(_context(driver)).invoke({}))
 
     assert not output.success and output.error.startswith("browser_probe_interactives failed: ")
-    assert output.data["elements"] == [] and output.data["page_state"]["generation_id"] == "g0"
+    assert output.data["content"]["elements"] == [] and output.data["content"]["page_state"]["generation_id"] == "g0"
 
 
 def test_probe_on_a_new_address_advances_the_generation() -> None:
@@ -194,8 +267,8 @@ def test_probe_on_a_new_address_advances_the_generation() -> None:
 
     output = _run(ProbeInteractivesTool(context).invoke({}))
 
-    assert output.data["generation_id"] == "g1"
-    assert output.data["elements"][0]["target_id"].startswith("t_g1_")
+    assert output.data["content"]["generation_id"] == "g1"
+    assert output.data["content"]["elements"][0]["target_id"].startswith("t_g1_")
     assert context.page_state.url == SECOND
 
 
@@ -213,8 +286,8 @@ def test_probe_cards_registers_cards_and_their_primary_links(tmp_path: Path) -> 
 
     [script] = _scripts(driver)
     assert script.args["max_cards"] == 12 and script.args["include_buttons"] is False
-    assert output.success and output.data["count"] == 1
-    assert output.data["cards"][0]["title"] == "Blue mouse"
+    assert output.success and output.data["content"]["count"] == 1
+    assert output.data["content"]["cards"][0]["title"] == "Blue mouse"
     assert context.page_state.selector_primary_links[".card"] == (0, "http://scene.test/mouse")
 
 
@@ -383,6 +456,33 @@ def test_find_searches_the_last_observation_without_observing_again() -> None:
     assert driver.kinds() == ["observe"]
     assert output.data["content"].startswith("### Result\nFound 1 match for /^\\s*- link/i:\n\n")
     assert '    - link "Go to second" [ref=e4]' in output.data["content"]
+
+
+def test_find_records_the_observation_it_took_as_a_read() -> None:
+    output = _found(_find_context(FakeDriver(observations=[_observation()])), {"text": "save"})
+
+    record = command_record(output)
+    assert (record.command, record.effect, record.ok, record.dispatched) == (Observe, Effect.READ, True, True)
+    assert (record.value, record.generation) == (output.data["content"], "g0")
+
+
+def test_find_over_the_last_observation_records_that_nothing_was_sent() -> None:
+    driver = FakeDriver(observations=[_observation()])
+    context = _find_context(driver)
+    context.page_state.record(Observe(), _run(driver.observe(Observe())))
+
+    assert command_record(_found(context, {"text": "save"})).dispatched is False
+
+
+def test_find_that_cannot_observe_reports_and_records_the_failure() -> None:
+    driver = FakeDriver()
+    driver.fail_next(dispatched=False)
+
+    output = _found(_find_context(driver), {"text": "save"})
+
+    record = command_record(output)
+    assert not output.success and output.error == "### Error\nscripted"
+    assert (record.command, record.effect, record.ok, record.dispatched) == (Observe, Effect.READ, False, False)
 
 
 def test_find_merges_nearby_matches_into_one_snippet() -> None:

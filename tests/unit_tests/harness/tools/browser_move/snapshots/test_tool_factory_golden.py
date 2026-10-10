@@ -30,8 +30,9 @@ CAPABILITY_VIEWS = [view for view in builder.list_views() if view != builder.RUN
 
 # Extra tools the worker removes after the build.
 PROBES = frozenset({"browser_probe_interactives", "browser_probe_cards"})
+RUNNER_REMOVED = PROBES | {"browser_recall_offload"}
 # Golden tools no extra tool of the surface builds yet.
-NOT_BUILT = frozenset({"browser_batch_interact", "browser_recall_offload"})
+NOT_BUILT = frozenset({"browser_batch_interact"})
 # Server tools with no command: dropped from the agent, each selection logged once.
 NO_COMMAND: dict[str, frozenset[str]] = {
     "unsafe_dev": frozenset({"browser_run_code_unsafe"}),
@@ -106,7 +107,11 @@ def _session(driver: Driver) -> DriverSession:
 
 def _built(profile: Any, driver: Driver, capabilities: list[str]) -> list[dict[str, Any]]:
     built = ToolFactory(profile, driver.info).build(
-        capabilities, image_support=False, session=_session(driver), page_state=BrowserPageState()
+        capabilities,
+        image_support=False,
+        session=_session(driver),
+        page_state=BrowserPageState(),
+        language=builder.LANGUAGE,
     )
     return sorted((builder._tool_dict(tool.card.tool_info()) for tool in built.tools), key=lambda tool: tool["name"])
 
@@ -150,9 +155,11 @@ def mcp_info(mcp_driver: Driver) -> DriverInfo:
     return mcp_driver.info
 
 
-def test_runner_tools_without_the_probes_equal_the_golden_byte_for_byte(surface: Any, mcp_driver: Driver) -> None:
+def test_runner_tools_without_the_helpers_it_removes_equal_the_golden_byte_for_byte(
+    surface: Any, mcp_driver: Driver
+) -> None:
     golden = _golden(builder.GOLDEN_DIR, builder.RUNNER_VIEW)
-    built = _without(_built(surface.profile, mcp_driver, _capabilities(builder.RUNNER_VIEW)), PROBES)
+    built = _without(_built(surface.profile, mcp_driver, _capabilities(builder.RUNNER_VIEW)), RUNNER_REMOVED)
 
     assert builder.render(built) == builder.render(golden)
     assert len(built) == len(golden) == 14
@@ -165,7 +172,7 @@ def test_core_tools_equal_the_golden_byte_for_byte_but_the_tools_not_built_yet(
     built = _built(surface.profile, mcp_driver, _capabilities("core"))
 
     assert builder.render(built) == builder.render(_without(golden, NOT_BUILT))
-    assert len(built) == len(golden) - len(NOT_BUILT) == 16
+    assert len(built) == len(golden) - len(NOT_BUILT) == 17
 
 
 @pytest.mark.parametrize("view", CAPABILITY_VIEWS)

@@ -75,8 +75,9 @@ async def _probe(context: ToolContext) -> Any:
 
 def _assert_probe_found_the_save_button(output: Any) -> None:
     assert output.success, output.error
-    saves = [element for element in output.data["elements"] if "Save order" in str(element.get("text"))]
-    assert saves and saves[0]["target_id"].startswith(f"t_{output.data['generation_id']}_")
+    payload = output.data["content"]
+    saves = [element for element in payload["elements"] if "Save order" in str(element.get("text"))]
+    assert saves and saves[0]["target_id"].startswith(f"t_{payload['generation_id']}_")
 
 
 @pytest.mark.live
