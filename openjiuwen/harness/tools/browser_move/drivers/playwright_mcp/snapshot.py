@@ -25,6 +25,7 @@ _NODE = re.compile(
     r'(?P<role>[\w-]+)(?: "(?P<name>(?:[^"\\]|\\.)*)")?(?P<attrs>(?: \[[^\]]*\])*)(?::(?: (?P<text>.*))?)?'
 )
 _ATTRIBUTE = re.compile(r"\[([^\]=]+)(?:=([^\]]*))?\]")
+_BOX = re.compile(r" \[box=[^\]]*\]")
 _VALUE_ROLES = frozenset({"textbox", "searchbox", "combobox", "spinbutton", "slider"})
 
 
@@ -85,6 +86,11 @@ def parse_header(parts: dict[str, str]) -> PageHeader | None:
     # The server lists tabs only when more than one is open.
     only = ContextRef(id="0", kind=TAB_KIND, title=title)
     return PageHeader(url=url, title=title, tabs=(only,), focused=only)
+
+
+def without_boxes(text: str) -> str:
+    """The text of a ``browser_snapshot`` taken with ``boxes``, as the server gives it without them."""
+    return _BOX.sub("", text)
 
 
 def parse_snapshot(text: str) -> tuple[tuple[Element, ...], PageHeader | None]:

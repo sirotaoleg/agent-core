@@ -49,7 +49,7 @@ from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.clients import
     BrowserMoveStreamableHttpClient,
 )
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.result import decode, result_text
-from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.snapshot import parse_snapshot
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.snapshot import parse_snapshot, without_boxes
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserInstanceConfig, playwright_mcp_config
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
@@ -193,10 +193,10 @@ class PlaywrightMcpDriver(HandlerDriver):
         return Health(ok=False, detail="the server does not answer")
 
     async def observe(self, command: Observe) -> Observation:
-        raw = await self._call("browser_snapshot", {})
+        # Boxes give elements their bounds; the text keeps the form the model reads today.
+        raw = await self._call("browser_snapshot", {"boxes": True})
         decoded = await self._decode("browser_snapshot", raw)
-        text = result_text(raw)
-        elements, header = parse_snapshot(text)
+        elements, header = parse_snapshot(result_text(raw))
         if header is None:
             raise DriverError("browser_snapshot reported no page", dispatched=True)
         screenshot = None
@@ -207,7 +207,7 @@ class PlaywrightMcpDriver(HandlerDriver):
             context=header.focused,
             elements=elements,
             screenshot=screenshot,
-            native_text=text,
+            native_text=without_boxes(result_text(raw)),
             surface=decoded.surface,
         )
 
