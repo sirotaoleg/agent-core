@@ -247,6 +247,39 @@ class TestTracing:
             }
         ]
 
+    def test_sensitive_script_args_are_masked(self):
+        sink = _traced(RunScript(code="(pin) => pin", args={"pin": SECRET}, sensitive=True))
+
+        assert sink.records[0]["args"]["args"] == MASK
+        assert SECRET not in sink.text
+
+    @pytest.mark.parametrize(
+        "action",
+        [TypeText(target=REF, text=SECRET, sensitive=True), RunScript(code=SECRET, sensitive=True)],
+        ids=["type-text", "run-script"],
+    )
+    def test_the_error_message_of_a_sensitive_command_is_dropped(self, action):
+        inner = FakeDriver()
+        inner.fail_next(DriverError(f"Error: {SECRET} is not defined", dispatched=True))
+        sink = TraceSink()
+
+        with pytest.raises(DriverError):
+            asyncio.run(Tracing(inner, sink).execute(action))
+
+        assert "message" not in sink.records[0]
+        assert sink.records[0]["error"] == "DriverError"
+        assert SECRET not in sink.text
+
+    def test_the_error_message_is_kept_when_the_command_is_not_sensitive(self):
+        inner = FakeDriver()
+        inner.fail_next(DriverError("Error: x is not defined", dispatched=True))
+        sink = TraceSink()
+
+        with pytest.raises(DriverError):
+            asyncio.run(Tracing(inner, sink).execute(RunScript(code="x")))
+
+        assert sink.records[0]["message"] == "Error: x is not defined"
+
     def test_observe_is_traced_without_the_element_contents(self):
         observation = Observation(context=ContextRef("c1", "screen"), native_text=SECRET)
         sink = TraceSink()
