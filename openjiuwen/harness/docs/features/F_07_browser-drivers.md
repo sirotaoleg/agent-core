@@ -757,8 +757,8 @@ unchanged.
 
 1. **Upload and drop files must be under the MCP server's working directory** (`mcp_cwd`) or its output directory;
    browser-use reads any path (only under `upload_root` when that is set) and answers a refused path with
-   `ok=False`. The MCP refusal arrives as `DriverError(dispatched=True)` although nothing was sent. Phase 4 decides whether the runtime stages files into
-   the workspace, or the server gets roots or the flag.
+   `ok=False`. The MCP refusal is `DriverError(dispatched=False)` ("Open dialogs and refused file access"). Phase 4
+   decides whether the runtime stages files into the workspace, or the server gets roots or the flag.
 2. **`Wait(until_text, seconds)` ignores `seconds` on MCP**: `browser_wait_for` takes no timeout for a text, the
    server's own applies (5 s on 0.0.78). browser-use waits up to `seconds`.
 3. **Context ids are tab positions on MCP** and shift when an earlier tab closes; browser-use ids are target ids.
@@ -779,3 +779,78 @@ The live Playwright MCP cases (conformance and assembly) run only with `BROWSER_
 live cases need `BROWSER_USE_SIDECAR_PYTHON`. Without the gate they ran in every unit run on a host with `npx` and
 Chrome (about 2.5 minutes, network access for `npx`). `Wait(until_text, seconds)` on this driver uses the server's own
 text-wait deadline (5 s); S_20 allows a driver without a deadline for a text wait to use its own.
+
+## Open dialogs and refused file access
+
+`BrowserContext.dialog`, an `observe()` that works while a JavaScript dialog blocks the page (both drivers), and
+the Playwright MCP file-access refusal counted as not dispatched. Decision E13 of the Phase 2 review and K2 of the
+Phase 5 close.
+
+### Decisions
+
+1. **`dialog` is a string on `BrowserContext`, `"<type>: <message>"`.** It is browser data, so it lives in the
+   surface context, not in `Observation` or `ActionResult` (S_20, rule 3). It is set in every observation and every
+   action result taken while a dialog blocks the page, and `None` otherwise. A dialog armed by an earlier
+   `HandleDialog` is answered at once and never shows.
+2. **browser-use: the sidecar answers `observe` from cached target info.** browser-use keeps URL, title and tabs as
+   cached target data, which needs no CDP call and works while the dialog holds the page; the DOM, the screenshot
+   and the `document.title` script do not. The reply has `dialog` and no elements, and the driver then runs no
+   script and takes no screenshot. Wire version 3: act replies also carry `url` and `dialog` (the dialog still open
+   when the reply is built), so a click that opens a dialog and an action a dialog refused both get
+   `surface = BrowserContext(url, dialog)`.
+3. **Playwright MCP: the tab list stands in for the snapshot.** While a modal state is open the server refuses
+   `browser_snapshot` like every page tool (`Tool "browser_snapshot" does not handle the modal state` plus
+   `### Modal state`; no `### Page`, no snapshot file; recorded as `snapshot_during_dialog`). `browser_tabs` is not
+   a page tool and still answers, with the URL, the tabs, an empty title (the server cannot read it) and
+   `### Modal state` (`tabs_list_during_dialog`). So `observe()` sends one `browser_tabs list` after a refused
+   snapshot; `native_text` is the refusal text, which is what the model reads today when it asks for a snapshot
+   during a dialog. A file chooser takes the same path (empty elements, no `dialog`).
+4. **The decoder reads the dialog from `### Modal state`**: `["<type>" dialog with message "<message>"]: can be
+   handled by …`. The server does not escape the message, so it ends at the first `"]: can be handled by`. A call a
+   dialog refuses stays `ok=False` and gets `surface` = `before` with the dialog: nothing was sent, so the page is
+   the one before the call.
+5. **The conformance `dialog` case checks an observation.** `check_context_change` observes right after the
+   command when the case has a `check`, before the cleanup answers the dialog. The browser scene's check wants
+   `"confirm: Proceed?"` in the click's result surface and in that observation; the suite stays surface-neutral.
+6. **A refused file access is `DriverError(dispatched=False)`.** `@playwright/mcp` 0.0.78 checks every upload and
+   drop path before it touches the page; the decoder matches `File access denied: … is outside allowed roots`
+   right after the stale-ref rule. The fixture `drop_outside_roots` comes from the recorder's server, which runs
+   without `--allow-unrestricted-file-access`: a drop of a file in a second temporary directory (`<OUTSIDE>`).
+
+### Rejected options
+
+- **MCP: the blocked observation from the last known context.** No extra call, but it misses a navigation that
+  happened with the dialog (a dialog on load) and is not the server's own view; the tab list is a real read.
+- **MCP: the linked snapshot file while a dialog is open.** `browser_snapshot` returns no link then; the empty
+  linked file belongs to action results, which already give `observation=None`.
+- **browser-use: keep `ObserveError` and let the runtime build the dialog view from the last act reply.** Every
+  caller would need that special case; the driver knows the dialog.
+- **A `dialog` field on `Observation` or `ActionResult`.** Browser-only data that a non-browser driver would fake.
+
+### Verification
+
+- Unit tests, each new one failing on the code before the change (15 failed on the code before):
+  - sidecar (`test_browser_use_sidecar.py`): `observe` during a dialog returns URL, title, tabs, the dialog and no
+    elements and sends nothing to the page; act replies carry `url` and the open `dialog` (opened, refused, handled);
+    an armed dialog leaves `dialog` empty. The `observe` row of "page reads fail at once" is gone.
+  - browser-use driver: the act result surface with an open dialog (opened, refused); no dialog, no surface;
+    `observe` during a dialog sends only `observe`.
+  - MCP decoder: `dialog` in the surface of `dialog_open_by_click` and `tabs_list_during_dialog`, `before` plus the
+    dialog for a refused click, none for a file chooser, a message with quotes and a line break;
+    `drop_outside_roots` is `DriverError(dispatched=False)`.
+  - MCP driver: `observe` during a dialog sends `browser_snapshot` then `browser_tabs list`, no screenshot.
+  - scene: the `dialog` check needs the dialog in both the result and the observation. Conformance self-test: a
+    driver whose observation hides the dialog fails the case.
+- Fixtures: three new cases, recorded live; the 33 earlier fixtures re-recorded byte-identical.
+- `pytest tests/unit_tests/harness/tools/browser_move -q`: **1653 passed, 113 skipped**.
+- Live, with the new `dialog` check: browser-use **45 passed**; Playwright MCP **51 passed**.
+
+### Known leftovers
+
+1. **browser-use navigation replies carry no `dialog`.** A page that opens a dialog on load shows it in the next
+   `observe()` or action result; the MCP navigation result has it (`### Modal state`).
+2. **The MCP title is empty during a dialog** (the server cannot read it); browser-use reports its cached title.
+3. **An MCP file chooser gives an observation without elements and without `dialog`**; the modal state is only in
+   `native_text`. browser-use has no file-chooser state.
+4. **Where upload and drop files may live on MCP is unchanged** ("Playwright MCP live conformance", Known leftovers
+   1); only the refusal is now `dispatched=False`.

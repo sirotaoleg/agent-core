@@ -195,7 +195,8 @@ Data types only; their use is specified with the composition root and the tool f
   from the observations taken so far; the last step is the command under test, the ones before it are setup steps.
   With `observe_between=False` no observation is taken between the steps, so every step sees the first one (for a
   setup step that opens a dialog, or one that changes the screen after the command under test has taken its refs).
-  `check(before, after, result)` tells whether the command under test took effect.
+  `check(before, after, result)` tells whether the command under test took effect; in a context-change case it is
+  checked on an observation taken right after the command, before the cleanup.
 
 ### FakeDriver (`contract/testing/fake.py`)
 
@@ -227,7 +228,7 @@ otherwise get `PytestUnknownMarkWarning`.
 | declared actions | `info.actions` of the running driver equals `driver_actions` | no |
 | happy path, one per `(command, ref kind)` of `info.actions` (`None` when the command takes no ref) | the command returns `ok=True` and `check(before, after, result)` holds | yes (`happy`) |
 | stale ref | `StaleRef` with `dispatched=False` | yes (`stale`) |
-| context change, one per `context_changes` entry | `result.context_changed` | yes |
+| context change, one per `context_changes` entry | `result.context_changed`; with a `check`, an `observe()` right after the command (before the cleanup) passes it | yes |
 | intercepted | `ActionIntercepted` with a non-empty `by` and `dispatched=False` | yes (`intercepted`) |
 | timeout | the scene's case ends in `Wait(until_text=..., seconds=...)` for a text that never appears; it raises `ActionTimeout` with `dispatched=True`; a driver that retries into success fails here | yes (`timeout`) |
 | unhandled command | the suite's own `UnhandledCommand` is not in `info.actions` and raises `Unsupported(dispatched=False)` | no |
@@ -263,7 +264,9 @@ scaled to the screenshot. An `IndexRef` cannot be built (skipped).
 - Timeout: `Wait(until_text=<a text on no scene page>, seconds=2.0)`; needs `Wait`.
 - Sensitive: `form-field`, a `FillForm` that fills the "Full name" textbox with the secret, `sensitive=True`.
 - Context changes: `navigate`, `same-url-reload` (`Navigate` to the current address), `link-click`, `open-tab`,
-  `popup-click` (`window.open`), `switch-tab`, `close-tab`, `dialog` (a `confirm()`).
+  `popup-click` (`window.open`), `switch-tab`, `close-tab`, `dialog` (a `confirm()`; its check wants
+  `BrowserContext.dialog == "confirm: Proceed?"` in the click's result and in an `observe()` while the dialog is
+  open).
 
 ## Middleware (`drivers/middleware.py`)
 
@@ -487,6 +490,11 @@ nothing to release.
 
 ## Drivers
 
+Both drivers fill `BrowserContext` (`surfaces/browser/context.py`). While a JavaScript dialog blocks the page,
+`dialog` is `"<type>: <message>"` (`"confirm: Proceed?"`) in every observation and in every action result
+that reports it, and `observe()` returns what it can read without the page (the context, tabs, URL, the dialog;
+no elements, no screenshot) instead of raising. Outside a dialog `dialog` is `None`.
+
 ### browser-use (`drivers/browser_use/`)
 
 `BrowserUseDriver(HandlerDriver)` runs commands through the browser-use sidecar: a separate Python process
@@ -513,16 +521,19 @@ native_text, surface}`, `versions` from the sidecar's `connect` reply.
   (`IndexRef`) stay internal; no handler accepts them.
 - `observe()` fills `elements`, `native_text` (browser-use's own page text), `screenshot` (a separate full-page
   capture when `full_page`) and `BrowserContext` (url, title, tabs, PDF viewer, scroll pixels). The title is read
-  from `document.title`, because browser-use's own title lags behind it; the sidecar's title is kept only when the
-  page runs no script. The focused context is the first tab whose URL is the page URL. `generation` stays empty.
-- Element and keyboard commands run in the sidecar as one action each (wire version 2). The action resolves its
+  from `document.title`, because browser-use's own title lags behind it; the sidecar's title is kept when the
+  page runs no script. While a dialog is open the sidecar answers `observe` from browser-use's cached target info
+  only (URL, title, tabs) with `dialog` and no elements; the driver then runs no script and takes no screenshot.
+  The focused context is the first tab whose URL is the page URL. `generation` stays empty.
+- Element and keyboard commands run in the sidecar as one action each (wire version 3). The action resolves its
   ref, then sends its input as a task and watches the page while it runs:
   - Dialogs. The sidecar owns `Page.javascriptDialogOpening` (it takes it back from browser-use's auto-accepting
     popups watchdog before every action and observation). When a dialog opens that `HandleDialog` did not arm,
     Chrome holds the input until the dialog closes; the action returns at once with `dialog_opened` (type and
     message) and its input waits in the background. `HandleDialog` answers the dialog on the session that reported
-    it. While a dialog is open, `observe()`, screenshots and page scripts fail at once (`DriverError`) instead of
-    blocking, and any other action returns `ok=False` without sending input.
+    it. While a dialog is open, `observe()` returns the page as above, screenshots and page scripts fail at once
+    (`DriverError`) instead of blocking, and any other action returns `ok=False` without sending input. Every act
+    reply carries the page URL and `dialog`, the dialog still open when the reply is built.
   - Popups. A page that opens a popup can wait for the debugger until told to run, which held the click for 30 s.
     When a page target is created during the action, the sidecar resumes the current page
     (`Runtime.runIfWaitingForDebugger`) and reports the new pages as `new_targets`.
@@ -536,7 +547,8 @@ native_text, surface}`, `versions` from the sidecar's `connect` reply.
     nothing is sent. The `Drag` destination, `Drop` and the focusing click of `TypeText` are not hit-tested.
 - `context_changed`: `Navigate`, `Back`, `OpenContext` always (a same-URL reload too); `SwitchContext` and
   `CloseContext` always; other commands when the sidecar reports `document_changed`, a dialog, or new pages (which
-  become `opened_contexts`). `detail` names an opened dialog.
+  become `opened_contexts`). `detail` names an opened dialog. `surface` is `BrowserContext(url, dialog)` when a
+  dialog is open after the command (one it opened, or one that refused it), else `None`.
 - Errors: each sidecar error code maps to one typed error. `dispatched=False` only for errors the sidecar raises
   before any input reaches the page: `StaleIndexError` and `StaleNodeError` (→ `StaleRef`; a node the CDP says is
   not in the document, "does not belong to the document" / "No node with given id"), `ElementNotFound`,
@@ -583,8 +595,10 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
     which goes to `surface`.
   - `detail`: the remaining sections as text, without `### Result`, `### Snapshot` and `### Events`; `None` when
     nothing remains.
-  - `surface`: `BrowserContext(url, title, tabs)` from the header; `None` when the result has no `### Page` and
-    is not a tab list (`browser_fill_form`, `browser_evaluate`, `browser_press_key`).
+  - `surface`: `BrowserContext(url, title, tabs, dialog)` from the header; `None` when the result has no
+    `### Page` and is not a tab list (`browser_fill_form`, `browser_evaluate`, `browser_press_key`). `dialog` is
+    `"<type>: <message>"` from a `### Modal state` line `- ["<type>" dialog with message "<message>"]: can be
+    handled by …` (the server does not escape the message; it ends at the first `"]: can be handled by`).
   - `observation`: from the inline `### Snapshot` YAML, or from the linked `page-*.yml` read under `output_dir`.
     A link that resolves outside `output_dir`, a missing or unreadable file and an empty file (the server writes
     one while a dialog blocks the snapshot) give `None`; the runtime then observes. `native_text` is the YAML
@@ -598,6 +612,7 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   | Signal | Raised | `dispatched` |
   |---|---|---|
   | `Ref … not found in the current page snapshot` | `StaleRef` | `False` |
+  | `File access denied: … is outside allowed roots` (the server checks file paths before it touches the page) | `DriverError` | `False` |
   | `Target page, context or browser has been closed`, `Failed to open a new tab` | `ConnectionLost` | `True` |
   | call log shows `performing <x> action` or `<x> action done` | `ActionTimeout` on a timeout, else `DriverError` | `True` |
   | call log has `… intercepts pointer events` | `ActionIntercepted(by=tag#id.class "text")` of the last blocker (`… in <container>` for a `from … subtree` blocker) | `False` |
@@ -607,7 +622,8 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
 
   Call-log lines are read without ANSI escapes and without the `N ×` fold. A call refused because a dialog is open
   (`Tool "<name>" does not handle the modal state`) is not raised: it returns `ok=False` with the error and the
-  modal state in `detail`, as browser-use does for an action while a dialog is open.
+  modal state in `detail`, as browser-use does for an action while a dialog is open; with `before` and a dialog,
+  `surface` is `before` with that `dialog` (nothing was sent, so the page is the one before the call).
 
 #### The driver (`drivers/playwright_mcp/driver.py`)
 
@@ -620,8 +636,11 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
 - `observe()` calls `browser_snapshot` with `boxes: true` (and `browser_take_screenshot` when asked), so every
   element has `bounds` and a `PointRef` can be built from an observation. `native_text` is the full text of that
   result (header, open tabs, YAML) without the boxes (`without_boxes`): what the model reads today. Tabs come from
-  the snapshot header, never from a `browser_tabs list`. An observation that comes free with an action result
-  (the linked snapshot file) has no bounds.
+  the snapshot header, never from a `browser_tabs list`, except while a modal state (a dialog or a file chooser)
+  makes the server refuse `browser_snapshot` and every other page tool: then one `browser_tabs list` (not a page
+  tool) gives `context` and `surface` (URL, tabs, the dialog; the title is empty), `elements` are empty, no
+  screenshot is taken and `native_text` is the refusal text. An observation that comes free with an action
+  result (the linked snapshot file) has no bounds.
 - **One attempt per tool call.** The driver calls `call_tool_once` on its client, never the retrying `call_tool`
   the runtime path uses: a call that fails is not sent again. A transport timeout (`mcp_timeout_s`) is
   `ActionTimeout(dispatched=True)`; no connection is `ConnectionLost(dispatched=False)`; any other transport failure
@@ -631,7 +650,7 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   sensitive call can still quote it, and `Tracing` does not record that message.
 - **Files.** The server reads upload and drop files only under its working directory and its output directory;
   any other path is refused with `File access denied: … is outside allowed roots` (decoded as
-  `DriverError(dispatched=True)`), unless the server runs with `--allow-unrestricted-file-access`.
+  `DriverError(dispatched=False)`), unless the server runs with `--allow-unrestricted-file-access`.
 - Every handler sends one tool call and decodes it with `decode(..., before=<last BrowserContext>)` in a worker
   thread (the decoder may read the linked snapshot file). Commands and tools: Click → `browser_click` /
   `browser_mouse_click_xy`; TypeText → `browser_type`; PressKey → `browser_press_key`; Hover → `browser_hover` /
