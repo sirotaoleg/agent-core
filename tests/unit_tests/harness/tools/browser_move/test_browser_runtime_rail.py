@@ -73,6 +73,7 @@ def _make_bare_runtime() -> BrowserAgentRuntime:
     runtime._reference_generations = {}
     runtime._selector_primary_links = {}
     runtime._last_observed_url = ""
+    runtime._core_settings = None
     return runtime
 
 

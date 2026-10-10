@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import time
 from copy import deepcopy
@@ -671,10 +670,6 @@ def domain_from_url(url: str) -> str:
 
 
 def _default_cache_path() -> Path:
-    raw = os.environ.get("OPENJIUWEN_BROWSER_SELECTOR_CACHE", "").strip()
-    if raw:
-        return Path(raw).expanduser()
-
     return Path.home() / ".openjiuwen" / "browser_selector_cache.json"
 
 
@@ -1154,8 +1149,9 @@ class BrowserSelectorCache:
 _SELECTOR_CACHE: BrowserSelectorCache | None = None
 
 
-def get_selector_cache() -> BrowserSelectorCache:
+def get_selector_cache(path: Path | None = None) -> BrowserSelectorCache:
+    """The process-wide selector cache; ``path`` applies only to the call that creates it."""
     global _SELECTOR_CACHE
     if _SELECTOR_CACHE is None:
-        _SELECTOR_CACHE = BrowserSelectorCache()
+        _SELECTOR_CACHE = BrowserSelectorCache(path)
     return _SELECTOR_CACHE

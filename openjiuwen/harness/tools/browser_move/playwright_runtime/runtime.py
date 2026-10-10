@@ -49,7 +49,7 @@ from .browser_working_context import (
     BrowserWorkingContextStore,
     latest_browser_user_request,
 )
-from .config import BrowserInstanceConfig, BrowserRunGuardrails
+from .config import BrowserInstanceConfig, BrowserRunGuardrails, BrowserSettings, CoreSettings
 from .page_state import CARD_EVIDENCE_FIELDS, BrowserPageState, BrowserTarget
 from .probe_semantics import normalize_card_probe_payload
 from .probes import (
@@ -432,9 +432,14 @@ class BrowserAgentRuntime:
         guardrails: BrowserRunGuardrails,
         instance: Optional[BrowserInstanceConfig] = None,
         allowed_tool_names: Optional[Iterable[str]] = None,
+        *,
+        core_settings: Optional[CoreSettings] = None,
+        browser_settings: Optional[BrowserSettings] = None,
     ) -> None:
         ensure_browser_runtime_client_patch()
         self._instance = instance
+        self._core_settings = core_settings
+        self._browser_settings = browser_settings or BrowserSettings.from_process_env()
         resolved_allowed_tool_names = (
             CORE_BROWSER_TOOL_NAMES if allowed_tool_names is None else tuple(dict.fromkeys(allowed_tool_names))
         )
@@ -447,6 +452,8 @@ class BrowserAgentRuntime:
             guardrails=guardrails,
             instance=instance,
             allowed_tool_names=resolved_allowed_tool_names,
+            browser_settings=self._browser_settings,
+            core_settings=core_settings,
         )
         self._browser_custom_action_tool = None
         self._browser_list_actions_tool = None
@@ -466,6 +473,10 @@ class BrowserAgentRuntime:
     @property
     def service(self) -> BrowserService:
         return self._service
+
+    @property
+    def core_settings(self) -> Optional[CoreSettings]:
+        return self._core_settings
 
     @property
     def browser_custom_action_tool(self) -> Any:
@@ -1099,7 +1110,7 @@ class BrowserAgentRuntime:
 
         self._code_executor = _direct_code_executor
         self._controller.bind_code_executor(_direct_code_executor)
-        self._controller.register_builtin_actions()
+        self._controller.register_builtin_actions(upload_root=self._browser_settings.upload_root)
 
     async def capture_browser_state(self, *, action_group_id: str = "") -> Dict[str, Any]:
         """Capture a fresh, non-cached browser observation for the next model call."""
@@ -2106,7 +2117,7 @@ class BrowserAgentRuntime:
             }
 
         site_profiles = site_profiles_for_url(self._ensure_page_state().url)
-        selector_cache = get_selector_cache()
+        selector_cache = get_selector_cache(self._browser_settings.selector_cache_path)
         selector_cache_records = selector_cache.export_for_probe()
 
         effective_max_cards = min(12, max(1, int(max_cards)))
@@ -2383,7 +2394,9 @@ class BrowserRuntimeRail(AgentRail):
     def __init__(self, runtime: BrowserAgentRuntime) -> None:
         super().__init__()
         self._runtime = runtime
-        self._status_logger = BrowserSubagentStatusLogger() if is_browser_subagent_status_log_enabled() else None
+        self._status_logger = (
+            BrowserSubagentStatusLogger() if is_browser_subagent_status_log_enabled(runtime.core_settings) else None
+        )
         browser_agent_log_info(
             "[BROWSER_SUBAGENT_BOOT] enabled=%s logger=%s",
             self._status_logger is not None,

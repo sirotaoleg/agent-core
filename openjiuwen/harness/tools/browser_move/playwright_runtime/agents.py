@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import inspect
 import json
-import os
 from typing import Any, Awaitable, Callable, Iterable, Optional
 
 import anyio
@@ -21,6 +20,7 @@ from openjiuwen.core.single_agent.agents.react_agent import ReActAgent, ReActAge
 from openjiuwen.core.single_agent.schema.agent_card import AgentCard
 
 from .browser_capabilities import CORE_BROWSER_TOOL_NAMES
+from .config import CoreSettings
 
 ToolResultObserver = Callable[[str, Any], Awaitable[None]]
 
@@ -47,64 +47,6 @@ def _build_dialogue_compressor_config(
         # Use alias field `model` for compatibility with strict alias parsing.
         model=ModelRequestConfig(model=compressor_model),
     )
-
-
-def _resolve_tool_timeout_s(default_s: float = 240.0) -> float:
-    raw = (
-        os.getenv("PLAYWRIGHT_TOOL_TIMEOUT_S")
-        or os.getenv("PLAYWRIGHT_MCP_TIMEOUT_S")
-        or os.getenv("BROWSER_TIMEOUT_S")
-        or str(default_s)
-    )
-    try:
-        parsed = float(raw)
-        if parsed > 0:
-            return parsed
-    except (TypeError, ValueError):
-        pass
-    return default_s
-
-
-def _resolve_sampling_value(
-    keys: tuple[str, ...],
-    *,
-    default: float,
-    min_value: float,
-    max_value: float,
-) -> float:
-    for key in keys:
-        raw = (os.getenv(key) or "").strip()
-        if not raw:
-            continue
-        try:
-            value = float(raw)
-        except (TypeError, ValueError):
-            continue
-        if min_value <= value <= max_value:
-            return value
-    return default
-
-
-def _resolve_sampling_params(
-    *,
-    temperature_keys: tuple[str, ...],
-    top_p_keys: tuple[str, ...],
-    default_temperature: float,
-    default_top_p: float,
-) -> tuple[float, float]:
-    temperature = _resolve_sampling_value(
-        temperature_keys,
-        default=default_temperature,
-        min_value=0.0,
-        max_value=2.0,
-    )
-    top_p = _resolve_sampling_value(
-        top_p_keys,
-        default=default_top_p,
-        min_value=0.0,
-        max_value=1.0,
-    )
-    return temperature, top_p
 
 
 def _format_tool_names(tool_call: Any) -> str:
@@ -342,6 +284,7 @@ def ensure_execute_signature_compat(
     agent: ReActAgent,
     *,
     tool_result_observer: ToolResultObserver | None = None,
+    tool_timeout_s: float | None = None,
 ) -> None:
     """Wrap ability_manager.execute with signature compatibility and timeout."""
     execute_fn = getattr(agent.ability_manager, "execute", None)
@@ -359,7 +302,8 @@ def ensure_execute_signature_compat(
     supports_ctx = "ctx" in params
     supports_tag = "tag" in params
     supports_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values())
-    tool_timeout_s = _resolve_tool_timeout_s()
+    if tool_timeout_s is None:
+        tool_timeout_s = CoreSettings.from_process_env().tool_timeout_s
 
     async def execute_with_timeout(*args, **kwargs):
         ctx, tool_call, session, tag, extra_kwargs = _normalize_execute_call(args, kwargs)
@@ -411,6 +355,7 @@ def build_browser_worker_agent(
     artifacts_subdir: str = "artifacts",
     tool_result_observer: ToolResultObserver | None = None,
     allowed_tool_names: Optional[Iterable[str]] = None,
+    settings: CoreSettings | None = None,
 ) -> ReActAgent:
     resolved_allowed_tool_names = (
         CORE_BROWSER_TOOL_NAMES
@@ -447,22 +392,19 @@ def build_browser_worker_agent(
             ]
         )
     )
-    worker_temperature, worker_top_p = _resolve_sampling_params(
-        temperature_keys=("BROWSER_WORKER_TEMPERATURE", "BROWSER_MODEL_TEMPERATURE", "MODEL_TEMPERATURE"),
-        top_p_keys=("BROWSER_WORKER_TOP_P", "BROWSER_MODEL_TOP_P", "MODEL_TOP_P"),
-        default_temperature=0.2,
-        default_top_p=0.1,
-    )
+    settings = settings or CoreSettings.from_process_env()
     if config.model_config_obj is not None:
-        config.model_config_obj.temperature = worker_temperature
-        config.model_config_obj.top_p = worker_top_p
+        config.model_config_obj.temperature = settings.worker_temperature
+        config.model_config_obj.top_p = settings.worker_top_p
     agent = ReActAgent(card=card).configure(config)
     agent.ability_manager.add(mcp_cfg)
     agent.ability_manager.set_mcp_tool_allowlist(
         mcp_cfg,
         resolved_allowed_tool_names,
     )
-    ensure_execute_signature_compat(agent, tool_result_observer=tool_result_observer)
+    ensure_execute_signature_compat(
+        agent, tool_result_observer=tool_result_observer, tool_timeout_s=settings.tool_timeout_s
+    )
     return agent
 
 

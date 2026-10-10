@@ -23,14 +23,14 @@ from ..surfaces.browser.config import BrowserSettings
 from . import ProvisionedDevice
 
 
-def _default_chrome_user_data_dir() -> str:
+def _default_chrome_user_data_dir(local_app_data: str) -> str:
     """Return the platform-standard Chrome user data directory path.
 
     Does not guarantee the directory exists 鈥?only that this is where Chrome
     stores its default profile on the current OS.
     """
     if os.name == "nt":
-        local_app_data = os.getenv("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+        local_app_data = local_app_data or str(Path.home() / "AppData" / "Local")
         return str(Path(local_app_data) / "Google" / "Chrome" / "User Data")
     if sys.platform == "darwin":
         return str(Path.home() / "Library" / "Application Support" / "Google" / "Chrome")
@@ -403,7 +403,7 @@ def _build_profile(settings: BrowserSettings) -> BrowserProfile:
     if settings.user_data_dir:
         user_data_dir = settings.user_data_dir
     elif settings.managed_kill_existing:
-        user_data_dir = _default_chrome_user_data_dir()
+        user_data_dir = _default_chrome_user_data_dir(settings.local_app_data)
     else:
         user_data_dir = str(settings.mcp_cwd / ".browser-profiles" / settings.profile_name)
     host = settings.managed_host

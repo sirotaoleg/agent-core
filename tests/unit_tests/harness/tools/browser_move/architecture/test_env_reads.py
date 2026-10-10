@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Environment variables are read only in the config modules: directly, via ``utils/env.py`` or as key tuples."""
+"""Environment variables are read only in the config modules: directly, via ``utils/env.py`` or by a known name."""
 
 from __future__ import annotations
 
@@ -15,69 +15,14 @@ from . import _scan
 ENV_MODULE = ("utils", "env")
 UPPER_SNAKE_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$")
 
-# Environment variables read only through key tuples or local helpers, so they never
-# appear as a literal key of a direct read or a utils.env call. Names that do are
-# collected from the code at test time and need not be listed here.
-KEY_TUPLE_ENV_NAMES = frozenset(
-    {
-        "BROWSER_MODEL_TEMPERATURE",
-        "BROWSER_MODEL_TOP_P",
-        "BROWSER_RUNTIME_MCP_ARGS",
-        "BROWSER_RUNTIME_MCP_CLIENT_TYPE",
-        "BROWSER_RUNTIME_MCP_COMMAND",
-        "BROWSER_RUNTIME_MCP_ENABLED",
-        "BROWSER_RUNTIME_MCP_HOST",
-        "BROWSER_RUNTIME_MCP_PATH",
-        "BROWSER_RUNTIME_MCP_PORT",
-        "BROWSER_RUNTIME_MCP_SERVER_ID",
-        "BROWSER_RUNTIME_MCP_SERVER_NAME",
-        "BROWSER_RUNTIME_MCP_SERVER_PATH",
-        "BROWSER_RUNTIME_MCP_TIMEOUT_S",
-        "BROWSER_WORKER_TEMPERATURE",
-        "BROWSER_WORKER_TOP_P",
-        "MODEL_TEMPERATURE",
-        "MODEL_TOP_P",
-        "OPENJIUWEN_BROWSER_AGENT_AUDIT_RAW",
-        "OPENJIUWEN_BROWSER_AGENT_LOG_MIRROR_COMMON",
-        "PLAYWRIGHT_RUNTIME_MCP_ARGS",
-        "PLAYWRIGHT_RUNTIME_MCP_CLIENT_TYPE",
-        "PLAYWRIGHT_RUNTIME_MCP_COMMAND",
-        "PLAYWRIGHT_RUNTIME_MCP_ENABLED",
-        "PLAYWRIGHT_RUNTIME_MCP_SERVER_ID",
-        "PLAYWRIGHT_RUNTIME_MCP_SERVER_NAME",
-        "PLAYWRIGHT_RUNTIME_MCP_SERVER_PATH",
-        "PLAYWRIGHT_RUNTIME_MCP_TIMEOUT_S",
-    }
-)
-
 # file relative to the package -> {descriptor: count}.
 KNOWN_ENV_READS: dict[str, dict[str, int]] = {
-    # reads that move into the config modules; settings objects are passed in instead
+    # the browser-use sidecar is a separate process with its own config boundary
     "drivers/browser_use/sidecar/session_adapter.py": {
         "os.environ.get(BROWSER_UPLOAD_ROOT)": 1,
     },
-    "drivers/browser_use/transport.py": {
-        "os.environ.get(?)": 3,
-        "os.environ.get(BROWSER_UPLOAD_ROOT)": 1,
-        "os.environ.items(?)": 1,
-        "os.getenv(BROWSER_USE_SIDECAR_PYTHON)": 1,
-    },
-    "controllers/action.py": {
-        "utils.env.resolve_upload_root()": 1,
-    },
-    "provisioning/managed_browser.py": {
-        "os.getenv(LOCALAPPDATA)": 1,
-    },
-    "playwright_runtime/agents.py": {
-        (
-            "_resolve_sampling_params(BROWSER_WORKER_TEMPERATURE,BROWSER_MODEL_TEMPERATURE,MODEL_TEMPERATURE,"
-            "BROWSER_WORKER_TOP_P,BROWSER_MODEL_TOP_P,MODEL_TOP_P)"
-        ): 1,
-        "os.getenv(?)": 1,
-        "os.getenv(BROWSER_TIMEOUT_S)": 1,
-        "os.getenv(PLAYWRIGHT_MCP_TIMEOUT_S)": 1,
-        "os.getenv(PLAYWRIGHT_TOOL_TIMEOUT_S)": 1,
-    },
+    # the logger is process-global and fetched at import time; it is configured from settings once the logging hook
+    # moves into openjiuwen.core
     "playwright_runtime/browser_logging.py": {
         "_env_bool(OPENJIUWEN_BROWSER_AGENT_AUDIT_RAW)": 1,
         "_env_bool(OPENJIUWEN_BROWSER_AGENT_LOG_MIRROR_COMMON)": 1,
@@ -85,90 +30,11 @@ KNOWN_ENV_READS: dict[str, dict[str, int]] = {
         "os.getenv(OPENJIUWEN_BROWSER_AGENT_LOG_FILE)": 1,
         "os.getenv(OPENJIUWEN_BROWSER_AGENT_LOG_LEVEL)": 1,
     },
-    "playwright_runtime/browser_tools.py": {
-        "_env_bool(PLAYWRIGHT_RUNTIME_MCP_ENABLED,BROWSER_RUNTIME_MCP_ENABLED)": 1,
-        "_env_first(PLAYWRIGHT_RUNTIME_LOG_DIR,BROWSER_RUNTIME_LOG_DIR)": 1,
-        "_env_first(PLAYWRIGHT_RUNTIME_MCP_ARGS,BROWSER_RUNTIME_MCP_ARGS)": 1,
-        "_env_first(PLAYWRIGHT_RUNTIME_MCP_CLIENT_TYPE,BROWSER_RUNTIME_MCP_CLIENT_TYPE)": 2,
-        "_env_first(PLAYWRIGHT_RUNTIME_MCP_COMMAND,BROWSER_RUNTIME_MCP_COMMAND)": 2,
-        "_env_first(PLAYWRIGHT_RUNTIME_MCP_HOST,BROWSER_RUNTIME_MCP_HOST)": 1,
-        "_env_first(PLAYWRIGHT_RUNTIME_MCP_PATH,BROWSER_RUNTIME_MCP_PATH)": 1,
-        "_env_first(PLAYWRIGHT_RUNTIME_MCP_PORT,BROWSER_RUNTIME_MCP_PORT)": 1,
-        "_env_first(PLAYWRIGHT_RUNTIME_MCP_SERVER_ID,BROWSER_RUNTIME_MCP_SERVER_ID)": 1,
-        "_env_first(PLAYWRIGHT_RUNTIME_MCP_SERVER_NAME,BROWSER_RUNTIME_MCP_SERVER_NAME)": 1,
-        "_env_first(PLAYWRIGHT_RUNTIME_MCP_SERVER_PATH,BROWSER_RUNTIME_MCP_SERVER_PATH)": 3,
-        "_env_first(PLAYWRIGHT_RUNTIME_MCP_TIMEOUT_S,BROWSER_RUNTIME_MCP_TIMEOUT_S)": 1,
-        "env.get(OPENAI_API_KEY)": 1,
-        "env.get(OPENAI_BASE_URL)": 1,
-        "env.get(OPENROUTER_API_KEY)": 1,
-        "env.get(OPENROUTER_BASE_URL)": 1,
-        "os.environ": 1,
-        "os.getenv(?)": 2,
-        "os.getenv(API_BASE)": 1,
-        "os.getenv(API_KEY)": 1,
-        "os.getenv(MODEL_PROVIDER)": 1,
-    },
-    "playwright_runtime/main.py": {
-        "os.getenv(AGENT_QUERY)": 1,
-        "os.getenv(AGENT_SESSION_ID)": 1,
-        "utils.env.load_repo_dotenv()": 1,
-    },
     # not the process environment: the env mapping of the Playwright MCP child in the MCP server config
     "playwright_runtime/service.py": {
         "env_map.get(PLAYWRIGHT_MCP_CDP_ENDPOINT)": 1,
         "env_map.pop(PLAYWRIGHT_MCP_DEVICE)": 1,
         "env_map.setdefault(PLAYWRIGHT_MCP_BROWSER)": 1,
-    },
-    "playwright_runtime/site_profiles.py": {
-        "os.environ.get(OPENJIUWEN_BROWSER_SELECTOR_CACHE)": 1,
-    },
-    "playwright_runtime/status_logging.py": {
-        "os.getenv(BROWSER_SUBAGENT_STATUS_LOG)": 1,
-    },
-    "playwright_runtime_mcp_server.py": {
-        "os.environ.setdefault(BROWSER_TIMEOUT_S)": 1,
-        "os.environ.setdefault(PLAYWRIGHT_TOOL_TIMEOUT_S)": 1,
-        "os.getenv(BROWSER_RUNTIME_LOG_DIR)": 1,
-        "os.getenv(BROWSER_TIMEOUT_S)": 1,
-        "os.getenv(PLAYWRIGHT_RUNTIME_LOG_DIR)": 1,
-        "os.getenv(PLAYWRIGHT_RUNTIME_MCP_HOST)": 1,
-        "os.getenv(PLAYWRIGHT_RUNTIME_MCP_LOG_LEVEL)": 1,
-        "os.getenv(PLAYWRIGHT_RUNTIME_MCP_PATH)": 1,
-        "os.getenv(PLAYWRIGHT_RUNTIME_MCP_PORT)": 1,
-        "os.getenv(PLAYWRIGHT_RUNTIME_MCP_STATELESS_HTTP)": 1,
-        "os.getenv(PLAYWRIGHT_RUNTIME_MCP_TRANSPORT)": 1,
-        "utils.env.load_repo_dotenv()": 2,
-    },
-    "utils/env.py": {
-        "os.getenv(?)": 3,
-        "utils.env.first_non_empty_env(API_BASE,MODEL_API_BASE)": 1,
-        "utils.env.first_non_empty_env(API_BASE,MODEL_API_BASE,DASHSCOPE_BASE_URL,DASHSCOPE_API_BASE)": 1,
-        "utils.env.first_non_empty_env(API_BASE,MODEL_API_BASE,OPENAI_BASE_URL,OPENAI_API_BASE)": 1,
-        "utils.env.first_non_empty_env(API_BASE,MODEL_API_BASE,OPENROUTER_BASE_URL,OPENROUTER_API_BASE)": 1,
-        "utils.env.first_non_empty_env(API_BASE,MODEL_API_BASE,SILICONFLOW_BASE_URL,SILICONFLOW_API_BASE)": 1,
-        "utils.env.first_non_empty_env(API_KEY,MODEL_API_KEY,DASHSCOPE_API_KEY,OPENAI_API_KEY,OPENROUTER_API_KEY)": 1,
-        "utils.env.first_non_empty_env(API_KEY,MODEL_API_KEY,OPENAI_API_KEY,OPENROUTER_API_KEY)": 1,
-        "utils.env.first_non_empty_env(API_KEY,MODEL_API_KEY,OPENROUTER_API_KEY,OPENAI_API_KEY)": 1,
-        "utils.env.first_non_empty_env(API_KEY,MODEL_API_KEY,SILICONFLOW_API_KEY,OPENAI_API_KEY,OPENROUTER_API_KEY)": 1,
-        "utils.env.first_non_empty_env(BROWSER_UPLOAD_ROOT)": 1,
-        "utils.env.first_non_empty_env(DASHSCOPE_API_KEY)": 1,
-        "utils.env.first_non_empty_env(MODEL_NAME)": 1,
-        "utils.env.first_non_empty_env(MODEL_PROVIDER,MODEL_CLIENT_PROVIDER)": 1,
-        "utils.env.first_non_empty_env(OPENROUTER_API_KEY)": 1,
-        (
-            "utils.env.first_non_empty_env(OPENROUTER_BASE_URL,OPENROUTER_API_BASE,SILICONFLOW_BASE_URL,"
-            "SILICONFLOW_API_BASE,DASHSCOPE_BASE_URL,DASHSCOPE_API_BASE,OPENAI_BASE_URL,OPENAI_API_BASE)"
-        ): 1,
-        "utils.env.first_non_empty_env(SILICONFLOW_API_KEY)": 1,
-        "utils.env.infer_provider_from_api_base()": 1,
-        "utils.env.is_falsy_env()": 1,
-        "utils.env.is_truthy_env()": 1,
-        "utils.env.normalize_provider()": 1,
-        "utils.env.resolve_int_env(BROWSER_TIMEOUT_S,PLAYWRIGHT_TOOL_TIMEOUT_S)": 1,
-        "utils.env.resolve_repo_dotenv_path()": 1,
-    },
-    "utils/upload_paths.py": {
-        "utils.env.resolve_upload_root()": 1,
     },
 }
 
@@ -297,7 +163,7 @@ def _direct_and_helper_reads(relpath: str) -> tuple[Counter, set[int], set[str]]
 
 @lru_cache(maxsize=None)
 def _known_env_names() -> frozenset[str]:
-    names = set(KEY_TUPLE_ENV_NAMES)
+    names: set[str] = set()
     for relpath in _scan.pkg_files():
         names |= _direct_and_helper_reads(relpath)[2]
         if _scan.is_config_module(relpath):

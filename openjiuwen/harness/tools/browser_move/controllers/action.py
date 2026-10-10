@@ -26,13 +26,11 @@ from .base import BaseController
 
 try:
     # Normal package import (openjiuwen.harness.tools.browser_move.controllers.action)
-    from ..utils.env import resolve_upload_root
     from ..utils.parsing import extract_json_object
 except ImportError:  # pragma: no cover
     # When imported as top-level `controllers.action` (playwright_runtime/__init__.py
     # appends browser_move/ to sys.path), `..utils` would go beyond the top-level
     # package. Fall back to sibling top-level `utils.*` imports.
-    from utils.env import resolve_upload_root
     from utils.parsing import extract_json_object
 
 ActionResult = dict[str, Any]
@@ -564,8 +562,8 @@ class ActionController(BaseController):
                 "error": str(exc),
             }
 
-    def register_builtin_actions(self) -> None:
-        register_builtin_actions(controller=self)
+    def register_builtin_actions(self, *, upload_root: Path | None = None) -> None:
+        register_builtin_actions(controller=self, upload_root=upload_root)
 
     def register_example_actions(self) -> None:
         register_builtin_actions(controller=self)
@@ -1609,7 +1607,9 @@ def _normalize_batch_interact_payload(kwargs: Mapping[str, Any]) -> dict[str, An
     return payload
 
 
-def register_builtin_actions(controller: ActionController | None = None) -> None:
+def register_builtin_actions(
+    controller: ActionController | None = None, *, upload_root: Path | None = None
+) -> None:
     ctl = controller or _DEFAULT_CONTROLLER
 
     async def ping(session_id: str = "", request_id: str = "", **kwargs: Any) -> ActionResult:
@@ -1795,7 +1795,6 @@ def register_builtin_actions(controller: ActionController | None = None) -> None
         **kwargs: Any,
     ) -> ActionResult:
         del kwargs
-        upload_root = resolve_upload_root()
         if upload_root is None:
             return {
                 "ok": False,

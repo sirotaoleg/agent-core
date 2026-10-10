@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 
 from openjiuwen.core.common.logging import logger
 from openjiuwen.core.runner import Runner
@@ -21,15 +20,22 @@ _tool_mgr_mod.StreamableHttpClient = BrowserMoveStreamableHttpClient
 
 from .config import (
     MISSING_API_KEY_MESSAGE,
+    BrowserSettings,
+    CoreSettings,
     build_runtime_settings,
     load_repo_dotenv,
+    process_environ,
+    read_demo_inputs,
 )
 from .runtime import BrowserAgentRuntime
 
 
 async def main() -> None:
     load_repo_dotenv()
-    settings = build_runtime_settings()
+    environ = process_environ()
+    core_settings = CoreSettings.from_env(environ)
+    browser_settings = BrowserSettings.from_env(environ)
+    settings = build_runtime_settings(core_settings=core_settings, browser_settings=browser_settings)
     if not settings.api_key:
         raise RuntimeError(MISSING_API_KEY_MESSAGE)
 
@@ -40,10 +46,11 @@ async def main() -> None:
         model_name=settings.model_name,
         mcp_cfg=settings.mcp_cfg,
         guardrails=settings.guardrails,
+        core_settings=core_settings,
+        browser_settings=browser_settings,
     )
 
-    initial_query = (os.getenv("AGENT_QUERY") or "").strip()
-    session_id = (os.getenv("AGENT_SESSION_ID") or "").strip() or "demo-browser-session"
+    initial_query, session_id = read_demo_inputs(environ)
 
     try:
         await runtime.ensure_started()

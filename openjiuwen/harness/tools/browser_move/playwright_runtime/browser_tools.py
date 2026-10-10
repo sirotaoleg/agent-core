@@ -9,19 +9,17 @@ import os
 import shlex
 import socket
 import subprocess
-import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 from urllib.parse import urlparse
 
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.runner import Runner
-_DEFAULT_SERVER_ID = "playwright_runtime_wrapper"
-_DEFAULT_SERVER_NAME = "playwright-runtime-wrapper"
+
+from .config import RuntimeServerSettings, process_environ, resolve_playwright_mcp_cwd, runtime_server_child_env
+
 _SUPPORTED_CLIENT_TYPES = {"stdio", "sse", "streamable-http", "streamable_http", "http"}
-_AUTO_HTTP_FALLBACK = "PLAYWRIGHT_RUNTIME_MCP_AUTO_HTTP_FALLBACK"
-_PROXY_BLOCKLIST = {"http://127.0.0.1:9", "http://localhost:9"}
 _LOCAL_SERVER_PROCESS: subprocess.Popen[str] | None = None
 _LOCAL_SERVER_URL: str | None = None
 _OPENJIUWEN_CLIENTS_PATCHED = False
@@ -35,21 +33,6 @@ _BROWSER_RUNTIME_STDERR_LOG = "browser_runtime_stderr.log"
 def get_registered_client(server_id: str) -> Any:
     """Return the MCP client created for *server_id*, or None if not found."""
     return _client_registry.get(server_id)
-
-
-def _env_first(*names: str, default: str = "") -> str:
-    for name in names:
-        value = (os.getenv(name) or "").strip()
-        if value:
-            return value
-    return default
-
-
-def _env_bool(*names: str, default: bool = False) -> bool:
-    value = _env_first(*names)
-    if not value:
-        return default
-    return value.lower() in {"1", "true", "yes", "on"}
 
 
 def _parse_args(raw: str) -> list[str]:
@@ -69,28 +52,20 @@ def _parse_args(raw: str) -> list[str]:
         return text.split()
 
 
-def _runtime_logs_dir() -> Path:
-    configured = _env_first("PLAYWRIGHT_RUNTIME_LOG_DIR", "BROWSER_RUNTIME_LOG_DIR")
-    if configured:
-        path = Path(configured).expanduser()
-    else:
-        from .config import resolve_playwright_mcp_cwd
-
-        path = Path(resolve_playwright_mcp_cwd()).expanduser() / "logs"
+def _runtime_logs_dir(settings: RuntimeServerSettings) -> Path:
+    path = settings.log_dir or Path(resolve_playwright_mcp_cwd()).expanduser() / "logs"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def _runtime_cwd() -> Path:
-    from .config import resolve_playwright_mcp_cwd
-
     path = Path(resolve_playwright_mcp_cwd()).expanduser()
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def _browser_runtime_log_paths() -> tuple[Path, Path]:
-    logs_dir = _runtime_logs_dir()
+def _browser_runtime_log_paths(settings: RuntimeServerSettings) -> tuple[Path, Path]:
+    logs_dir = _runtime_logs_dir(settings)
     return (
         logs_dir / _BROWSER_RUNTIME_STDOUT_LOG,
         logs_dir / _BROWSER_RUNTIME_STDERR_LOG,
@@ -157,85 +132,16 @@ def ensure_browser_runtime_client_patch() -> None:
     _ensure_openjiuwen_client_patch()
 
 
-def _build_child_env() -> dict[str, str]:
-    env = dict(os.environ)
-    passthrough_keys = [
-        "MODEL_NAME",
-        "MODEL_PROVIDER",
-        "API_KEY",
-        "API_BASE",
-        "OPENROUTER_API_KEY",
-        "OPENROUTER_BASE_URL",
-        "OPENAI_API_KEY",
-        "OPENAI_BASE_URL",
-        "PLAYWRIGHT_MCP_COMMAND",
-        "PLAYWRIGHT_MCP_ARGS",
-        "PLAYWRIGHT_CDP_URL",
-        "PLAYWRIGHT_CDP_HEADERS",
-        "PLAYWRIGHT_MCP_CDP_ENDPOINT",
-        "PLAYWRIGHT_MCP_CDP_TIMEOUT",
-        "PLAYWRIGHT_MCP_BROWSER",
-        "PLAYWRIGHT_MCP_DEVICE",
-        "PLAYWRIGHT_BROWSERS_PATH",
-        "PLAYWRIGHT_TOOL_TIMEOUT_S",
-        "PLAYWRIGHT_RUNTIME_MCP_COMMAND",
-        "PLAYWRIGHT_RUNTIME_MCP_ARGS",
-        "PLAYWRIGHT_RUNTIME_MCP_SERVER_PATH",
-        "PLAYWRIGHT_RUNTIME_MCP_TIMEOUT_S",
-        "BROWSER_TIMEOUT_S",
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "NO_PROXY",
-    ]
-    for key in passthrough_keys:
-        value = os.getenv(key)
-        if value:
-            env[key] = value
-
-    api_key = (os.getenv("API_KEY") or "").strip()
-    api_base = (os.getenv("API_BASE") or "").strip()
-    model_provider = (os.getenv("MODEL_PROVIDER") or "").strip().lower()
-
-    if api_key and not env.get("OPENROUTER_API_KEY") and "openrouter.ai" in api_base:
-        env["OPENROUTER_API_KEY"] = api_key
-    if api_base and not env.get("OPENROUTER_BASE_URL") and "openrouter.ai" in api_base:
-        env["OPENROUTER_BASE_URL"] = api_base
-
-    if api_key and not env.get("OPENAI_API_KEY") and "openrouter.ai" not in api_base:
-        env["OPENAI_API_KEY"] = api_key
-    if api_base and not env.get("OPENAI_BASE_URL") and "openrouter.ai" not in api_base:
-        env["OPENAI_BASE_URL"] = api_base
-
-    if model_provider == "openrouter":
-        env["MODEL_PROVIDER"] = "openrouter"
-    elif model_provider in {"openai", "siliconflow"}:
-        env["MODEL_PROVIDER"] = model_provider
-
-    for proxy_key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
-        proxy_value = (env.get(proxy_key) or "").strip().lower()
-        if proxy_value in _PROXY_BLOCKLIST:
-            env.pop(proxy_key, None)
-    return env
-
-
-def _runtime_host() -> str:
-    return _env_first("PLAYWRIGHT_RUNTIME_MCP_HOST", "BROWSER_RUNTIME_MCP_HOST", default="127.0.0.1")
-
-
-def _runtime_port() -> str:
-    return _env_first("PLAYWRIGHT_RUNTIME_MCP_PORT", "BROWSER_RUNTIME_MCP_PORT", default="8940")
-
-
-def _runtime_path(transport: str) -> str:
+def _runtime_path(settings: RuntimeServerSettings, transport: str) -> str:
     default_path = "/mcp" if _normalize_client_type(transport) == "streamable-http" else "/sse"
-    path = _env_first("PLAYWRIGHT_RUNTIME_MCP_PATH", "BROWSER_RUNTIME_MCP_PATH", default=default_path)
+    path = settings.path or default_path
     if not path.startswith("/"):
         return f"/{path}"
     return path
 
 
-def _build_server_url(transport: str) -> str:
-    return f"http://{_runtime_host()}:{_runtime_port()}{_runtime_path(transport)}"
+def _build_server_url(settings: RuntimeServerSettings, transport: str) -> str:
+    return f"http://{settings.host}:{settings.port}{_runtime_path(settings, transport)}"
 
 
 def _is_port_available(host: str, port: int) -> bool:
@@ -268,7 +174,15 @@ def _wait_port_open(host: str, port: int, timeout_s: float = 30.0) -> None:
     raise RuntimeError(f"Browser runtime MCP server did not start in time: {host}:{port}")
 
 
-def _start_local_server(transport: str, host: str, port: int, path: str) -> str:
+def _start_local_server(
+    transport: str,
+    host: str,
+    port: int,
+    path: str,
+    *,
+    settings: RuntimeServerSettings,
+    environ: Mapping[str, str],
+) -> str:
     global _LOCAL_SERVER_PROCESS
     global _LOCAL_SERVER_URL
     global _browser_runtime_stdout_handle
@@ -282,13 +196,8 @@ def _start_local_server(transport: str, host: str, port: int, path: str) -> str:
     if not server_script.exists():
         raise FileNotFoundError(f"playwright runtime MCP server not found: {server_script}")
 
-    command = _env_first(
-        "PLAYWRIGHT_RUNTIME_MCP_COMMAND",
-        "BROWSER_RUNTIME_MCP_COMMAND",
-        default=sys.executable,
-    )
     cmd = [
-        command,
+        settings.command,
         str(server_script),
         "--transport",
         normalized,
@@ -300,7 +209,7 @@ def _start_local_server(transport: str, host: str, port: int, path: str) -> str:
         path,
         "--no-banner",
     ]
-    stdout_log_path, stderr_log_path = _browser_runtime_log_paths()
+    stdout_log_path, stderr_log_path = _browser_runtime_log_paths(settings)
     _close_browser_runtime_log_handles()
     stdout_handle = stdout_log_path.open("a", encoding="utf-8")
     stderr_handle = stderr_log_path.open("a", encoding="utf-8")
@@ -308,7 +217,7 @@ def _start_local_server(transport: str, host: str, port: int, path: str) -> str:
         _LOCAL_SERVER_PROCESS = subprocess.Popen(
             cmd,
             cwd=str(_runtime_cwd()),
-            env=_build_child_env(),
+            env=runtime_server_child_env(environ),
             stdout=stdout_handle,
             stderr=stderr_handle,
             text=True,
@@ -354,14 +263,14 @@ def stop_local_browser_runtime_server() -> None:
         _close_browser_runtime_log_handles()
 
 
-def restart_local_browser_runtime_server() -> str | None:
-    transport = _normalize_client_type(
-        _env_first(
-            "PLAYWRIGHT_RUNTIME_MCP_CLIENT_TYPE",
-            "BROWSER_RUNTIME_MCP_CLIENT_TYPE",
-            default="streamable-http",
-        )
-    )
+def restart_local_browser_runtime_server(
+    settings: RuntimeServerSettings | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> str | None:
+    environ = process_environ() if environ is None else environ
+    settings = settings or RuntimeServerSettings.from_env(environ)
+    transport = _normalize_client_type(settings.client_type)
     current_url = _LOCAL_SERVER_URL
     current_proc = _LOCAL_SERVER_PROCESS
 
@@ -369,9 +278,9 @@ def restart_local_browser_runtime_server() -> str | None:
         stop_local_browser_runtime_server()
         return None
 
-    host = _runtime_host()
-    path = _runtime_path(transport)
-    preferred_port = int(_runtime_port())
+    host = settings.host
+    path = _runtime_path(settings, transport)
+    preferred_port = int(settings.port)
     if current_url:
         host, preferred_port, path = _parse_local_server_url(current_url)
 
@@ -383,12 +292,14 @@ def restart_local_browser_runtime_server() -> str | None:
     deadline = time.time() + 10.0
     while time.time() < deadline:
         if _is_port_available(host, preferred_port):
-            return _start_local_server(transport, host, preferred_port, path)
+            return _start_local_server(transport, host, preferred_port, path, settings=settings, environ=environ)
         time.sleep(0.3)
     raise RuntimeError(f"Browser runtime port is still occupied after shutdown: {host}:{preferred_port}")
 
 
-def _ensure_local_server_started(transport: str) -> str:
+def _ensure_local_server_started(
+    transport: str, settings: RuntimeServerSettings, environ: Mapping[str, str]
+) -> str:
     global _LOCAL_SERVER_PROCESS
     global _LOCAL_SERVER_URL
 
@@ -398,18 +309,20 @@ def _ensure_local_server_started(transport: str) -> str:
     if _LOCAL_SERVER_PROCESS is not None and _LOCAL_SERVER_PROCESS.poll() is None and _LOCAL_SERVER_URL:
         return _LOCAL_SERVER_URL
 
-    host = _runtime_host()
-    preferred_port = int(_runtime_port())
-    path = _runtime_path(normalized)
+    host = settings.host
+    preferred_port = int(settings.port)
+    path = _runtime_path(settings, normalized)
     port = _pick_available_port(host, preferred_port)
-    return _start_local_server(normalized, host, port, path)
+    return _start_local_server(normalized, host, port, path, settings=settings, environ=environ)
 
 
-def _build_http_fallback_config(base_cfg: McpServerConfig, server_url: str | None = None) -> McpServerConfig:
+def _build_http_fallback_config(
+    base_cfg: McpServerConfig, settings: RuntimeServerSettings, server_url: str | None = None
+) -> McpServerConfig:
     return McpServerConfig(
         server_id=f"{base_cfg.server_id}_http",
         server_name=base_cfg.server_name,
-        server_path=server_url or _build_server_url("streamable-http"),
+        server_path=server_url or _build_server_url(settings, "streamable-http"),
         client_type="streamable-http",
     )
 
@@ -453,70 +366,36 @@ def _result_error_text(result: Any) -> str:
     return str(result)
 
 
-def build_browser_runtime_mcp_config() -> McpServerConfig | None:
+def build_browser_runtime_mcp_config(
+    settings: RuntimeServerSettings | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> McpServerConfig | None:
     """Build browser runtime MCP config for OpenJiuWen agent registration."""
-    if not _env_bool("PLAYWRIGHT_RUNTIME_MCP_ENABLED", "BROWSER_RUNTIME_MCP_ENABLED", default=False):
+    environ = process_environ() if environ is None else environ
+    settings = settings or RuntimeServerSettings.from_env(environ)
+    if not settings.enabled:
         return None
 
-    server_id = _env_first(
-        "PLAYWRIGHT_RUNTIME_MCP_SERVER_ID",
-        "BROWSER_RUNTIME_MCP_SERVER_ID",
-        default=_DEFAULT_SERVER_ID,
-    )
-    server_name = _env_first(
-        "PLAYWRIGHT_RUNTIME_MCP_SERVER_NAME",
-        "BROWSER_RUNTIME_MCP_SERVER_NAME",
-        default=_DEFAULT_SERVER_NAME,
-    )
-    client_type = _normalize_client_type(
-        _env_first(
-            "PLAYWRIGHT_RUNTIME_MCP_CLIENT_TYPE",
-            "BROWSER_RUNTIME_MCP_CLIENT_TYPE",
-            default="streamable-http",
-        )
-    )
+    client_type = _normalize_client_type(settings.client_type)
     if client_type not in _SUPPORTED_CLIENT_TYPES:
         raise ValueError("PLAYWRIGHT_RUNTIME_MCP_CLIENT_TYPE must be stdio, sse, or streamable-http.")
 
-    if client_type == "sse":
-        server_path = _env_first(
-            "PLAYWRIGHT_RUNTIME_MCP_SERVER_PATH",
-            "BROWSER_RUNTIME_MCP_SERVER_PATH",
-            default=_build_server_url("sse"),
-        )
+    if client_type in {"sse", "streamable-http"}:
         return McpServerConfig(
-            server_id=server_id,
-            server_name=server_name,
-            server_path=server_path,
-            client_type="sse",
-        )
-
-    if client_type == "streamable-http":
-        server_path = _env_first(
-            "PLAYWRIGHT_RUNTIME_MCP_SERVER_PATH",
-            "BROWSER_RUNTIME_MCP_SERVER_PATH",
-            default=_build_server_url("streamable-http"),
-        )
-        return McpServerConfig(
-            server_id=server_id,
-            server_name=server_name,
-            server_path=server_path,
-            client_type="streamable-http",
+            server_id=settings.server_id,
+            server_name=settings.server_name,
+            server_path=settings.server_path or _build_server_url(settings, client_type),
+            client_type=client_type,
         )
 
     server_script = _server_script()
     if not server_script.exists():
         raise FileNotFoundError(f"playwright runtime MCP server not found: {server_script}")
 
-    command = _env_first(
-        "PLAYWRIGHT_RUNTIME_MCP_COMMAND",
-        "BROWSER_RUNTIME_MCP_COMMAND",
-        default=sys.executable,
-    )
-    args_raw = _env_first("PLAYWRIGHT_RUNTIME_MCP_ARGS", "BROWSER_RUNTIME_MCP_ARGS")
     args = (
-        _parse_args(args_raw)
-        if args_raw
+        _parse_args(settings.args)
+        if settings.args
         else [
             "-m",
             "openjiuwen.harness.tools.browser_move.playwright_runtime_mcp_server",
@@ -529,44 +408,38 @@ def build_browser_runtime_mcp_config() -> McpServerConfig | None:
     )
 
     params: dict[str, Any] = {
-        "command": command,
+        "command": settings.command,
         "args": args,
         "cwd": str(_runtime_cwd()),
     }
-    timeout_raw = _env_first(
-        "PLAYWRIGHT_RUNTIME_MCP_TIMEOUT_S",
-        "BROWSER_RUNTIME_MCP_TIMEOUT_S",
-        default="300",
-    )
-    try:
-        timeout_s = int(timeout_raw)
-        if timeout_s > 0:
-            params["timeout_s"] = timeout_s
-    except ValueError:
-        pass
+    if settings.timeout_s > 0:
+        params["timeout_s"] = settings.timeout_s
 
-    child_env = _build_child_env()
+    child_env = runtime_server_child_env(environ)
     if child_env:
         params["env"] = child_env
 
-    server_path = _env_first(
-        "PLAYWRIGHT_RUNTIME_MCP_SERVER_PATH",
-        "BROWSER_RUNTIME_MCP_SERVER_PATH",
-        default="stdio://playwright-runtime-wrapper",
-    )
     return McpServerConfig(
-        server_id=server_id,
-        server_name=server_name,
-        server_path=server_path,
+        server_id=settings.server_id,
+        server_name=settings.server_name,
+        server_path=settings.server_path or "stdio://playwright-runtime-wrapper",
         client_type="stdio",
         params=params,
     )
 
 
-async def register_browser_runtime_mcp_server(agent: Any, *, tag: str = "agent.main") -> bool:
+async def register_browser_runtime_mcp_server(
+    agent: Any,
+    *,
+    tag: str = "agent.main",
+    settings: RuntimeServerSettings | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> bool:
     """Register browser runtime MCP server on an OpenJiuWen agent with fallbacks."""
     _ensure_openjiuwen_client_patch()
-    cfg = build_browser_runtime_mcp_config()
+    environ = process_environ() if environ is None else environ
+    settings = settings or RuntimeServerSettings.from_env(environ)
+    cfg = build_browser_runtime_mcp_config(settings, environ=environ)
     if cfg is None:
         return False
 
@@ -583,14 +456,14 @@ async def register_browser_runtime_mcp_server(agent: Any, *, tag: str = "agent.m
         return False, error_text
 
     http_err = ""
-    if cfg.client_type == "stdio" and _env_bool(_AUTO_HTTP_FALLBACK, default=True):
-        http_cfg = _build_http_fallback_config(cfg)
+    if cfg.client_type == "stdio" and settings.auto_http_fallback:
+        http_cfg = _build_http_fallback_config(cfg, settings)
         ok, http_err = await _register_once(http_cfg)
         if ok:
             return True
         try:
-            auto_url = _ensure_local_server_started("streamable-http")
-            http_cfg = _build_http_fallback_config(cfg, server_url=auto_url)
+            auto_url = _ensure_local_server_started("streamable-http", settings, environ)
+            http_cfg = _build_http_fallback_config(cfg, settings, server_url=auto_url)
             ok, auto_http_err = await _register_once(http_cfg)
             if ok:
                 return True
@@ -605,7 +478,7 @@ async def register_browser_runtime_mcp_server(agent: Any, *, tag: str = "agent.m
     normalized_type = _normalize_client_type(cfg.client_type)
     if normalized_type in {"streamable-http", "sse"}:
         try:
-            auto_url = _ensure_local_server_started(normalized_type)
+            auto_url = _ensure_local_server_started(normalized_type, settings, environ)
             retry_cfg = (
                 _build_http_retry_config(cfg, auto_url)
                 if normalized_type == "streamable-http"

@@ -9,6 +9,7 @@ import asyncio
 import base64
 import struct
 from dataclasses import dataclass
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
@@ -106,6 +107,8 @@ class BrowserUseConfig:
 
     cdp_url: str
     timeout_s: float = 30.0
+    sidecar_python: Path | None = None
+    upload_root: Path | None = None
 
 
 def _translate_error(method: str, exc: Exception) -> DriverError:
@@ -219,7 +222,7 @@ class BrowserUseDriver(HandlerDriver):
             raise DriverError("BrowserUseDriver.start() needs a BrowserUseConfig", dispatched=False)
         if self._transport is not None:
             await self.stop()
-        transport = SidecarTransport()
+        transport = SidecarTransport(sidecar_python=config.sidecar_python, upload_root=config.upload_root)
         try:
             await transport.start(timeout_s=config.timeout_s)
             result = await transport.request(
@@ -331,7 +334,7 @@ class BrowserUseDriver(HandlerDriver):
     async def _upload_file(self, action: UploadFile) -> ActionResult:
         if action.target is None:
             raise Unsupported("BrowserUseDriver needs the file input as target", dispatched=False)
-        existing, path_error = resolve_upload_file_paths(action.paths)
+        existing, path_error = resolve_upload_file_paths(action.paths, upload_root=self._upload_root())
         if path_error:
             return ActionResult(ok=False, detail=path_error)
         data = await self._request("upload_files", {"ref": self._ref(action.target), "paths": existing})
@@ -341,7 +344,7 @@ class BrowserUseDriver(HandlerDriver):
     async def _drop(self, action: Drop) -> ActionResult:
         existing: list[str] = []
         if action.paths:
-            existing, path_error = resolve_upload_file_paths(action.paths)
+            existing, path_error = resolve_upload_file_paths(action.paths, upload_root=self._upload_root())
             if path_error:
                 return ActionResult(ok=False, detail=path_error)
         data = await self._request(
@@ -464,6 +467,9 @@ class BrowserUseDriver(HandlerDriver):
             "navigate", {"url": url, "wait_until": "load", "timeout_ms": None, "new_tab": new_tab}
         )
 
+    def _upload_root(self) -> Path | None:
+        return self._config.upload_root if self._config is not None else None
+
     def _ref(self, ref: DriverRef | Locator) -> dict[str, Any]:
         return _ref_to_wire(ref, self._driver_generation)
 
@@ -497,8 +503,15 @@ class BrowserUseDriver(HandlerDriver):
 
 def create_browser_use_driver(device: ProvisionedDevice, surface_settings: Any) -> BrowserUseDriver:
     """Driver factory (registry signature): the driver connects to ``device.endpoint`` on ``start()``."""
-    del surface_settings
-    return BrowserUseDriver(BrowserUseConfig(cdp_url=device.endpoint))
+    if surface_settings is None:
+        return BrowserUseDriver(BrowserUseConfig(cdp_url=device.endpoint))
+    return BrowserUseDriver(
+        BrowserUseConfig(
+            cdp_url=device.endpoint,
+            sidecar_python=surface_settings.sidecar_python,
+            upload_root=surface_settings.upload_root,
+        )
+    )
 
 
 __all__ = ["BrowserUseConfig", "BrowserUseDriver", "create_browser_use_driver"]

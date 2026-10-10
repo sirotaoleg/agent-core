@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional
@@ -20,11 +21,18 @@ from ..utils.env import (
     DEFAULT_GUARDRAIL_MAX_STEPS,
     DEFAULT_GUARDRAIL_RETRY_ONCE,
     DEFAULT_MODEL_NAME,
+    FALSY_ENV_VALUES,
     MISSING_API_KEY_MESSAGE,  # noqa: F401  (re-exported for main.py / mcp_server)
     SUPPORTED_MODEL_PROVIDERS,
-    load_repo_dotenv,  # noqa: F401  (re-exported for main.py / mcp_server)
+    first_value,
+    infer_provider_from_api_base,
+    int_value,
+    is_falsy_env,
+    is_truthy_env,
+    normalize_provider,
     parse_command_args,
 )
+from . import REPO_ROOT
 from .browser_capabilities import (
     CORE_BROWSER_CAPABILITY_NAME,
     DEFAULT_BROWSER_CAPABILITIES,
@@ -104,16 +112,8 @@ DEFAULT_WORKER_TEMPERATURE = 0.2
 DEFAULT_WORKER_TOP_P = 0.1
 DEFAULT_LOG_FILE = Path("logs") / "browser_agent.log"
 _LEGACY_DRIVER_VALUES = frozenset({"managed", "remote", "extension"})
-_TRUTHY = frozenset({"1", "true", "yes", "on"})
-_FALSY = frozenset({"0", "false", "no", "off"})
-_LOG_FLAG_OFF = _FALSY | {""}
-_LOG_FILE_OFF = _FALSY | {"none", "null", "-"}
-_PROVIDER_ALIASES = {
-    "alibaba": "dashscope",
-    "aliyun": "dashscope",
-    "silicon-flow": "siliconflow",
-    "silicon_flow": "siliconflow",
-}
+_LOG_FLAG_OFF = FALSY_ENV_VALUES | {""}
+_LOG_FILE_OFF = FALSY_ENV_VALUES | {"none", "null", "-"}
 _BASE_URL_KEYS = (
     "OPENROUTER_BASE_URL",
     "OPENROUTER_API_BASE",
@@ -149,30 +149,11 @@ _PROVIDER_ENDPOINTS: dict[str, tuple[tuple[str, ...], tuple[str, ...], str]] = {
 }
 
 
-def _first(environ: Mapping[str, str], *keys: str) -> str:
-    for key in keys:
-        value = (environ.get(key) or "").strip()
-        if value:
-            return value
-    return ""
-
-
-def _int(environ: Mapping[str, str], *keys: str, default: int, minimum: int) -> int:
-    for key in keys:
-        try:
-            value = int((environ.get(key) or "").strip())
-        except ValueError:
-            continue
-        if value >= minimum:
-            return value
-    return default
-
-
 def _bool(environ: Mapping[str, str], key: str, *, default: bool) -> bool:
-    value = (environ.get(key) or "").strip().lower()
-    if value in _TRUTHY:
+    value = environ.get(key) or ""
+    if is_truthy_env(value):
         return True
-    if value in _FALSY:
+    if is_falsy_env(value):
         return False
     return default
 
@@ -197,27 +178,12 @@ def _driver(environ: Mapping[str, str]) -> str:
     return value
 
 
-def _provider_from_api_base(api_base: str) -> str:
-    base = api_base.lower()
-    if not base:
-        return ""
-    for provider, marker in (
-        ("openrouter", "openrouter.ai"),
-        ("siliconflow", "siliconflow"),
-        ("dashscope", "dashscope"),
-    ):
-        if marker in base:
-            return provider
-    return "openai"
-
-
 def _provider(environ: Mapping[str, str]) -> str:
-    raw = _first(environ, "MODEL_PROVIDER", "MODEL_CLIENT_PROVIDER")
+    raw = first_value(environ, "MODEL_PROVIDER", "MODEL_CLIENT_PROVIDER")
     if raw:
-        lowered = raw.lower()
-        return lowered if lowered in SUPPORTED_MODEL_PROVIDERS else _PROVIDER_ALIASES.get(lowered, raw)
-    api_base = _first(environ, "API_BASE", "MODEL_API_BASE") or _first(environ, *_BASE_URL_KEYS)
-    inferred = _provider_from_api_base(api_base)
+        return normalize_provider(raw)
+    api_base = first_value(environ, "API_BASE", "MODEL_API_BASE") or first_value(environ, *_BASE_URL_KEYS)
+    inferred = infer_provider_from_api_base(api_base)
     if inferred:
         return inferred
     for provider, key in (
@@ -225,7 +191,7 @@ def _provider(environ: Mapping[str, str]) -> str:
         ("siliconflow", "SILICONFLOW_API_KEY"),
         ("dashscope", "DASHSCOPE_API_KEY"),
     ):
-        if _first(environ, key):
+        if first_value(environ, key):
             return provider
     return "openai"
 
@@ -245,9 +211,11 @@ def _tool_timeout_s(environ: Mapping[str, str]) -> float:
 
 def _guardrails(environ: Mapping[str, str]) -> BrowserRunGuardrails:
     return BrowserRunGuardrails(
-        max_steps=_int(environ, "BROWSER_GUARDRAIL_MAX_STEPS", default=DEFAULT_GUARDRAIL_MAX_STEPS, minimum=1),
-        max_failures=_int(environ, "BROWSER_GUARDRAIL_MAX_FAILURES", default=DEFAULT_GUARDRAIL_MAX_FAILURES, minimum=0),
-        timeout_s=_int(
+        max_steps=int_value(environ, "BROWSER_GUARDRAIL_MAX_STEPS", default=DEFAULT_GUARDRAIL_MAX_STEPS, minimum=1),
+        max_failures=int_value(
+            environ, "BROWSER_GUARDRAIL_MAX_FAILURES", default=DEFAULT_GUARDRAIL_MAX_FAILURES, minimum=0
+        ),
+        timeout_s=int_value(
             environ, "BROWSER_TIMEOUT_S", "PLAYWRIGHT_TOOL_TIMEOUT_S", default=DEFAULT_BROWSER_TIMEOUT_S, minimum=1
         ),
         retry_once=_bool(environ, "BROWSER_GUARDRAIL_RETRY_ONCE", default=DEFAULT_GUARDRAIL_RETRY_ONCE),
@@ -276,6 +244,91 @@ def _log_level(environ: Mapping[str, str]) -> int:
     return level if isinstance(level, int) else logging.INFO
 
 
+def _timeout_or_zero(raw: str) -> int:
+    try:
+        return int(raw)
+    except ValueError:
+        return 0
+
+
+def _optional_path(raw: str) -> Path | None:
+    return Path(raw).expanduser() if raw else None
+
+
+@dataclass(frozen=True)
+class RuntimeServerSettings:
+    """The runtime MCP server (``playwright_runtime_mcp_server``): how the agent reaches it, how it listens."""
+
+    enabled: bool = False
+    server_id: str = "playwright_runtime_wrapper"
+    server_name: str = "playwright-runtime-wrapper"
+    client_type: str = "streamable-http"
+    server_path: str = ""
+    command: str = sys.executable
+    args: str = ""
+    timeout_s: int = 300
+    host: str = "127.0.0.1"
+    port: str = "8940"
+    path: str = ""
+    log_dir: Path | None = None
+    auto_http_fallback: bool = True
+    transport: str = "stdio"
+    log_level: str = "INFO"
+    stateless_http: bool | None = None
+
+    @classmethod
+    def from_env(cls, environ: Mapping[str, str]) -> RuntimeServerSettings:
+        """Client side: ``PLAYWRIGHT_RUNTIME_*`` first, then the ``BROWSER_RUNTIME_*`` aliases."""
+        auto_http_fallback = first_value(environ, "PLAYWRIGHT_RUNTIME_MCP_AUTO_HTTP_FALLBACK")
+        return cls(
+            enabled=is_truthy_env(
+                first_value(environ, "PLAYWRIGHT_RUNTIME_MCP_ENABLED", "BROWSER_RUNTIME_MCP_ENABLED")
+            ),
+            server_id=first_value(
+                environ, "PLAYWRIGHT_RUNTIME_MCP_SERVER_ID", "BROWSER_RUNTIME_MCP_SERVER_ID", default=cls.server_id
+            ),
+            server_name=first_value(
+                environ,
+                "PLAYWRIGHT_RUNTIME_MCP_SERVER_NAME",
+                "BROWSER_RUNTIME_MCP_SERVER_NAME",
+                default=cls.server_name,
+            ),
+            client_type=first_value(
+                environ,
+                "PLAYWRIGHT_RUNTIME_MCP_CLIENT_TYPE",
+                "BROWSER_RUNTIME_MCP_CLIENT_TYPE",
+                default=cls.client_type,
+            ),
+            server_path=first_value(environ, "PLAYWRIGHT_RUNTIME_MCP_SERVER_PATH", "BROWSER_RUNTIME_MCP_SERVER_PATH"),
+            command=first_value(
+                environ, "PLAYWRIGHT_RUNTIME_MCP_COMMAND", "BROWSER_RUNTIME_MCP_COMMAND", default=sys.executable
+            ),
+            args=first_value(environ, "PLAYWRIGHT_RUNTIME_MCP_ARGS", "BROWSER_RUNTIME_MCP_ARGS"),
+            timeout_s=_timeout_or_zero(
+                first_value(environ, "PLAYWRIGHT_RUNTIME_MCP_TIMEOUT_S", "BROWSER_RUNTIME_MCP_TIMEOUT_S", default="300")
+            ),
+            host=first_value(environ, "PLAYWRIGHT_RUNTIME_MCP_HOST", "BROWSER_RUNTIME_MCP_HOST", default=cls.host),
+            port=first_value(environ, "PLAYWRIGHT_RUNTIME_MCP_PORT", "BROWSER_RUNTIME_MCP_PORT", default=cls.port),
+            path=first_value(environ, "PLAYWRIGHT_RUNTIME_MCP_PATH", "BROWSER_RUNTIME_MCP_PATH"),
+            log_dir=_optional_path(first_value(environ, "PLAYWRIGHT_RUNTIME_LOG_DIR", "BROWSER_RUNTIME_LOG_DIR")),
+            auto_http_fallback=is_truthy_env(auto_http_fallback) if auto_http_fallback else True,
+        )
+
+    @classmethod
+    def server_from_env(cls, environ: Mapping[str, str]) -> RuntimeServerSettings:
+        """Server entry point: ``PLAYWRIGHT_RUNTIME_*`` only (the log dir also takes its alias), its own defaults."""
+        stateless_http = environ.get("PLAYWRIGHT_RUNTIME_MCP_STATELESS_HTTP") or ""
+        return cls(
+            transport=(environ.get("PLAYWRIGHT_RUNTIME_MCP_TRANSPORT") or "stdio").strip().lower(),
+            host=(environ.get("PLAYWRIGHT_RUNTIME_MCP_HOST") or "127.0.0.1").strip(),
+            port=(environ.get("PLAYWRIGHT_RUNTIME_MCP_PORT") or "8940").strip(),
+            path=(environ.get("PLAYWRIGHT_RUNTIME_MCP_PATH") or "").strip(),
+            log_level=(environ.get("PLAYWRIGHT_RUNTIME_MCP_LOG_LEVEL") or "INFO").strip(),
+            log_dir=_optional_path(first_value(environ, "PLAYWRIGHT_RUNTIME_LOG_DIR", "BROWSER_RUNTIME_LOG_DIR")),
+            stateless_http=True if is_truthy_env(stateless_http) else False if is_falsy_env(stateless_http) else None,
+        )
+
+
 @dataclass(frozen=True)
 class CoreSettings:
     """Settings of the agent core: driver, surface, model, guardrails and logging; nothing surface-specific."""
@@ -295,6 +348,7 @@ class CoreSettings:
     log_mirror_common: bool = False
     log_audit_raw: bool = False
     status_log: bool = True
+    runtime_server: RuntimeServerSettings = field(default_factory=RuntimeServerSettings)
 
     @property
     def topology(self) -> str:
@@ -307,9 +361,9 @@ class CoreSettings:
         return cls(
             driver=_driver(environ),
             provider=provider,
-            api_key=_first(environ, "API_KEY", "MODEL_API_KEY", *key_names),
-            api_base=_first(environ, "API_BASE", "MODEL_API_BASE", *base_names) or default_base,
-            model_name=_first(environ, "MODEL_NAME") or DEFAULT_MODEL_NAME,
+            api_key=first_value(environ, "API_KEY", "MODEL_API_KEY", *key_names),
+            api_base=first_value(environ, "API_BASE", "MODEL_API_BASE", *base_names) or default_base,
+            model_name=first_value(environ, "MODEL_NAME") or DEFAULT_MODEL_NAME,
             worker_temperature=_float(
                 environ,
                 ("BROWSER_WORKER_TEMPERATURE", "BROWSER_MODEL_TEMPERATURE", "MODEL_TEMPERATURE"),
@@ -328,12 +382,80 @@ class CoreSettings:
             log_level=_log_level(environ),
             log_mirror_common=_log_flag(environ, "OPENJIUWEN_BROWSER_AGENT_LOG_MIRROR_COMMON"),
             log_audit_raw=_log_flag(environ, "OPENJIUWEN_BROWSER_AGENT_AUDIT_RAW"),
-            status_log=(environ.get("BROWSER_SUBAGENT_STATUS_LOG") or "").strip().lower() not in _FALSY,
+            status_log=not is_falsy_env(environ.get("BROWSER_SUBAGENT_STATUS_LOG") or ""),
+            runtime_server=RuntimeServerSettings.from_env(environ),
         )
 
     @classmethod
     def from_process_env(cls) -> CoreSettings:
         return cls.from_env(os.environ)
+
+
+def process_environ() -> dict[str, str]:
+    """A snapshot of the process environment, for entry points and child-process environments."""
+    return dict(os.environ)
+
+
+def resolve_repo_dotenv_path() -> Path:
+    return Path(REPO_ROOT).expanduser().resolve() / ".env"
+
+
+def load_repo_dotenv(*, override: bool = False) -> bool:
+    env_path = resolve_repo_dotenv_path()
+    if not env_path.exists():
+        return False
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return False
+    return bool(load_dotenv(dotenv_path=env_path, override=override))
+
+
+def read_demo_inputs(environ: Mapping[str, str]) -> tuple[str, str]:
+    """``(query, session_id)`` of the demo CLI in ``main.py``."""
+    query = (environ.get("AGENT_QUERY") or "").strip()
+    session_id = (environ.get("AGENT_SESSION_ID") or "").strip() or "demo-browser-session"
+    return query, session_id
+
+
+def runtime_server_environ(environ: Mapping[str, str]) -> dict[str, str]:
+    """``environ`` with the runtime MCP server's tool timeout defaults filled in."""
+    env = dict(environ)
+    env.setdefault("BROWSER_TIMEOUT_S", str(DEFAULT_BROWSER_TIMEOUT_S))
+    env.setdefault("PLAYWRIGHT_TOOL_TIMEOUT_S", env["BROWSER_TIMEOUT_S"])
+    return env
+
+
+_PROXY_BLOCKLIST = frozenset({"http://127.0.0.1:9", "http://localhost:9"})
+
+
+def runtime_server_child_env(environ: Mapping[str, str]) -> dict[str, str]:
+    """Environment of the runtime MCP server child: ``environ`` with API_KEY / API_BASE under provider names."""
+    env = dict(environ)
+    api_key = (env.get("API_KEY") or "").strip()
+    api_base = (env.get("API_BASE") or "").strip()
+    model_provider = (env.get("MODEL_PROVIDER") or "").strip().lower()
+
+    if api_key and not env.get("OPENROUTER_API_KEY") and "openrouter.ai" in api_base:
+        env["OPENROUTER_API_KEY"] = api_key
+    if api_base and not env.get("OPENROUTER_BASE_URL") and "openrouter.ai" in api_base:
+        env["OPENROUTER_BASE_URL"] = api_base
+
+    if api_key and not env.get("OPENAI_API_KEY") and "openrouter.ai" not in api_base:
+        env["OPENAI_API_KEY"] = api_key
+    if api_base and not env.get("OPENAI_BASE_URL") and "openrouter.ai" not in api_base:
+        env["OPENAI_BASE_URL"] = api_base
+
+    if model_provider == "openrouter":
+        env["MODEL_PROVIDER"] = "openrouter"
+    elif model_provider in {"openai", "siliconflow"}:
+        env["MODEL_PROVIDER"] = model_provider
+
+    for proxy_key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+        proxy_value = (env.get(proxy_key) or "").strip().lower()
+        if proxy_value in _PROXY_BLOCKLIST:
+            env.pop(proxy_key, None)
+    return env
 
 
 def resolve_playwright_mcp_cwd() -> str:
@@ -451,8 +573,13 @@ def _playwright_mcp_config(
     )
 
 
-def build_runtime_settings(instance: Optional[BrowserInstanceConfig] = None) -> RuntimeSettings:
-    core = CoreSettings.from_process_env()
+def build_runtime_settings(
+    instance: Optional[BrowserInstanceConfig] = None,
+    *,
+    core_settings: CoreSettings | None = None,
+    browser_settings: BrowserSettings | None = None,
+) -> RuntimeSettings:
+    core = core_settings or CoreSettings.from_process_env()
     if core.provider not in SUPPORTED_MODEL_PROVIDERS:
         raise ValueError(
             f"Unsupported MODEL_PROVIDER '{core.provider}'. Supported: openai, openrouter, siliconflow, dashscope."
@@ -462,7 +589,7 @@ def build_runtime_settings(instance: Optional[BrowserInstanceConfig] = None) -> 
         api_key=core.api_key,
         api_base=core.api_base,
         model_name=core.model_name,
-        mcp_cfg=_playwright_mcp_config(BrowserSettings.from_process_env(), instance),
+        mcp_cfg=_playwright_mcp_config(browser_settings or BrowserSettings.from_process_env(), instance),
         guardrails=core.guardrails,
         instance=instance,
     )

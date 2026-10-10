@@ -7,8 +7,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Sequence
 
-from .env import resolve_upload_root
-
 
 def _strip_path_text(raw: str) -> str:
     text = str(raw or "").strip()
@@ -26,13 +24,12 @@ def _try_open(path: Path) -> bool:
         return False
 
 
-def _candidates_for(text: str) -> list[Path]:
-    """Build resolve candidates: expanduser path, then BROWSER_UPLOAD_ROOT fallback."""
+def _candidates_for(text: str, upload_root: Path | None) -> list[Path]:
+    """Build resolve candidates: expanduser path, then the upload root fallback."""
     primary = Path(text).expanduser()
     out: list[Path] = [primary]
     if primary.is_absolute():
         return out
-    upload_root = resolve_upload_root()
     if upload_root is not None:
         # Bare names / relative paths listed by list_upload_files live under the root.
         out.append(upload_root / text)
@@ -40,13 +37,15 @@ def _candidates_for(text: str) -> list[Path]:
     return out
 
 
-def resolve_upload_file_paths(paths: Sequence[str]) -> tuple[list[str], str | None]:
+def resolve_upload_file_paths(
+    paths: Sequence[str], *, upload_root: Path | None = None
+) -> tuple[list[str], str | None]:
     """Return ``(absolute_existing_paths, error_or_none)``.
 
     - Strips wrapping quotes (LLM/tool-arg footgun).
     - ``expanduser().resolve()`` before existence checks.
-    - Relative / bare names also try ``BROWSER_UPLOAD_ROOT`` when configured
-      (same catalog as ``list_upload_files``).
+    - Relative / bare names also try ``upload_root`` (``BROWSER_UPLOAD_ROOT``)
+      when given (same catalog as ``list_upload_files``).
     - Fail closed: any missing or unreadable path yields an error and an empty
       existing list is still returned for the ones that passed (callers reject
       the whole batch when error is set).
@@ -63,7 +62,7 @@ def resolve_upload_file_paths(paths: Sequence[str]) -> tuple[list[str], str | No
             continue
         resolved_ok: str | None = None
         last_resolved = text
-        for candidate in _candidates_for(text):
+        for candidate in _candidates_for(text, upload_root):
             try:
                 resolved = candidate.resolve()
             except OSError:

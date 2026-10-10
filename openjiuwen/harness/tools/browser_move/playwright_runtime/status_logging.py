@@ -6,7 +6,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import re
 import time
 from collections import Counter
@@ -15,10 +14,9 @@ from urllib.parse import urlsplit, urlunsplit
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging import (
     browser_agent_log_info,
 )
+from openjiuwen.harness.tools.browser_move.playwright_runtime.config import CoreSettings
 
 _STATUS_KEY = "_browser_subagent_status_logging"
-_TRUE_VALUES = {"1", "true", "yes", "on"}
-_FALSE_VALUES = {"0", "false", "no", "off"}
 _TEXT_VALUE_KEYS = {
     "value",
     "text",
@@ -65,14 +63,9 @@ _URL_RE = re.compile(r"https?://[^\s)>'\"]+", re.IGNORECASE)
 MetadataProvider = Callable[[], Mapping[str, Any]]
 
 
-def is_browser_subagent_status_log_enabled() -> bool:
+def is_browser_subagent_status_log_enabled(settings: CoreSettings | None = None) -> bool:
     """Return whether browser subagent status logging is enabled."""
-    raw = (os.getenv("BROWSER_SUBAGENT_STATUS_LOG") or "").strip().lower()
-    if raw in _FALSE_VALUES:
-        return False
-    if raw in _TRUE_VALUES:
-        return True
-    return True
+    return (settings or CoreSettings.from_process_env()).status_log
 
 
 def _safe_str(value: Any, limit: int = 240) -> str:

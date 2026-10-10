@@ -8,14 +8,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import os
 import platform
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import exceptions as driver_errors
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import wire
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging import get_browser_agent_logger
+from openjiuwen.harness.tools.browser_move.playwright_runtime.config import process_environ
 
 _logger = get_browser_agent_logger()
 
@@ -52,15 +52,13 @@ def _default_venv_python() -> Path:
     return repo_root / _SIDECAR_VENV_DIR / "bin" / "python"
 
 
-def discover_sidecar_python() -> Path:
+def discover_sidecar_python(override: Path | None = None) -> Path:
     """Resolve the sidecar interpreter path, or raise ``DriverUnsupported`` with a creation recipe."""
-    override = os.getenv("BROWSER_USE_SIDECAR_PYTHON")
-    if override:
-        candidate = Path(override)
-        if candidate.is_file():
-            return candidate
+    if override is not None:
+        if override.is_file():
+            return override
         raise driver_errors.DriverUnsupported(
-            f"BROWSER_USE_SIDECAR_PYTHON={override!r} does not point at an existing interpreter"
+            f"BROWSER_USE_SIDECAR_PYTHON={str(override)!r} does not point at an existing interpreter"
         )
 
     candidate = _default_venv_python()
@@ -75,30 +73,29 @@ def discover_sidecar_python() -> Path:
     )
 
 
-def _sidecar_env() -> dict[str, str]:
+def _sidecar_env(environ: Mapping[str, str], upload_root: Path | None) -> dict[str, str]:
     """A minimal environment for the sidecar: no LLM credentials, ever."""
     env: dict[str, str] = {}
     for key in ("PATH",):
-        value = os.environ.get(key)
+        value = environ.get(key)
         if value is not None:
             env[key] = value
     if platform.system() == "Windows":
         for key in ("SystemRoot", "TEMP", "TMP", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "LOCALAPPDATA", "APPDATA"):
-            value = os.environ.get(key)
+            value = environ.get(key)
             if value is not None:
                 env[key] = value
     else:
         for key in ("HOME", "TMPDIR"):
-            value = os.environ.get(key)
+            value = environ.get(key)
             if value is not None:
                 env[key] = value
-    for key, value in os.environ.items():
+    for key, value in environ.items():
         if key.startswith("BROWSER_USE_") and key != "BROWSER_USE_SIDECAR_PYTHON":
             env[key] = value
     # Same catalog root as list_upload_files / runtime path resolution.
-    upload_root = os.environ.get("BROWSER_UPLOAD_ROOT")
-    if upload_root is not None and str(upload_root).strip():
-        env["BROWSER_UPLOAD_ROOT"] = str(upload_root).strip()
+    if upload_root is not None:
+        env["BROWSER_UPLOAD_ROOT"] = str(upload_root)
     env.setdefault("ANONYMIZED_TELEMETRY", "false")
     return env
 
@@ -106,7 +103,16 @@ def _sidecar_env() -> dict[str, str]:
 class SidecarTransport:
     """One live sidecar process plus its NDJSON request/response cycle."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        sidecar_python: Path | None = None,
+        upload_root: Path | None = None,
+        environ: Mapping[str, str] | None = None,
+    ) -> None:
+        self._sidecar_python = sidecar_python
+        self._upload_root = upload_root
+        self._environ = environ
         self._process: asyncio.subprocess.Process | None = None
         self._next_id = 1
         self._lock = asyncio.Lock()
@@ -119,7 +125,7 @@ class SidecarTransport:
 
     async def start(self, *, timeout_s: float = 30.0) -> dict[str, Any]:
         """Spawn the sidecar and read its hello line."""
-        python_path = discover_sidecar_python()
+        python_path = discover_sidecar_python(self._sidecar_python)
         main_path = _sidecar_dir() / "main.py"
         # asyncio StreamReader defaults to a 64 KiB line limit; screenshot
         # NDJSON replies routinely exceed that. Align with wire.MAX_LINE_BYTES.
@@ -129,7 +135,7 @@ class SidecarTransport:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env=_sidecar_env(),
+            env=_sidecar_env(process_environ() if self._environ is None else self._environ, self._upload_root),
             limit=wire.MAX_LINE_BYTES,
         )
         asyncio.ensure_future(self._drain_stderr())

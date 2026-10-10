@@ -7,19 +7,22 @@ from __future__ import annotations
 import asyncio
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
-from openjiuwen.harness.tools.browser_move.controllers.action import ActionController, register_builtin_actions
-from openjiuwen.harness.tools.browser_move.controllers.action import _build_set_input_files_script, _list_dir_files
+from openjiuwen.harness.tools.browser_move.controllers.action import (
+    ActionController,
+    _build_set_input_files_script,
+    _list_dir_files,
+    register_builtin_actions,
+)
 
 
 def _run(coro):
     return asyncio.run(coro)
 
 
-def _make_ctl_with_builtins() -> ActionController:
+def _make_ctl_with_builtins(upload_root: Path | None = None) -> ActionController:
     ctl = ActionController()
-    register_builtin_actions(controller=ctl)
+    register_builtin_actions(controller=ctl, upload_root=upload_root)
     return ctl
 
 
@@ -66,28 +69,24 @@ def test_build_set_input_files_script_embeds_selector_and_paths() -> None:
 
 def test_list_upload_files_returns_error_when_env_not_set() -> None:
     ctl = _make_ctl_with_builtins()
-    with patch("controllers.action.resolve_upload_root", return_value=None):
-        result = _run(ctl.run_action("list_upload_files"))
+    result = _run(ctl.run_action("list_upload_files"))
     assert result["ok"] is False
     assert "BROWSER_UPLOAD_ROOT" in result["error"]
     assert result["files"] == []
 
 
 def test_list_upload_files_returns_error_when_dir_missing() -> None:
-    ctl = _make_ctl_with_builtins()
-    with patch("controllers.action.resolve_upload_root", return_value=Path("/tmp/does_not_exist_xyz_99")):
-        result = _run(ctl.run_action("list_upload_files"))
+    ctl = _make_ctl_with_builtins(Path("/tmp/does_not_exist_xyz_99"))
+    result = _run(ctl.run_action("list_upload_files"))
     assert result["ok"] is False
     assert result["files"] == []
 
 
 def test_list_upload_files_returns_file_list_when_dir_exists() -> None:
-    ctl = _make_ctl_with_builtins()
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "report.xlsx").write_bytes(b"data")
-        with patch("controllers.action.resolve_upload_root", return_value=root):
-            result = _run(ctl.run_action("list_upload_files"))
+        result = _run(_make_ctl_with_builtins(root).run_action("list_upload_files"))
 
     assert result["ok"] is True
     assert any(f["name"] == "report.xlsx" for f in result["files"])

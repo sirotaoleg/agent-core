@@ -30,6 +30,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     DEFAULT_GUARDRAIL_MAX_STEPS,
     DEFAULT_MODEL_NAME,
     BrowserInstanceConfig,
+    RuntimeServerSettings,
     build_playwright_mcp_config,
     build_runtime_settings,
     parse_command_args,
@@ -365,16 +366,10 @@ def test_local_browser_runtime_server_logs_are_written_under_runtime_log_dir() -
         process = MagicMock()
         process.poll.return_value = None
         with (
-            patch.dict(os.environ, {"PLAYWRIGHT_RUNTIME_LOG_DIR": tmp}, clear=False),
             patch.object(
                 browser_tools_module,
                 "_server_script",
                 return_value=Path(__file__),
-            ),
-            patch.object(
-                browser_tools_module,
-                "_build_child_env",
-                return_value={},
             ),
             patch.object(
                 browser_tools_module,
@@ -386,7 +381,14 @@ def test_local_browser_runtime_server_logs_are_written_under_runtime_log_dir() -
                 return_value=process,
             ) as mock_popen,
         ):
-            getattr(browser_tools_module, "_start_local_server")("streamable-http", "127.0.0.1", 8940, "/mcp")
+            getattr(browser_tools_module, "_start_local_server")(
+                "streamable-http",
+                "127.0.0.1",
+                8940,
+                "/mcp",
+                settings=RuntimeServerSettings(log_dir=Path(tmp)),
+                environ={},
+            )
             stdout_log = Path(tmp) / "browser_runtime_stdout.log"
             stderr_log = Path(tmp) / "browser_runtime_stderr.log"
             assert stdout_log.exists()

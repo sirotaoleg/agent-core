@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -30,10 +29,14 @@ from fastmcp import Context, FastMCP
 from clients.stdio_client import BrowserMoveStdioClient
 from clients.streamable_http_client import BrowserMoveStreamableHttpClient
 from playwright_runtime.config import (
-    DEFAULT_BROWSER_TIMEOUT_S,
     MISSING_API_KEY_MESSAGE,
+    BrowserSettings,
+    CoreSettings,
+    RuntimeServerSettings,
     build_runtime_settings,
     load_repo_dotenv,
+    process_environ,
+    runtime_server_environ,
 )
 from controllers.action import (
     bind_runtime,
@@ -54,6 +57,9 @@ _tool_mgr_mod.StreamableHttpClient = BrowserMoveStreamableHttpClient
 
 _runtime: Optional["BrowserAgentRuntime"] = None
 _runtime_lock = asyncio.Lock()
+# Set by main(); without it (module imported, not run) the runtime reads the process environment.
+_core_settings: Optional[CoreSettings] = None
+_browser_settings: Optional[BrowserSettings] = None
 
 load_repo_dotenv()
 
@@ -61,7 +67,7 @@ load_repo_dotenv()
 def _build_runtime() -> "BrowserAgentRuntime":
     from playwright_runtime.runtime import BrowserAgentRuntime
 
-    settings = build_runtime_settings()
+    settings = build_runtime_settings(core_settings=_core_settings, browser_settings=_browser_settings)
     if not settings.api_key:
         raise RuntimeError(MISSING_API_KEY_MESSAGE)
     return BrowserAgentRuntime(
@@ -71,6 +77,8 @@ def _build_runtime() -> "BrowserAgentRuntime":
         model_name=settings.model_name,
         mcp_cfg=settings.mcp_cfg,
         guardrails=settings.guardrails,
+        core_settings=_core_settings,
+        browser_settings=_browser_settings,
     )
 
 
@@ -265,7 +273,7 @@ async def browser_list_custom_actions() -> dict[str, Any]:
     description="Return runtime readiness and selected model/provider config.",
 )
 async def browser_runtime_health() -> dict[str, Any]:
-    settings = build_runtime_settings()
+    settings = build_runtime_settings(core_settings=_core_settings, browser_settings=_browser_settings)
     svc = _runtime.service if _runtime is not None else None
     return {
         "ok": svc.connection_healthy if svc is not None else False,
@@ -277,33 +285,34 @@ async def browser_runtime_health() -> dict[str, Any]:
     }
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(settings: RuntimeServerSettings | None = None) -> argparse.Namespace:
+    settings = settings or RuntimeServerSettings.server_from_env(process_environ())
     parser = argparse.ArgumentParser(description="Playwright runtime MCP server")
     parser.add_argument(
         "--transport",
         choices=["stdio", "sse", "streamable-http", "http"],
-        default=(os.getenv("PLAYWRIGHT_RUNTIME_MCP_TRANSPORT") or "stdio").strip().lower(),
+        default=settings.transport,
         help="MCP transport mode. Use stdio for agent-launched server; sse/http for standalone server.",
     )
     parser.add_argument(
         "--host",
-        default=(os.getenv("PLAYWRIGHT_RUNTIME_MCP_HOST") or "127.0.0.1").strip(),
+        default=settings.host,
         help="Host for sse/http transports.",
     )
     parser.add_argument(
         "--port",
         type=int,
-        default=int((os.getenv("PLAYWRIGHT_RUNTIME_MCP_PORT") or "8940").strip()),
+        default=int(settings.port),
         help="Port for sse/http transports.",
     )
     parser.add_argument(
         "--path",
-        default=(os.getenv("PLAYWRIGHT_RUNTIME_MCP_PATH") or "").strip(),
+        default=settings.path,
         help="Optional custom endpoint path for sse/http transports.",
     )
     parser.add_argument(
         "--log-level",
-        default=(os.getenv("PLAYWRIGHT_RUNTIME_MCP_LOG_LEVEL") or "INFO").strip(),
+        default=settings.log_level,
         help="Server log level.",
     )
     parser.add_argument(
@@ -322,40 +331,25 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _apply_timeout_defaults() -> None:
-    """Set runtime timeout defaults based on transport when not explicitly provided."""
-    timeout_text = str(DEFAULT_BROWSER_TIMEOUT_S)
-    os.environ.setdefault("BROWSER_TIMEOUT_S", timeout_text)
-    os.environ.setdefault("PLAYWRIGHT_TOOL_TIMEOUT_S", os.getenv("BROWSER_TIMEOUT_S", timeout_text))
-
-
-def _resolve_stateless_http(args: argparse.Namespace) -> bool:
+def _resolve_stateless_http(args: argparse.Namespace, settings: RuntimeServerSettings) -> bool:
     """Resolve whether to run HTTP transports in stateless mode."""
     if args.stateless_http:
         return True
-
-    env_raw = (os.getenv("PLAYWRIGHT_RUNTIME_MCP_STATELESS_HTTP") or "").strip().lower()
-    if env_raw in {"1", "true", "yes", "on"}:
-        return True
-    if env_raw in {"0", "false", "no", "off"}:
-        return False
+    if settings.stateless_http is not None:
+        return settings.stateless_http
 
     # Default to stateless for streamable/http to avoid stateful session crashes.
     return args.transport in {"streamable-http", "http"}
 
 
-def _configure_stdio_logging() -> None:
+def _configure_stdio_logging(log_dir: Path | None) -> None:
     """Prevent application logs from polluting stdio JSON-RPC output."""
     try:
         from openjiuwen.core.common.logging.default.log_config import log_config
         from openjiuwen.core.common.logging.manager import LogManager
 
-        configured = (
-            (os.getenv("PLAYWRIGHT_RUNTIME_LOG_DIR") or "").strip()
-            or (os.getenv("BROWSER_RUNTIME_LOG_DIR") or "").strip()
-        )
-        if configured:
-            log_path = str(Path(configured).expanduser().resolve())
+        if log_dir is not None:
+            log_path = str(log_dir.resolve())
         else:
             log_path = str((Path.cwd().expanduser().resolve() / "logs").resolve())
         log_config._log_config["log_path"] = log_path
@@ -376,11 +370,16 @@ def _configure_stdio_logging() -> None:
 
 
 def main() -> None:
+    global _core_settings, _browser_settings
+
     load_repo_dotenv()
-    args = parse_args()
+    environ = runtime_server_environ(process_environ())
+    server_settings = RuntimeServerSettings.server_from_env(environ)
+    args = parse_args(server_settings)
     if args.transport == "stdio":
-        _configure_stdio_logging()
-    _apply_timeout_defaults()
+        _configure_stdio_logging(server_settings.log_dir)
+    _core_settings = CoreSettings.from_env(environ)
+    _browser_settings = BrowserSettings.from_env(environ)
     kwargs: Dict[str, Any] = {
         "show_banner": not args.no_banner,
         "log_level": args.log_level,
@@ -390,7 +389,7 @@ def main() -> None:
         kwargs["port"] = args.port
         if args.path:
             kwargs["path"] = args.path
-    if args.transport in {"streamable-http", "http"} and _resolve_stateless_http(args):
+    if args.transport in {"streamable-http", "http"} and _resolve_stateless_http(args, server_settings):
         kwargs["stateless_http"] = True
     mcp.run(transport=args.transport, **kwargs)
 

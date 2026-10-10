@@ -449,7 +449,7 @@ def test_runtime_probe_cards_unwraps_result_field_and_records_cache(tmp_path, mo
     )
 
     cache = BrowserSelectorCache(tmp_path / "selector_cache.json")
-    monkeypatch.setattr(runtime_module, "get_selector_cache", lambda: cache)
+    monkeypatch.setattr(runtime_module, "get_selector_cache", lambda _path=None: cache)
 
     result = _run(runtime.probe_cards())
 
@@ -575,7 +575,7 @@ def test_runtime_probe_cards_records_rejected_cache_attempt(tmp_path, monkeypatc
         encoding="utf-8",
     )
     cache = BrowserSelectorCache(cache_path)
-    monkeypatch.setattr(runtime_module, "get_selector_cache", lambda: cache)
+    monkeypatch.setattr(runtime_module, "get_selector_cache", lambda _path=None: cache)
 
     runtime = _make_runtime()
     runtime.ensure_runtime_ready = AsyncMock()

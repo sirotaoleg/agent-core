@@ -118,4 +118,5 @@ class TestBrowserUseConformance(DriverConformance):
 
     @pytest.fixture
     def conformance_driver_factory(self, chrome_device: ProvisionedDevice):
-        return lambda sink: Tracing(create_browser_use_driver(chrome_device, None), sink)
+        settings = BrowserSettings.from_process_env()
+        return lambda sink: Tracing(create_browser_use_driver(chrome_device, settings), sink)

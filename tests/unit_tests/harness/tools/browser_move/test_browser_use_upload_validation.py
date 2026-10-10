@@ -10,7 +10,7 @@ import asyncio
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from openjiuwen.harness.tools.browser_move.contract import ActionResult, DriverRef
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import BrowserUseDriver
@@ -142,11 +142,7 @@ def test_resolve_upload_file_paths_uses_browser_upload_root_for_basename() -> No
         root = Path(tmp)
         target = root / "staged_upload.txt"
         target.write_text("staged", encoding="utf-8")
-        with patch(
-            "openjiuwen.harness.tools.browser_move.utils.upload_paths.resolve_upload_root",
-            return_value=root.resolve(),
-        ):
-            existing, err = resolve_upload_file_paths(["staged_upload.txt"])
+        existing, err = resolve_upload_file_paths(["staged_upload.txt"], upload_root=root.resolve())
 
     assert err is None
     assert existing == [str(target.resolve())]

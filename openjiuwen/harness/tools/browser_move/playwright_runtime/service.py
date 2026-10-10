@@ -29,7 +29,7 @@ from ..contract.registry import PROVISIONERS
 from ..provisioning import ProvisionedDevice  # importing the package registers the built-in provisioners
 from ..utils.parsing import extract_json_object
 from .agents import build_browser_worker_agent, refresh_browser_worker_system_prompt
-from .config import BrowserInstanceConfig, BrowserRunGuardrails, BrowserSettings
+from .config import BrowserInstanceConfig, BrowserRunGuardrails, BrowserSettings, CoreSettings
 from .final_answer_recovery import (
     FinalAnswerRecoveryRail,
     final_answer_recovery,
@@ -228,6 +228,7 @@ class BrowserService:
         instance: Optional[BrowserInstanceConfig] = None,
         allowed_tool_names: Optional[Iterable[str]] = None,
         browser_settings: Optional[BrowserSettings] = None,
+        core_settings: Optional[CoreSettings] = None,
     ) -> None:
         self.provider = provider
         self.api_key = api_key
@@ -237,6 +238,7 @@ class BrowserService:
         self.guardrails = guardrails
         self._instance = instance or BrowserInstanceConfig()
         self._settings = browser_settings or BrowserSettings.from_process_env()
+        self._core_settings = core_settings
         self._allowed_tool_names = (
             None
             if allowed_tool_names is None
@@ -833,6 +835,7 @@ class BrowserService:
             artifacts_subdir=self._artifacts_subdir,
             tool_result_observer=self._observe_worker_tool_result,
             allowed_tool_names=self._allowed_tool_names,
+            settings=self._core_settings,
         )
         await self._browser_agent.register_rail(InterceptedActionHintRail())
         await self._browser_agent.register_rail(RepeatedCallGuardRail())
