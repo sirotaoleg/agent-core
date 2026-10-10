@@ -10,6 +10,9 @@ import re
 
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext, AgentRail
 
+from ..contract import ActionIntercepted, DriverRef, Locator, PointRef
+from .tool_factory import CommandRecord, command_record
+
 INTERCEPTS_POINTER_EVENTS = "intercepts pointer events"
 
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
@@ -35,6 +38,7 @@ _GENERIC_HINT = (
     "If it is a dialog, banner or overlay, dismiss or close it first. If it is part of the same control "
     "(an icon or custom styling over an input), click the control's visible label or text instead."
 )
+_RETRY = "Then retry the action (take a fresh browser_snapshot if the page changed)."
 
 
 def _describe_element(html: str) -> str:
@@ -86,12 +90,7 @@ def _explain_call_log(text: str) -> str | None:
     verb = action.group(1).capitalize() if action is not None else "Action"
 
     hint = _CONSENT_HINT if _CONSENT.search(f"{blocker_html} {container_html or ''}") else _GENERIC_HINT
-    return (
-        "### Error\n"
-        f"{verb} not delivered: {target} is covered by {covering}.\n"
-        f"{hint}\n"
-        "Then retry the action (take a fresh browser_snapshot if the page changed)."
-    )
+    return f"### Error\n{verb} not delivered: {target} is covered by {covering}.\n{hint}\n{_RETRY}"
 
 
 def explain_intercepted_action(content: str) -> str | None:
@@ -116,5 +115,42 @@ class InterceptedActionHintRail(AgentRail):
         tool_msg = getattr(inputs, "tool_msg", None)
         content = getattr(tool_msg, "content", None)
         explained = explain_intercepted_action(content) if isinstance(content, str) else None
+        if explained is not None:
+            inputs.tool_msg = tool_msg.model_copy(update={"content": explained})
+
+
+def _target(record: CommandRecord) -> str:
+    target = getattr(record.action, "target", None)
+    if isinstance(target, DriverRef):
+        return target.ref
+    if isinstance(target, Locator):
+        return (target.css or target.text or "the target")[:_MAX_LOCATOR_CHARS]
+    if isinstance(target, PointRef):
+        return f"({target.x}, {target.y})"
+    return "the target"
+
+
+def explain_blocked_command(record: CommandRecord) -> str | None:
+    """Compact error for a command another element intercepted, from its record; else None."""
+    if record.error != ActionIntercepted.__name__ or not record.blocked_by:
+        return None
+    hint = _CONSENT_HINT if _CONSENT.search(record.blocked_by) else _GENERIC_HINT
+    return (
+        "### Error\n"
+        f"{record.command.__name__} not delivered: {_target(record)} is covered by {record.blocked_by}.\n"
+        f"{hint}\n"
+        f"{_RETRY}"
+    )
+
+
+class CommandInterceptedHintRail(AgentRail):
+    """``InterceptedActionHintRail`` on command records: the blocker comes from ``CommandRecord.blocked_by``."""
+
+    async def after_tool_call(self, ctx: AgentCallbackContext) -> None:
+        inputs = ctx.inputs
+        tool_msg = getattr(inputs, "tool_msg", None)
+        record = command_record(getattr(inputs, "tool_result", None))
+        readable = isinstance(getattr(tool_msg, "content", None), str)
+        explained = explain_blocked_command(record) if record is not None and readable else None
         if explained is not None:
             inputs.tool_msg = tool_msg.model_copy(update={"content": explained})

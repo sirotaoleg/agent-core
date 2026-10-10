@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import re
@@ -14,6 +15,9 @@ from typing import Any
 from openjiuwen.core.common.logging import logger
 from openjiuwen.core.single_agent.prompts.builder import PromptSection
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext, AgentRail
+
+from ..contract import RunScript
+from .tool_factory import CommandRecord, command_record
 
 REPEAT_NOTE_THRESHOLD = 3
 REPEAT_WITHHOLD_TOOLS_THRESHOLD = 5
@@ -44,8 +48,8 @@ _NOOP_FUNCTION = re.compile(rf"(?:async)?\(\)=>(?:{_NOOP_VALUE}|\{{return{_NOOP_
 
 @dataclass
 class _RepeatState:
-    last_key: str | None = None
-    last_fingerprint: str | None = None
+    last_key: Any = None
+    last_fingerprint: Any = None
     repeat_count: int = 0
     noop_count: int = 0
     withhold_tools: bool = False
@@ -195,3 +199,52 @@ class RepeatedCallGuardRail(AgentRail):
                     priority=100,
                 )
             )
+
+
+def _record_identity(record: CommandRecord) -> tuple[Any, Any]:
+    """(masked command, result); a script compares without whitespace and with its digits masked."""
+    action, value = record.action, record.value
+    if isinstance(action, RunScript):
+        action = dataclasses.replace(action, code=_DIGITS.sub("#", _WHITESPACE.sub("", action.code)))
+        value = _DIGITS.sub("#", json.dumps(value, sort_keys=True, ensure_ascii=False, default=str))
+    return action, (record.ok, record.error, value, record.surface)
+
+
+def _is_noop_script(record: CommandRecord | None) -> bool:
+    action = record.action if record is not None else None
+    return isinstance(action, RunScript) and _NOOP_FUNCTION.fullmatch(_WHITESPACE.sub("", action.code)) is not None
+
+
+class CommandRepeatGuardRail(RepeatedCallGuardRail):
+    """``RepeatedCallGuardRail`` on command records: a call repeats when its masked command and its result do."""
+
+    async def after_tool_call(self, ctx: AgentCallbackContext) -> None:
+        state = ctx.extra.get(_STATE_KEY)
+        inputs = ctx.inputs
+        tool_msg = getattr(inputs, "tool_msg", None)
+        if not isinstance(state, _RepeatState) or tool_msg is None:
+            return
+        record = command_record(getattr(inputs, "tool_result", None))
+        if record is None:
+            # Nothing was sent; the call itself is all there is to compare.
+            key = _normalise_call_key(getattr(inputs, "tool_name", ""), getattr(inputs, "tool_args", None))
+            fingerprint = None
+        else:
+            key, fingerprint = _record_identity(record)
+        if key == state.last_key and fingerprint == state.last_fingerprint:
+            state.repeat_count += 1
+        else:
+            state.last_key, state.last_fingerprint, state.repeat_count = key, fingerprint, 1
+        state.noop_count = state.noop_count + 1 if _is_noop_script(record) else 0
+
+        count = max(state.repeat_count, state.noop_count)
+        if count < REPEAT_NOTE_THRESHOLD:
+            return
+        if count >= REPEAT_WITHHOLD_TOOLS_THRESHOLD:
+            state.withhold_tools = True
+        if isinstance(tool_msg.content, str) and _NOTE_HEADER not in tool_msg.content:
+            if state.noop_count > state.repeat_count:
+                note = _noop_note(state.noop_count)
+            else:
+                note = _repeat_note(state.repeat_count)
+            inputs.tool_msg = tool_msg.model_copy(update={"content": f"{tool_msg.content.rstrip()}\n{note}"})
