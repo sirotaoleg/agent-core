@@ -37,6 +37,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     RunScript,
     Screenshot,
     Scroll,
+    StaleRef,
     SurfaceProfile,
     SwitchContext,
     ToolSpec,
@@ -343,6 +344,29 @@ async def test_a_stale_ref_never_reaches_the_driver_and_answers_with_one_fresh_o
     record = output.data["command"]
     assert (record.error, record.dispatched, record.generation) == ("StaleRef", False, "g1")
     assert page_state.last_observation is not None and page_state.last_observation.generation == "g1"
+
+
+@pytest.mark.asyncio
+async def test_a_stale_ref_the_driver_found_answers_with_the_observation_it_carries_and_records_it() -> None:
+    fresh = _observation('- button "Saved" [ref=e2]')
+    seen: list[Any] = []
+
+    class Spy(BrowserRenderer):
+        def error(self, action: Action, error: Any, observation: Observation | None) -> Any:
+            seen.append(observation)
+            return super().error(action, error, observation)
+
+    driver = FakeDriver()
+    driver.fail_next(StaleRef("e1 is gone", observation=fresh))
+    built, page_state = _build(driver, profile=_profile(renderer=Spy()))
+
+    output = await _tool(built, "toy_click").invoke({"ref": "e1"})
+
+    recorded = page_state.last_observation
+    assert output.error == '### Error\ne1 is gone\n\n- button "Saved" [ref=e2]'
+    assert seen == [recorded]
+    assert (recorded.native_text, recorded.generation) == (fresh.native_text, "g0")
+    assert output.data["command"].error == "StaleRef"
 
 
 @pytest.mark.asyncio
