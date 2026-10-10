@@ -7,10 +7,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, Union
 
 from .actions import Action, Effect
-from .observation import Observation
+from .errors import DriverError
+from .observation import Observation, Screenshot, SurfaceContext
+from .refs import RefResolver
 from .results import ActionResult
 
 
@@ -29,14 +31,34 @@ class ToolSpec:
     commands: tuple[type[Action], ...]
     description: str = ""
     prompt_section: str | None = None
+    schema: Mapping[str, Any] | None = field(default=None, hash=False)
+    build: Callable[[Mapping[str, Any], RefResolver], Action] | None = field(default=None, hash=False)
+
+
+ContentBlock = Union[str, Screenshot]
+
+
+class Renderer(Protocol):
+    """Turns what a driver returns into the content blocks the model reads (text and/or image)."""
+
+    def observation(self, observation: Observation) -> tuple[ContentBlock, ...]: ...
+
+    def result(self, action: Action, result: ActionResult) -> tuple[ContentBlock, ...]: ...
+
+    def error(
+        self, action: Action, error: DriverError, observation: Observation | None
+    ) -> tuple[ContentBlock, ...]: ...
 
 
 @dataclass(frozen=True)
 class PolicyRule:
-    """Checked by the security rail before middleware; ``check`` returns a deny reason or ``None``."""
+    """Checked by the security rail before middleware; ``check(action, context)`` returns a deny reason or ``None``.
+
+    ``context`` is the current surface context, ``None`` before the first observation.
+    """
 
     command_type: type[Action]
-    check: Callable[[Action], str | None]
+    check: Callable[[Action, SurfaceContext | None], str | None]
 
 
 SceneStep = Callable[[Sequence[Observation]], Action]
@@ -79,7 +101,7 @@ class SurfaceProfile:
 
     name: str
     commands: tuple[type[Action], ...]
-    renderer: Callable[[Observation], Sequence[Any]]
+    renderer: Renderer
     tool_specs: tuple[ToolSpec, ...] = ()
     native_tools: tuple[Any, ...] = ()
     capability_catalog: Mapping[str, frozenset[tuple[type[Action], type | None]]] = field(

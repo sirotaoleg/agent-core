@@ -15,7 +15,7 @@ from typing import Any, ClassVar, TypeVar
 from .actions import Action, Observe
 from .errors import Unsupported
 from .observation import Observation
-from .refs import REF_KINDS
+from .refs import REF_KINDS, RefResolver
 from .results import ActionResult
 
 
@@ -26,8 +26,20 @@ class Health:
 
 
 @dataclass(frozen=True)
+class NativeTool:
+    """A tool the driver offers in its own format: description, JSON schema and the decoder of its arguments."""
+
+    description: str
+    schema: Mapping[str, Any] = field(hash=False)
+    build: Callable[[Mapping[str, Any], RefResolver], Action] = field(hash=False)
+
+
+@dataclass(frozen=True)
 class DriverInfo:
-    """``actions`` maps each handled command type to the element ref kinds it accepts (empty: no refs)."""
+    """``actions`` maps each handled command type to the element ref kinds it accepts (empty: no refs).
+
+    ``native_tools`` is keyed by the tool spec name; the model sees ``tool_name_prefix`` + name.
+    """
 
     name: str
     surfaces: frozenset[str]
@@ -35,6 +47,8 @@ class DriverInfo:
     actions: Mapping[type[Action], frozenset[type]] = field(default_factory=dict, hash=False)
     observes: frozenset[str] = frozenset()
     tool_hints: Mapping[type[Action], str] = field(default_factory=dict, hash=False)
+    native_tools: Mapping[str, NativeTool] = field(default_factory=dict, hash=False)
+    tool_name_prefix: str = ""
 
 
 class Driver(ABC):

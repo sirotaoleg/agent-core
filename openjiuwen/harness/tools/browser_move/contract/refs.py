@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Union
+from typing import Protocol, Union
 
 
 @dataclass(frozen=True)
@@ -55,3 +55,19 @@ class ContextRef:
 # ``ContextRef`` is not an element ref kind: no handler accepts it.
 Ref = Union[DriverRef, PointRef, IndexRef, Locator]
 REF_KINDS: tuple[type, ...] = (DriverRef, PointRef, IndexRef, Locator)
+
+
+class RefResolver(Protocol):
+    """What a tool's argument decoder asks the runtime about ids the model sends."""
+
+    @property
+    def contexts(self) -> tuple[ContextRef, ...]: ...
+
+    @property
+    def current_context(self) -> ContextRef | None: ...
+
+    def resolve(self, model_id: str, generation: str) -> Ref:
+        """The ref behind a runtime-minted element id; raises ``ValueError`` for an id it does not know."""
+
+    def generation_of(self, ref: str) -> str:
+        """The generation a driver ref was last seen in; the current one for a ref never seen."""

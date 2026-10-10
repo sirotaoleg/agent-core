@@ -19,7 +19,7 @@ from .actions import (
     TypeText,
     Wait,
 )
-from .driver import Driver, DriverInfo, HandlerDriver, Health, ensure_supported, handles, iter_refs
+from .driver import Driver, DriverInfo, HandlerDriver, Health, NativeTool, ensure_supported, handles, iter_refs
 from .errors import (
     ActionIntercepted,
     ActionTimeout,
@@ -33,7 +33,7 @@ from .errors import (
     Unsupported,
 )
 from .observation import Element, Observation, Screenshot, SurfaceContext, Viewport
-from .refs import REF_KINDS, ContextRef, DriverRef, IndexRef, Locator, PointRef, Ref
+from .refs import REF_KINDS, ContextRef, DriverRef, IndexRef, Locator, PointRef, Ref, RefResolver
 from .registry import (
     DRIVERS,
     PROVISIONERS,
@@ -44,7 +44,17 @@ from .registry import (
     register_surface,
 )
 from .results import ActionResult
-from .surface import PolicyRule, Scene, SceneCase, SurfaceBundle, SurfaceProfile, SurfaceSettings, ToolSpec
+from .surface import (
+    ContentBlock,
+    PolicyRule,
+    Renderer,
+    Scene,
+    SceneCase,
+    SurfaceBundle,
+    SurfaceProfile,
+    SurfaceSettings,
+    ToolSpec,
+)
 
 __all__ = [
     "DRIVERS",
@@ -59,6 +69,7 @@ __all__ = [
     "Click",
     "CloseContext",
     "ConnectionLost",
+    "ContentBlock",
     "ContextRef",
     "Drag",
     "Driver",
@@ -75,6 +86,7 @@ __all__ = [
     "IndexRef",
     "Locator",
     "NavigationError",
+    "NativeTool",
     "Observation",
     "Observe",
     "PointRef",
@@ -82,7 +94,9 @@ __all__ = [
     "PolicyRule",
     "PressKey",
     "Ref",
+    "RefResolver",
     "Registry",
+    "Renderer",
     "RunScript",
     "Scene",
     "SceneCase",
