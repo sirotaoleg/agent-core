@@ -53,6 +53,7 @@ from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.driver import 
     create_playwright_mcp_driver,
 )
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.result import result_text
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.snapshot import without_boxes
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserInstanceConfig,
     build_playwright_mcp_config,
@@ -382,7 +383,17 @@ def test_observe_reads_the_snapshot_header_tabs_elements_and_full_text(tmp_path:
     assert [element.ref.ref for element in observation.elements] == ["f9e1", "f9e2", "f9e3", "f9e4", "f9e5", "f9e6"]
     assert observation.screenshot is None
     assert observation.generation == ""
-    assert calls == [("browser_snapshot", {})]
+    assert calls == [("browser_snapshot", {"boxes": True})]
+
+
+def test_observe_gives_bounds_and_keeps_the_boxes_out_of_the_text(tmp_path: Path) -> None:
+    raw = _raw("snapshot_with_boxes")
+
+    observation, _calls = _run(tmp_path, {"browser_snapshot": raw}, lambda driver: driver.observe(Observe()))
+
+    assert observation.native_text == without_boxes(result_text(raw))
+    assert "[box=" not in observation.native_text
+    assert {element.ref.ref: element.bounds for element in observation.elements}["f7e2"] == (8.0, 21.0, 1264.0, 37.0)
 
 
 @pytest.mark.parametrize("full_page", [False, True])
@@ -393,7 +404,10 @@ def test_observe_with_a_screenshot_takes_it_at_css_scale(tmp_path: Path, full_pa
         tmp_path, replies, lambda driver: driver.observe(Observe(include_screenshot=True, full_page=full_page))
     )
 
-    assert calls == [("browser_snapshot", {}), ("browser_take_screenshot", {"type": "png", "fullPage": full_page})]
+    assert calls == [
+        ("browser_snapshot", {"boxes": True}),
+        ("browser_take_screenshot", {"type": "png", "fullPage": full_page}),
+    ]
     assert observation.screenshot is not None
     assert (observation.screenshot.width, observation.screenshot.height, observation.screenshot.scale) == (
         1264,

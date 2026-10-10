@@ -13,6 +13,7 @@ from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.snapshot impor
     parse_snapshot,
     parse_tabs,
     split_sections,
+    without_boxes,
 )
 
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "mcp"
@@ -88,6 +89,16 @@ def test_boxes_become_bounds() -> None:
     assert elements["f7e2"].bounds == (8.0, 21.0, 1264.0, 37.0)
     assert elements["f8e3"].bounds == (8.0, 50.0, 95.0, 21.0)
     assert "box" not in elements["f7e2"].extra
+
+
+def test_without_boxes_removes_only_the_boxes() -> None:
+    text = _text("snapshot_with_boxes")
+
+    plain = without_boxes(text)
+
+    assert "[box=" not in plain
+    assert plain.count("[ref=") == text.count("[ref=")
+    assert '  - heading "Fixture form page" [level=1] [ref=f7e2]\n' in plain
 
 
 def test_filled_form_values_and_checked_state() -> None:
