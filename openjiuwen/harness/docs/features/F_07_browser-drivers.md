@@ -935,3 +935,93 @@ Before anything configures it, the browser-agent logger takes its settings from 
 use. It used to parse the whole `CoreSettings`, so an invalid unrelated value (an unknown `BROWSER_DRIVER`) raised at
 import time in every module that fetches the logger (`drivers/browser_use/driver.py`, `transport.py`).
 `CoreSettings.logging_from_process_env()` reads only the four log fields; everything else keeps its default.
+
+## Page state, driver session and policy rail
+
+Phase 4 items 3, 4 and 6 and the security rail of item 5: `BrowserPageState` learns contract types,
+`DriverSession` recovers from a lost connection, `ActionPolicy` checks commands before the driver (S_20 "Runtime
+state and recovery"). Nothing in `runtime.py`, `service.py`, `agents.py` or `browser_agent.py` calls them yet; the
+agent switch wires them.
+
+### Decisions
+
+1. **One page state, extended in place.** `record`, `check`, `generation_of`, `resolve`, `reset` and the
+   `RefResolver` attributes sit next to the text-snapshot API, which the runtime still uses. The per-ref body of
+   `register_ax_snapshot` became `_register_ax_ref`, shared by text snapshots and typed elements; the regex path is
+   deleted only when the runtime stops reading snapshot text.
+2. **New-generation triggers, in order:** `context_changed`; an address change without the flag (today's
+   backstop); a context id change; an element-set change. The element change is the Jaccard distance over
+   `(ref, role)` pairs, strictly above `element_change_threshold` (default `0.5`, constructor parameter, no env
+   var). `Observation.fingerprint` is not used: it hashes names too, so any text change would bump.
+3. **A context change forgets every context.** `last_observation`, `surface_context`, `contexts` and
+   `current_context` are dropped, then refilled from the outcome (J8: MCP context ids are positions). Without the
+   drop, the next observation would be compared with the previous document and could bump a second time.
+4. **`record` takes an `Observation` too.** `observe()` returns an `Observation`, not an `ActionResult`; passing it
+   directly keeps one entry point and lets `free_observations` count only observations that came with the result
+   of another command (plan item 4).
+5. **Observations replace the current AX targets.** An `Observation` is complete, like the full snapshot of
+   `capture_browser_state`; refs missing from it leave the current generation.
+6. **Stamping includes element refs.** `Element.ref.generation` gets the generation too, so every ref in a stamped
+   observation can go through `check`.
+7. **`check` reports every stale ref at once** (as `validate_reference_values` does), with today's AX-ref and
+   selector wording; point and index refs get the same shape. A ref with an empty generation passes.
+8. **`resolve(target_id, generation)` returns `DriverRef` for AX targets and `Locator(css)` for validated probe
+   selectors;** a link-only target is a `ValueError` (the primary-link rail turns those into `Navigate`).
+9. **The session restarts the same driver object.** Re-provisioning gives a new `ProvisionedDevice`, but the
+   driver is not rebuilt: the provisioners normally hand back the same endpoint (remote: the configured `cdp_url`;
+   managed: the port stored in the profile; extension: none). `DriverAssembly` gained `surface_settings` so the session can call
+   `provision` again; the session replaces its assembly with the new device so `close()` releases it.
+10. **Re-provisioning is triggered by `start()` raising a `DriverError`;** `health()` is not consulted.
+11. **The failed call raises `ConnectionLost(driver_restarted)` with the original `dispatched`;** the command
+    itself is never re-sent. The second loss in a task, or a failed restart, raises a `BaseError`
+    (`DEEPAGENT_RUNTIME_ERROR`, `driver_lost`), which is not a `DriverError`, so a tool cannot render it as an
+    ordinary tool error. `begin_task()` resets the counter.
+12. **`ActionPolicy` takes `builders` keyed by the model-facing tool name.** The tool factory does not exist yet;
+    a name → decoder map is what it produces, whatever prefix the driver declares.
+13. **Denial as in `BrowserRuntimeRail._deny_tool_call`, with the Phase 4 text.** Per-call `_skip_tool_calls`
+    (the base rail's `_skip_tool` is invocation-wide and parallel calls share `ctx.extra`), message
+    `### Error\n<reason>`, metadata `executed/state_changed/denied`, `PolicyDenied` as the tool result. The runtime
+    payload of today's denial (`runtime_state`, codes) belongs to the browser rail, not to the policy.
+14. **A `ValueError` from parsing or decoding is a denial,** so a malformed `browser_tabs` index never reaches the
+    driver (J8).
+
+### Rejected options
+
+- **A new `PageState` module next to the old one.** The plan says extend; two registries would disagree on the
+  generation.
+- **Rebuilding the driver from the registry after re-provisioning.** Needs the driver name, the registries and the
+  middleware chain in the session (a second composition root) for a case no provisioner produces today.
+- **`health()` after a restart to detect a dead device.** The MCP server answers `ping` with Chrome gone, so it
+  would not decide anything there; the next command reports the loss instead.
+- **Using the base `_apply_reject`.** It sets the invocation-wide `_skip_tool`.
+- **Letting the rail's `PolicyDenied` propagate as an exception.** The harness would treat it as a tool failure
+  after the call started; the plan wants it before anything runs.
+
+### Verification
+
+- New tests: `test_browser_page_state_record.py` (18: each trigger incl. a same-address reload via
+  `context_changed`, the threshold and its parameter, a role change, stamping, AX targets from elements, stale refs
+  nested in `FillForm`, stale point/locator refs, unknown current refs, contexts replaced on change, the
+  free-observation counter, `resolve`, `reset`, the page state as a decoder's `RefResolver`),
+  `test_driver_session.py` (8, `FakeDriver`: restart with message and reset, the command sent once, second loss
+  fails, `begin_task`, re-provisioning, failed restart, `observe`, `close` after re-provisioning),
+  `test_action_policy.py` (7: callback registered, denial message/metadata/skip/`PolicyDenied`, allow, command and
+  surface context passed (D15), other commands and unknown tools, decode error, no driver call through the ability
+  manager).
+- Existing `test_browser_page_state.py` (25) unchanged and green.
+- Browser-word allowlist: `playwright_runtime/page_state.py` 26 → 29 (the address backstop); the two new modules
+  have none.
+- `pytest tests/unit_tests/harness/tools/browser_move tests/unit_tests/harness/rails
+  tests/unit_tests/harness/test_deep_agent_rail_event_routing.py` (live assembly deselected): **2762 passed, 111
+  skipped** (architecture, goldens and runner contract included).
+- Live: `test_assembly_live.py` **2 passed** (`DriverAssembly` field).
+
+### Known leftovers
+
+1. Nothing calls `record`/`check`/`DriverSession`/`ActionPolicy` yet; `capture_browser_state` still observes after
+   actions, so the saved observations are counted only once the tools use `record`.
+2. The address backstop and `contexts` read `url`, `title` and `tabs` from the surface context by attribute name:
+   the core cannot import `BrowserContext`. They move with `page_state.py` into the browser surface (Phase 9).
+3. A re-provisioned device with a different endpoint would need a rebuilt driver (decision 9).
+4. The browser profile's `messages` (`driver_restarted`, `driver_lost`) and `policy_rules` come with the profile
+   task; the session reads the two messages at construction.

@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
 | Last revised | 2026-10-10 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -510,8 +510,67 @@ holds no state. `create_browser_agent` and the Playwright MCP path do not call i
 A failure in steps 4–6 releases the device; a failure in `start` calls `close()`. A failure in `provision` leaves
 nothing to release.
 
-`DriverAssembly(stack, device, provisioner)`: `close()` stops the stack, then releases the device with
-`provisioner.release` in a worker thread, also when `stop` raises.
+`DriverAssembly(stack, device, provisioner, surface_settings)`: `close()` stops the stack, then releases the device
+with `provisioner.release` in a worker thread, also when `stop` raises. `surface_settings` is what `provision` was
+called with; `DriverSession` provisions again from it.
+
+## Runtime state and recovery (`playwright_runtime/`)
+
+Three pieces sit between the model-facing tools and the driver stack. None is wired into an agent yet; they are
+reached only from their tests until the agent switches to commands.
+
+### Page state (`page_state.py`, `BrowserPageState`)
+
+The existing generation and target registry, extended for contract types. Generations keep the `g<n>` format and
+one counter; the text-snapshot methods (`register_ax_snapshot`, `replace_ax_snapshot`, probes) are unchanged.
+
+- `record(action, outcome) -> outcome`: `outcome` is an `ActionResult`, or the `Observation` of an `observe()`. A new
+  generation starts when `result.context_changed`, when the observation's context id differs from the current one,
+  when the Jaccard distance between the `(ref, role)` sets of the last and the new observation is above
+  `element_change_threshold` (constructor parameter, default `0.5`), or when the surface context's address differs
+  from the known one without the flag (backstop). A new generation drops `last_observation`, `surface_context`,
+  `contexts` and `current_context`: context ids are valid only until the next context change. The returned value is
+  stamped: `ActionResult.generation`, `Observation.generation` and every `Element.ref.generation`. Observation
+  elements replace the current generation's AX targets (same targets as a complete text snapshot). The surface
+  context's `tabs` become `contexts`; `observation.context` becomes `current_context`.
+- `free_observations` counts observations that came with an `ActionResult` of a command other than `Observe`.
+- `check(action)`: every ref in `iter_refs(action)` whose generation is older than the current one →
+  `StaleRef(dispatched=False)`, one message per stale ref (`Stale AX ref e1 belongs to g0; current generation is
+  g1.`). Refs with an empty generation and unknown refs of the current generation pass; the driver decides.
+- `RefResolver`: `contexts`, `current_context`, `generation_of(ref)` (the generation the ref was last registered in,
+  the current one for a ref never seen) and `resolve(target_id, generation)` (`resolve_target`, then `DriverRef` for
+  an AX target, `Locator(css)` for a probe target with a validated selector, `ValueError` otherwise).
+- `reset()`: a new generation and no contexts or last observation.
+
+### Driver session (`driver_session.py`, `DriverSession`)
+
+`DriverSession(assembly, page_state, messages)` forwards `execute` and `observe` to `assembly.stack`; `messages` must
+hold `driver_restarted` and `driver_lost` (read at construction).
+
+| Event | Behaviour |
+|---|---|
+| first `ConnectionLost` in a task (any `dispatched`) | `stop()` (driver errors ignored); `start()`; if `start()` raises a `DriverError`: `provisioner.release(device)`, `provisioner.provision(surface_settings)`, `start()`; then `page_state.reset()` and the call raises `ConnectionLost(driver_restarted, dispatched=<original>)` |
+| restart fails | task failure: `BaseError` `DEEPAGENT_RUNTIME_ERROR` with `driver_lost`, the restart error as cause |
+| second `ConnectionLost` in the same task | task failure, no restart |
+| `begin_task()` | resets the loss counter |
+| `close()` | `assembly.close()` with the current (possibly re-provisioned) device |
+
+The failed command is never sent again. `health()` is not polled.
+
+### Policy rail (`action_policy.py`, `ActionPolicy`)
+
+`ActionPolicy(builders, rules, page_state)` is a `BaseSecurityRail` on `BEFORE_TOOL_CALL`. `builders` maps a
+model-facing tool name to the pure argument decoder of its spec (`ToolSpec.build` / `NativeTool.build`). For a tool
+in `builders` it parses the arguments (a JSON string or a mapping), decodes the command with the page state as
+`RefResolver` and calls `rule.check(action, page_state.surface_context)` for each rule whose `command_type` matches.
+A reason, or a `ValueError` from parsing or decoding, denies the call:
+
+- `extra["_skip_tool_calls"][tool_call_id] = True` (per call; the ability manager returns the prepared result
+  without running the tool);
+- `tool_msg`: content `### Error\n<reason>`, metadata `executed=False`, `state_changed=False`, `denied=True`;
+- `tool_result`: `PolicyDenied(reason)` (`dispatched=False`).
+
+Tools without a decoder pass unchecked.
 
 ## Drivers
 
@@ -691,6 +750,6 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
 
 - `S_05` (tools contract): the tools built from these commands are registered like every harness tool and go
   through the permission engine.
-- `S_08` (security engine): the browser security rail checks `PolicyRule`s on commands before middleware and the
-  driver, and raises `PolicyDenied`.
+- `S_08` (security engine): `ActionPolicy` checks `PolicyRule`s on commands before middleware and the driver and
+  denies with a `PolicyDenied` result.
 - `S_18` (subagents): `create_browser_agent` is the public entry point; its signature does not change.
