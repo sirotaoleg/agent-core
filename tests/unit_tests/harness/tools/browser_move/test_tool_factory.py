@@ -584,6 +584,8 @@ def _record(**fields: Any) -> CommandRecord:
     [
         (_record(), (True, True, True)),
         (_record(command=Observe, effect=Effect.READ), (True, True, False)),
+        (_record(command=Observe, effect=Effect.READ, dispatched=False), (True, True, False)),
+        (_record(command=RunScript, effect=Effect.READ, ok=False, error="DriverError"), (False, False, False)),
         (_record(effect=Effect.NAVIGATE, context_changed=True), (True, True, True)),
         (_record(ok=False, error=ActionTimeout.__name__), (False, True, True)),
         (_record(ok=False, dispatched=True, error="DriverError"), (False, True, False)),
