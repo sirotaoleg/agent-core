@@ -184,6 +184,11 @@ class CommandTool(Tool):
             if isinstance(action, Observe):
                 return self._observed(action, await self._context.observe(action))
             result = await self._context.execute(action)
+        except StaleRef as stale:
+            fresh = stale.observation
+            return self._failure(
+                action, stale, None if fresh is None else self._context.page_state.record(Observe(), fresh)
+            )
         except DriverError as error:
             return self._failure(action, error, None)
         return self._output(action, result, result.value, self._context.renderer.result(action, result))
