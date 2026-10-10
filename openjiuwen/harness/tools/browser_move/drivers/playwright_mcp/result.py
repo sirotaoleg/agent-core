@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import base64
+import dataclasses
 import json
 import re
 import struct
@@ -43,7 +44,7 @@ _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 _FILE_LINK = re.compile(r"^- \[[^\]]*\]\((?P<path>[^)]+)\)$", re.MULTILINE)
-_DIALOG = re.compile(r"dialog with message")
+_DIALOG = re.compile(r'^- \["(?P<type>[^"]+)" dialog with message "(?P<message>.*?)"\]: can be handled by', re.M | re.S)
 _MODAL_REFUSAL = re.compile(r'Tool "[\w-]+" does not handle the modal state')
 _STALE_REF = re.compile(r"Ref \S+ not found in the current page snapshot")
 # After the browser dies the server first fails to open a new tab, then reports the closed target.
@@ -83,14 +84,19 @@ def decode(
     parts = split_sections(text)
     if sensitive:
         parts.pop(_CODE_SECTION, None)
+    dialog = _dialog(parts.get("Modal state", ""))
     if raw_result.get("isError") or "Error" in parts:
         if _MODAL_REFUSAL.search(parts.get("Error", "")):
-            return ActionResult(ok=False, detail=_detail(parts))
+            # Nothing was sent, so the page is still the one before the call.
+            blocked = None if before is None or dialog is None else dataclasses.replace(before, dialog=dialog)
+            return ActionResult(ok=False, detail=_detail(parts), surface=blocked)
         raise _error(tool_name, _ANSI.sub("", parts.get("Error") or text))
 
     tab_list = parse_tabs(parts.get("Result", "")) if tool_name == "browser_tabs" else None
     header = tab_list or parse_header(parts)
-    surface = None if header is None else BrowserContext(url=header.url, title=header.title, tabs=header.tabs)
+    surface = (
+        None if header is None else BrowserContext(url=header.url, title=header.title, tabs=header.tabs, dialog=dialog)
+    )
     image = next((block for block in blocks if block.get("type") == "image"), None)
     if image is not None:
         value: Any = _screenshot(str(image["data"]))
@@ -100,7 +106,7 @@ def decode(
         value = None
 
     opened: tuple[ContextRef, ...] = ()
-    changed = tool_name in _NAVIGATING_TOOLS or bool(_DIALOG.search(parts.get("Modal state", "")))
+    changed = tool_name in _NAVIGATING_TOOLS or dialog is not None
     if before is not None and header is not None:
         opened = header.tabs[len(before.tabs) :]
         changed = changed or header.url != before.url or len(header.tabs) != len(before.tabs)
@@ -119,6 +125,11 @@ def result_text(raw_result: Mapping[str, Any]) -> str:
     """The text blocks of a result, joined: what the model reads today."""
     blocks = raw_result.get("content") or ()
     return "\n".join(str(block.get("text", "")) for block in blocks if block.get("type") == "text")
+
+
+def _dialog(modal_state: str) -> str | None:
+    match = _DIALOG.search(modal_state)
+    return None if match is None else f"{match.group('type')}: {match.group('message')}"
 
 
 def _detail(parts: dict[str, str]) -> str | None:

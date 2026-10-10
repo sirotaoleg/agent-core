@@ -274,7 +274,8 @@ class SessionAdapter:
     async def observe(
         self, *, include_dom: bool = True, include_screenshot: bool = False, cached: bool = False
     ) -> dict[str, Any]:
-        self._refuse_while_dialog_open("observe", exceptions.ObserveError)
+        if self._dialog_pending is not None:
+            return await self._dialog_observation()
         await self._ensure_listeners()
         summary = await self._session.get_browser_state_summary(
             include_screenshot=include_screenshot, cached=cached
@@ -827,6 +828,22 @@ class SessionAdapter:
         except Exception:  # noqa: BLE001 - dialog arming must not crash the session
             pass
 
+    def _open_dialog(self) -> dict[str, str] | None:
+        pending = self._dialog_pending
+        return None if pending is None else {"type": pending["type"], "message": pending["message"]}
+
+    async def _dialog_observation(self) -> dict[str, Any]:
+        # Only browser-use's cached target info: anything sent to the page waits until the dialog is handled.
+        tabs = await self.list_tabs()
+        return {
+            "url": await self._safe_current_url(),
+            "title": next((tab["title"] for tab in tabs if tab["active"]), ""),
+            "tabs": tabs,
+            "elements": [],
+            "dialog": self._open_dialog(),
+            "driver_generation": self._driver_generation,
+        }
+
     def _refuse_while_dialog_open(self, method: str, error: type[exceptions.DriverError]) -> None:
         # Page scripts and captures block while a JS dialog is open: fail at once instead of timing out.
         if self._dialog_pending is not None:
@@ -925,9 +942,11 @@ class SessionAdapter:
         return {
             "ok": ok,
             "detail": detail,
+            "url": url,
             "document_changed": changed,
             "driver_generation": self._driver_generation,
             "dialog_opened": None if act is None else act.dialog,
+            "dialog": self._open_dialog(),
             "new_targets": [] if act is None else list(act.new_targets),
         }
 

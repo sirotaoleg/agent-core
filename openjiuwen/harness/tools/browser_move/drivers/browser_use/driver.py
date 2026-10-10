@@ -160,6 +160,10 @@ def _element_from_wire(data: dict[str, Any]) -> Element:
     )
 
 
+def _dialog_text(dialog: dict[str, Any] | None) -> str | None:
+    return None if dialog is None else f"{dialog.get('type') or 'dialog'}: {dialog.get('message', '')}"
+
+
 def _screenshot_from_b64(data: str) -> Screenshot:
     png = base64.b64decode(data)
     width, height = struct.unpack(">II", png[16:24]) if png[:8] == _PNG_SIGNATURE and len(png) >= 24 else (0, 0)
@@ -187,6 +191,7 @@ def _observation_from_wire(data: dict[str, Any], screenshot_b64: str | None) -> 
             is_pdf_viewer=bool(data.get("is_pdf_viewer", False)),
             pixels_above=int(data.get("pixels_above", 0)),
             pixels_below=int(data.get("pixels_below", 0)),
+            dialog=_dialog_text(data.get("dialog")),
         ),
     )
 
@@ -259,13 +264,15 @@ class BrowserUseDriver(HandlerDriver):
             "observe", {"include_dom": True, "include_screenshot": viewport_screenshot, "cached": False}
         )
         self._driver_generation = int(data.get("driver_generation", self._driver_generation))
-        try:
-            data = {**data, "title": str(await self._evaluate(_DOCUMENT_TITLE_JS, None))}
-        except DriverError:
-            pass  # no script context (e.g. the PDF viewer): keep the sidecar's title
         screenshot_b64 = data.get("screenshot_b64")
-        if command.include_screenshot and command.full_page:
-            screenshot_b64 = await self._request("screenshot", {"full_page": True, "clip": None})
+        # Scripts and captures wait while a dialog is open.
+        if data.get("dialog") is None:
+            try:
+                data = {**data, "title": str(await self._evaluate(_DOCUMENT_TITLE_JS, None))}
+            except DriverError:
+                pass  # no script context (e.g. the PDF viewer): keep the sidecar's title
+            if command.include_screenshot and command.full_page:
+                screenshot_b64 = await self._request("screenshot", {"full_page": True, "clip": None})
         return _observation_from_wire(data, screenshot_b64)
 
     @handles(Click, refs={DriverRef, Locator})
@@ -481,6 +488,7 @@ class BrowserUseDriver(HandlerDriver):
             note = f"{dialog.get('type') or 'dialog'} dialog opened: {dialog.get('message', '')!r}"
             detail = f"{detail}; {note}" if detail else note
         opened = tuple(_context_from_wire(target) for target in data.get("new_targets") or ())
+        open_dialog = _dialog_text(data.get("dialog"))
         return ActionResult(
             ok=bool(data["ok"]),
             detail=detail,
@@ -488,6 +496,7 @@ class BrowserUseDriver(HandlerDriver):
                 context_changed or bool(data.get("document_changed", False)) or dialog is not None or bool(opened)
             ),
             opened_contexts=opened,
+            surface=None if open_dialog is None else BrowserContext(url=str(data.get("url", "")), dialog=open_dialog),
             **fields,
         )
 

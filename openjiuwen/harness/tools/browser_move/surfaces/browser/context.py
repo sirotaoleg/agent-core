@@ -12,7 +12,7 @@ from openjiuwen.harness.tools.browser_move.contract import ContextRef, SurfaceCo
 
 @dataclass(frozen=True, kw_only=True)
 class BrowserContext(SurfaceContext):
-    """Page URL and title, open tabs, PDF viewer flag, scroll position and the last HTTP status of the page."""
+    """Page URL and title, tabs, PDF viewer flag, scroll position, last HTTP status, open dialog ("type: message")."""
 
     url: str
     title: str = ""
@@ -21,3 +21,4 @@ class BrowserContext(SurfaceContext):
     pixels_above: int = 0
     pixels_below: int = 0
     last_status: int | None = None
+    dialog: str | None = None

@@ -49,7 +49,12 @@ from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.clients import
     BrowserMoveStreamableHttpClient,
 )
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.result import decode, result_text
-from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.snapshot import parse_snapshot, without_boxes
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.snapshot import (
+    parse_snapshot,
+    parse_tabs,
+    split_sections,
+    without_boxes,
+)
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserInstanceConfig, playwright_mcp_config
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
@@ -196,6 +201,8 @@ class PlaywrightMcpDriver(HandlerDriver):
         # Boxes give elements their bounds; the text keeps the form the model reads today.
         raw = await self._call("browser_snapshot", {"boxes": True})
         decoded = await self._decode("browser_snapshot", raw)
+        if not decoded.ok:
+            return await self._observe_modal_state(raw)
         elements, header = parse_snapshot(result_text(raw))
         if header is None:
             raise DriverError("browser_snapshot reported no page", dispatched=True)
@@ -210,6 +217,15 @@ class PlaywrightMcpDriver(HandlerDriver):
             native_text=without_boxes(result_text(raw)),
             surface=decoded.surface,
         )
+
+    async def _observe_modal_state(self, refused: dict[str, Any]) -> Observation:
+        # A dialog or file chooser refuses the snapshot and every other page tool; the tab list still answers.
+        raw = await self._call("browser_tabs", {"action": "list"})
+        listed = await self._decode("browser_tabs", raw)
+        header = parse_tabs(split_sections(result_text(raw)).get("Result", ""))
+        if header is None:
+            raise DriverError("browser_tabs reported no page", dispatched=True)
+        return Observation(context=header.focused, native_text=result_text(refused), surface=listed.surface)
 
     @handles(Click, refs={DriverRef, Locator, PointRef})
     async def _click(self, action: Click) -> ActionResult:
