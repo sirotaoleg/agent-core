@@ -140,9 +140,10 @@ class CommandRecord:
         """The tool message metadata the context processors read."""
         # Of the failed commands only a timeout counts as a possible change, as the text classifier counted it.
         mutating = self.effect is not Effect.READ and (self.ok or self.error == ActionTimeout.__name__)
+        # A read that answered counts as run even when it reused an observation, as the server call always ran.
         return {
             "success": self.ok,
-            "executed": self.dispatched,
+            "executed": self.ok if self.effect is Effect.READ else self.dispatched,
             "state_changed": self.context_changed or mutating,
             "denied": False,
         }
