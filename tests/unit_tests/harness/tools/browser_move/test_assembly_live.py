@@ -28,7 +28,12 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.context import Brows
 _SIDECAR_PYTHON_ENV = "BROWSER_USE_SIDECAR_PYTHON"
 
 
+LIVE_MCP_ENV = "BROWSER_MOVE_LIVE_MCP"
+
+
 def _mcp_skip_reason() -> str | None:
+    if os.getenv(LIVE_MCP_ENV) != "1":
+        return f"set {LIVE_MCP_ENV}=1 to run against a real @playwright/mcp server and Chrome"
     settings = BrowserSettings.from_process_env()
     if shutil.which(settings.mcp_command) is None:
         return f"{settings.mcp_command!r} is not on PATH (it starts @playwright/mcp)"

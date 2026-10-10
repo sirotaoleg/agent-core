@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 from collections.abc import Iterator
@@ -31,7 +32,12 @@ pytest_plugins = ["openjiuwen.harness.tools.browser_move.contract.testing.confor
 SERVER_ARGS = "-y @playwright/mcp@0.0.78 --allow-unrestricted-file-access"
 
 
+LIVE_MCP_ENV = "BROWSER_MOVE_LIVE_MCP"
+
+
 def _skip_reason() -> str | None:
+    if os.getenv(LIVE_MCP_ENV) != "1":
+        return f"set {LIVE_MCP_ENV}=1 to run against a real @playwright/mcp server and Chrome"
     settings = BrowserSettings.from_process_env()
     if shutil.which(settings.mcp_command) is None:
         return f"{settings.mcp_command!r} is not on PATH (it starts @playwright/mcp)"
