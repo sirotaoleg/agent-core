@@ -17,7 +17,7 @@ PKG_DOTTED = "openjiuwen.harness.tools.browser_move"
 PKG_DIR = REPO_ROOT.joinpath(*PKG_DOTTED.split("."))
 CORE_DIR = REPO_ROOT / "openjiuwen" / "core"
 
-CORE_FOLDERS = ("runtime", "playwright_runtime", "controllers", "utils", "clients")
+CORE_FOLDERS = ("runtime", "playwright_runtime", "controllers", "utils")
 # Wraps every driver, so it obeys the core rules although it lives under drivers/.
 CORE_MODULES = frozenset({"drivers/middleware.py"})
 CONTRACT_FOLDER = "contract"

@@ -94,9 +94,6 @@ MCP_TOOL_NAME_RE = re.compile(
 # file relative to the package -> number of driver-name matches.
 KNOWN_DRIVER_NAMES: dict[str, int] = {
     # legacy code, removed with the old paths
-    "clients/logging_utils.py": 2,
-    "clients/stdio_client.py": 5,
-    "clients/streamable_http_client.py": 5,
     "controllers/action.py": 3,
     "playwright_runtime/__init__.py": 1,
     "playwright_runtime/agents.py": 4,
@@ -104,7 +101,7 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
     "playwright_runtime/browser_tools.py": 23,
     "playwright_runtime/browser_working_context.py": 2,
     "playwright_runtime/browser_working_context_rail.py": 2,
-    "playwright_runtime/main.py": 3,
+    "playwright_runtime/main.py": 5,
     "playwright_runtime/repeated_call_guard.py": 1,
     "playwright_runtime/runtime.py": 20,
     "playwright_runtime/runtime_tools.py": 3,

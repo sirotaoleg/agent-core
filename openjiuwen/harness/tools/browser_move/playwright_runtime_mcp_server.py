@@ -26,8 +26,8 @@ for _p in (str(_REPO_ROOT), str(_SRC_ROOT)):
         sys.path.append(_p)
 
 from fastmcp import Context, FastMCP
-from clients.stdio_client import BrowserMoveStdioClient
-from clients.streamable_http_client import BrowserMoveStreamableHttpClient
+from drivers.playwright_mcp.clients.stdio_client import BrowserMoveStdioClient
+from drivers.playwright_mcp.clients.streamable_http_client import BrowserMoveStreamableHttpClient
 from playwright_runtime.config import (
     MISSING_API_KEY_MESSAGE,
     CoreSettings,

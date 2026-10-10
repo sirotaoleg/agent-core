@@ -15,7 +15,6 @@ BROWSER_WORD_RE = re.compile(r"\b(?:browser|page|tab|url)\b", re.IGNORECASE)
 # file relative to the package -> number of browser-word matches.
 KNOWN_BROWSER_WORDS: dict[str, int] = {
     # browser code that moves to surfaces/browser/
-    "clients/logging_utils.py": 5,
     "controllers/action.py": 129,
     "controllers/base.py": 1,
     "playwright_runtime/agents.py": 23,

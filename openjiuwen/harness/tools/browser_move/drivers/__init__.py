@@ -6,6 +6,6 @@
 from ..contract.registry import DRIVERS, register_driver
 
 register_driver("browser_use", f"{__name__}.browser_use.driver:create_browser_use_driver")
-register_driver("playwright_mcp", f"{__name__}.playwright_mcp:create_playwright_mcp_driver")
+register_driver("playwright_mcp", f"{__name__}.playwright_mcp.driver:create_playwright_mcp_driver")
 
 __all__ = ["DRIVERS"]

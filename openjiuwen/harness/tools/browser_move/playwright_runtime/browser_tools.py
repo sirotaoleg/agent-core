@@ -105,8 +105,8 @@ def _ensure_openjiuwen_client_patch() -> None:
 
     import openjiuwen.core.runner.resources_manager.tool_manager as tool_mgr
 
-    from ..clients.stdio_client import BrowserMoveStdioClient
-    from ..clients.streamable_http_client import BrowserMoveStreamableHttpClient
+    from ..drivers.playwright_mcp.clients.stdio_client import BrowserMoveStdioClient
+    from ..drivers.playwright_mcp.clients.streamable_http_client import BrowserMoveStreamableHttpClient
 
     tool_mgr.StdioClient = BrowserMoveStdioClient
     original_create_client = tool_mgr.ToolMgr._create_client

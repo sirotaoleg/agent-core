@@ -12,7 +12,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging im
     browser_agent_log_info,
     browser_agent_log_warning,
 )
-from ..utils.parsing import sanitize_json_schema
+from ....utils.parsing import sanitize_json_schema
 from .logging_utils import summarize_tool_arguments_for_log
 
 

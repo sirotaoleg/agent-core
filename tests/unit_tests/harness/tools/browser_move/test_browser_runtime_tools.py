@@ -15,7 +15,7 @@ from openjiuwen.core.foundation.llm import ToolMessage
 from openjiuwen.core.foundation.tool import McpServerConfig, McpToolCard, Tool, ToolCard
 from openjiuwen.core.foundation.tool.mcp.base import MCPTool, McpToolResult
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext, ToolCallInputs
-from openjiuwen.harness.tools.browser_move.clients.stdio_client import BrowserMoveStdioClient
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.clients.stdio_client import BrowserMoveStdioClient
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime, BrowserRuntimeRail
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime_tools import (

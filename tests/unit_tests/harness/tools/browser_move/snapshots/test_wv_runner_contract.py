@@ -406,7 +406,7 @@ def test_run_py_tokens_line(openrouter_call: dict[str, Any]) -> None:
 
 def test_analyze_tool_error_signal_from_mcp_result() -> None:
     """A Playwright MCP ``### Error`` result reaches the agent unchanged."""
-    from openjiuwen.harness.tools.browser_move.clients.stdio_client import BrowserMoveStdioClient
+    from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.clients.stdio_client import BrowserMoveStdioClient
     from openjiuwen.harness.tools.browser_move.playwright_runtime.config import build_playwright_mcp_config
 
     error_text = "### Error\nError: locator.click: Timeout 5000ms exceeded."

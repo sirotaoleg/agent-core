@@ -12,8 +12,8 @@ from openjiuwen.core.runner import Runner
 
 # Use browser_move client subclasses for MCP transport retry and timeout handling.
 import openjiuwen.core.runner.resources_manager.tool_manager as _tool_mgr_mod
-from ..clients.stdio_client import BrowserMoveStdioClient
-from ..clients.streamable_http_client import BrowserMoveStreamableHttpClient
+from ..drivers.playwright_mcp.clients.stdio_client import BrowserMoveStdioClient
+from ..drivers.playwright_mcp.clients.streamable_http_client import BrowserMoveStreamableHttpClient
 
 _tool_mgr_mod.StdioClient = BrowserMoveStdioClient
 _tool_mgr_mod.StreamableHttpClient = BrowserMoveStreamableHttpClient

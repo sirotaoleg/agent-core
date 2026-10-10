@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_tools import ensure_browser_runtime_client_patch
-from openjiuwen.harness.tools.browser_move.clients.stdio_client import BrowserMoveStdioClient
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.clients.stdio_client import BrowserMoveStdioClient
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.runner.resources_manager.tool_manager import ToolMgr
 

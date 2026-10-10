@@ -12,7 +12,13 @@ from collections import Counter
 from . import _scan
 
 # (file relative to the package, imported module relative to the package) -> count.
-KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {}
+KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {
+    # legacy code, removed with the old paths
+    ("playwright_runtime/browser_tools.py", "drivers.playwright_mcp.clients.stdio_client"): 1,
+    ("playwright_runtime/browser_tools.py", "drivers.playwright_mcp.clients.streamable_http_client"): 1,
+    ("playwright_runtime/main.py", "drivers.playwright_mcp.clients.stdio_client"): 1,
+    ("playwright_runtime/main.py", "drivers.playwright_mcp.clients.streamable_http_client"): 1,
+}
 
 # (file relative to openjiuwen/core, imported module) -> count.
 KNOWN_CORE_TO_HARNESS_IMPORTS: dict[tuple[str, str], int] = {

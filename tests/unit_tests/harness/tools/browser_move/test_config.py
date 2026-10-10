@@ -14,7 +14,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from openjiuwen.core.foundation.tool import McpServerConfig
-from openjiuwen.harness.tools.browser_move.clients.streamable_http_client import (
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.clients.streamable_http_client import (
     BrowserMoveStreamableHttpClient,
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime import browser_tools as browser_tools_module
