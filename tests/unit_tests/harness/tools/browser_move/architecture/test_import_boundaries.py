@@ -22,11 +22,6 @@ KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {
 
 # (file relative to openjiuwen/core, imported module) -> count.
 KNOWN_CORE_TO_HARNESS_IMPORTS: dict[tuple[str, str], int] = {
-    # legacy code, removed with the old paths
-    (
-        "single_agent/agents/react_agent.py",
-        "openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging",
-    ): 1,
     # Outside browser_move; the driver refactor does not remove these.
     ("context_engine/context/session_memory_manager.py", "openjiuwen.harness.tools.filesystem"): 2,
     ("context_engine/processor/forked/compressor/session_memory_agent.py", "openjiuwen.harness.tools.filesystem"): 1,

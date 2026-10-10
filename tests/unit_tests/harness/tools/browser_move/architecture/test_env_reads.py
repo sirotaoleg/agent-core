@@ -22,15 +22,6 @@ KNOWN_ENV_READS: dict[str, dict[str, int]] = {
     "drivers/browser_use/sidecar/session_adapter.py": {
         "os.environ.get(BROWSER_UPLOAD_ROOT)": 1,
     },
-    # the logger is process-global and fetched at import time; it is configured from settings once the logging hook
-    # moves into openjiuwen.core
-    "playwright_runtime/browser_logging.py": {
-        "_env_bool(OPENJIUWEN_BROWSER_AGENT_AUDIT_RAW)": 1,
-        "_env_bool(OPENJIUWEN_BROWSER_AGENT_LOG_MIRROR_COMMON)": 1,
-        "os.getenv(?)": 1,
-        "os.getenv(OPENJIUWEN_BROWSER_AGENT_LOG_FILE)": 1,
-        "os.getenv(OPENJIUWEN_BROWSER_AGENT_LOG_LEVEL)": 1,
-    },
     # not the process environment: the env mapping of the Playwright MCP child in the MCP server config
     "playwright_runtime/service.py": {
         "env_map.get(PLAYWRIGHT_MCP_CDP_ENDPOINT)": 1,
