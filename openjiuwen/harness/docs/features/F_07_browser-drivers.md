@@ -2262,3 +2262,88 @@ The Phase 0 decision to accept and ignore these arguments is reversed.
    else) before the case can expect `Unsupported` on browser-use and a subtree on Playwright MCP.
 2. `depth` is rounded like every numeric argument (`round(float(depth))`); the server's schema says `number`, so a
    fractional depth from the model is rounded rather than refused.
+
+## The switch, step 5: the server judges the refs the model sends
+
+The fifth switch session, on `p4-switch`: on the Playwright MCP dialect a `target` the model sends carries no
+generation, so the page state never refuses it before the driver; the server's own "not found" is the stale answer.
+
+### Background
+
+The MCP smoke after step 4 passed 3/3 at $1.28 against the reference's $0.83. Allrecipes and Amazon came in under
+the reference; Google Flights cost $1.17 against $0.58. The dialect's `_target` stamped every aria ref and css
+selector the model sent with `generation_of(target)`, the generation the page state last saw it in, and `check`
+refused it with `Stale AX ref f1e149 belongs to g3; current generation is g4.` before the driver was called;
+`CommandTool` then rendered the error plus a fresh full observation (about 18,000 characters). On a single-page
+application the generation advances often (DOM churn, address changes), so refs the server would still resolve were
+refused: six distinct refs in the Google Flights run, none in the reference run. The old worker sent refs straight to
+`@playwright/mcp`, which resolves `aria-ref` and css against the live page and answers `Ref ... not found in the
+current page snapshot` only when the element is really gone (the driver decodes that to `StaleRef(dispatched=False)`,
+fixture `click_stale_ref`).
+
+### Decisions
+
+1. **Who owns staleness is a property of the dialect, written in the generation its decoder stamps.** The page
+   state owns it for the refs it hands out or the model dates itself: `resolve`d targets, points on a screenshot,
+   the browser dialect's `ref` / `selector` with the model's `generation_id`, browser-use index refs. The Playwright
+   MCP server owns it for the aria refs and css the model sends on its dialect. S_20 says this once under Refs; the
+   MCP dialect, which lives in the driver package, expresses it; no core code learns about MCP.
+2. **`_target` builds `DriverRef(target, "")` and `Locator(css=target, text=None, generation="")`.** `check`
+   already lets an empty generation pass (the rule a point used before the first screenshot), so the page state does
+   not change. `PointRef` keeps `screenshot_generation`, the browser dialect keeps the model's `generation_id`,
+   `resolve` keeps the target's generation. This reverses decision 1 of "Tool factory and Playwright MCP native
+   tools" (a `DriverRef` at the generation the page state last saw it in).
+3. **The server's refusal stays the driver-raised `StaleRef`.** `RetryOnStale` observes once and attaches the
+   fresh observation; `CommandTool` renders the error with it and records the observation, as before. The model
+   reads the same shape of answer as the pre-refusal gave, now only for an element that is really gone.
+4. **Nothing downstream needed the generation of an MCP ref.** `RetryOnStale` reads only `dispatched`; `resolve`
+   and the batch / find / custom helpers stamp `page_state.generation_id` themselves; the policy probe checks the
+   command against the surface context; `CommandRecord.generation` and `message_metadata` come from the result and
+   the page state, not from the refs. The factory's builder for a spec without a schema (`_generated_build`) still
+   stamps `generation_of`; no MCP tool goes through it, and it was left alone.
+5. **Two runtime-rail tests that asserted the pre-refusal on the MCP path were rewritten**, not deleted: after a
+   navigation the click on the old ref now reaches the driver and the server's `StaleRef` renders with its fresh
+   observation; after a URL change the click on the old ref reaches the driver and succeeds.
+
+### Rejected options
+
+- **Teaching `check` about the MCP dialect** (a flag on the page state or on `DriverInfo` that skips the check for
+  aria refs): the page state would learn a driver's name, and the generation on the ref would say something untrue.
+- **A forgiving page-state rule** (accept a ref one generation old): the server already does the only lookup that
+  matters, against the live page; a forgiving rule would still refuse refs that survived two generations and still
+  pass refs of elements that are gone.
+- **Keeping the pre-refusal and shrinking the observation it renders**: cheaper, but still a wrong answer for an
+  element that exists; the cost was the symptom.
+
+### Golden status
+
+| Check | Result |
+|---|---|
+| every MCP view, prompts included (`test_tool_prompt_snapshot.py`) | byte for byte, no golden touched |
+| factory goldens (`test_tool_factory_golden.py`) `core` / `runner`, browser-use views | unchanged |
+| tool-result goldens (`test_tool_result_golden.py`), `click_stale_ref` included | unchanged (the stale wording is the server's, the rendered error never carried a generation) |
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q`: **2309 passed, 112 skipped** (2307 before this step; one wall-clock batch test,
+  `wait_for_stable`, failed once while the live suite ran beside it and passed alone). New: the dialect's
+  target without a generation (an aria ref and a css selector, the resolver reporting an older one); the page state
+  passing an MCP click and hover after `reset()`; the factory's `browser_click` reaching the `FakeDriver` after the
+  generation moved (`Click(DriverRef("e1", ""))`, the record stamped `g1`) and the driver's `StaleRef` rendering with
+  the observation it carries; the two rewritten rail tests. The `PointRef` pre-refusal test is unchanged and green.
+- Live, `BROWSER_MOVE_LIVE_MCP=1`: MCP conformance + live assembly + live helpers **58 passed, 6 skipped** (57 before; the six browser-use-gated cases of those files). New live case
+  (`test_browser_helpers_live.py`): a full snapshot, `browser_click` on "Open popup" (a second tab, the generation
+  moves), `browser_tabs` `select 0` (moves again, nothing re-registered), then `browser_click` on the "Last button"
+  ref from the first snapshot: the page state reports the ref in an older generation than the current one (the
+  popup click's answer snapshot re-registered the first tab's refs once, the tab select did not), the click reaches the
+  server and the title becomes `last`.
+- Live, `BROWSER_USE_SIDECAR_PYTHON` set: browser-use conformance **45 passed**.
+
+### Known leftovers
+
+1. `_generated_build` (a spec without a schema) still stamps `generation_of`; no built driver serves an element ref
+   through it today.
+2. The live case proves the server resolves a ref the page state's generation moved past; it does not measure the
+   smoke. The next MCP smoke tells whether Google Flights returns to the reference cost.
+3. The import block of `test_browser_runtime_rail.py` was unsorted before this step (`ruff --select I`); it was left
+   as found.

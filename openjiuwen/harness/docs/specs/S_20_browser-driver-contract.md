@@ -83,6 +83,14 @@ a driver ref was last seen in; the current one for a ref never seen). The page s
 every `PointRef` with `screenshot_generation` (the model sends no generation for a point), so a point taken on an
 older screenshot is stale like an element ref; an empty generation is never stale.
 
+Who owns staleness is a property of the dialect, written in the generation its decoder stamps. The page state owns
+it for the refs it hands out or the model dates itself: a runtime-minted target (`resolve`), a point on a screenshot
+(`screenshot_generation`), the browser dialect's `ref` / `selector` with the model's `generation_id`, and a
+browser-use index ref. The Playwright MCP server owns it for the aria refs and css the model sends on its dialect,
+which it resolves against the live page: those decode with an empty generation, the page state lets them through,
+and the server's "not found" is the `StaleRef` the driver raises (`dispatched=False`), so the model gets the error
+with a fresh observation either way.
+
 ### Commands (`actions.py`, `surfaces/<name>/commands.py`)
 
 A command is a frozen dataclass subclassing `Action`, with a class-level `effect` (`Effect.READ`, `ACT`,
@@ -821,7 +829,8 @@ one counter; the text-snapshot methods (`register_ax_snapshot`, `replace_ax_snap
   kept across generations, so `check` refuses a point on an older screenshot.
 - `check(action)`: every ref in `iter_refs(action)` whose generation is older than the current one →
   `StaleRef(dispatched=False)`, one message per stale ref (`Stale AX ref e1 belongs to g0; current generation is
-  g1.`). Refs with an empty generation and unknown refs of the current generation pass; the driver decides.
+  g1.`). Refs with an empty generation and unknown refs of the current generation pass; the driver decides. On the
+  Playwright MCP dialect every element target the model sends is such a ref (Refs).
 - `RefResolver`: `contexts`, `current_context`, `screenshot_generation`, `generation_of(ref)` (the generation the ref
   was last registered in, the current one for a ref never seen) and `resolve(target_id, generation)`
   (`resolve_target`, then `DriverRef` for an AX target, `Locator(css)` for a probe target with a validated selector,
@@ -1331,9 +1340,11 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
 
 `DECODERS` maps each server tool a capability can select to the pure decoder of its arguments, the inverse of the
 driver's handler: decoding a call the driver sent and sending the command again gives the same arguments. A
-`target` that matches `ARIA_REF` becomes `DriverRef(target, resolver.generation_of(target))`, any other target
-`Locator(css=target, text=None, generation=resolver.generation_of(target))`; coordinates become
-`PointRef(round(x), round(y), resolver.screenshot_generation)` (the model sends no generation for a point).
+`target` that matches `ARIA_REF` becomes `DriverRef(target, "")`, any other target
+`Locator(css=target, text=None, generation="")`: the server resolves both against the live page and judges
+staleness itself, so the page state never refuses them (Refs). Coordinates become
+`PointRef(round(x), round(y), resolver.screenshot_generation)` (the model sends no generation for a point, and the
+page state refuses one on an older screenshot).
 
 | Server tool | Command |
 |---|---|
