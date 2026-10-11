@@ -105,7 +105,7 @@ class ToyProvisioner:
 
 def _registries(driver: FakeDriver, provisioner: ToyProvisioner) -> Registries:
     surfaces: Registry[SurfaceBundle] = Registry("surface")
-    surfaces.register("toy", lambda environ: BUNDLE)
+    surfaces.register("toy", lambda environ, instance=None, settings=None: BUNDLE)
     drivers: Registry[Any] = Registry("driver")
     drivers.register("fake", lambda device, settings: driver)
     provisioners: Registry[Any] = Registry("provisioner")

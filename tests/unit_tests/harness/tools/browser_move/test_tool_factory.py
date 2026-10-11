@@ -57,6 +57,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory impor
     CommandRecord,
     ToolContext,
     ToolFactory,
+    ToolFlags,
     command_record,
 )
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
@@ -260,6 +261,33 @@ def test_extra_tools_are_built_from_the_tool_context() -> None:
     assert len(built.tools) == 5
     assert (seen[0].page_state, seen[0].settings, seen[0].image_support) == (page_state, "toy-settings", False)
     assert isinstance(seen[0].driver, DriverSession)
+
+
+def test_a_worker_build_leaves_out_the_extra_tools_flagged_for_the_main_agent_only() -> None:
+    class ForBoth:
+        flags = ToolFlags()
+
+        def __init__(self, context: ToolContext) -> None:
+            self.card = _build(FakeDriver())[0].tools[0].card
+
+    class MainAgentOnly(ForBoth):
+        flags = ToolFlags(worker=False)
+
+    def unflagged(context: ToolContext) -> Any:
+        return ForBoth(context)
+
+    profile = _profile(extra_tools=(ForBoth, MainAgentOnly, unflagged))
+    driver, page_state = FakeDriver(), BrowserPageState()
+    session = DriverSession(DriverAssembly(driver, DEVICE, None, None), page_state, MESSAGES)
+
+    def built(worker: bool) -> list[type]:
+        tools = ToolFactory(profile, driver.info).build(
+            ("core",), image_support=False, session=session, page_state=page_state, worker=worker
+        )
+        return [type(tool) for tool in tools.tools[4:]]
+
+    assert built(worker=False) == [ForBoth, MainAgentOnly, ForBoth]
+    assert built(worker=True) == [ForBoth, ForBoth]
 
 
 def test_extra_tools_get_the_workspace_and_language_the_agent_is_built_with(tmp_path: Path) -> None:

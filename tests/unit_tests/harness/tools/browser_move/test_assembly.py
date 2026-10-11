@@ -127,9 +127,12 @@ class World:
         drivers.register("fake_driver", self._driver)
         self.registries = Registries(drivers=drivers, surfaces=surfaces, provisioners=provisioners)
 
-    def _surface(self, environ: Any) -> SurfaceBundle:
+    def _surface(self, environ: Any, instance: Any = None, settings: Any = None) -> SurfaceBundle:
         self.log.append(("surface", environ))
-        return SurfaceBundle(settings=self.settings, profile=self.profile)
+        settings = self.settings if settings is None else settings
+        if instance is not None:
+            settings = settings.with_instance(instance)
+        return SurfaceBundle(settings=settings, profile=dataclasses.replace(self.profile, settings=settings))
 
     def _provisioner_factory(self, name: str):
         def create() -> FakeProvisioner:
@@ -144,8 +147,10 @@ class World:
             raise self._driver_error
         return self.driver
 
-    def assemble(self, core: CoreSettings = CORE, *, instance: Any = None) -> DriverAssembly:
-        return asyncio.run(assemble_driver(core, ENVIRON, instance=instance, registries=self.registries))
+    def assemble(self, core: CoreSettings = CORE, *, instance: Any = None, settings: Any = None) -> DriverAssembly:
+        return asyncio.run(
+            assemble_driver(core, ENVIRON, instance=instance, registries=self.registries, settings=settings)
+        )
 
 
 class TestAssembleDriver:
@@ -176,6 +181,17 @@ class TestAssembleDriver:
             ("driver", DEVICE, applied),
         ]
         assert assembly.surface.settings == assembly.surface.profile.settings == assembly.surface_settings == applied
+
+    def test_given_settings_replace_the_environment_and_still_take_the_instance(self) -> None:
+        world = World()
+        given = FakeSettings(provisioning="other_provisioning", owner="given")
+
+        assembly = world.assemble(settings=given, instance={"provisioning": "other_provisioning", "owner": "agent-a"})
+
+        applied = FakeSettings(provisioning="other_provisioning", owner="agent-a")
+        assert world.log[1:3] == [("provisioner", "other_provisioning"), ("provision", applied)]
+        assert assembly.surface_settings == applied
+        assert world.assemble(settings=given).surface_settings == given
 
     def test_stack_is_tracing_over_stale_retry_over_timeouts_over_the_driver(self) -> None:
         world = World()
@@ -338,6 +354,19 @@ class TestBuiltInRegistrations:
         )
         assert bundle.profile.name == "browser"
         assert bundle.profile.settings is bundle.settings
+
+    def test_browser_surface_applies_the_instance_to_the_given_settings(self) -> None:
+        given = BrowserSettings(provisioning="managed", profile_name="from-settings", managed_port=9444)
+
+        bundle = SURFACES.create("browser", {"BROWSER_MANAGED_PORT": "9555"}, BrowserInstanceConfig(key="a"), given)
+
+        assert (bundle.settings.provisioning, bundle.settings.profile_name, bundle.settings.managed_port) == (
+            "managed",
+            "a",
+            0,
+        )
+        assert bundle.profile.settings is bundle.settings
+        assert SURFACES.create("browser", {"BROWSER_MANAGED_PORT": "9555"}, None, given).settings is given
 
     def test_default_registries_reach_the_built_in_names(self) -> None:
         assert {"playwright_mcp", "browser_use"} <= set(DRIVERS.names())

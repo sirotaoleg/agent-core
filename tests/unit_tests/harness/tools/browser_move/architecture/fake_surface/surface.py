@@ -158,7 +158,7 @@ class ScreenProvisioner:
 def screen_registries(driver: ScreenDriver, provisioner: ScreenProvisioner) -> Registries:
     """Test-scoped registries: the screen surface, its driver and its provisioner by name."""
     surfaces: Registry[SurfaceBundle] = Registry("surface")
-    surfaces.register("fake", lambda environ: SurfaceBundle(PROFILE.settings, PROFILE))
+    surfaces.register("fake", lambda environ, instance=None, settings=None: SurfaceBundle(PROFILE.settings, PROFILE))
     drivers: Registry[Any] = Registry("driver")
     drivers.register("screen_driver", lambda device, settings: driver)
     provisioners: Registry[Any] = Registry("provisioner")
