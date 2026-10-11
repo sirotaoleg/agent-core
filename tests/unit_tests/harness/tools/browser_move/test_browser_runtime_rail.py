@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -2292,3 +2292,15 @@ def test_after_invoke_cannot_override_runtime_terminal_state_without_progress_bl
     assert result["result_type"] == "error"
     assert result["failure_summary"] == "runtime blocked: captcha"
     assert session.get_state("__browser_phase_budget_state__")["blockers"] == ["captcha"]
+
+
+def test_a_failing_status_logger_is_logged_and_stays_inside_the_rail() -> None:
+    rail = BrowserRuntimeRail(_mock_runtime())
+    error = RuntimeError("status sink closed")
+    rail._status_logger = SimpleNamespace(before_invoke=MagicMock(side_effect=error))
+    warn = runtime_module.browser_agent_log_warning
+
+    with patch.object(runtime_module, "browser_agent_log_warning", wraps=warn) as warned:
+        rail._emit_status("before_invoke", AgentCallbackContext(agent=MagicMock()))
+
+    assert warned.call_args.args[1:] == ("before_invoke", error)
