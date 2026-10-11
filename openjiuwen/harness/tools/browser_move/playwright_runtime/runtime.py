@@ -448,6 +448,7 @@ class BrowserAgentRuntime:
         self._browser_list_actions_tool = None
         self._controller: BaseController = ActionController()
         self._agent: Any = None
+        self._dedicated_log = True
         self._session: DriverSession | None = None
         self._context: ToolContext | None = None
         self._parts: dict[bool, AgentParts] = {}
@@ -465,6 +466,11 @@ class BrowserAgentRuntime:
     @property
     def core_settings(self) -> Optional[CoreSettings]:
         return self._core_settings
+
+    @property
+    def dedicated_log(self) -> bool:
+        """Whether the agent's invokes write to the dedicated log file; the runner's own agent uses the process log."""
+        return self._dedicated_log
 
     @property
     def controller(self) -> BaseController:
@@ -830,6 +836,8 @@ class BrowserAgentRuntime:
     def _direct_agent(self) -> Any:
         from openjiuwen.harness.subagents.browser_agent import create_browser_agent
 
+        # The runner reads model usage from the process log, where the worker's model calls land.
+        self._dedicated_log = False
         core = self._service.core
         model = Model(
             model_client_config=ModelClientConfig(
@@ -1104,7 +1112,8 @@ class BrowserRuntimeRail(AgentRail):
 
     async def before_invoke(self, ctx: AgentCallbackContext) -> None:
         if isinstance(getattr(ctx, "extra", None), dict):
-            ctx.extra[_BROWSER_LOG_CONTEXT_TOKEN_KEY] = set_browser_agent_log_context(True)
+            if self._runtime.dedicated_log:
+                ctx.extra[_BROWSER_LOG_CONTEXT_TOKEN_KEY] = set_browser_agent_log_context(True)
             try:
                 timeout_s = max(1, int(self._runtime.service.guardrails.timeout_s))
             except (TypeError, ValueError, AttributeError):
