@@ -77,11 +77,10 @@ def _target(value: Any, resolver: RefResolver) -> DriverRef | Locator:
     target = str(value or "")
     if not target:
         raise ValueError("'target' is required")
-    # The model sends no generation: a ref belongs to the observation it was last seen in.
-    generation = resolver.generation_of(target)
+    # The server resolves aria refs and css against the live page, so it, not the page state, judges staleness.
     if ARIA_REF.fullmatch(target):
-        return DriverRef(target, generation)
-    return Locator(css=target, text=None, generation=generation)
+        return DriverRef(target, "")
+    return Locator(css=target, text=None, generation="")
 
 
 def _point(args: Mapping[str, Any], x: str, y: str, resolver: RefResolver) -> PointRef:
