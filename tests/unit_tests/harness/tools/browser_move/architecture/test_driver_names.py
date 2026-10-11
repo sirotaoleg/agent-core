@@ -105,8 +105,6 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
     "playwright_runtime/runtime.py": 2,
     "playwright_runtime/runtime_tools.py": 1,
     "playwright_runtime/service.py": 1,
-    "utils/__init__.py": 4,
-    "utils/env.py": 3,
     "utils/parsing.py": 1,
     # model-facing card text, kept byte-identical to the golden tool list
     "surfaces/browser/helpers/batch_steps.py": 1,

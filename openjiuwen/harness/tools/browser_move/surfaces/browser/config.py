@@ -15,8 +15,6 @@ from typing import TYPE_CHECKING, Mapping
 from openjiuwen.core.foundation.tool import McpServerConfig
 
 from ...utils.env import (
-    DEFAULT_PLAYWRIGHT_MCP_ARGS,
-    DEFAULT_PLAYWRIGHT_MCP_COMMAND,
     env_value,
     first_value,
     int_value,
@@ -30,6 +28,8 @@ if TYPE_CHECKING:
 ENV_PREFIXES = ("BROWSER_", "PLAYWRIGHT_")
 PROVISIONINGS = ("remote", "managed", "extension")
 DEFAULT_MCP_TIMEOUT_S = 600
+DEFAULT_PLAYWRIGHT_MCP_COMMAND = "npx"
+DEFAULT_PLAYWRIGHT_MCP_ARGS = "-y @playwright/mcp@0.0.78"
 DEFAULT_PROFILE_NAME = "jiuwenclaw"
 _MCP_PASSTHROUGH_ENV = ("PLAYWRIGHT_BROWSERS_PATH", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY")
 
