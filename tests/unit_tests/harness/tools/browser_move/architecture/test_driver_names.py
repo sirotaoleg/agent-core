@@ -102,7 +102,7 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
     "playwright_runtime/browser_working_context.py": 2,
     "playwright_runtime/browser_working_context_rail.py": 2,
     "playwright_runtime/main.py": 5,
-    "playwright_runtime/runtime.py": 3,
+    "playwright_runtime/runtime.py": 2,
     "playwright_runtime/runtime_tools.py": 1,
     "playwright_runtime/service.py": 14,
     "utils/__init__.py": 4,

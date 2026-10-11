@@ -817,7 +817,7 @@ class BrowserAgentRuntime:
         self._service.acquire_task_binding()
 
     async def ensure_started(self) -> None:
-        """The runner's agent: the worker on Playwright MCP, the main agent on this facade otherwise."""
+        """The runner's agent: the worker when the topology delegates, the main agent on this facade otherwise."""
         if self._service.core.topology == "direct":
             if self._agent is None:
                 self._agent = self._direct_agent()
