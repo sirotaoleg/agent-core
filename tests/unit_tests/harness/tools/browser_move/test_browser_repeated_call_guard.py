@@ -16,7 +16,7 @@ import pytest
 from openjiuwen.core.foundation.llm import AssistantMessage, ToolCall
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.runner import Runner
-from openjiuwen.core.single_agent.prompts.builder import SystemPromptBuilder
+from openjiuwen.core.single_agent.prompts.builder import PromptSection, SystemPromptBuilder
 from openjiuwen.core.single_agent.rail.base import ModelCallInputs, ToolCallInputs
 from openjiuwen.harness.tools.browser_move.contract import (
     ActionResult,
@@ -231,6 +231,20 @@ class TestWithholdingTools:
         assert withheld == [False] * 5
         assert inputs.tools == []
         assert "Tools are disabled for this reply" in run.agent.system_prompt_builder.build()
+
+    def test_a_run_whose_before_invoke_fired_on_another_context_is_still_guarded(self) -> None:
+        run = _Run()
+        run.extra = {}
+        run.agent.system_prompt_builder.add_section(
+            PromptSection(name="browser_repeated_call_finish", content={"en": "stale", "cn": "stale"}, priority=100)
+        )
+        first = run.model_call()
+        for _ in range(5):
+            run.evaluate("() => document.title", "Home")
+
+        assert first.tools == [{"name": EVALUATE}]
+        assert not run.agent.system_prompt_builder.has_section("browser_repeated_call_finish")
+        assert run.model_call().tools == []
 
     def test_new_run_resets_state_and_finish_section(self) -> None:
         run = _Run()
