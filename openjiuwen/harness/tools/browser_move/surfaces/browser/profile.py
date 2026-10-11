@@ -37,6 +37,7 @@ MESSAGES: Mapping[str, str] = {
     "driver_restarted": "the browser restarted; take a fresh observation",
     "driver_lost": "the browser connection was lost again; the task cannot continue",
     "context_changed": "Call browser_snapshot again and use refs from generation {generation}.",
+    "retry": "Then retry the action (take a fresh browser_snapshot if the page changed).",
 }
 
 
