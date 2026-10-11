@@ -46,6 +46,7 @@ from .page_state import BrowserPageState
 from .service_registry import BROWSER_SERVICE_REGISTRY, BrowserServiceIdentity
 
 MAX_ITERATION_MESSAGE = "Max iterations reached without completion"
+WORKER_LANGUAGE = "en"
 _ctx_observer_session_id: contextvars.ContextVar[str] = contextvars.ContextVar(
     "playwright_runtime_observer_session_id",
     default="",
@@ -648,7 +649,7 @@ class BrowserService:
             self._session.assembly.surface,
             capabilities=self._capabilities,
             image_support=False,
-            language="en",
+            language=WORKER_LANGUAGE,
             worker=True,
         )
         self._browser_agent = build_browser_worker_agent(

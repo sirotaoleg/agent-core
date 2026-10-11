@@ -78,7 +78,7 @@ from .config import (
 from .driver_session import DriverSession
 from .page_state import CARD_EVIDENCE_FIELDS, BrowserPageState, BrowserTarget
 from .semantic_state import SemanticStateTracker, price_interval_signature
-from .service import MAX_ITERATION_MESSAGE, BrowserService, BrowserTaskProgressState
+from .service import MAX_ITERATION_MESSAGE, WORKER_LANGUAGE, BrowserService, BrowserTaskProgressState
 from .site_profiles import infer_profile_evidence_entity
 from .status_logging import BrowserSubagentStatusLogger, is_browser_subagent_status_log_enabled
 from .tool_factory import Builder, CommandRecord, ToolContext, ToolFlags, command_record
@@ -831,8 +831,8 @@ class BrowserAgentRuntime:
             return
         from .runtime_tools import BrowserCustomActionTool, BrowserListActionsTool
 
-        self._browser_custom_action_tool = BrowserCustomActionTool(self, language="en")
-        self._browser_list_actions_tool = BrowserListActionsTool(self, language="en")
+        self._browser_custom_action_tool = BrowserCustomActionTool(self, language=WORKER_LANGUAGE)
+        self._browser_list_actions_tool = BrowserListActionsTool(self, language=WORKER_LANGUAGE)
         self._register_runtime_tool(self._browser_custom_action_tool, tool_name="browser_custom_action")
         self._register_runtime_tool(self._browser_list_actions_tool, tool_name="browser_list_custom_actions")
 
@@ -855,7 +855,7 @@ class BrowserAgentRuntime:
         )
         return create_browser_agent(
             model,
-            language=self._language,
+            language=WORKER_LANGUAGE,
             temperature=core.worker_temperature,
             max_iterations=self._service.guardrails.max_steps,
             workspace=self._workspace,
