@@ -858,7 +858,32 @@ def test_factory_keeps_a_given_server_command_line_under_its_own_name_and_endpoi
     )
     assert server.params["env"]["X"] == "1"
     assert server.params["env"]["PLAYWRIGHT_MCP_CDP_ENDPOINT"] == device.endpoint
+    assert server.params["env"]["PLAYWRIGHT_MCP_BROWSER"] == "chrome"
     assert driver.config.output_dir == Path("C:/runs")
+
+
+def test_a_given_server_env_keeps_its_browser_and_loses_its_device(environ) -> None:
+    values, device = DEVICES["managed"]
+    environ(values)
+    given = McpServerConfig(
+        server_id="runner-id",
+        server_name="playwright-official-agent-a",
+        server_path="stdio://playwright",
+        client_type="stdio",
+        params={
+            "command": "node",
+            "args": [],
+            "cwd": "C:/runs",
+            "env": {"PLAYWRIGHT_MCP_BROWSER": "msedge", "PLAYWRIGHT_MCP_DEVICE": "iPhone 15"},
+        },
+    )
+    settings = dataclasses.replace(BrowserSettings.from_env(os.environ), mcp_server=given)
+
+    env = create_playwright_mcp_driver(device, settings).config.server.params["env"]
+
+    assert env["PLAYWRIGHT_MCP_BROWSER"] == "msedge"
+    assert "PLAYWRIGHT_MCP_DEVICE" not in env
+    assert env["PLAYWRIGHT_MCP_CDP_ENDPOINT"] == device.endpoint
 
 
 def test_factory_builds_the_extension_command_line(environ) -> None:
