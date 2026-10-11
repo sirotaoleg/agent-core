@@ -47,7 +47,10 @@ test-scoped registries, run a scripted task through `build_agent` on a real deep
 
 ### Observation (`observation.py`)
 
-What `Driver.observe()` returns: a snapshot of the focused context.
+What `Driver.observe()` returns: a snapshot of the focused context. A scoped `Observe` (`depth` or `root` set) gives a
+partial one: the subtree under `root`, at most `depth` levels deep. It shows some of the page's elements, so the page
+state never takes it for the page's observation (see "Page state"); a driver that cannot scope raises
+`Unsupported(dispatched=False)` before anything is sent.
 
 | Type | Purpose |
 |---|---|
@@ -90,7 +93,7 @@ screen:
 
 | Command | Fields | Effect |
 |---|---|---|
-| `Observe` | `include_screenshot=False`, `full_page=False` | READ |
+| `Observe` | `include_screenshot=False`, `full_page=False`, `depth: int \| None = None`, `root: Ref \| None = None`; `scoped` is true when either is set | READ |
 | `Click` | `target: Ref`, `button="left"`, `modifiers=()`, `count=1` | ACT |
 | `TypeText` | `target: Ref \| None`, `text`, `submit=False`, `sensitive=False`, `clear=True`, `slowly=False` | ACT |
 | `PressKey` | `key`, `target: Ref \| None = None` | ACT |
@@ -806,6 +809,10 @@ one counter; the text-snapshot methods (`register_ax_snapshot`, `replace_ax_snap
   stamped: `ActionResult.generation`, `Observation.generation` and every `Element.ref.generation`. Observation
   elements replace the current generation's AX targets (same targets as a complete text snapshot). The surface
   context's `tabs` become `contexts`; `observation.context` becomes `current_context`.
+- A scoped `Observe` (`action.scoped`) with an `Observation` outcome is partial: no generation check, no change to
+  `last_observation`, `current_context`, `contexts`, the address or `fresh_observation`. The refs it shows join the
+  current generation (new AX targets; existing ones are kept), the refs it does not show stay valid, as a model
+  snapshot registered them before the switch. The returned observation is stamped like any other.
 - `free_observations` counts observations that came with an `ActionResult` of a command other than `Observe`.
 - `fresh_observation`: `last_observation` while it is of the current generation and no command was recorded after
   it without an observation, nor noted with `note_dispatched()` (a command that reached the surface and failed);
@@ -1146,7 +1153,9 @@ native_text, surface}`, `versions` from the sidecar's `connect` reply.
   (`IndexRef`) stay internal; no handler accepts them.
 - `observe()` fills `elements`, `native_text` (browser-use's own page text), `screenshot` (a separate full-page
   capture when `full_page`) and `BrowserContext` (url, title, tabs, `tab_urls`, `current_tab`, PDF viewer, scroll
-  pixels). The title is read from `document.title`, because browser-use's own title lags behind it; the sidecar's
+  pixels). A scoped `Observe` is `Unsupported(dispatched=False)`: browser-use observes whole pages, and the browser
+  dialect's `browser_snapshot` has no `depth` or `target`. The title is read from `document.title`, because
+  browser-use's own title lags behind it; the sidecar's
   title is kept when the page runs no script. While a dialog is open the sidecar answers `observe` from
   browser-use's cached target info only (URL, title, tabs) with `dialog` and no elements; the driver then runs no
   script and takes no screenshot.
@@ -1288,6 +1297,10 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   tool) gives `context` and `surface` (URL, tabs, the dialog; the title is empty), `elements` are empty, no
   screenshot is taken and `native_text` is the refusal text. An observation that comes free with an action
   result (the linked snapshot file) has no bounds.
+  A scoped `Observe` is sent exactly as the model asked and without `boxes`: `depth` → `depth`, `root` → `target`
+  (`DriverRef.ref` or the `Locator`'s css; a `PointRef` or a text `Locator` is `Unsupported(dispatched=False)` before
+  the call), so `native_text` is the server's answer byte for byte (fixtures `snapshot_depth_1`, `snapshot_target`)
+  and the elements of the subtree have no bounds.
 - **One attempt per tool call.** The driver calls `call_tool_once` on its client, never the retrying `call_tool`
   the runtime path uses: a call that fails is not sent again. A transport timeout (`mcp_timeout_s`) is
   `ActionTimeout(dispatched=True)`; no connection is `ConnectionLost(dispatched=False)`; any other transport failure
@@ -1335,7 +1348,7 @@ driver's handler: decoding a call the driver sent and sending the command again 
 | `browser_handle_dialog` | `HandleDialog(accept, promptText)` |
 | `browser_evaluate` | `RunScript(function, target=<target or None>)` |
 | `browser_navigate` / `browser_navigate_back` | `Navigate(url)` / `Back()` |
-| `browser_snapshot` | `Observe()` |
+| `browser_snapshot` | `Observe(depth=round(depth), root=<target or None>)`; `Observe()` without them |
 | `browser_take_screenshot` | `Observe(include_screenshot=True, full_page=fullPage)` |
 | `browser_tabs` | `list` → `Observe()`; `new` → `OpenContext(url)`; `select` → `SwitchContext(contexts[index])`; `close` → `CloseContext(contexts[index])`, the current context without `index` |
 | `browser_close` | `CloseContext(current_context)` |
@@ -1344,9 +1357,9 @@ driver's handler: decoding a call the driver sent and sending the command again 
 | `browser_pdf_save` / `browser_console_messages` / `browser_network_requests` | `GetPdf(filename)` / `GetConsole(level, all)` / `GetNetwork(static, filter)` |
 
 Arguments that do not change the command are accepted and ignored: `element` (every tool), `filename`, the
-snapshot's `target`, `depth`, `boxes`, the screenshot's `target`, `element`, `type`, `scale`, and the click's
-`delay`. A missing required argument, a wrong type, an unknown field type or tab action, a `select` without index
-and an index outside `contexts` raise `ValueError`. `browser_find` (served by the surface's `FindTool`) and
+snapshot's `boxes`, the screenshot's `target`, `element`, `type`, `scale`, and the click's `delay`. A missing
+required argument, a wrong type (a non-numeric `depth` included), an unknown field type or tab action, a `select`
+without index and an index outside `contexts` raise `ValueError`. `browser_find` (served by the surface's `FindTool`) and
 `browser_wait_for` (not model-facing) have no decoder.
 
 ## Relation to other specs

@@ -2165,3 +2165,100 @@ old rails and the last client-patch consumers are gone; the browser-use golden i
 3. `main.py` and `playwright_runtime_mcp_server.py` keep their module-level client-patch copies; `browser_tools.py`
    keeps the patch and the public `register_browser_runtime_mcp_server` wrapper (Phase 7).
 4. The browser-use `runner` golden has no agents: no golden pins the runner's browser-use (Direct) view.
+
+## The switch, step 4: scoped snapshots
+
+The fourth switch session, on `p4-switch`: the model's `browser_snapshot` `depth` and `target` reach the server
+again, and a scoped snapshot is a partial observation of the page.
+
+### Background
+
+The MCP smoke after step 3 cost 60% more than its reference ($1.33 against $0.83 for the same three tasks). Every
+`browser_snapshot` call decoded to `Observe()` and the driver always sent `{"boxes": true}`, so `{"depth": 1}` on
+Allrecipes returned 56,933 characters where the old path returned 361. The model reads pages cheaply this way: in the
+559-task baseline, 215 tasks (38%) passed snapshot arguments (`depth` 208, `target` 25, `filename` 6, `boxes` 2).
+The Phase 0 decision to accept and ignore these arguments is reversed.
+
+### Decisions
+
+1. **`Observe` gains `depth: int | None = None` and `root: Ref | None = None`**; `scoped` is true when either is
+   set. A scoped observation is the subtree under `root`, at most `depth` levels deep: partial by contract.
+   `include_screenshot` and `full_page` stay as they were. The root is a ref like any other, so `page_state.check`
+   refuses a scoped observe on a stale ref before the driver sees it.
+2. **The MCP dialect decodes `depth` → `depth` and `target` → `root`**, the target with the same rule as every
+   other decoder (`ARIA_REF` → `DriverRef`, else `Locator(css)`), the depth rounded like every number. `boxes`,
+   `filename` and `element` stay accepted and ignored (baseline counts: `boxes` 2, `filename` 6; `element` is the
+   model's own label of the target).
+3. **The MCP driver sends a scoped snapshot exactly as the model asked, without `boxes`.** A full `observe()` keeps
+   `{"boxes": true}` for the bounds a `PointRef` needs. The recorded fixtures show `boxes` adds only the `[box=…]`
+   tokens (`snapshot_with_boxes` without them equals `snapshot_form_page` up to the frame counter), so the text
+   would be the same either way; the model's arguments verbatim need no stripping and the answer is the server's
+   byte for byte. Two fixtures were recorded with `@playwright/mcp@0.0.78` on the fixture page, `snapshot_depth_1`
+   (`{"depth": 1}`, 442 characters) and `snapshot_target` (`{"target": "e3"}`, the navigation, 362 characters); the
+   rendered golden of each equals its recorded `model_text`. A `PointRef` or a text `Locator` root is
+   `Unsupported(dispatched=False)` before the call; the subtree's elements have no bounds.
+4. **The page state treats a scoped observation as partial.** No generation check (a subtree against the last full
+   observation would trip the Jaccard rule on an unchanged page), and `last_observation`, `fresh_observation`,
+   `current_context`, `contexts` and the address are left alone; the refs it shows join the current generation and
+   the refs it does not show stay valid. This is the old split: a model's `browser_snapshot` went through
+   `register_ax_snapshot` (add), only the runtime's own capture through `replace_ax_snapshot`. So
+   `capture_browser_state` observes afresh after a scoped snapshot unless a full observation is still fresh.
+5. **browser-use refuses a scoped `Observe`** with `Unsupported(dispatched=False)` before anything is sent. The
+   browser dialect's `browser_snapshot` schema has no `depth` or `target`, so nothing on that driver builds one; the
+   refusal is for the contract.
+6. **Model-facing schemas do not change.** The MCP `browser_snapshot` card is the server's own (it always listed
+   `depth` and `target`); the browser dialect's has `include_screenshot` only. Every snapshot golden stays byte for
+   byte.
+
+### Rejected options
+
+- **`boxes: true` on scoped snapshots too**, for the subtree's bounds: the text would be identical after
+  `without_boxes`, but nothing reads the bounds of a partial observation (points come from the fresh full one), and
+  the model's arguments verbatim are the simplest proof that the model reads what it read before.
+- **A separate `ScopedObserve` command**: two READ commands for one server tool; the dialect, the factory and the
+  renderer would all branch on it. Two optional fields and a `scoped` property do the same.
+- **Recording a scoped observation as the page's observation**: the next full observation's element distance against
+  a subtree would start a generation on an unchanged page, and `browser_find` and the compact capture would search a
+  subtree.
+- **Updating the address and title from a scoped snapshot's header**: a later full observation would then miss a
+  navigation the model saw only through a scoped snapshot (the address backstop compares against the known one).
+- **A conformance case "scoped observe returns only the subtree"**: not added, see Known leftovers 1.
+
+### Golden status
+
+| Check | Result |
+|---|---|
+| every MCP view, prompts included (`test_tool_prompt_snapshot.py`) | byte for byte, no golden touched |
+| factory goldens (`test_tool_factory_golden.py`) `core` / `runner`, browser-use views | unchanged |
+| tool-result goldens (`test_tool_result_golden.py`) | `snapshot_depth_1.txt` and `snapshot_target.txt` added, each equal to the recorded model text; the other 36 unchanged |
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q`: **2307 passed, 111 skipped** (2287 before this
+  step). New: the contract's `scoped` property and `iter_refs` over the root; the dialect's `depth` / `target`
+  decoding and the non-numeric `depth` error; the driver's four scoped-observe cases (depth alone, a `DriverRef`
+  root, a css root with a depth, a `PointRef` root refused unsent); the page state's four rules (generation and last
+  observation kept, refs added and kept, an outdated observation not made fresh, a stale root refused);
+  browser-use's refusal; the facade's `capture_browser_state` reusing a full snapshot and observing afresh after a
+  scoped one; the two fixtures in the well-formedness, decoder and result-golden suites.
+- `fixtures/mcp/record_mcp_fixtures.py` records the two new cases right after `snapshot_form_page` (same page,
+  same refs); re-recording `snapshot_depth_1` twice gave identical files.
+- Live, `BROWSER_MOVE_LIVE_MCP=1`: MCP conformance + live assembly + live helpers **57 passed, 6 skipped** (the six
+  browser-use-gated cases of those files, no sidecar interpreter set in that run). Live, `BROWSER_USE_SIDECAR_PYTHON`
+  set: browser-use conformance **45 passed**.
+- A scripted run through the factory's `browser_snapshot` on the live MCP scene (managed Chrome, `@playwright/mcp@0.0.78`):
+  the full snapshot is 1,104 characters, `{"depth": 1}` 327 characters (the root's children, subtrees cut), and a
+  `browser_click` on the "Save order" ref taken from the earlier full snapshot still succeeds afterwards (title
+  `clicked`); the generation stays `g1` across the scoped snapshot and the click.
+
+### Known leftovers
+
+1. **No conformance case for scoped observations.** The suite decides what a driver handles from `info.actions`,
+   which `HandlerDriver` fills from the `@handles` marks of `execute` handlers; `Observe` runs through `observe()`
+   and is never listed there (the factory treats it as handled by every driver), and a `depth`-only scope carries no
+   ref kind for `ensure_supported` to check. Listing `Observe` in `info.actions` would also make the suite's
+   `_pairs` generate happy-path cases that `execute` an `Observe`. Saying "this driver scopes" needs a decision
+   (`Observe` in `info.actions` with the suite skipping its happy path, a new `DriverInfo` field, or something
+   else) before the case can expect `Unsupported` on browser-use and a subtree on Playwright MCP.
+2. `depth` is rounded like every numeric argument (`round(float(depth))`); the server's schema says `number`, so a
+   fractional depth from the model is rounded rather than refused.
