@@ -141,6 +141,20 @@ def _aim(ref: DriverRef | Locator, what: str) -> dict[str, Any]:
     return {"element": f"{what} {target}", "target": target}
 
 
+def _snapshot_args(command: Observe) -> dict[str, Any]:
+    # Boxes give elements their bounds; a scoped snapshot goes as the model asked, so its text stays the server's.
+    if not command.scoped:
+        return {"boxes": True}
+    args: dict[str, Any] = {}
+    if command.depth is not None:
+        args["depth"] = command.depth
+    if isinstance(command.root, PointRef):
+        raise Unsupported("browser_snapshot scopes to an element ref or a css target, not a point", dispatched=False)
+    if command.root is not None:
+        args["target"] = _target(command.root)
+    return args
+
+
 def _point(ref: PointRef) -> dict[str, int]:
     # Screenshots are taken at CSS scale, so a screenshot pixel is a viewport pixel (Screenshot.scale is 1).
     return {"x": ref.x, "y": ref.y}
@@ -246,8 +260,7 @@ class PlaywrightMcpDriver(HandlerDriver):
         return Health(ok=False, detail="the server does not answer")
 
     async def observe(self, command: Observe) -> Observation:
-        # Boxes give elements their bounds; the text keeps the form the model reads today.
-        raw = await self._call("browser_snapshot", {"boxes": True})
+        raw = await self._call("browser_snapshot", _snapshot_args(command))
         decoded = await self._decode("browser_snapshot", raw)
         if not decoded.ok:
             return await self._observe_modal_state(raw)

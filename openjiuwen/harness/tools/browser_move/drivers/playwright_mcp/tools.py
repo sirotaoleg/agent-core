@@ -180,7 +180,11 @@ def build_navigate_back(args: Mapping[str, Any], resolver: RefResolver) -> Actio
 
 
 def build_snapshot(args: Mapping[str, Any], resolver: RefResolver) -> Action:
-    return Observe()
+    target = args.get("target")
+    return Observe(
+        depth=None if args.get("depth") is None else _number(args, "depth"),
+        root=None if not target else _target(target, resolver),
+    )
 
 
 def build_take_screenshot(args: Mapping[str, Any], resolver: RefResolver) -> Action:
@@ -242,7 +246,7 @@ def build_network_requests(args: Mapping[str, Any], resolver: RefResolver) -> Ac
     return GetNetwork(static=bool(args.get("static")), filter=None if url_filter is None else str(url_filter))
 
 
-# Arguments not decoded here (element, filename, depth, boxes, type, scale, delay) do not change the command.
+# Arguments not decoded here (element, filename, boxes, type, scale, delay) do not change the command.
 DECODERS: Mapping[str, Builder] = MappingProxyType(
     {
         "browser_click": build_click,

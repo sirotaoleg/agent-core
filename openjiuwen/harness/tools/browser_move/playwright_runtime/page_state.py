@@ -432,6 +432,8 @@ class BrowserPageState:
 
     def record(self, action: Action, outcome: ActionResult | Observation) -> ActionResult | Observation:
         """Advance the generation when ``outcome`` shows a new context or document; return it stamped."""
+        if isinstance(outcome, Observation) and isinstance(action, Observe) and action.scoped:
+            return self._register_observation(outcome, complete=False)
         result = outcome if isinstance(outcome, ActionResult) else ActionResult(ok=True, observation=outcome)
         observation = result.observation
         if observation is not None and not isinstance(action, Observe):
@@ -506,7 +508,8 @@ class BrowserPageState:
         self.contexts = ()
         self.current_context = None
 
-    def _register_observation(self, observation: Observation) -> Observation:
+    def _register_observation(self, observation: Observation, *, complete: bool = True) -> Observation:
+        # A partial observation (a scoped snapshot) adds the refs it shows; only a complete one drops the others.
         elements = tuple(
             dataclasses.replace(element, ref=DriverRef(element.ref.ref, self.generation_id))
             for element in observation.elements
@@ -515,7 +518,7 @@ class BrowserPageState:
         missing_refs = [
             ref_value
             for ref_value, generation in self.reference_generations.items()
-            if generation == self.generation and ref_value not in refs
+            if complete and generation == self.generation and ref_value not in refs
         ]
         for ref_value in missing_refs:
             self._remove_current_ax_ref(ref_value)

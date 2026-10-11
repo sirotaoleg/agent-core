@@ -30,10 +30,18 @@ class Action:
 
 @dataclass(frozen=True)
 class Observe(Action):
+    """A snapshot of the focused context; ``depth`` or ``root`` scope it to a subtree, a partial observation."""
+
     effect: ClassVar[Effect] = Effect.READ
 
     include_screenshot: bool = False
     full_page: bool = False
+    depth: int | None = None
+    root: Ref | None = None
+
+    @property
+    def scoped(self) -> bool:
+        return self.depth is not None or self.root is not None
 
 
 @dataclass(frozen=True)

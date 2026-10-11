@@ -271,6 +271,8 @@ class BrowserUseDriver(HandlerDriver):
         return Health(ok=bool(result.get("connected", False)), detail=result.get("error"))
 
     async def observe(self, command: Observe) -> Observation:
+        if command.scoped:
+            raise Unsupported("BrowserUseDriver observes the whole page only", dispatched=False)
         viewport_screenshot = command.include_screenshot and not command.full_page
         data = await self._request(
             "observe", {"include_dom": True, "include_screenshot": viewport_screenshot, "cached": False}
