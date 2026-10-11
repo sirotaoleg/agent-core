@@ -10,7 +10,7 @@
 |---|---|
 | Type | spec |
 | Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/runtime.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/topology.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_state_context_processor.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_working_context.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/status_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `helpers/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
-| Last revised | 2026-10-11 |
+| Last revised | 2026-10-12 |
 | Related feature | [[F_07_browser-drivers]] |
 
 ## Scope
@@ -368,7 +368,10 @@ listed in [[F_07_browser-drivers]] ("Settings", inventory).
   `log_audit_raw`, `status_log`, `runtime_server` (`RuntimeServerSettings`, client side). It has no field that only
   a browser has.
 - **`RuntimeServerSettings`** (core): the runtime MCP server, i.e. `browser_move` served over MCP
-  (`playwright_runtime_mcp_server.py`) and registered by `browser_tools.py`. Client fields: `enabled`, `server_id`,
+  (`playwright_runtime_mcp_server.py`); `build_browser_runtime_mcp_config` (`browser_tools.py`) turns the client
+  fields into the `McpServerConfig` a host registers through the core (`Runner.resource_mgr.add_mcp_server` and the
+  agent's ability manager). `browser_move` patches none of the core's MCP client classes and starts no local copy of
+  the server for a host: a host that wants the server running starts the entry point itself. Client fields: `enabled`, `server_id`,
   `server_name`, `client_type` (as given; normalised by the caller), `server_path` (`""` = derived from host, port
   and path), `command` (default: the current interpreter), `args` (raw string), `timeout_s` (`0` = no timeout, also
   for a value that is not an integer), `host`, `port` (a string; parsed where it is used), `path`, `log_dir`
@@ -394,7 +397,7 @@ listed in [[F_07_browser-drivers]] ("Settings", inventory).
 |---|---|---|
 | unset or empty | `playwright_mcp` | `BROWSER_PROVISIONING`, default `remote` (`extension` when `PLAYWRIGHT_MCP_EXTENSION` is true) |
 | `playwright_mcp`, `browser_use` | that value | as for unset |
-| `managed`, `remote`, `extension` (legacy) | `playwright_mcp` | `BROWSER_PROVISIONING` if set, else the legacy value; one `DeprecationWarning` from `BrowserSettings` |
+| `managed`, `remote`, `extension` (legacy) | `playwright_mcp` | `BROWSER_PROVISIONING` if set, else the legacy value; one `DeprecationWarning` per parse from `BrowserSettings` (Python's warning registry shows it once per value and call site) |
 | anything else | `ValueError` | as for unset |
 
 Values are compared after trimming and lower-casing. An explicit `BROWSER_PROVISIONING` or a legacy value wins over
@@ -450,7 +453,8 @@ value from one.
 
 - `utils/env.py` holds pure parse helpers shared by both config modules (`first_value`, `int_value`,
   `parse_command_args`, `is_truthy_env` / `is_falsy_env`, `normalize_provider`, `infer_provider_from_api_base`)
-  and defaults; it has no environment access.
+  and driver-free defaults; it has no environment access. The Playwright MCP launch defaults (`npx`,
+  `-y @playwright/mcp@0.0.78`) live in `surfaces/browser/config.py`, their only reader.
 - Environments of child processes are pure functions of a mapping the caller passes:
   `runtime_server_child_env(environ)` (the runtime MCP server child: the whole mapping, API key and base copied to
   the provider names, blocked proxies removed) and `runtime_server_environ(environ)` (the server's tool timeout
@@ -463,8 +467,8 @@ value from one.
   takes `upload_root` and `selector_cache_path` for its builtin actions and selector cache.
 - Public functions keep their signatures and gain keyword-only settings or values. Where a caller passes none, the
   function builds them through the config module at the same moment it read the environment before
-  (`build_browser_runtime_mcp_config`, `register_browser_runtime_mcp_server`, `restart_local_browser_runtime_server`,
-  `ensure_execute_signature_compat`, `build_browser_worker_agent`, `is_browser_subagent_status_log_enabled`).
+  (`build_browser_runtime_mcp_config`, `ensure_execute_signature_compat`, `build_browser_worker_agent`,
+  `is_browser_subagent_status_log_enabled`).
   Helpers whose value has an obvious "not configured" take the value and treat `None` as not configured:
   `resolve_upload_file_paths(paths, *, upload_root)`, `register_builtin_actions(controller, *, upload_root)`,
   `get_selector_cache(path)`, `discover_sidecar_python(override)`.
@@ -486,9 +490,8 @@ value from one.
 - `configure_browser_agent_logging(settings: CoreSettings)` (`playwright_runtime/browser_logging.py`) applies
   `log_file`, `log_level`, `log_mirror_common` and `log_audit_raw` to the stdlib logger `openjiuwen.browser_agent`
   and registers browser tool names with the hook: `browser_` anywhere in the name or a `mcp_playwright` prefix,
-  case-insensitive. It is called where a browser agent is built or given browser tools: `create_browser_agent`,
-  `build_browser_worker_agent` and `register_browser_runtime_mcp_server`. Without a call, no tool-call line goes to
-  the browser log.
+  case-insensitive. It is called where a browser agent is built: `create_browser_agent` and
+  `build_browser_worker_agent`. Without a call, no tool-call line goes to the browser log.
 - The logger keeps what it was configured with (it is process-wide): the file handler, level, propagation and the
   audit flag. Until the first `configure_browser_agent_logging`, the first use of the logger configures it from
   `CoreSettings.from_process_env()`, so modules that fetch it at import time keep `./logs/browser_agent.log`.
@@ -1128,7 +1131,9 @@ lifetime, hands it to its `BrowserService`, and from `ensure_runtime_ready()` on
   before the session exists enforces the tools built after it, through the live mapping.
 - `register_runtime_tools()`: `browser_custom_action` and `browser_list_custom_actions` in `Runner.resource_mgr`
   (tag `agent.playwright.runtime`), once; a tool that already exists there is accepted. `DelegatedWorker.start`
-  calls it; the main agent never holds these tools.
+  calls it; the main agent never holds these tools. They are the only `Tool` wrappers of the facade
+  (`runtime_tools.py`); cancellation and health are reached through the facade's methods, as the server entry point
+  does. Neither card names a driver; the worker's `AgentCard` renders the session driver's display name.
 - `main_agent_answer(session_id, request_id, *, result=None, error=None)`: the runner's answer dict from a main-agent
   run, for `Direct.run`: `ok` (no error, `result_type` not `"error"`), `final` (the output), `page` from
   `page_state.surface_context`, `screenshot=None`, `error`, and `status` / `progress` from the rail's

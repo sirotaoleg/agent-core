@@ -5,7 +5,7 @@
 | Item | Value |
 |---|---|
 | Type | feature |
-| Date | 2026-10-11 |
+| Date | 2026-10-12 |
 | Scope | `openjiuwen/harness/tools/browser_move/` (`contract/`, `drivers/`, `provisioning/`, `surfaces/browser/`, `playwright_runtime/`, `controllers/action.py`, `utils/`, `playwright_runtime_mcp_server.py`), `openjiuwen/harness/subagents/browser_agent.py`, `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/single_agent/agents/react_agent.py`, `tests/unit_tests/harness/tools/browser_move/` |
 | Test baseline | see "Verification" in each section |
 | Related spec | [[S_20_browser-driver-contract]] |
@@ -3045,3 +3045,114 @@ Two things the module had to learn:
    `runner_direct` golden and the live module, not by the contract test's mirror (previous section).
 4. The `runner_worker` golden carries no `source_commit`; `surfaces/test_browser_tools.py` compares recorded goldens
    only. When the browser-use goldens are re-recorded (Phase 7), the two conventions can merge.
+
+## Phase 7: legacy removed
+
+The last old paths die before the renames (Phase 8) and the split (Phase 9): the MCP client patch and everything
+that only existed for the time the agents reached the browser through core's `ToolMgr`. Nothing the model reads
+changed; every golden is byte for byte what it was at the Phase 6 close.
+
+### What went
+
+- **The MCP client patch** (`browser_tools.py`: `_ensure_openjiuwen_client_patch`,
+  `ensure_browser_runtime_client_patch`, `_client_registry`, `get_registered_client`) and its two module-level
+  copies (`main.py`, `playwright_runtime_mcp_server.py`). Its consumers were gone since the switch (P5-T1's
+  inventory, S1–S3); what remained was the process-wide side effect: after one patch call every stdio or
+  streamable-http MCP server any agent registered in the process got a `BrowserMove*Client`. Those servers get
+  core's clients again.
+- **`register_browser_runtime_mcp_server`** and the local-server launcher it fell back to (`_start_local_server`,
+  `stop_local_browser_runtime_server`, `restart_local_browser_runtime_server`, port probing, the stdout/stderr log
+  handles, the http fallback and retry configs). The three public names leave `browser_move.__all__` and
+  `playwright_runtime.__all__`; `build_browser_runtime_mcp_config` stays as the client-side config of the runtime
+  server, and the system test registers that config through the core calls the wrapper made
+  (`Runner.resource_mgr.add_mcp_server`, `ability_manager.add`).
+- **`_build_dialogue_compressor_config`** (`agents.py`), without a caller since Phase 4, and its three imports.
+- **`BrowserCancelTool`, `BrowserClearCancelTool`, `BrowserRuntimeHealthTool`** (`runtime_tools.py`), with the
+  card that still said "heartbeat status": `register_runtime_tools` adds only the two custom-action tools, so the
+  three had no caller outside their tests; no golden carried any of the three cards. The facade's `cancel_run`,
+  `clear_cancel` and `runtime_health` stay for the server entry point.
+- **The Playwright MCP launch defaults** (`DEFAULT_PLAYWRIGHT_MCP_COMMAND`, `DEFAULT_PLAYWRIGHT_MCP_ARGS`) moved
+  from `utils/env.py` into `surfaces/browser/config.py`, their only reader, and left the `utils` exports.
+- **Driver names in wording**: the probe builders' docstrings ("the JavaScript", not the tool that once ran it),
+  the upload-path and action-controller docstrings and the package comment ("the server entry point"), the demo
+  entry's log lines ("Server command"), `browser_tools.py`'s own description.
+- **The worker card** renders the session driver's display name (`"… using {driver_name} tools."`, the name
+  `build_worker` already passes for the prompt), so the text is unchanged on Playwright MCP and right on
+  browser-use; the custom-action card says "the direct browser tools".
+- **`BROWSER_DRIVER`** is only a registry name; the legacy values keep today's mapping (below).
+
+### Decisions
+
+1. **The registration wrapper is deleted, not kept as a shim.** Plan Phase 7 item 1 names the patch; the task
+   names the wrapper with it (P5-T1 open question 1). Without the patch the wrapper was the core's two calls plus a
+   launcher for a server a host can start itself.
+2. **The three unregistered runtime tools are deleted rather than reworded.** The task asked to check the
+   "heartbeat status" card against the goldens; the card was in none, and the tool had no caller.
+3. **The driver-name pattern wants `browser_use` to end there** (`browser_use(?![a-z])`): the three entries that
+   counted `latest_browser_user_request` (`runtime.py`, `browser_working_context.py`,
+   `browser_working_context_rail.py`) go without touching the helper.
+4. **The launch defaults move to the surface's config module**, where the driver-name rule allows a driver name.
+5. **The legacy `BROWSER_DRIVER` values stay as they were, confirmed and measured.** `_provisioning`
+   (`surfaces/browser/config.py`) warns on every parse of a legacy value with `stacklevel=3`; Python's warning
+   registry shows a given message once per call site under the `default` filter (three parses from one site:
+   `managed`, `managed`, `remote` → two warnings), every time under `always` (what `pytest.warns` uses), and the
+   default filter hides `DeprecationWarning` outside `__main__`. Tested by `surfaces/test_browser_settings.py` (one
+   warning per parse for each of the three values, an explicit `BROWSER_PROVISIONING` wins) and
+   `test_settings_facades.py` (exactly one through `build_playwright_mcp_config`). There is no explicit
+   once-per-process guard; the plan asks for "a warning" and none was added.
+
+### Rejected options
+
+- **Renaming `latest_browser_user_request`** to satisfy the pattern: a production rename for a detector's false
+  positive, and Phase 8 is the rename PR.
+- **Reading the runtime server's cwd from the given `environ`** instead of `resolve_playwright_mcp_cwd()` to
+  empty `browser_tools.py`'s entry: it would change which environment the cwd comes from when a caller passes a
+  mapping; the facade's name goes with Phase 8.
+- **Keeping `stop_local_browser_runtime_server` / `restart_local_browser_runtime_server`** as exports: both acted
+  only on a process the deleted wrapper had started.
+- **An explicit once-per-process guard** for the legacy-value warning: not in the plan; recorded as a question.
+
+### What stays on the allowlists, and why
+
+| File | Driver names | MCP names | Why it stays | Goes with |
+|---|---|---|---|---|
+| `playwright_runtime/runtime.py` | 0 (was 2) | 9 | `browser_take_screenshot` ×4 in the image-capability guidance (model-facing prompt bytes, en/cn); `browser_resume` ×2 (a public run-context key, not the tool); `browser_click` → `browser_navigate` ×2 (the primary-link rewrite needs the dialect's navigation tool by name); `"source": "browser_evaluate"` ×1 (evidence provenance the model reads) | Phase 9: the browser rail and its prompt text move to `surfaces/browser/` |
+| `playwright_runtime/agents.py` | 0 (was 1) | 11 | the worker prompt names the tools it governs; pinned byte for byte by the `runner` golden | Phase 9: prompt sections move to `surfaces/browser/` |
+| `playwright_runtime/browser_capabilities.py` | 2 | 69 | the capability catalog (tool names per capability; descriptions the main agent chooses from) | Phase 9: `surfaces/browser/capabilities.py` |
+| `playwright_runtime/browser_tools.py` | 3 (was 23) | 0 | `resolve_playwright_mcp_cwd` ×2 (the config facade's name) and `"/mcp"` (the runtime server's own streamable-http path); the module is about the runtime served over MCP, not the driver | Phase 8 (the facade's name) |
+| `playwright_runtime/service.py` | 1 | 0 | `PLAYWRIGHT_MCP_CDP_ENDPOINT` read from the given server config's env map, part of the lifecycle identity (S_20 names it) | Phase 9: the service split |
+| `surfaces/browser/helpers/batch_steps.py` | 1 | — | card text pinned by the golden tool list | stays |
+| import `runtime.py` → `surfaces.browser.helpers` | — | 4 | the facade's decision-policy hooks, page metadata and custom actions | Phase 9 |
+
+Counts, before → after this phase: driver names 15 entries / 52 hits → 4 entries / 7 hits; MCP tool names
+5 entries / 92 hits → 3 entries / 89 hits; core imports of concrete modules 5 entries / 8 → 1 entry / 4; browser
+words: `browser_tools.py` gone (10 → 0), nothing grew. Against the Phase 0 measurements (`runtime.py` 110 MCP
+tool-name literals, `controllers/action.py` 16, `agents.py` 9): `controllers/action.py` 0, `runtime.py` 9 (the
+four items above), `agents.py` 11 (the prompt), `browser_capabilities.py` 69 (the catalog); zero elsewhere outside
+`drivers/playwright_mcp/`.
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q`: **2362 passed, 122 skipped** (2365 / 122 at the
+  Phase 6 close: four tests deleted with their code, one added for the worker card).
+- The eleven harness files outside `browser_move` that build the browser agent: **248 passed**.
+- Both live sets, one run, `BROWSER_MOVE_LIVE_MCP=1` and `BROWSER_USE_SIDECAR_PYTHON` set (MCP conformance,
+  browser-use conformance, helpers, assembly, rails, topology): **119 passed in 365.67s (0:06:05)** (51 MCP conformance, 45 browser-use conformance, helpers, assembly, rails, the four topology cases)
+- Goldens: `git diff cb3e9065d --stat -- tests/unit_tests/harness/tools/browser_move/snapshots/golden/` is empty.
+- `ruff check` clean on every touched line; unchanged pre-existing findings: `E402`/`I001` in
+  `playwright_runtime_mcp_server.py` and `main.py`, `ASYNC250` in `main.py`, 17 in `probes.py`, 2 in
+  `controllers/action.py`, `I001` in the system test.
+- `python -m …playwright_runtime_mcp_server --help` still fails on the script-style import
+  (`playwright_runtime.config` → `from ..contract import SurfaceSettings`), as since P5-T1; not touched.
+
+### Known leftovers
+
+1. The allowlist table above: seven driver-name hits in four files, 89 MCP-name hits in three, one import entry.
+2. No explicit once-per-process guard on the legacy `BROWSER_DRIVER` warning (decision 5).
+3. Noticed, not touched (outside the plan's list of old MCP helpers): `BrowserService.build_progress_context` has
+   no caller; `record_tool_progress`, `record_worker_progress`, `get_progress_state` and `export_progress_state`
+   are called by tests only; `DEFAULT_BROWSER_UPLOAD_ROOT` (`utils/env.py`), `browser_agent_log_error`,
+   `install_browser_subagent_status_logging_async`, `BrowserPageState.replace_ax_snapshot` and four
+   `BrowserProfileStore` methods have no production caller.
+4. The browser-use goldens were not re-recorded (Phase 6 verification leftover 4 named Phase 7; the task did not).
+5. The server entry point's script-style imports (above).
