@@ -1,6 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""``assemble_driver`` with fake registries, and the built-in registrations it uses by default."""
+"""``assemble_surface``, ``assemble_driver`` and ``open_session`` with fake registries, and the built-in names."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import dataclasses
 import json
 import subprocess
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 from unittest.mock import patch
@@ -22,6 +23,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     Click,
     ConnectionLost,
     ContextRef,
+    DriverError,
     DriverInfo,
     DriverRef,
     Effect,
@@ -41,8 +43,11 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import (
     DriverAssembly,
     Registries,
     assemble_driver,
+    assemble_surface,
+    open_session,
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserInstanceConfig, CoreSettings
+from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.provisioning import PROVISIONERS, ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.surfaces import SURFACES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
@@ -51,6 +56,7 @@ ENVIRON = {"FAKE_SURFACE_FLAG": "on"}
 CORE = CoreSettings(driver="fake_driver", surface="fake")
 DEVICE = ProvisionedDevice(kind="fake-device", endpoint="fake://1", extras={})
 OTHER_DEVICE = ProvisionedDevice(kind="fake-device", endpoint="fake://2", extras={})
+MESSAGES = {"driver_restarted": "restarted", "driver_lost": "lost", "retry": "Retry."}
 
 
 @dataclass(frozen=True)
@@ -78,6 +84,12 @@ class FailingStartDriver(FakeDriver):
     async def start(self, config: Any = None) -> None:
         await super().start(config)
         raise ConnectionLost("no device", dispatched=False)
+
+
+class BrokenStartDriver(FakeDriver):
+    async def start(self, config: Any = None) -> None:
+        await super().start(config)
+        raise DriverError("bad config", dispatched=False)
 
 
 class FailingStopDriver(FakeDriver):
@@ -109,11 +121,13 @@ class World:
         *,
         driver_error: BaseException | None = None,
         timeouts: dict[Effect, float] | None = None,
+        then: Iterable[FakeDriver] = (),
     ) -> None:
         self.log: list[tuple[Any, ...]] = []
+        self._next_drivers = list(then)
         self.settings = FakeSettings()
         self.profile = SurfaceProfile(
-            name="fake", commands=(), renderer=None, timeouts=timeouts or {}, settings=self.settings
+            name="fake", commands=(), renderer=None, timeouts=timeouts or {}, messages=MESSAGES, settings=self.settings
         )
         self.driver = driver if driver is not None else FakeDriver(info=_fake_info())
         self.provisioner = FakeProvisioner(self.log)
@@ -145,7 +159,8 @@ class World:
         self.log.append(("driver", device, surface_settings))
         if self._driver_error is not None:
             raise self._driver_error
-        return self.driver
+        driver, self.driver = self.driver, self._next_drivers.pop(0) if self._next_drivers else self.driver
+        return driver
 
     def assemble(self, core: CoreSettings = CORE, *, instance: Any = None, settings: Any = None) -> DriverAssembly:
         return asyncio.run(
@@ -302,6 +317,77 @@ class TestAssembleDriver:
 
         (record,) = [call.args[1] for call in debug.call_args_list]
         assert (record["call"], record["command"], record["context"]) == ("observe", "Observe", "c1")
+
+
+class TestAssembleSurface:
+    def test_the_surface_comes_from_the_registry_with_the_instance_applied_to_the_given_settings(self) -> None:
+        world = World()
+        given = FakeSettings(provisioning="other_provisioning", owner="given")
+
+        bundle = assemble_surface(
+            CORE, ENVIRON, instance={"provisioning": "other_provisioning", "owner": "agent-a"}, settings=given,
+            registries=world.registries,
+        )
+
+        assert world.log == [("surface", ENVIRON)]
+        assert bundle.settings == bundle.profile.settings == FakeSettings("other_provisioning", "agent-a")
+
+    def test_assemble_driver_starts_from_the_same_surface(self) -> None:
+        world = World()
+
+        assembly = world.assemble()
+
+        assert assembly.surface == assemble_surface(CORE, ENVIRON, registries=world.registries)
+
+
+class TestOpenSession:
+    def _open(self, world: World) -> tuple[Any, BrowserPageState]:
+        page_state = BrowserPageState()
+        session = asyncio.run(open_session(CORE, ENVIRON, page_state=page_state, registries=world.registries))
+        return session, page_state
+
+    def test_a_first_start_that_loses_the_connection_is_provisioned_and_started_once_more(self) -> None:
+        first = FailingStartDriver(info=_fake_info())
+        second = FakeDriver(info=_fake_info())
+        world = World(first, then=[second])
+
+        session, page_state = self._open(world)
+
+        assert [entry[0] for entry in world.log] == [
+            "surface", "provisioner", "provision", "driver", "release", "surface", "provisioner", "provision", "driver"
+        ]
+        assert (first.kinds(), second.kinds()) == (["start", "stop"], ["start"])
+        assert session.assembly.stack.inner.inner.inner is second
+        assert session.page_state is page_state
+
+    def test_a_second_lost_connection_propagates_with_both_devices_released(self) -> None:
+        first = FailingStartDriver(info=_fake_info())
+        second = FailingStartDriver(info=_fake_info())
+        world = World(first, then=[second])
+
+        with pytest.raises(ConnectionLost, match="no device"):
+            self._open(world)
+
+        assert [entry for entry in world.log if entry[0] == "release"] == [("release", DEVICE), ("release", DEVICE)]
+        assert (first.kinds(), second.kinds()) == (["start", "stop"], ["start", "stop"])
+
+    def test_another_driver_error_on_the_first_start_is_not_retried(self) -> None:
+        world = World(BrokenStartDriver(info=_fake_info()), then=[FakeDriver(info=_fake_info())])
+
+        with pytest.raises(DriverError, match="bad config"):
+            self._open(world)
+
+        assert [entry[0] for entry in world.log] == ["surface", "provisioner", "provision", "driver", "release"]
+
+    def test_the_session_reads_the_messages_of_the_surface_profile(self) -> None:
+        world = World()
+        world.profile = dataclasses.replace(
+            world.profile, messages={"driver_restarted": "again", "driver_lost": "gone", "retry": "Retry."}
+        )
+
+        session, _ = self._open(world)
+
+        assert (session._restarted, session._lost) == ("again", "gone")
 
 
 class TestDriverAssemblyClose:

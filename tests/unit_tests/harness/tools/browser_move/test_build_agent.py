@@ -1,6 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""``build_agent_parts`` and ``build_agent``: factory tools, core rails before the profile's, one construction path."""
+"""``build_agent_parts``, ``core_rails`` and ``build_agent``: factory tools, profile rails, one construction path."""
 
 from __future__ import annotations
 
@@ -34,6 +34,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import (
     assemble_driver,
     build_agent,
     build_agent_parts,
+    core_rails,
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import CoreSettings
 from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
@@ -135,25 +136,24 @@ def test_parts_hold_the_factory_tools_and_prompt_sections() -> None:
     assert parts.prompt_sections == ("Look first.",)
 
 
-def test_the_core_rails_come_first_and_the_profile_rails_last() -> None:
+def test_the_parts_hold_the_profile_rails_only() -> None:
     parts = _parts(_session())
 
-    assert [type(rail) for rail in parts.rails] == [
-        ActionPolicy,
-        RepeatedCallGuardRail,
-        InterceptedActionHintRail,
-        ProfileRail,
-    ]
+    assert [type(rail) for rail in parts.rails] == [ProfileRail]
+    assert set(parts.builders) == {"toy_look", "toy_script"}
 
 
-def test_the_policy_rail_decodes_with_the_factory_builders_and_checks_the_profile_rules() -> None:
-    session = _session()
-    parts = _parts(session)
-    policy = parts.rails[0]
+def test_the_core_rails_are_the_policy_the_guard_and_the_hint_in_that_order() -> None:
+    page_state = BrowserPageState()
+    builders: dict[str, Any] = {}
 
-    assert set(policy._builders) == {"toy_look", "toy_script"}
-    assert policy._rules == (RULE,)
-    assert policy._page_state is session.page_state
+    rails = core_rails(PROFILE, builders, page_state)
+
+    assert [type(rail) for rail in rails] == [ActionPolicy, RepeatedCallGuardRail, InterceptedActionHintRail]
+    assert rails[0]._builders is builders
+    assert rails[0]._rules == (RULE,)
+    assert rails[0]._page_state is page_state
+    assert rails[2]._retry == "Retry."
 
 
 def test_profile_rails_receive_the_tool_context_of_the_session() -> None:
@@ -208,15 +208,17 @@ def test_build_agent_hands_the_parts_to_create_deep_agent_over_a_started_session
     assert args == ("model",)
     assert kwargs["system_prompt"] == "You poke screens.\n\nLook first."
     assert [tool.card.name for tool in kwargs["tools"]] == ["toy_look", "toy_script"]
-    assert [type(rail) for rail in kwargs["rails"]][:3] == [
+    assert [type(rail) for rail in kwargs["rails"]] == [
         ActionPolicy,
         RepeatedCallGuardRail,
         InterceptedActionHintRail,
+        ProfileRail,
     ]
     assert (kwargs["workspace"], kwargs["language"], kwargs["max_iterations"]) == ("/tmp/ws", "en", 7)
     assert session.assembly.stack.inner.inner.inner is driver
     assert driver.kinds() == ["start"]
     assert kwargs["rails"][0]._page_state is session.page_state
+    assert set(kwargs["rails"][0]._builders) == {"toy_look", "toy_script"}
 
 
 def test_a_failing_agent_construction_stops_the_driver_and_releases_the_device() -> None:

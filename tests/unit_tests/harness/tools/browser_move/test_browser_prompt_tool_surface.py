@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from openjiuwen.core.foundation.llm import AssistantMessage
-from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
+from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_system_prompt
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
     CORE_BROWSER_TOOL_NAMES,
@@ -45,7 +45,9 @@ _FINAL_JSON = json.dumps(
 
 
 def _render(tool_names: tuple[str, ...] | None) -> str:
-    return build_browser_worker_system_prompt("screenshots", "artifacts", tool_names=tool_names)
+    return build_browser_worker_system_prompt(
+        "screenshots", "artifacts", tool_names=tool_names, driver_name="Playwright MCP"
+    )
 
 
 def _mentioned_tools(prompt: str) -> set[str]:
@@ -67,7 +69,7 @@ class _RecordingLLM:
 def _run_worker_request(helpers_added: tuple[str, ...], helpers_removed: tuple[str, ...]) -> tuple[str, set[str]]:
     """Build the worker as the service does, run one task, return (system prompt, tool names) of the request."""
     service = _make_service()
-    with patch.object(service_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))):
+    with patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))):
         asyncio.run(service.ensure_started())
     worker = service.browser_agent
     llm = _RecordingLLM()
@@ -142,7 +144,7 @@ class TestWorkerPromptRendering:
         prompt = _render(full_surface)
 
         assert hashlib.sha256(prompt.encode("utf-8")).hexdigest() == FULL_SURFACE_PROMPT_SHA256
-        assert prompt == _render(None) == build_browser_worker_system_prompt()
+        assert prompt == _render(None) == build_browser_worker_system_prompt(driver_name="Playwright MCP")
         assert (
             "browser_batch_interact is a standalone runtime helper like browser_probe_interactives and "
             "browser_probe_cards, not a browser_custom_action wrapper. Use it directly. "

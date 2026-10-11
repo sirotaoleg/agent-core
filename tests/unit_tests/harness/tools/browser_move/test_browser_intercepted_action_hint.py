@@ -25,7 +25,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     ElementNotFound,
 )
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
-from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
+from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_agent
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.playwright_runtime.intercepted_action import (
@@ -198,6 +198,7 @@ def _worker(llm: _ScriptedLLM, driver: FakeDriver, **kwargs: Any) -> Any:
         api_base="https://example.invalid/v1",
         model_name="mock-model",
         max_steps=3,
+        driver_name="Playwright MCP",
         **kwargs,
     )
     worker.set_llm(llm)
@@ -248,9 +249,9 @@ def test_service_registers_the_rail_on_the_worker() -> None:
     )
     worker = MagicMock()
     worker.register_rail = AsyncMock()
-    module = "openjiuwen.harness.tools.browser_move.playwright_runtime.service"
+    module = "openjiuwen.harness.tools.browser_move.playwright_runtime.agents"
     with (
-        patch.object(service_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))),
+        patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))),
         patch(f"{module}.build_browser_worker_agent", return_value=worker),
     ):
         asyncio.run(service.ensure_started())

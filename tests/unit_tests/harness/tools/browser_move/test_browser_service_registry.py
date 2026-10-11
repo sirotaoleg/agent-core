@@ -13,7 +13,7 @@ import pytest
 
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
-from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
+from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserInstanceConfig,
@@ -74,7 +74,7 @@ def _assembly(provisioner: Any) -> DriverAssembly:
 async def _open(service: BrowserService, provisioner: Any) -> FakeDriver:
     """Open the service's session on a fresh fake driver over ``provisioner``."""
     assembly = _assembly(provisioner)
-    with patch.object(service_module, "assemble_driver", AsyncMock(return_value=assembly)):
+    with patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=assembly)):
         await service.ensure_runtime_ready()
     return assembly.stack
 

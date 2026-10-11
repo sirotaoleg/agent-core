@@ -130,6 +130,22 @@ def test_arguments_that_do_not_decode_are_denied() -> None:
     assert ctx.extra["_skip_tool_calls"] == {"call-1": True}
 
 
+def test_a_decoder_added_to_the_mapping_after_construction_is_enforced() -> None:
+    page_state = BrowserPageState(page_id="page-test")
+    page_state.record(Observe(), Observation(context=MagicMock(id="0", title="Shop"), surface=SHOP))
+    builders: dict[str, Any] = {}
+    policy = ActionPolicy(builders, [PolicyRule(Navigate, _Recorder().check)], page_state)
+    ctx = _context(NAVIGATE_TOOL, '{"url": "https://elsewhere.test/"}')
+
+    asyncio.run(policy.before_tool_call(ctx))
+    assert ctx.inputs.tool_msg is None
+
+    builders[NAVIGATE_TOOL] = _navigate
+    asyncio.run(policy.before_tool_call(ctx))
+
+    assert ctx.inputs.tool_msg.content == "### Error\nleaves https://shop.test/"
+
+
 def test_a_denied_call_never_reaches_the_driver() -> None:
     driver = FakeDriver(results=[ActionResult(ok=True)])
     policy, _ = _policy()

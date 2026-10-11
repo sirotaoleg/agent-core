@@ -21,11 +21,11 @@ from openjiuwen.harness.rails.context_engineer import ContextProcessorRail
 from openjiuwen.harness.subagents import browser_agent as browser_agent_module
 from openjiuwen.harness.subagents.browser_agent import DEFAULT_BROWSER_AGENT_SYSTEM_PROMPT
 from openjiuwen.harness.tools.browser_move.contract import ConnectionLost
+from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime import runtime as runtime_module
-from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
+from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import WORKER_LANGUAGE
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails, CoreSettings
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime, BrowserRuntimeRail
-from openjiuwen.harness.tools.browser_move.playwright_runtime.service import WORKER_LANGUAGE
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     DEVICE,
     MCP_PREFIX,
@@ -61,7 +61,7 @@ def _runtime(core: CoreSettings | None = None, language: str | None = "en") -> B
 
 def _assembling(driver: Any = None) -> Any:
     assembly = fake_assembly(driver or mcp_fake_driver())
-    return patch.object(service_module, "assemble_driver", AsyncMock(return_value=assembly))
+    return patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=assembly))
 
 
 def test_the_main_agent_and_the_worker_share_the_services_session() -> None:
@@ -253,7 +253,7 @@ def test_on_browser_use_a_session_that_cannot_start_fails_the_task_before_any_mo
     failing = AsyncMock(side_effect=ConnectionLost("connect: No valid agent focus available", dispatched=True))
     model_calls = AsyncMock(side_effect=RuntimeError("the model was called"))
     with (
-        patch.object(service_module, "assemble_driver", failing),
+        patch.object(assembly_module, "assemble_driver", failing),
         patch.object(OpenAIModelClient, "invoke", model_calls),
         patch.object(OpenAIModelClient, "stream", model_calls),
         patch.object(deep_agent_module, "schedule_image_support_probe"),
@@ -261,7 +261,7 @@ def test_on_browser_use_a_session_that_cannot_start_fails_the_task_before_any_mo
         answer = run(runtime.run_browser_task(task="Report the heading", session_id="s", request_id="r"))
 
     assert (answer["ok"], answer["error"]) == (False, "connect: No valid agent focus available")
-    assert failing.await_count == 1
+    assert failing.await_count == 2
     model_calls.assert_not_awaited()
 
 

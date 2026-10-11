@@ -15,7 +15,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     RunScript,
     SwitchContext,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
+from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
@@ -90,7 +90,7 @@ def test_probe_for_policy_starts_the_driver_session_on_demand() -> None:
     driver = mcp_fake_driver(results=[result(value={"url": _FLIGHTS, "elements": []})] * 2)
     assemble = AsyncMock(return_value=fake_assembly(driver))
 
-    with patch.object(service_module, "assemble_driver", assemble):
+    with patch.object(assembly_module, "assemble_driver", assemble):
         probed = run(runtime.probe_for_policy(_SOURCE, _PARAMS))
         run(runtime.probe_for_policy(_SOURCE, _PARAMS))
 

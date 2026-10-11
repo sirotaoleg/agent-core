@@ -300,6 +300,10 @@ def test_tool_name_prefix_is_the_model_prefix_of_the_server(tmp_path: Path) -> N
     assert PlaywrightMcpDriver().info.tool_name_prefix == ""
 
 
+def test_the_display_name_is_playwright_mcp() -> None:
+    assert PlaywrightMcpDriver().info.display_name == "Playwright MCP"
+
+
 async def _value(value: Any) -> Any:
     return value
 

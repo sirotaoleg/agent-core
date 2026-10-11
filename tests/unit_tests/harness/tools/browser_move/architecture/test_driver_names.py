@@ -96,7 +96,7 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
     # legacy code, removed with the old paths
     "controllers/action.py": 3,
     "playwright_runtime/__init__.py": 1,
-    "playwright_runtime/agents.py": 4,
+    "playwright_runtime/agents.py": 1,
     "playwright_runtime/browser_capabilities.py": 2,
     "playwright_runtime/browser_tools.py": 23,
     "playwright_runtime/browser_working_context.py": 2,
@@ -104,7 +104,7 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
     "playwright_runtime/main.py": 5,
     "playwright_runtime/runtime.py": 2,
     "playwright_runtime/runtime_tools.py": 1,
-    "playwright_runtime/service.py": 14,
+    "playwright_runtime/service.py": 1,
     "utils/__init__.py": 4,
     "utils/env.py": 3,
     "utils/parsing.py": 1,

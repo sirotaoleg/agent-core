@@ -15,7 +15,8 @@ import pytest
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.contract.registry import default_topology
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
-from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
+from openjiuwen.harness.tools.browser_move.playwright_runtime import agents as agents_module
+from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.action_policy import ActionPolicy
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserInstanceConfig,
@@ -76,7 +77,7 @@ def _opened(service: BrowserService, driver: FakeDriver | None = None) -> tuple[
     """Open the service's session on ``driver``; returns it with the ``assemble_driver`` mock that built it."""
     driver = driver or mcp_fake_driver()
     assemble = AsyncMock(return_value=fake_assembly(driver))
-    with patch.object(service_module, "assemble_driver", assemble):
+    with patch.object(assembly_module, "assemble_driver", assemble):
         _run(service.ensure_runtime_ready())
     return driver, assemble
 
@@ -551,7 +552,7 @@ def test_ensure_runtime_ready_opens_one_session_and_the_next_task_restarts_its_s
     assert (driver.kinds(), service.started) == (["stop"], False)
     assert session.assembly.provisioner.released == []
 
-    with patch.object(service_module, "assemble_driver", assemble):
+    with patch.object(assembly_module, "assemble_driver", assemble):
         _run(service.ensure_runtime_ready())
 
     assert assemble.await_count == 1
@@ -564,8 +565,8 @@ def test_ensure_started_builds_the_worker_from_the_factory_with_the_probes_the_b
     worker = MagicMock()
     worker.register_rail = AsyncMock()
     with (
-        patch.object(service_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))),
-        patch.object(service_module, "build_browser_worker_agent", return_value=worker) as build,
+        patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))),
+        patch.object(agents_module, "build_browser_worker_agent", return_value=worker) as build,
     ):
         _run(service.ensure_started())
         _run(service.ensure_started())
@@ -608,7 +609,7 @@ def test_ensure_started_builds_the_worker_from_the_factory_with_the_probes_the_b
 
 def test_the_worker_is_built_again_after_a_task_release() -> None:
     service = _make_service()
-    with patch.object(service_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))):
+    with patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))):
         _run(service.ensure_started())
         first = service.browser_agent
         _run(service.release_task_binding())

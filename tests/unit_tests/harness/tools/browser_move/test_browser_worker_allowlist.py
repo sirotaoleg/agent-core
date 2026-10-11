@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, patch
 
-from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
+from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_system_prompt
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
     CORE_BROWSER_TOOL_NAMES,
@@ -22,7 +22,7 @@ WORKER_HELPERS = {"browser_probe_interactives", "browser_probe_cards", "browser_
 
 def _worker_tool_names(allowed_tool_names: tuple[str, ...] | None) -> set[str]:
     service: BrowserService = _make_service(allowed_tool_names=allowed_tool_names)
-    with patch.object(service_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))):
+    with patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))):
         asyncio.run(service.ensure_started())
     worker = service.browser_agent
     return {tool.name for tool in asyncio.run(worker.ability_manager.list_tool_info())}
@@ -42,7 +42,7 @@ def test_worker_with_none_allowlist_defaults_to_core() -> None:
 
 
 def test_worker_prompt_only_mentions_conditionally_visible_run_code() -> None:
-    prompt = build_browser_worker_system_prompt("screenshots", "artifacts")
+    prompt = build_browser_worker_system_prompt("screenshots", "artifacts", driver_name="Playwright MCP")
 
     assert "browser_run_code_unsafe" not in prompt
     assert "only when it is present" in prompt

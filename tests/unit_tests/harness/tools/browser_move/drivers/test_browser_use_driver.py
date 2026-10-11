@@ -142,6 +142,7 @@ def test_info_describes_the_browser_surface():
     assert info.name == "browser_use"
     assert info.surfaces == frozenset({"browser"})
     assert info.observes == frozenset({"elements", "screenshot", "native_text", "surface"})
+    assert info.display_name == "browser-use"
 
 
 @pytest.mark.parametrize(
