@@ -2359,8 +2359,33 @@ Phase 4 done-when items with their evidence, and the numbers the merge is judged
    exception with `exc_info=True`, which `browser_agent_log_warning(message, *args)` does not take, so the except
    branch itself raised `TypeError` out of the rail (step 3's leftover 1). The failure is now one warning line,
    `[BROWSER_SUBAGENT_ERROR] method=<hook> error=<text>`, and the invoke goes on; the helper's signature is unchanged.
+2. **The runner's Direct agent writes to the process log.** The core logger sends every line of an invoke to
+   `openjiuwen.browser_agent` while `BrowserRuntimeRail` holds the browser log context, which `before_invoke` entered
+   for every invoke. So on the browser-use runner path the model client's `CompletionUsage(...)` lines and the
+   agent's `tokens={...}` line ended in `browser_agent.log`, while the worker, which has no such rail, writes them to
+   stdout, where the runner's `budget.py`, `analyze.py` and `run_one_task` read them. `BrowserAgentRuntime.dedicated_log`
+   (default `True`) is `False` for the agent the facade builds for itself in `_direct_agent`, and the rail enters the
+   context only when it is `True`. Nothing the model sees changes; `create_browser_agent`'s own agents are unchanged.
+
+### Rejected options
+
+- **Leaving the context around the model call only** (off in `before_model_call`, on in `after_model_call`): the
+  context processors run after the before hooks and before the model call, so the browser capture and its raw audit
+  would run outside the context anyway, and the agent logs its `tokens={...}` line after the after hooks, inside it.
+- **A `Model` wrapper that drops the context inside `invoke`**: `create_browser_agent` copies the model into a plain
+  `Model` for the browser temperature, so the wrapper would not survive construction.
+- **`OPENJIUWEN_BROWSER_AGENT_LOG_MIRROR_COMMON` in the runner's launcher**: every browser line into the runner's
+  stdout, not only the model calls, and a change outside `browser_move`.
+
+### Behaviour changes to know
+
+- On the runner's Direct path no raw audit artifact (`OPENJIUWEN_BROWSER_AGENT_AUDIT_RAW`) is written: the audit needs
+  the browser log context. Tool-call lines still reach the browser log through the hook, as the worker's do.
 
 ### Verification
+
+- `test_browser_runtime_facade.py`: the Direct runtime reports `dedicated_log=False` and its rail's `before_invoke`
+  leaves the browser log context unset; the default runtime enters it.
 
 - `test_browser_runtime_rail.py`: a status logger that raises is logged with the hook name and the error and the
   rail returns.

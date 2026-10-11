@@ -478,6 +478,13 @@ value from one.
   lines written through `browser_agent_log_info` / `_warning` / `_error` also go to the common logger. `log_mirror_common` propagates browser lines to the parent
   loggers. Raw audit artifacts are written only with `log_audit_raw`, a log file and the browser log context, next
   to the log file under `browser_agent_audit/`.
+- The browser log context (`openjiuwen/core/common/logging/browser_context.py`) is entered by
+  `BrowserRuntimeRail.before_invoke` for the invoke when the runtime's `dedicated_log` is true, the default; while it
+  is set, the core logger sends every line of the invoke, the model client's usage lines included, to
+  `openjiuwen.browser_agent` instead of the process log (mirrored to it only with `log_mirror_common`). The WebVoyager
+  runner's Direct agent runs with `dedicated_log=False`, so its model-call lines reach the captured process log as the
+  worker's do; its tool-call lines still reach the browser log through the hook, and no raw audit artifact is written
+  for it.
 
 ## Provisioning (`provisioning/`)
 
@@ -1040,7 +1047,10 @@ lifetime, hands it to its `BrowserService`, and from `ensure_runtime_ready()` on
   `Runner.run_agent` under the guardrails' timeout and maps the result: `ok` (no error, `result_type` not
   `"error"`), `final` (the output), `page` from `page_state.surface_context`, `screenshot=None`, `error`, and
   `status` / `progress` from the rail's `authoritative_browser_result` / `progress_state` when present. The
-  session opens at the main agent's first invoke, as for `create_browser_agent`.
+  session opens at the main agent's first invoke, as for `create_browser_agent`. That agent runs outside the
+  browser-agent log context (`dedicated_log` is `False` on the facade that built it): its lines, the model client's
+  usage lines included, go to the process log as the worker's do. Agents from `create_browser_agent` keep the
+  dedicated log (`dedicated_log` is `True`).
 - `runtime_health()`: `session.health()` when the stack runs, else `ok=False, detail="not started"`, with
   `started` and the model settings.
 - `shutdown()`: `service.shutdown()`, the facade's session view dropped, then `OpenAIModelClient.aclose()` so the
@@ -1078,7 +1088,8 @@ driver's native tools, which exist only after `start()`).
 The main agent's rail, built with the runtime and registered by `create_browser_agent`. It reads `ToolKind`s before
 a call and `CommandRecord`s after it, never tool text.
 
-- `before_invoke`: `ensure_runtime_ready()`, then `agent_parts(image_support=<the agent's read-image support>)`:
+- `before_invoke`: the browser log context for the invoke when `runtime.dedicated_log` is true (reset in
+  `after_invoke`), `ensure_runtime_ready()`, then `agent_parts(image_support=<the agent's read-image support>)`:
   every tool through `ability_manager.add_ability(card, tool)` on every invoke (a re-add refreshes the instance),
   and the parts' rails (`ActionPolicy`, `RepeatedCallGuardRail`, `InterceptedActionHintRail`, the profile's)
   through `agent.register_rail` once per agent.
