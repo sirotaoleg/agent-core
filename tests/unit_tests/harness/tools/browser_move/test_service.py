@@ -22,8 +22,8 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     CoreSettings,
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.final_answer_recovery import FinalAnswerRecoveryRail
-from openjiuwen.harness.tools.browser_move.playwright_runtime.intercepted_action import CommandInterceptedHintRail
-from openjiuwen.harness.tools.browser_move.playwright_runtime.repeated_call_guard import CommandRepeatGuardRail
+from openjiuwen.harness.tools.browser_move.playwright_runtime.intercepted_action import InterceptedActionHintRail
+from openjiuwen.harness.tools.browser_move.playwright_runtime.repeated_call_guard import RepeatedCallGuardRail
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
@@ -599,8 +599,8 @@ def test_ensure_started_builds_the_worker_from_the_factory_with_the_probes_the_b
     )
     assert [type(call.args[0]) for call in worker.register_rail.await_args_list] == [
         ActionPolicy,
-        CommandRepeatGuardRail,
-        CommandInterceptedHintRail,
+        RepeatedCallGuardRail,
+        InterceptedActionHintRail,
         FinalAnswerRecoveryRail,
     ]
 

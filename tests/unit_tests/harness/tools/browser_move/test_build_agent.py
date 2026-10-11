@@ -37,16 +37,16 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import (
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import CoreSettings
 from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
-from openjiuwen.harness.tools.browser_move.playwright_runtime.intercepted_action import CommandInterceptedHintRail
+from openjiuwen.harness.tools.browser_move.playwright_runtime.intercepted_action import InterceptedActionHintRail
 from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
-from openjiuwen.harness.tools.browser_move.playwright_runtime.repeated_call_guard import CommandRepeatGuardRail
+from openjiuwen.harness.tools.browser_move.playwright_runtime.repeated_call_guard import RepeatedCallGuardRail
 from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import ToolContext
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.surfaces.browser.renderer import BrowserRenderer
 
 CORE = CoreSettings(driver="fake", surface="toy")
 DEVICE = ProvisionedDevice(kind="fake-device", endpoint="fake://1", extras={})
-MESSAGES = {"driver_restarted": "restarted; observe again", "driver_lost": "the device is gone"}
+MESSAGES = {"driver_restarted": "restarted; observe again", "driver_lost": "the device is gone", "retry": "Retry."}
 
 
 def _script(args: Mapping[str, Any], resolver: RefResolver) -> Action:
@@ -140,8 +140,8 @@ def test_the_core_rails_come_first_and_the_profile_rails_last() -> None:
 
     assert [type(rail) for rail in parts.rails] == [
         ActionPolicy,
-        CommandRepeatGuardRail,
-        CommandInterceptedHintRail,
+        RepeatedCallGuardRail,
+        InterceptedActionHintRail,
         ProfileRail,
     ]
 
@@ -210,8 +210,8 @@ def test_build_agent_hands_the_parts_to_create_deep_agent_over_a_started_session
     assert [tool.card.name for tool in kwargs["tools"]] == ["toy_look", "toy_script"]
     assert [type(rail) for rail in kwargs["rails"]][:3] == [
         ActionPolicy,
-        CommandRepeatGuardRail,
-        CommandInterceptedHintRail,
+        RepeatedCallGuardRail,
+        InterceptedActionHintRail,
     ]
     assert (kwargs["workspace"], kwargs["language"], kwargs["max_iterations"]) == ("/tmp/ws", "en", 7)
     assert session.assembly.stack.inner.inner.inner is driver

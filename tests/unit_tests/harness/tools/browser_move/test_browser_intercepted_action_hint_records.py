@@ -29,14 +29,17 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime import service as 
 from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_agent
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.playwright_runtime.intercepted_action import (
-    CommandInterceptedHintRail,
+    InterceptedActionHintRail,
     explain_blocked_command,
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
 from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import command_record
+from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import MESSAGES
 
 from .command_tools import command_tools, fake_driver, result, tool_message
 from .runtime_fixtures import fake_assembly, mcp_fake_driver
+
+RETRY = MESSAGES["retry"]
 
 CONSENT_HINT = "This is a cookie-consent dialog: close it first"
 GENERIC_HINT = "If it is a dialog, banner or overlay, dismiss or close it first."
@@ -66,7 +69,7 @@ def _output(name: str, arguments: dict[str, Any], answer: DriverError | ActionRe
 
 def _explained_text(name: str, arguments: dict[str, Any], answer: DriverError | ActionResult) -> str | None:
     _, output = _output(name, arguments, answer)
-    return explain_blocked_command(command_record(output))
+    return explain_blocked_command(command_record(output), RETRY)
 
 
 def _inputs(name: str, arguments: dict[str, Any], answer: DriverError | ActionResult) -> ToolCallInputs:
@@ -142,11 +145,11 @@ class TestInterceptedActionHintRail:
         inputs = _inputs("browser_click", {"target": "e57"}, _blocked(ONETRUST_BY))
         raw_result, blocked = inputs.tool_result, inputs.tool_msg
 
-        asyncio.run(CommandInterceptedHintRail().after_tool_call(SimpleNamespace(inputs=inputs)))
+        asyncio.run(InterceptedActionHintRail(RETRY).after_tool_call(SimpleNamespace(inputs=inputs)))
 
         assert inputs.tool_result is raw_result
         assert raw_result.error == f"### Error\n{CALL_LOG}"
-        assert inputs.tool_msg.content == explain_blocked_command(command_record(raw_result))
+        assert inputs.tool_msg.content == explain_blocked_command(command_record(raw_result), RETRY)
         assert (inputs.tool_msg.tool_call_id, inputs.tool_msg.name) == ("call-1", "browser_click")
         assert blocked.content == f"### Error\n{CALL_LOG}", "the original ToolMessage must not be mutated"
 
@@ -168,7 +171,7 @@ class TestInterceptedActionHintRail:
         _, output = _output("browser_click", {"target": "e57"}, answer)
         inputs = ToolCallInputs(tool_name="browser_click", tool_result=output, tool_msg=tool_msg)
 
-        asyncio.run(CommandInterceptedHintRail().after_tool_call(SimpleNamespace(inputs=inputs)))
+        asyncio.run(InterceptedActionHintRail(RETRY).after_tool_call(SimpleNamespace(inputs=inputs)))
 
         assert inputs.tool_msg is tool_msg
 
@@ -218,7 +221,7 @@ def test_worker_model_sees_compact_error_and_observer_sees_raw_result() -> None:
     async def scenario() -> list[dict[str, Any]]:
         llm = _ScriptedLLM()
         worker = _worker(llm, _intercepting_driver(), tool_result_observer=observer)
-        await worker.register_rail(CommandInterceptedHintRail())
+        await worker.register_rail(InterceptedActionHintRail(RETRY))
         await Runner.run_agent(worker, {"query": "Open the filters", "conversation_id": "intercepted-hint-records"})
         return llm.requests
 
@@ -227,7 +230,8 @@ def test_worker_model_sees_compact_error_and_observer_sees_raw_result() -> None:
     assert len(requests) == 2
     tool_messages = [message for message in requests[1]["messages"] if getattr(message, "role", "") == "tool"]
     ((tool_name, raw_result),) = observed
-    assert [message.content for message in tool_messages] == [explain_blocked_command(command_record(raw_result))]
+    explained = explain_blocked_command(command_record(raw_result), RETRY)
+    assert [message.content for message in tool_messages] == [explained]
     assert tool_name == "browser_click"
     assert raw_result.success is False
     assert raw_result.error == f"### Error\n{CALL_LOG}", "the observer must keep the driver's own message"
@@ -252,16 +256,16 @@ def test_service_registers_the_rail_on_the_worker() -> None:
         asyncio.run(service.ensure_started())
 
     rails = [call.args[0] for call in worker.register_rail.await_args_list]
-    assert any(isinstance(rail, CommandInterceptedHintRail) for rail in rails)
+    assert any(isinstance(rail, InterceptedActionHintRail) for rail in rails)
 
 
 class TestInterceptedActionHintRailInputs:
     def test_rewrites_a_plain_text_error_without_envelope(self) -> None:
         inputs = _inputs("browser_click", {"target": "e57"}, _blocked(ONETRUST_BY, "covered"))
 
-        asyncio.run(CommandInterceptedHintRail().after_tool_call(SimpleNamespace(inputs=inputs)))
+        asyncio.run(InterceptedActionHintRail(RETRY).after_tool_call(SimpleNamespace(inputs=inputs)))
 
-        assert inputs.tool_msg.content == explain_blocked_command(command_record(inputs.tool_result))
+        assert inputs.tool_msg.content == explain_blocked_command(command_record(inputs.tool_result), RETRY)
         assert inputs.tool_msg.content.startswith("### Error\nClick not delivered: ")
         assert CONSENT_HINT in inputs.tool_msg.content
 
@@ -275,7 +279,7 @@ class TestInterceptedActionHintRailInputs:
         original = tool_message(tool, output, "call-5")
         inputs = ToolCallInputs(tool_name="browser_click", tool_result=output, tool_msg=original)
 
-        asyncio.run(CommandInterceptedHintRail().after_tool_call(SimpleNamespace(inputs=inputs)))
+        asyncio.run(InterceptedActionHintRail(RETRY).after_tool_call(SimpleNamespace(inputs=inputs)))
 
         assert inputs.tool_msg is original
 
@@ -291,7 +295,7 @@ def test_hint_adds_no_model_round_trip(with_rail: bool) -> None:
         llm = _ScriptedLLM()
         worker = _worker(llm, _intercepting_driver())
         if with_rail:
-            await worker.register_rail(CommandInterceptedHintRail())
+            await worker.register_rail(InterceptedActionHintRail(RETRY))
         await Runner.run_agent(
             worker, {"query": "Open the filters", "conversation_id": f"f06-hint-records-{with_rail}"}
         )

@@ -39,7 +39,11 @@ from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 BOARD = 100
 SCREEN = ContextRef("screen-1", "screen", "Board")
 DEVICE = ProvisionedDevice(kind="fake-screen", endpoint="screen://1", extras={})
-MESSAGES = {"driver_restarted": "the screen restarted; look again", "driver_lost": "the screen is gone"}
+MESSAGES = {
+    "driver_restarted": "the screen restarted; look again",
+    "driver_lost": "the screen is gone",
+    "retry": "Then poke again.",
+}
 
 
 @dataclass(frozen=True)

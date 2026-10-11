@@ -102,7 +102,6 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
     "playwright_runtime/browser_working_context.py": 2,
     "playwright_runtime/browser_working_context_rail.py": 2,
     "playwright_runtime/main.py": 5,
-    "playwright_runtime/repeated_call_guard.py": 1,
     "playwright_runtime/runtime.py": 20,
     "playwright_runtime/runtime_tools.py": 1,
     "playwright_runtime/service.py": 14,
@@ -121,9 +120,7 @@ KNOWN_MCP_TOOL_NAMES: dict[str, int] = {
     "playwright_runtime/agents.py": 11,
     "playwright_runtime/browser_capabilities.py": 69,
     "playwright_runtime/browser_state_context_processor.py": 46,
-    "playwright_runtime/intercepted_action.py": 1,
     "playwright_runtime/probes.py": 2,
-    "playwright_runtime/repeated_call_guard.py": 3,
     "playwright_runtime/runtime.py": 57,
     "utils/upload_paths.py": 1,
 }

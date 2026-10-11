@@ -30,7 +30,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime import service as 
 from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_agent
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.playwright_runtime.repeated_call_guard import (
-    CommandRepeatGuardRail,
+    RepeatedCallGuardRail,
     _is_noop_script,
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
@@ -59,7 +59,7 @@ class _Run:
     """Drives the rail the way one ReActAgent invoke does (tool contexts get a copy of extra)."""
 
     def __init__(self) -> None:
-        self.rail = CommandRepeatGuardRail()
+        self.rail = RepeatedCallGuardRail()
         self.agent = SimpleNamespace(system_prompt_builder=SystemPromptBuilder())
         self.extra: dict[str, Any] = {}
         self.driver = fake_driver()
@@ -433,7 +433,7 @@ def test_worker_loop_ends_with_final_answer_once_tools_are_withheld() -> None:
     async def scenario() -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
         llm = _LoopingLLM()
         worker = _build_worker(llm, max_steps, fake_driver(_results(*["ok"] * 10)))
-        await worker.register_rail(CommandRepeatGuardRail())
+        await worker.register_rail(RepeatedCallGuardRail())
         outcome = await Runner.run_agent(
             worker, {"query": "Find a vegetarian lasagna", "conversation_id": "loop-records-1"}
         )
@@ -461,7 +461,7 @@ def test_worker_loop_with_a_counter_in_the_argument_also_ends() -> None:
     async def scenario() -> tuple[dict[str, Any], list[dict[str, Any]]]:
         llm = _LoopingLLM(lambda n: f"() => 'done{n}'")
         worker = _build_worker(llm, max_steps, fake_driver(_results(*[f"done{n}" for n in range(1, 6)])))
-        await worker.register_rail(CommandRepeatGuardRail())
+        await worker.register_rail(RepeatedCallGuardRail())
         outcome = await Runner.run_agent(
             worker, {"query": "Find a vegetarian lasagna", "conversation_id": "loop-records-3"}
         )
@@ -496,7 +496,7 @@ def test_service_registers_the_guard_on_the_worker() -> None:
         asyncio.run(service.ensure_started())
 
     rails = [call.args[0] for call in worker.register_rail.await_args_list]
-    assert any(isinstance(rail, CommandRepeatGuardRail) for rail in rails)
+    assert any(isinstance(rail, RepeatedCallGuardRail) for rail in rails)
 
 
 class _SameTurnLLM:
@@ -527,7 +527,7 @@ def test_identical_calls_issued_in_one_model_turn_withhold_tools() -> None:
         llm = _SameTurnLLM(8)
         driver = fake_driver(_results(*[None] * 8))
         worker = _build_worker(llm, 20, driver, "browser_press_key")
-        await worker.register_rail(CommandRepeatGuardRail())
+        await worker.register_rail(RepeatedCallGuardRail())
         outcome = await Runner.run_agent(worker, {"query": "Move the price slider", "conversation_id": "f1-records"})
         return outcome, list(llm.requests), driver.kinds().count("execute")
 
@@ -567,7 +567,7 @@ def test_guard_adds_no_model_round_trip(with_rail: bool) -> None:
         llm = _RepeatThenAnswerLLM(4)
         worker = _build_worker(llm, 20, fake_driver(_results(*["ok"] * 4)))
         if with_rail:
-            await worker.register_rail(CommandRepeatGuardRail())
+            await worker.register_rail(RepeatedCallGuardRail())
         await Runner.run_agent(
             worker, {"query": "Find a vegetarian lasagna", "conversation_id": f"f06-guard-records-{with_rail}"}
         )
