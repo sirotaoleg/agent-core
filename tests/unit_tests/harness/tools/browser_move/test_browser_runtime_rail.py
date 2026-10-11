@@ -16,10 +16,12 @@ from openjiuwen.core.foundation.llm import ToolCall
 from openjiuwen.core.foundation.llm.schema.message import ToolMessage, UserMessage
 from openjiuwen.core.single_agent.ability_manager import AbilityManager
 from openjiuwen.core.single_agent.prompts.builder import SystemPromptBuilder
+from openjiuwen.core.runner.callback.errors import AbortError
 from openjiuwen.harness.tools.browser_move.contract import (
     ActionResult,
     ActionTimeout,
     Click,
+    ConnectionLost,
     DriverError,
     DriverInfo,
     DriverRef,
@@ -240,6 +242,21 @@ def test_before_invoke_called_twice_delegates_twice() -> None:
     parts = runtime.agent_parts(image_support=True)
     assert ctx1.agent.ability_manager.add_ability.call_count == 2 * len(parts.tools)
     assert ctx1.agent.register_rail.await_count == len(parts.rails)
+
+
+def test_a_session_that_cannot_start_aborts_the_invoke_before_any_tool_is_added() -> None:
+    runtime = make_runtime(image_support=None)
+    error = ConnectionLost("connect: no device", dispatched=False)
+    runtime.ensure_runtime_ready = AsyncMock(side_effect=error)
+    rail = BrowserRuntimeRail(runtime)
+    ctx = _make_ctx()
+
+    with pytest.raises(AbortError) as raised:
+        _run(rail.before_invoke(ctx))
+
+    assert (raised.value.cause, raised.value.reason) == (error, "connect: no device")
+    ctx.agent.ability_manager.add_ability.assert_not_called()
+    ctx.agent.register_rail.assert_not_awaited()
 
 
 def test_before_tool_call_normalizes_explicit_snapshot_ref_target() -> None:

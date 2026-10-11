@@ -11,9 +11,12 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from openjiuwen.core.common.logging.browser_context import is_browser_agent_log_context
+from openjiuwen.core.foundation.llm.model_clients.openai_model_client import OpenAIModelClient
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext
+from openjiuwen.harness import deep_agent as deep_agent_module
 from openjiuwen.harness.subagents import browser_agent as browser_agent_module
+from openjiuwen.harness.tools.browser_move.contract import ConnectionLost
 from openjiuwen.harness.tools.browser_move.playwright_runtime import runtime as runtime_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails, CoreSettings
@@ -197,6 +200,23 @@ def test_the_direct_agent_runs_outside_the_browser_log_context_like_the_worker()
     with _assembling():
         assert (direct.dedicated_log, run(invoked(direct))) == (False, (False, False))
         assert (_runtime().dedicated_log, run(invoked(_runtime()))) == (True, (True, True))
+
+
+def test_on_browser_use_a_session_that_cannot_start_fails_the_task_before_any_model_call() -> None:
+    runtime = _runtime(CoreSettings(driver="browser_use"))
+    failing = AsyncMock(side_effect=ConnectionLost("connect: No valid agent focus available", dispatched=True))
+    model_calls = AsyncMock(side_effect=RuntimeError("the model was called"))
+    with (
+        patch.object(service_module, "assemble_driver", failing),
+        patch.object(OpenAIModelClient, "invoke", model_calls),
+        patch.object(OpenAIModelClient, "stream", model_calls),
+        patch.object(deep_agent_module, "schedule_image_support_probe"),
+    ):
+        answer = run(runtime.run_browser_task(task="Report the heading", session_id="s", request_id="r"))
+
+    assert (answer["ok"], answer["error"]) == (False, "connect: No valid agent focus available")
+    assert failing.await_count == 1
+    model_calls.assert_not_awaited()
 
 
 def test_on_browser_use_a_failed_run_is_reported_in_the_answer() -> None:

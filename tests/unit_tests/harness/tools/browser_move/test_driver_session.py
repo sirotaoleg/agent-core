@@ -279,3 +279,34 @@ def test_health_asks_the_stack() -> None:
     assert asyncio.run(session.health()).ok is False
     asyncio.run(session.start())
     assert asyncio.run(session.health()).ok is True
+
+
+class StartLosesOnceDriver(FakeDriver):
+    async def start(self, config: Any = None) -> None:
+        await super().start(config)
+        if self.kinds().count("start") == 1:
+            raise ConnectionLost("no device yet", dispatched=False)
+
+
+def test_a_start_that_loses_the_connection_restarts_once() -> None:
+    driver = StartLosesOnceDriver()
+    session, provisioner, page_state = _session(driver)
+    asyncio.run(session.stop())
+
+    asyncio.run(session.start())
+
+    assert driver.kinds() == ["stop", "start", "stop", "start"]
+    assert page_state.generation_id == "g1"
+    assert provisioner.log == []
+
+
+def test_a_start_that_loses_the_connection_twice_fails() -> None:
+    driver = StartFailsDriver()
+    session, _, page_state = _session(driver)
+
+    with pytest.raises(BaseError, match="the device is gone") as raised:
+        asyncio.run(session.start())
+
+    assert driver.kinds() == ["start", "stop", "start"]
+    assert isinstance(raised.value.cause, ConnectionLost)
+    assert page_state.generation_id == "g0"
