@@ -25,8 +25,6 @@ KNOWN_ENV_READS: dict[str, dict[str, int]] = {
     # not the process environment: the env mapping of the Playwright MCP child in the MCP server config
     "playwright_runtime/service.py": {
         "env_map.get(PLAYWRIGHT_MCP_CDP_ENDPOINT)": 1,
-        "env_map.pop(PLAYWRIGHT_MCP_DEVICE)": 1,
-        "env_map.setdefault(PLAYWRIGHT_MCP_BROWSER)": 1,
     },
 }
 

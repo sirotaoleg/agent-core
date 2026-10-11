@@ -17,6 +17,7 @@ from openjiuwen.core.foundation.llm import AssistantMessage, ToolCall
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.contract import Observation, Observe
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
+from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_agent
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.playwright_runtime.final_answer_recovery import (
@@ -27,6 +28,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.final_answer_recov
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
 
 from .command_tools import HOME, command_tools
+from .runtime_fixtures import fake_assembly, mcp_fake_driver
 
 ANSWER = {
     "ok": True,
@@ -96,9 +98,7 @@ def _service(
         api_key="mock-api-key",
         api_base="https://example.invalid/v1",
         model_name="mock-model",
-        mcp_cfg=_mcp_cfg(),
         max_steps=max_steps,
-        allowed_tool_names=(),
     )
     llm = _ScriptedLLM(respond)
     worker.set_llm(llm)
@@ -348,7 +348,7 @@ def test_service_registers_the_recovery_rail(other_rails: int) -> None:
     worker.register_rail = AsyncMock()
     module = "openjiuwen.harness.tools.browser_move.playwright_runtime.service"
     with (
-        patch.object(service, "ensure_runtime_ready", AsyncMock()),
+        patch.object(service_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))),
         patch(f"{module}.build_browser_worker_agent", return_value=worker),
     ):
         asyncio.run(service.ensure_started())

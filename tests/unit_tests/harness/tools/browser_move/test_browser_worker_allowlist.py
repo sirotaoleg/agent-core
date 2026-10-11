@@ -1,74 +1,44 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Tests for installing capability allowlists on Playwright workers."""
+"""The worker gets the factory tools of the capabilities its allowlist covers, plus the probes and the batch."""
 
-from unittest.mock import MagicMock, patch
+from __future__ import annotations
 
-from openjiuwen.core.foundation.tool import McpServerConfig
-from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import (
-    build_browser_worker_system_prompt,
-    build_browser_worker_agent,
-)
+import asyncio
+from unittest.mock import AsyncMock, patch
+
+from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
+from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_system_prompt
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
     CORE_BROWSER_TOOL_NAMES,
+    PDF_BROWSER_TOOL_NAMES,
 )
+from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
+from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import MCP_PREFIX, fake_assembly, mcp_fake_driver
+from tests.unit_tests.harness.tools.browser_move.test_service import _make_service
+
+WORKER_HELPERS = {"browser_probe_interactives", "browser_probe_cards", "browser_batch_interact"}
 
 
-def _mcp_config() -> McpServerConfig:
-    return McpServerConfig(
-        server_id="playwright_official_stdio",
-        server_name="playwright-official",
-        server_path="stdio://playwright",
-        client_type="stdio",
-    )
-
-
-def _build_with_mocked_agent(
-    config: McpServerConfig,
-    allowed_tool_names: tuple[str, ...] | None,
-) -> MagicMock:
-    worker = MagicMock()
-    worker.configure.return_value = worker
-    with patch(
-        "openjiuwen.harness.tools.browser_move.playwright_runtime.agents.ReActAgent",
-        return_value=worker,
-    ):
-        result = build_browser_worker_agent(
-            provider="openai",
-            api_key="key",
-            api_base="https://example.invalid/v1",
-            model_name="model",
-            mcp_cfg=config,
-            max_steps=3,
-            allowed_tool_names=allowed_tool_names,
-        )
-    assert result is worker
-    return worker
+def _worker_tool_names(allowed_tool_names: tuple[str, ...] | None) -> set[str]:
+    service: BrowserService = _make_service(allowed_tool_names=allowed_tool_names)
+    with patch.object(service_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))):
+        asyncio.run(service.ensure_started())
+    worker = service.browser_agent
+    return {tool.name for tool in asyncio.run(worker.ability_manager.list_tool_info())}
 
 
 def test_worker_installs_task_allowlist_for_playwright_server() -> None:
-    config = _mcp_config()
-    allowed = ("browser_click", "browser_pdf_save")
+    names = _worker_tool_names(CORE_BROWSER_TOOL_NAMES + PDF_BROWSER_TOOL_NAMES)
 
-    worker = _build_with_mocked_agent(config, allowed)
-
-    worker.ability_manager.add.assert_called_once_with(config)
-    worker.ability_manager.set_mcp_tool_allowlist.assert_called_once_with(
-        config,
-        allowed,
-    )
+    assert names == {MCP_PREFIX + name for name in CORE_BROWSER_TOOL_NAMES + PDF_BROWSER_TOOL_NAMES} | WORKER_HELPERS
 
 
 def test_worker_with_none_allowlist_defaults_to_core() -> None:
-    config = _mcp_config()
+    names = _worker_tool_names(None)
 
-    worker = _build_with_mocked_agent(config, None)
-
-    worker.ability_manager.add.assert_called_once_with(config)
-    worker.ability_manager.set_mcp_tool_allowlist.assert_called_once_with(
-        config,
-        CORE_BROWSER_TOOL_NAMES,
-    )
+    assert names == {MCP_PREFIX + name for name in CORE_BROWSER_TOOL_NAMES} | WORKER_HELPERS
+    assert "browser_recall_offload" not in names
 
 
 def test_worker_prompt_only_mentions_conditionally_visible_run_code() -> None:

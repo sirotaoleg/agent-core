@@ -26,7 +26,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.contract.testing.fake import DEFAULT_ACTIONS
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import DECODERS
-from openjiuwen.harness.tools.browser_move.playwright_runtime import runtime as runtime_module
+from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime, ToolKind
@@ -168,7 +168,7 @@ def make_runtime(
         workspace=workspace,
     )
     driver = driver if driver is not None else mcp_fake_driver()
-    with patch.object(runtime_module, "assemble_driver", AsyncMock(return_value=fake_assembly(driver))):
+    with patch.object(service_module, "assemble_driver", AsyncMock(return_value=fake_assembly(driver))):
         run(runtime.ensure_runtime_ready())
     if image_support is not None:
         runtime.agent_parts(image_support=image_support)

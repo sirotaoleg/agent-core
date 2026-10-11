@@ -5,51 +5,17 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
-from unittest.mock import AsyncMock
 
-from openjiuwen.core.foundation.tool import McpServerConfig
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.playwright_runtime.probes import (
     build_interactive_probe_js,
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.site_profiles import (
     builtin_site_profiles,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import (
-    BrowserAgentRuntime,
-)
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime_tools import (
-    BrowserProbeInteractivesTool,
-)
 
 
 def _run(coro):
     return asyncio.run(coro)
-
-
-def _make_runtime() -> BrowserAgentRuntime:
-    mcp_cfg = McpServerConfig(
-        server_id="test-playwright-runtime",
-        server_name="test-playwright-runtime",
-        server_path="stdio://playwright",
-        client_type="stdio",
-        params={"cwd": str(Path.cwd())},
-    )
-
-    return BrowserAgentRuntime(
-        provider="openai",
-        api_key="test-key",
-        api_base="https://example.invalid/v1",
-        model_name="test-model",
-        mcp_cfg=mcp_cfg,
-        guardrails=BrowserRunGuardrails(
-            max_steps=3,
-            max_failures=1,
-            timeout_s=30,
-            retry_once=False,
-        ),
-    )
 
 
 def test_build_interactive_probe_js_contains_high_value_selectors() -> None:
@@ -121,63 +87,6 @@ def test_build_interactive_probe_js_clamps_max_items() -> None:
     js = build_interactive_probe_js(max_items=999, viewport_only=True)
 
     assert '"max_items": 100' in js
-
-
-def test_browser_probe_interactives_tool_invokes_runtime_api() -> None:
-    runtime = _make_runtime()
-    runtime.probe_interactives = AsyncMock(
-        return_value={
-            "ok": True,
-            "elements": [
-                {
-                    "id": "e1",
-                    "role": "button",
-                    "text": "Add to cart",
-                    "selector_hint": "button:nth-of-type(1)",
-                }
-            ],
-            "error": None,
-        }
-    )
-
-    tool = BrowserProbeInteractivesTool(runtime, language="en")
-
-    result = _run(
-        tool.invoke(
-            {
-                "max_items": 200,
-                "viewport_only": "false",
-                "query": "cart",
-            }
-        )
-    )
-
-    runtime.probe_interactives.assert_called_once_with(
-        max_items=40,
-        viewport_only=False,
-        query="cart",
-    )
-    assert result.success is True
-    assert result.data["elements"][0]["text"] == "Add to cart"
-
-
-def test_browser_probe_interactives_tool_reports_runtime_error() -> None:
-    runtime = _make_runtime()
-    runtime.probe_interactives = AsyncMock(
-        return_value={
-            "ok": False,
-            "error": "browser_code_executor_not_ready",
-            "elements": [],
-        }
-    )
-
-    tool = BrowserProbeInteractivesTool(runtime, language="en")
-
-    result = _run(tool.invoke({}))
-
-    assert result.success is False
-    assert result.error == "browser_code_executor_not_ready"
-    assert result.data["elements"] == []
 
 
 def test_probe_query_uses_exact_match_before_bounded_alias_widening() -> None:

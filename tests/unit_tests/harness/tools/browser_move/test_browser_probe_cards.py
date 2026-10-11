@@ -8,12 +8,9 @@ import asyncio
 import shutil
 import subprocess
 from pathlib import Path
-from unittest.mock import AsyncMock
 
 import pytest
 
-from openjiuwen.core.foundation.tool import McpServerConfig
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.playwright_runtime.probes import (
     build_browser_state_metadata_js,
     build_card_probe_js,
@@ -22,40 +19,10 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.probes import (
 from openjiuwen.harness.tools.browser_move.playwright_runtime.site_profiles import (
     builtin_site_profiles,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import (
-    BrowserAgentRuntime,
-)
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime_tools import (
-    BrowserProbeCardsTool,
-)
 
 
 def _run(coro):
     return asyncio.run(coro)
-
-
-def _make_runtime() -> BrowserAgentRuntime:
-    mcp_cfg = McpServerConfig(
-        server_id="test-playwright-runtime",
-        server_name="test-playwright-runtime",
-        server_path="stdio://playwright",
-        client_type="stdio",
-        params={"cwd": str(Path.cwd())},
-    )
-
-    return BrowserAgentRuntime(
-        provider="openai",
-        api_key="test-key",
-        api_base="https://example.invalid/v1",
-        model_name="test-model",
-        mcp_cfg=mcp_cfg,
-        guardrails=BrowserRunGuardrails(
-            max_steps=3,
-            max_failures=1,
-            timeout_s=30,
-            retry_once=False,
-        ),
-    )
 
 
 def test_build_card_probe_js_contains_card_extraction_terms() -> None:
@@ -157,65 +124,6 @@ def test_build_card_probe_js_clamps_max_cards() -> None:
     js = build_card_probe_js(max_cards=999, viewport_only=True)
 
     assert '"max_cards": 50' in js
-
-
-def test_browser_probe_cards_tool_invokes_runtime_api() -> None:
-    runtime = _make_runtime()
-    runtime.probe_cards = AsyncMock(
-        return_value={
-            "ok": True,
-            "cards": [
-                {
-                    "id": "card_1",
-                    "title": "A Light in the Attic",
-                    "price": "£51.77",
-                    "selector_hint": "article.product_pod",
-                }
-            ],
-            "error": None,
-        }
-    )
-
-    tool = BrowserProbeCardsTool(runtime, language="en")
-
-    result = _run(
-        tool.invoke(
-            {
-                "max_cards": 200,
-                "viewport_only": "false",
-                "include_buttons": "true",
-                "query": "attic",
-            }
-        )
-    )
-
-    runtime.probe_cards.assert_called_once_with(
-        max_cards=20,
-        viewport_only=False,
-        include_buttons=True,
-        query="attic",
-    )
-    assert result.success is True
-    assert result.data["cards"][0]["title"] == "A Light in the Attic"
-
-
-def test_browser_probe_cards_tool_reports_runtime_error() -> None:
-    runtime = _make_runtime()
-    runtime.probe_cards = AsyncMock(
-        return_value={
-            "ok": False,
-            "error": "browser_code_executor_not_ready",
-            "cards": [],
-        }
-    )
-
-    tool = BrowserProbeCardsTool(runtime, language="en")
-
-    result = _run(tool.invoke({}))
-
-    assert result.success is False
-    assert result.error == "browser_code_executor_not_ready"
-    assert result.data["cards"] == []
 
 
 def test_build_card_probe_js_keeps_normalization_simple() -> None:

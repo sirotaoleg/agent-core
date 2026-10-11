@@ -37,7 +37,6 @@ from openjiuwen.harness.tools.browser_move.contract.testing.fake import DEFAULT_
 from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
 from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime_tools import BrowserBatchInteractTool
 from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import ToolContext, ToolFlags, command_record
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     FieldKind,
@@ -144,10 +143,6 @@ def _marked(action: Any) -> bool:
 
 
 # --- card, flags, step contract --------------------------------------------------------------------------------------
-
-
-def test_the_batch_card_equals_the_old_tool_card() -> None:
-    assert BatchTool(_context()).card.tool_info() == BrowserBatchInteractTool(None).card.tool_info()
 
 
 def test_the_batch_declares_that_it_acts() -> None:

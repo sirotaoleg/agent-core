@@ -32,6 +32,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabiliti
     CORE_BROWSER_TOOL_NAMES,
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import (
+    BrowserAgentRuntime,
     BrowserRuntimeRail,
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_working_context_rail import (
@@ -552,3 +553,16 @@ def test_decision_policy_model_is_used_as_is_and_bound_to_the_runtime() -> None:
     assert policy.bound is runtime_cls.return_value
     assert calls[0]["enable_model_anomaly_detection_rail"] is False
     assert not any(isinstance(rail, ContextProcessorRail) for rail in calls[0]["rails"])
+
+
+def test_a_given_runtime_is_used_instead_of_a_new_facade() -> None:
+    calls, fake_create = _capture_create_deep_agent()
+    given = MagicMock(spec=BrowserAgentRuntime)
+    with patch("openjiuwen.harness.subagents.browser_agent.BrowserAgentRuntime") as runtime_cls, patch(
+        "openjiuwen.harness.subagents.browser_agent.create_deep_agent", side_effect=fake_create
+    ):
+        create_browser_agent(_fake_model(), runtime=given)
+
+    runtime_cls.assert_not_called()
+    rails = [rail for rail in calls[0]["rails"] if isinstance(rail, BrowserRuntimeRail)]
+    assert len(rails) == 1 and rails[0]._runtime is given

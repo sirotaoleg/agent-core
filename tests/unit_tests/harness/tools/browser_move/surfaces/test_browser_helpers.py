@@ -31,10 +31,6 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime import site_profil
 from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
 from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime_tools import (
-    BrowserProbeCardsTool,
-    BrowserProbeInteractivesTool,
-)
 from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import ToolContext, ToolFlags, command_record
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
@@ -122,13 +118,6 @@ def _fresh_selector_cache(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # --- cards -----------------------------------------------------------------------------------------------------------
-
-
-def test_probe_cards_equal_the_old_helper_cards() -> None:
-    context = _context(FakeDriver())
-    old = [BrowserProbeInteractivesTool(None), BrowserProbeCardsTool(None)]
-    new = [ProbeInteractivesTool(context), ProbeCardsTool(context)]
-    assert [tool.card.tool_info() for tool in new] == [tool.card.tool_info() for tool in old]
 
 
 def test_the_extra_tools_are_the_probes_the_batch_find_and_recall() -> None:

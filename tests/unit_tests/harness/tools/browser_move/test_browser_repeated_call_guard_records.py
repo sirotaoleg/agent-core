@@ -26,6 +26,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     Observation,
 )
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
+from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_agent
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.playwright_runtime.repeated_call_guard import (
@@ -36,6 +37,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.service import Bro
 from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import command_record
 
 from .command_tools import HOME, command_tools, fake_driver, result, tool_message
+from .runtime_fixtures import fake_assembly, mcp_fake_driver
 
 NOTE = "### Repeated call"
 NOOP_WORDING = "only returned constants or the page title/URL"
@@ -412,9 +414,7 @@ def _build_worker(llm: Any, max_steps: int, driver: FakeDriver, *names: str) -> 
         api_key="mock-api-key",
         api_base="https://example.invalid/v1",
         model_name="mock-model",
-        mcp_cfg=McpServerConfig(server_id="pw-test", server_name="pw-test", server_path="stdio://pw"),
         max_steps=max_steps,
-        allowed_tool_names=(),
     )
     worker.set_llm(llm)
     tools = command_tools(driver)
@@ -477,7 +477,6 @@ def test_worker_loop_with_a_counter_in_the_argument_also_ends() -> None:
     assert [NOTE in message for message in tool_messages] == [False, False, True, True, True]
 
 
-@pytest.mark.xfail(strict=True, reason="the service still registers the text-based guard")
 def test_service_registers_the_guard_on_the_worker() -> None:
     service = BrowserService(
         provider="openai",
@@ -491,7 +490,7 @@ def test_service_registers_the_guard_on_the_worker() -> None:
     worker.register_rail = AsyncMock()
     module = "openjiuwen.harness.tools.browser_move.playwright_runtime.service"
     with (
-        patch.object(service, "ensure_runtime_ready", AsyncMock()),
+        patch.object(service_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))),
         patch(f"{module}.build_browser_worker_agent", return_value=worker),
     ):
         asyncio.run(service.ensure_started())

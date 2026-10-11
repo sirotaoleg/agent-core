@@ -9,46 +9,36 @@ import hashlib
 import json
 import re
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from openjiuwen.core.foundation.llm import AssistantMessage
-from openjiuwen.core.foundation.tool import McpServerConfig, ToolInfo
-from openjiuwen.core.foundation.tool.mcp.base import mcp_model_tool_prefix
-from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import (
-    build_browser_worker_agent,
-    build_browser_worker_system_prompt,
-)
+from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
+from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_system_prompt
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
     CORE_BROWSER_TOOL_NAMES,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime_tools import (
-    BrowserBatchInteractTool,
     BrowserCustomActionTool,
     BrowserListActionsTool,
-    BrowserProbeCardsTool,
-    BrowserProbeInteractivesTool,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
+from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import MCP_PREFIX, fake_assembly, mcp_fake_driver
+from tests.unit_tests.harness.tools.browser_move.test_service import _make_service
 
-HELPER_TOOLS = {
-    "browser_probe_interactives": BrowserProbeInteractivesTool,
-    "browser_probe_cards": BrowserProbeCardsTool,
-    "browser_batch_interact": BrowserBatchInteractTool,
+# The runtime tools a caller may still add to the worker by card.
+RUNTIME_TOOLS = {
     "browser_custom_action": BrowserCustomActionTool,
     "browser_list_custom_actions": BrowserListActionsTool,
 }
-# The helpers BrowserAgentRuntime.ensure_started() actually gives the worker.
+# The helpers the service gives the worker from the factory's extra tools.
 RUNTIME_WORKER_HELPERS = ("browser_probe_interactives", "browser_probe_cards", "browser_batch_interact")
+HELPER_TOOLS = (*RUNTIME_WORKER_HELPERS, *RUNTIME_TOOLS)
 # Only mentioned in conditional wording ("only when it is present").
 CONDITIONAL_MENTIONS = {"browser_run_code", "browser_take_screenshot"}
 # Prompt with the full tool surface at 18b840cf; it must stay byte-identical.
 FULL_SURFACE_PROMPT_SHA256 = "a814c53b1b2571d807ff0bba21411541397f281390bdb82497a31554fdeb9f89"
 
-_SERVER_NAME = "playwright-official"
-_MCP_SERVER_TOOL_NAMES = CORE_BROWSER_TOOL_NAMES + ("browser_take_screenshot", "browser_wait_for")
 _FINAL_JSON = json.dumps(
     {"ok": True, "final": "done", "page": {"url": "", "title": ""}, "screenshot": None, "error": None}
 )
@@ -74,54 +64,25 @@ class _RecordingLLM:
         return AssistantMessage(content=_FINAL_JSON)
 
 
-async def _fake_mcp_tool_infos(*args: Any, **kwargs: Any) -> list[ToolInfo]:
-    del args, kwargs
-    return [
-        ToolInfo(name=name, description=f"{name} tool", parameters={"type": "object", "properties": {}})
-        for name in _MCP_SERVER_TOOL_NAMES
-    ]
-
-
 def _run_worker_request(helpers_added: tuple[str, ...], helpers_removed: tuple[str, ...]) -> tuple[str, set[str]]:
     """Build the worker as the service does, run one task, return (system prompt, tool names) of the request."""
-    mcp_cfg = McpServerConfig(
-        server_id="playwright_official_stdio",
-        server_name=_SERVER_NAME,
-        server_path="stdio://playwright",
-        client_type="stdio",
-    )
-    worker = build_browser_worker_agent(
-        provider="openai",
-        api_key="mock-api-key",
-        api_base="https://example.invalid/v1",
-        model_name="mock-model",
-        mcp_cfg=mcp_cfg,
-        max_steps=2,
-        allowed_tool_names=CORE_BROWSER_TOOL_NAMES,
-    )
+    service = _make_service()
+    with patch.object(service_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))):
+        asyncio.run(service.ensure_started())
+    worker = service.browser_agent
     llm = _RecordingLLM()
     worker.set_llm(llm)
-    # Mirrors BrowserAgentRuntime.ensure_started(): helper cards are added after the worker is built.
+    for name in RUNTIME_WORKER_HELPERS:
+        if name not in helpers_added:
+            worker.ability_manager.remove_ability(name)
     for name in helpers_added:
-        worker.ability_manager.add(HELPER_TOOLS[name](MagicMock(), language="en").card)
+        if name in RUNTIME_TOOLS:
+            worker.ability_manager.add(RUNTIME_TOOLS[name](MagicMock(), language="en").card)
     # Mirrors the WebVoyager harness, which strips helpers after ensure_started().
     for name in helpers_removed:
         worker.ability_manager.remove_ability(name)
 
-    service = BrowserService(
-        provider="openai",
-        api_key="mock-api-key",
-        api_base="https://example.invalid/v1",
-        model_name="mock-model",
-        mcp_cfg=mcp_cfg,
-        guardrails=BrowserRunGuardrails(max_steps=2, max_failures=1, timeout_s=30),
-    )
-    service.browser_agent = worker
-    with patch(
-        "openjiuwen.core.runner.Runner.resource_mgr.get_mcp_tool_infos",
-        side_effect=_fake_mcp_tool_infos,
-    ):
-        result = asyncio.run(service.run_task_once(task="Open example.com", session_id="s-1", request_id="r-1"))
+    result = asyncio.run(service.run_task_once(task="Open example.com", session_id="s-1", request_id="r-1"))
 
     assert result["ok"] is True
     assert llm.requests, "the worker never called the model"
@@ -129,8 +90,7 @@ def _run_worker_request(helpers_added: tuple[str, ...], helpers_removed: tuple[s
     system_prompt = "\n".join(
         str(message.content) for message in request["messages"] if getattr(message, "role", "") == "system"
     )
-    prefix = mcp_model_tool_prefix(_SERVER_NAME)
-    tool_names = {tool.name.removeprefix(prefix) for tool in request["tools"] or []}
+    tool_names = {tool.name.removeprefix(MCP_PREFIX) for tool in request["tools"] or []}
     return system_prompt, tool_names
 
 
@@ -165,7 +125,7 @@ class TestWorkerRequestPromptMatchesTools:
         assert not missing, f"prompt names tools the model was not given: {sorted(missing)}"
 
     def test_runtime_default_surface_does_not_name_custom_action(self) -> None:
-        # BrowserAgentRuntime registers browser_custom_action but never adds it to the worker.
+        # The service gives the worker the probes and the batch, never browser_custom_action.
         system_prompt, tool_names = _run_worker_request(RUNTIME_WORKER_HELPERS, ())
 
         assert set(RUNTIME_WORKER_HELPERS) <= tool_names

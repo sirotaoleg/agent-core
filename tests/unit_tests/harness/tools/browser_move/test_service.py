@@ -6,28 +6,35 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
+from typing import Any, Iterable
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from openjiuwen.harness.tools.browser_move.contract.registry import PROVISIONERS
+from openjiuwen.core.foundation.tool import McpServerConfig
+from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
+from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
+from openjiuwen.harness.tools.browser_move.playwright_runtime.action_policy import ActionPolicy
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserInstanceConfig,
     BrowserRunGuardrails,
+    CoreSettings,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.profiles import BrowserProfile
+from openjiuwen.harness.tools.browser_move.playwright_runtime.final_answer_recovery import FinalAnswerRecoveryRail
+from openjiuwen.harness.tools.browser_move.playwright_runtime.intercepted_action import CommandInterceptedHintRail
+from openjiuwen.harness.tools.browser_move.playwright_runtime.repeated_call_guard import CommandRepeatGuardRail
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
-from openjiuwen.harness.tools.browser_move.playwright_runtime.service_registry import BROWSER_SERVICE_REGISTRY
-from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
-from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import (
-    ManagedBrowserProvisioner,
-    _build_profile,
-)
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
+from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
+    DEVICE,
+    MCP_PREFIX,
+    FakeProvisioner,
+    fake_assembly,
+    mcp_fake_driver,
+)
 
-from openjiuwen.core.foundation.tool import McpServerConfig
+WORKER_HELPERS = {"browser_probe_interactives", "browser_probe_cards", "browser_batch_interact"}
 
 
 def _make_service(
@@ -36,6 +43,8 @@ def _make_service(
     runtime_cwd: str | None = None,
     instance: BrowserInstanceConfig | None = None,
     browser_settings: BrowserSettings | None = None,
+    allowed_tool_names: Iterable[str] | None = None,
+    core_settings: CoreSettings | None = None,
 ) -> BrowserService:
     mcp_cfg = McpServerConfig(
         server_id="test-playwright",
@@ -52,7 +61,9 @@ def _make_service(
         mcp_cfg=mcp_cfg,
         guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=retry_once),
         instance=instance,
+        allowed_tool_names=allowed_tool_names,
         browser_settings=browser_settings,
+        core_settings=core_settings,
     )
 
 
@@ -60,37 +71,18 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-async def _capture_initial_mcp_registration(service: BrowserService) -> dict:
-    registered_params: list[dict] = []
+def _opened(service: BrowserService, driver: FakeDriver | None = None) -> tuple[FakeDriver, AsyncMock]:
+    """Open the service's session on ``driver``; returns it with the ``assemble_driver`` mock that built it."""
+    driver = driver or mcp_fake_driver()
+    assemble = AsyncMock(return_value=fake_assembly(driver))
+    with patch.object(service_module, "assemble_driver", assemble):
+        _run(service.ensure_runtime_ready())
+    return driver, assemble
 
-    async def fake_add_mcp_server(config, *, tag: str):
-        assert tag == "browser.service"
-        registered_params.append(dict(config.params))
-        return None
 
-    with patch.object(service, "_acquire_registry_lease"), patch.object(
-        service,
-        "_ensure_managed_driver_started",
-        AsyncMock(return_value=False),
-    ), patch.object(service, "_ensure_screenshots_dir"), patch(
-        "openjiuwen.harness.tools.browser_move.playwright_runtime.browser_tools."
-        "ensure_browser_runtime_client_patch"
-    ), patch(
-        "openjiuwen.harness.tools.browser_move.playwright_runtime.service.Runner.start",
-        new=AsyncMock(),
-    ), patch(
-        "openjiuwen.harness.tools.browser_move.playwright_runtime.service."
-        "Runner.resource_mgr.add_mcp_server",
-        new=AsyncMock(side_effect=fake_add_mcp_server),
-    ), patch(
-        "openjiuwen.harness.tools.browser_move.playwright_runtime.service."
-        "BROWSER_SERVICE_REGISTRY.activate_binding",
-        return_value=False,
-    ):
-        await service.ensure_runtime_ready()
-
-    assert len(registered_params) == 1
-    return registered_params[0]
+def _handed(service: BrowserService) -> dict[str, Any]:
+    _, assemble = _opened(service)
+    return assemble.await_args.kwargs | {"core": assemble.await_args.args[0]}
 
 
 def test_failure_summary_is_reused_then_cleared() -> None:
@@ -519,311 +511,111 @@ def test_run_task_once_uses_fresh_worker_conversation_ids() -> None:
     assert seen_request_ids == ["req-1", "req-1"]
 
 
-def test_ensure_managed_driver_started_reuses_healthy_existing_driver() -> None:
-    async def _test():
-        service = _make_service()
-        setattr(service, "_driver_mode", "managed")
-        healthy_driver = MagicMock()
-        healthy_driver.is_endpoint_ready.return_value = True
-        setattr(service, "_managed_driver", healthy_driver)
-
-        with patch.object(PROVISIONERS, "create") as create:
-            await getattr(service, "_ensure_managed_driver_started")()
-
-        assert getattr(service, "_managed_driver") is healthy_driver
-        create.assert_not_called()
-
-    _run(_test())
-
-
-def test_ensure_managed_driver_started_replaces_stale_driver() -> None:
-    async def _test():
-        service = _make_service()
-        setattr(service, "_driver_mode", "managed")
-        stale_driver = MagicMock()
-        stale_driver.is_endpoint_ready.return_value = False
-        setattr(service, "_managed_driver", stale_driver)
-
-        profile = BrowserProfile(
-            name="jiuwenclaw",
-            driver_type="managed",
-            cdp_url="http://127.0.0.1:9333",
-            user_data_dir=str(Path.cwd()),
-            debug_port=9333,
-            host="127.0.0.1",
-        )
-        new_driver = MagicMock()
-        new_driver.provision.return_value = ProvisionedDevice(
-            kind="chrome", endpoint="http://127.0.0.1:9333", extras={"profile": profile}
-        )
-
-        with patch.object(PROVISIONERS, "create", return_value=new_driver):
-            await getattr(service, "_ensure_managed_driver_started")()
-
-        assert getattr(service, "_managed_driver") is new_driver
-        new_driver.provision.assert_called_once()
-
-    _run(_test())
-
-
-def test_ensure_runtime_ready_refreshes_mcp_binding_after_managed_browser_restart() -> None:
-    async def _test():
-        service = _make_service()
-        setattr(service, "started", True)
-        setattr(service, "_driver_mode", "managed")
-        setattr(service, "_registered_cdp_endpoint", "http://127.0.0.1:9333")
-        getattr(service, "_inject_cdp_endpoint")("http://127.0.0.1:9333")
-        setattr(service, "_browser_agent", object())
-
-        stale_driver = MagicMock()
-        stale_driver.is_endpoint_ready.return_value = False
-        setattr(service, "_managed_driver", stale_driver)
-
-        profile = BrowserProfile(
-            name="jiuwenclaw",
-            driver_type="managed",
-            cdp_url="http://127.0.0.1:9333",
-            user_data_dir=str(Path.cwd()),
-            debug_port=9333,
-            host="127.0.0.1",
-        )
-        new_driver = MagicMock()
-        new_driver.provision.return_value = ProvisionedDevice(
-            kind="chrome", endpoint="http://127.0.0.1:9333", extras={"profile": profile}
-        )
-
-        with patch.object(PROVISIONERS, "create", return_value=new_driver), patch.object(
-            service, "_refresh_mcp_server_binding", AsyncMock()
-        ) as refresh_binding:
-            await service.ensure_runtime_ready()
-
-        refresh_binding.assert_awaited_once()
-        assert getattr(service, "_managed_driver") is new_driver
-        assert getattr(service, "_browser_agent") is None
-
-    _run(_test())
-
-
 def test_profile_store_defaults_to_runtime_workspace() -> None:
     expected_root = (Path.cwd() / "tmp-runtime-root").resolve()
     service = _make_service(runtime_cwd=str(expected_root))
-    expected = expected_root / ".browser" / "profiles.json"
-    assert getattr(service, "_profile_store").path.resolve() == expected
+
+    handed = _handed(service)["settings"]
+
+    assert (handed.mcp_cwd, handed.profile_store_path) == (expected_root, None)
+    assert handed.mcp_server is service.mcp_cfg
 
 
-def test_validate_mcp_command_accepts_absolute_node_without_npx(tmp_path: Path) -> None:
-    node = tmp_path / "Node Runtime" / ("node.exe" if os.name == "nt" else "node")
-    node.parent.mkdir()
-    node.write_text("test", encoding="utf-8")
-    node.chmod(0o755)
+def test_the_session_takes_the_given_mcp_config_the_instance_and_the_core_settings() -> None:
+    instance = BrowserInstanceConfig(key="k", driver_mode="managed")
+    core = CoreSettings(driver="playwright_mcp", status_log=False)
+    service = _make_service(instance=instance, core_settings=core)
+
+    handed = _handed(service)
+
+    assert handed["instance"] is instance
+    assert handed["core"] is core
+    assert handed["settings"].mcp_server is service.mcp_cfg
+
+
+def test_the_instance_driver_overrides_the_core_driver() -> None:
+    service = _make_service(instance=BrowserInstanceConfig(driver="browser_use"), core_settings=CoreSettings())
+
+    assert (service.core.driver, service.core.topology) == ("browser_use", "direct")
+    assert _handed(service)["core"].driver == "browser_use"
+
+
+def test_ensure_runtime_ready_opens_one_session_and_the_next_task_restarts_its_stack() -> None:
     service = _make_service()
-    service.mcp_cfg.params["command"] = str(node.resolve())
+    driver, assemble = _opened(service)
+    session = service.session
+    _run(service.ensure_runtime_ready())
 
-    with patch(
-        "openjiuwen.harness.tools.browser_move.playwright_runtime.service.shutil.which",
-        return_value=None,
-    ):
-        assert service._validate_mcp_command() == str(node.resolve())
+    assert _run(service.release_task_binding()) is True
+    assert (driver.kinds(), service.started) == (["stop"], False)
+    assert session.assembly.provisioner.released == []
+
+    with patch.object(service_module, "assemble_driver", assemble):
+        _run(service.ensure_runtime_ready())
+
+    assert assemble.await_count == 1
+    assert service.session is session
+    assert (driver.kinds(), service.started) == (["stop", "start"], True)
 
 
-def test_validate_mcp_command_reports_missing_configured_command() -> None:
+def test_ensure_started_builds_the_worker_from_the_factory_with_the_probes_the_batch_and_the_rails() -> None:
     service = _make_service()
-    service.mcp_cfg.params["command"] = "missing-playwright-command"
-
-    with patch(
-        "openjiuwen.harness.tools.browser_move.playwright_runtime.service.shutil.which",
-        return_value=None,
-    ), pytest.raises(RuntimeError, match="missing-playwright-command.*not found in PATH"):
-        service._validate_mcp_command()
-
-
-def test_ensure_runtime_ready_registers_expanded_tilde_command(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    home_dir = tmp_path / "home"
-    node = home_dir / "bin" / ("node.exe" if os.name == "nt" else "node")
-    node.parent.mkdir(parents=True)
-    node.write_text("test", encoding="utf-8")
-    node.chmod(0o755)
-    mcp_cwd = tmp_path / "mcp-cwd"
-    mcp_cwd.mkdir()
-    monkeypatch.setenv("HOME", str(home_dir))
-    monkeypatch.setenv("USERPROFILE", str(home_dir))
-
-    service = _make_service(runtime_cwd=str(mcp_cwd))
-    service.mcp_cfg.params["command"] = f"~/bin/{node.name}"
-
-    registered_params = _run(_capture_initial_mcp_registration(service))
-
-    expected_command = os.path.abspath(node)
-    assert registered_params["command"] == expected_command
-    assert service.mcp_cfg.params["command"] == expected_command
-    assert registered_params["cwd"] == str(mcp_cwd)
-
-
-def test_ensure_runtime_ready_registers_resolved_relative_command_with_custom_cwd(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    lookup_cwd = tmp_path / "lookup-cwd"
-    node = lookup_cwd / "bin" / ("node.exe" if os.name == "nt" else "node")
-    node.parent.mkdir(parents=True)
-    node.write_text("test", encoding="utf-8")
-    node.chmod(0o755)
-    mcp_cwd = tmp_path / "mcp-cwd"
-    mcp_cwd.mkdir()
-    monkeypatch.chdir(lookup_cwd)
-
-    service = _make_service(runtime_cwd=str(mcp_cwd))
-    relative_command = str(Path("bin") / node.name)
-    service.mcp_cfg.params["command"] = relative_command
-
-    registered_params = _run(_capture_initial_mcp_registration(service))
-
-    expected_command = os.path.abspath(relative_command)
-    assert registered_params["command"] == expected_command
-    assert service.mcp_cfg.params["command"] == expected_command
-    assert registered_params["cwd"] == str(mcp_cwd)
-    assert Path(expected_command).parent != mcp_cwd
-
-
-def test_build_managed_profile_defaults_user_data_dir_to_runtime_workspace() -> None:
-    with patch.dict(os.environ, {"BROWSER_DRIVER": "managed"}, clear=False):
-        expected_root = (Path.cwd() / "tmp-runtime-root").resolve()
-        service = _make_service(runtime_cwd=str(expected_root))
-    profile = _build_profile(service._provisioning_settings())
-    expected = expected_root / ".browser-profiles" / getattr(service, "_profile_name")
-    assert Path(profile.user_data_dir).resolve() == expected
-
-
-def test_build_managed_profile_prefers_instance_browser_binary() -> None:
-    instance = BrowserInstanceConfig(
-        driver_mode="managed",
-        browser_binary="C:/configured/chrome.exe",
-    )
-    with patch.dict(
-        os.environ,
-        {"BROWSER_DRIVER": "managed", "BROWSER_MANAGED_BINARY": "C:/environment/chrome.exe"},
-        clear=False,
+    worker = MagicMock()
+    worker.register_rail = AsyncMock()
+    with (
+        patch.object(service_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))),
+        patch.object(service_module, "build_browser_worker_agent", return_value=worker) as build,
     ):
-        mcp_cfg = McpServerConfig(
-            server_id="test-playwright",
-            server_name="test-playwright",
-            server_path="stdio://playwright",
-            client_type="stdio",
-            params={"cwd": str(Path.cwd())},
+        _run(service.ensure_started())
+        _run(service.ensure_started())
+
+    build.assert_called_once()
+    kwargs = build.call_args.kwargs
+    names = {tool.card.name for tool in kwargs["tools"]}
+    assert {name for name in names if name.startswith(MCP_PREFIX)} == {
+        MCP_PREFIX + name
+        for name in (
+            "browser_click",
+            "browser_evaluate",
+            "browser_file_upload",
+            "browser_fill_form",
+            "browser_find",
+            "browser_handle_dialog",
+            "browser_hover",
+            "browser_navigate",
+            "browser_navigate_back",
+            "browser_press_key",
+            "browser_select_option",
+            "browser_snapshot",
+            "browser_tabs",
+            "browser_type",
         )
-        service = BrowserService(
-            provider="openai",
-            api_key="test-key",
-            api_base="https://example.invalid/v1",
-            model_name="test-model",
-            mcp_cfg=mcp_cfg,
-            guardrails=BrowserRunGuardrails(),
-            instance=instance,
-        )
-        profile = _build_profile(service._provisioning_settings())
-
-    assert profile.browser_binary == "C:/configured/chrome.exe"
-
-
-def test_existing_profile_browser_binary_is_cleared_for_auto_detection() -> None:
-    async def _test():
-        with patch.dict(os.environ, {}, clear=True):
-            service = _make_service()
-        setattr(service, "_driver_mode", "managed")
-        profile = BrowserProfile(
-            name="jiuwenclaw",
-            driver_type="managed",
-            cdp_url="http://127.0.0.1:9333",
-            browser_binary="C:/old/chrome.exe",
-            user_data_dir=str(Path.cwd()),
-            debug_port=9333,
-            host="127.0.0.1",
-        )
-        profile_store = getattr(service, "_profile_store")
-
-        with patch.object(
-            service,
-            "_resolve_existing_cdp_profile",
-            return_value=None,
-        ), patch.object(
-            profile_store,
-            "get_profile",
-            return_value=profile,
-        ), patch.object(
-            profile_store,
-            "upsert_profile",
-            side_effect=lambda browser_profile, select=False: browser_profile,
-        ), patch.object(ManagedBrowserProvisioner, "start", return_value="http://127.0.0.1:9333") as start:
-            await service._ensure_managed_driver_started()
-
-        assert profile.browser_binary == ""
-        start.assert_called_once()
-
-    _run(_test())
-
-
-def test_managed_chrome_comes_from_the_registered_provisioner_with_the_instance_settings(tmp_path: Path) -> None:
-    async def _test():
-        service = _make_service(
-            runtime_cwd=str(tmp_path),
-            instance=BrowserInstanceConfig(key="k", user_data_dir=" C:/udd ", browser_binary="C:/chrome.exe"),
-            browser_settings=BrowserSettings(provisioning="managed", managed_args=("--headless=new",)),
-        )
-        profile = BrowserProfile(name="k", driver_type="managed")
-        provisioner = MagicMock()
-        provisioner.provision.return_value = ProvisionedDevice(
-            kind="chrome", endpoint="http://127.0.0.1:45000", extras={"profile": profile}
-        )
-
-        with (
-            patch.object(service, "_resolve_existing_cdp_profile", return_value=None),
-            patch.object(PROVISIONERS, "create", return_value=provisioner) as create,
-            patch.object(BROWSER_SERVICE_REGISTRY, "register_managed_driver") as register,
-        ):
-            assert await service._ensure_managed_driver_started() is True
-
-        create.assert_called_once_with("managed", profile_store=service._profile_store)
-        handed = provisioner.provision.call_args.args[0]
-        assert (handed.provisioning, handed.profile_name, handed.managed_port) == ("managed", "k", 0)
-        assert (handed.user_data_dir, handed.browser_binary, handed.mcp_cwd) == ("C:/udd", "C:/chrome.exe", tmp_path)
-        assert handed.managed_args == ("--headless=new",)
-        assert service._managed_driver is provisioner
-        assert service._active_profile is profile
-        assert service.mcp_cfg.params["env"]["PLAYWRIGHT_MCP_CDP_ENDPOINT"] == "http://127.0.0.1:45000"
-        register.assert_called_once_with(service.lifecycle_identity, service, provisioner)
-
-    _run(_test())
-
-
-@pytest.mark.parametrize(
-    ("instance", "expected_port"),
-    [
-        (BrowserInstanceConfig(), 9444),
-        (BrowserInstanceConfig(key="k"), 0),
-        (BrowserInstanceConfig(key="k", managed_port=9501), 9501),
-    ],
-)
-def test_provisioning_port_comes_from_the_instance_then_the_key_then_the_settings(
-    instance: BrowserInstanceConfig, expected_port: int
-) -> None:
-    service = _make_service(
-        instance=instance, browser_settings=BrowserSettings(provisioning="managed", managed_port=9444)
+    }
+    assert {name for name in names if not name.startswith(MCP_PREFIX)} == WORKER_HELPERS
+    assert (kwargs["max_steps"], kwargs["settings"], kwargs["tool_result_observer"]) == (
+        3,
+        service.core,
+        service._observe_worker_tool_result,
     )
+    assert [type(call.args[0]) for call in worker.register_rail.await_args_list] == [
+        ActionPolicy,
+        CommandRepeatGuardRail,
+        CommandInterceptedHintRail,
+        FinalAnswerRecoveryRail,
+    ]
 
-    assert service._provisioning_settings().managed_port == expected_port
 
+def test_the_worker_is_built_again_after_a_task_release() -> None:
+    service = _make_service()
+    with patch.object(service_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))):
+        _run(service.ensure_started())
+        first = service.browser_agent
+        _run(service.release_task_binding())
+        assert service.browser_agent is None
+        _run(service.ensure_started())
 
-@pytest.mark.parametrize("provisioning", ["remote", "extension"])
-def test_remote_and_extension_services_do_not_provision(provisioning: str) -> None:
-    service = _make_service(browser_settings=BrowserSettings(provisioning=provisioning))
-
-    with patch.object(PROVISIONERS, "create") as create:
-        assert _run(service._ensure_managed_driver_started()) is False
-
-    create.assert_not_called()
+    assert service.browser_agent is not first
+    assert service.started is True
 
 
 def test_given_browser_settings_win_over_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -849,7 +641,7 @@ def test_without_browser_settings_the_service_reads_them_once_from_the_environme
     monkeypatch.setenv("BROWSER_PROFILE_NAME", "changed-later")
 
     assert (service._driver_mode, service._profile_name) == ("managed", "from-env")
-    assert service._provisioning_settings().profile_name == "from-env"
+    assert _handed(service)["settings"].profile_name == "from-env"
 
 
 def test_unknown_instance_provisioning_names_the_instance_field_and_browser_provisioning() -> None:
@@ -862,30 +654,20 @@ def test_unknown_instance_provisioning_names_the_instance_field_and_browser_prov
 
 
 def test_reset_stops_browser_without_eager_restart() -> None:
-    async def _test():
-        service = _make_service()
-        service.started = True
-        managed_driver = MagicMock()
-        service._managed_driver = managed_driver
-        service._heartbeat_task = asyncio.create_task(asyncio.sleep(60))
+    service = _make_service()
+    driver, assemble = _opened(service)
+    provisioner: FakeProvisioner = service.session.assembly.provisioner
 
-        with patch.object(service, "_remove_registered_mcp_server", AsyncMock()):
-            await service.reset()
+    _run(service.reset())
 
-        managed_driver.stop.assert_called_once()
-        assert service.started is False
-        assert service._managed_driver is None
-        assert service._heartbeat_task is None
-
-    _run(_test())
+    assert driver.kinds() == ["stop"]
+    assert provisioner.released == [DEVICE]
+    assert (service.started, service.session, service.browser_agent) == (False, None, None)
+    assert assemble.await_count == 1
 
 
 def test_run_task_does_not_reset_browser_runtime_after_completion() -> None:
     service = _make_service()
-    setattr(service, "_driver_mode", "managed")
-    managed_driver = MagicMock()
-    managed_driver.owns_process = True
-    setattr(service, "_managed_driver", managed_driver)
     reset_calls = {"count": 0}
 
     async def fake_ensure_started() -> None:
@@ -906,7 +688,7 @@ def test_run_task_does_not_reset_browser_runtime_after_completion() -> None:
 
     with patch.object(service, "ensure_started", fake_ensure_started), patch.object(
         service, "run_task_once", fake_run_task_once
-    ), patch.object(service, "_reset_browser_runtime", fake_reset_browser_runtime):
+    ), patch.object(service, "reset", fake_reset_browser_runtime):
         result = _run(service.run_task(task="Open Baidu", session_id="keep-after-task", request_id="req-keep"))
 
     assert result["ok"] is True

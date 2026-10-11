@@ -7,20 +7,15 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock
 
-
-from openjiuwen.core.foundation.tool import McpServerConfig, Tool, ToolCard
+from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime_tools import (
-    BrowserBatchInteractTool,
     BrowserCancelTool,
     BrowserClearCancelTool,
     BrowserCustomActionTool,
     BrowserListActionsTool,
-    BrowserProbeCardsTool,
-    BrowserProbeInteractivesTool,
     BrowserRuntimeHealthTool,
-    build_browser_runtime_tools,
 )
 
 
@@ -44,49 +39,6 @@ def _make_runtime() -> BrowserAgentRuntime:
         mcp_cfg=mcp_cfg,
         guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
     )
-
-
-def test_build_browser_runtime_tools_returns_helper_tools_by_default() -> None:
-    tools = build_browser_runtime_tools(_make_runtime())
-    assert len(tools) == 3
-
-
-def test_each_tool_is_tool_subclass() -> None:
-    for tool in build_browser_runtime_tools(_make_runtime()):
-        assert isinstance(tool, Tool)
-
-
-def test_each_tool_has_tool_card() -> None:
-    for tool in build_browser_runtime_tools(_make_runtime()):
-        assert isinstance(tool.card, ToolCard)
-
-
-def test_default_helper_tool_names() -> None:
-    names = [tool.card.name for tool in build_browser_runtime_tools(_make_runtime())]
-    assert names == [
-        "browser_probe_interactives",
-        "browser_probe_cards",
-        "browser_batch_interact",
-    ]
-
-
-def test_helper_tool_classes() -> None:
-    probe_interactives, probe_cards, batch_interact = build_browser_runtime_tools(_make_runtime())
-    assert isinstance(probe_interactives, BrowserProbeInteractivesTool)
-    assert isinstance(probe_cards, BrowserProbeCardsTool)
-    assert isinstance(batch_interact, BrowserBatchInteractTool)
-
-
-def test_language_en_uses_non_empty_descriptions() -> None:
-    tools = build_browser_runtime_tools(_make_runtime(), language="en")
-    for tool in tools:
-        assert tool.card.description
-        assert any(ch.isascii() and ch.isalpha() for ch in tool.card.description)
-
-
-def test_tool_ids_are_non_empty() -> None:
-    for tool in build_browser_runtime_tools(_make_runtime()):
-        assert tool.card.id
 
 
 def test_cancel_tool_calls_cancel_run() -> None:
@@ -144,91 +96,13 @@ def test_custom_action_tool_uses_runtime_api() -> None:
     assert result.success is True
 
 
-def test_probe_interactives_tool_uses_runtime_api() -> None:
-    runtime = _make_runtime()
-    runtime.probe_interactives = AsyncMock(
-        return_value={
-            "ok": True,
-            "elements": [
-                {
-                    "id": "e1",
-                    "role": "button",
-                    "text": "Next",
-                    "selector_hint": "button:nth-of-type(1)",
-                }
-            ],
-            "error": None,
-        }
-    )
-
-    tool = BrowserProbeInteractivesTool(runtime)
-
-    result = _run(
-        tool.invoke(
-            {
-                "max_items": 20,
-                "viewport_only": True,
-                "query": "next",
-            }
-        )
-    )
-
-    runtime.probe_interactives.assert_called_once_with(
-        max_items=20,
-        viewport_only=True,
-        query="next",
-    )
-    assert result.success is True
-    assert result.data["elements"][0]["text"] == "Next"
-
-
-def test_probe_cards_tool_uses_runtime_api() -> None:
-    runtime = _make_runtime()
-    runtime.probe_cards = AsyncMock(
-        return_value={
-            "ok": True,
-            "cards": [
-                {
-                    "id": "card_1",
-                    "title": "Book",
-                    "price": "£10.00",
-                    "selector_hint": "article.product_pod",
-                }
-            ],
-            "error": None,
-        }
-    )
-
-    tool = BrowserProbeCardsTool(runtime)
-
-    result = _run(
-        tool.invoke(
-            {
-                "max_cards": 20,
-                "viewport_only": True,
-                "include_buttons": True,
-                "query": "book",
-            }
-        )
-    )
-
-    runtime.probe_cards.assert_called_once_with(
-        max_cards=20,
-        viewport_only=True,
-        include_buttons=True,
-        query="book",
-    )
-    assert result.success is True
-    assert result.data["cards"][0]["title"] == "Book"
-
-
 def test_runtime_health_tool_uses_runtime_api() -> None:
     runtime = _make_runtime()
     runtime.runtime_health = AsyncMock(
         return_value={
             "ok": False,
             "started": False,
-            "last_heartbeat_ok": None,
+            "detail": "not started",
             "provider": "openai",
             "api_base": "https://example.invalid/v1",
             "model_name": "test-model",
@@ -239,115 +113,3 @@ def test_runtime_health_tool_uses_runtime_api() -> None:
     runtime.runtime_health.assert_called_once()
     assert result.success is True
     assert result.data["started"] is False
-
-
-def test_batch_interact_tool_uses_runtime_api_for_realistic_form_flow() -> None:
-    runtime = _make_runtime()
-    runtime.batch_interact = AsyncMock(
-        return_value={
-            "ok": True,
-            "steps": [
-                {"index": 0, "op": "fill", "ok": True},
-                {"index": 1, "op": "autocomplete", "ok": True},
-                {"index": 2, "op": "select_option", "ok": True},
-            ],
-            "error": None,
-        }
-    )
-    tool = BrowserBatchInteractTool(runtime)
-    steps = [
-        {"op": "fill", "label": "First name", "value": "John"},
-        {
-            "op": "autocomplete",
-            "placeholder": "From",
-            "value": "Singapore",
-            "choose_text": "Singapore (SIN)",
-        },
-        {"op": "select_option", "label": "Nationality", "option_text": "Singapore"},
-    ]
-
-    result = _run(
-        tool.invoke(
-            {
-                "steps": steps,
-                "timeout_ms": 3000,
-                "wait_after_each_ms": 50,
-                "continue_on_error": False,
-                "global_timeout_ms": 15000,
-                "generation_id": "g3",
-                "session_id": "sess-batch",
-                "request_id": "req-batch",
-            }
-        )
-    )
-
-    runtime.batch_interact.assert_called_once_with(
-        steps=steps,
-        generation_id="g3",
-        timeout_ms=3000,
-        condition_timeout_ms=None,
-        wait_after_each_ms=50,
-        continue_on_error=False,
-        global_timeout_ms=15000,
-        session_id="sess-batch",
-        request_id="req-batch",
-    )
-    assert result.success is True
-    assert result.data["steps"][1]["op"] == "autocomplete"
-
-
-def test_batch_interact_tool_reports_runtime_error() -> None:
-    runtime = _make_runtime()
-    runtime.batch_interact = AsyncMock(
-        return_value={
-            "ok": False,
-            "error": "browser_code_executor_not_ready",
-            "steps_requested": 1,
-        }
-    )
-    tool = BrowserBatchInteractTool(runtime)
-
-    result = _run(
-        tool.invoke(
-            {
-                "steps": [{"op": "click", "text": "Search"}],
-                "generation_id": "g0",
-            }
-        )
-    )
-
-    assert result.success is False
-    assert result.error == "browser_code_executor_not_ready"
-    assert result.data["steps_requested"] == 1
-
-
-def test_batch_interact_schema_supports_single_action_and_exposes_condition_waits() -> None:
-    tool = BrowserBatchInteractTool(_make_runtime())
-    steps_schema = tool.card.input_params["properties"]["steps"]
-    operations = steps_schema["items"]["properties"]["op"]["enum"]
-
-    assert steps_schema["minItems"] == 1
-    assert steps_schema["maxItems"] == 25
-    assert "generation_id" in tool.card.input_params["required"]
-    assert "target_id" in steps_schema["items"]["properties"]
-    assert "ref" in steps_schema["items"]["properties"]
-    assert "option_target_id" in steps_schema["items"]["properties"]
-    assert "wait_for_url" in operations
-    assert "wait_for_first_card_title" in operations
-    assert "wait_for_sort_state" in operations
-    assert "wait_for_result_count" in operations
-    assert "wait_for_dom_text_change" in operations
-    assert "wait_for_stable" in operations
-    assert "wait_for_tab" in operations
-    assert "sleep" not in operations
-    step_properties = steps_schema["items"]["properties"]
-    assert "min_tabs" in step_properties
-    assert "title_contains" in step_properties
-    assert "activate" in step_properties
-    assert "ms" not in step_properties
-    assert "wait_after_ms" not in step_properties
-    assert "wait_after_type_ms" not in step_properties
-    assert "wait_after_each_ms" not in tool.card.input_params["properties"]
-    assert "default 2500" in (
-        tool.card.input_params["properties"]["timeout_ms"]["description"].lower()
-    )
