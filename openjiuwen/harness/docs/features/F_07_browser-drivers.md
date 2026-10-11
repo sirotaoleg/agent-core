@@ -2347,3 +2347,20 @@ fixture `click_stale_ref`).
    smoke. The next MCP smoke tells whether Google Flights returns to the reference cost.
 3. The import block of `test_browser_runtime_rail.py` was unsorted before this step (`ruff --select I`); it was left
    as found.
+
+## The switch: verification baseline
+
+The verification session of the switch, on `p4-switch` after step 5: the small fixes the step reviews left to it, the
+Phase 4 done-when items with their evidence, and the numbers the merge is judged against.
+
+### Decisions
+
+1. **A status-logger failure stays inside the rail.** `BrowserRuntimeRail._emit_status` logged a status-logger
+   exception with `exc_info=True`, which `browser_agent_log_warning(message, *args)` does not take, so the except
+   branch itself raised `TypeError` out of the rail (step 3's leftover 1). The failure is now one warning line,
+   `[BROWSER_SUBAGENT_ERROR] method=<hook> error=<text>`, and the invoke goes on; the helper's signature is unchanged.
+
+### Verification
+
+- `test_browser_runtime_rail.py`: a status logger that raises is logged with the hook name and the error and the
+  rail returns.
