@@ -1671,6 +1671,120 @@ Six assertions on one scripted run (`look`, an off-board `poke`, `click`, a `pok
 5. `DriverAssembly.surface_settings` duplicates `surface.settings`; it stays while hand-built assemblies pass it
    positionally.
 
+## The switch, step 1: the main agent on the driver session
+
+The first of the three switch sessions (design sections 1(c), 1(d), 2, 6 and 7; decisions O5, P8, Q14 and S1 of
+wave 6; `switch-plan.md` S1), on the branch `p4-switch`. `create_browser_agent` keeps its signature; the agent it
+builds runs on a `DriverSession` through the composition root, the factory tools and the record rails, and the old
+MCP path of `runtime.py` is gone. The WebVoyager worker (`service.py`, `agents.py`) still runs the old path until S2.
+
+### Decisions
+
+1. **The facade keeps its signature and owns the session.** `BrowserAgentRuntime.ensure_runtime_ready` calls
+   `assemble_driver` with the given `CoreSettings` (else the process environment) and the instance, makes the
+   `DriverSession` and a `ToolContext`, and registers `CUSTOM_ACTIONS` on the controller. `mcp_cfg` stays a
+   constructor argument for the worker path; honouring it on the session is S2 (Q11). Two keyword-only arguments
+   were added, `workspace` and `language`, because the recall tool and the tool context need them.
+2. **Everything arrives at the first invoke.** The design put the extra tools at construction; `browser_find` takes
+   its description from the driver's native tools, which exist only after `start()`, so the factory build (command
+   tools, extra tools, rails) runs in `BrowserRuntimeRail.before_invoke` where the MCP tools were added before.
+   `create_deep_agent` gets no browser tools; a caller listing tools before the first invoke sees its own only.
+   The `core` golden is byte-identical, which is what the rule protects.
+3. **The parts' rails register dynamically**, through `agent.register_rail`, once per agent. The main agent thus
+   runs `ActionPolicy`, `CommandRepeatGuardRail` and `CommandInterceptedHintRail` as `build_agent_parts` returns
+   them; the design table named only `ActionPolicy` for the main agent, `build_agent_parts` (P4-T6) decided
+   otherwise, and one list serves both topologies.
+4. **`ToolKind`**: what the rail knows before a call. It decodes the command with the factory's builder (one more
+   decode next to `ActionPolicy`'s and the tool's; all pure) and carries the schema's field names; after the call the
+   record's action and effect replace it. The classifiers (phase, action class, intent, read-only recovery, replan
+   exemption, progress, bounds, page-state attachment) read the kind; the strategy signature keeps the tool name
+   as a label so direct and batch clicks still compare equal.
+5. **Capabilities from the allowlist.** The factory selects by capability entry; the facade derives the entries
+   whose tools are all in `allowed_tool_names`, the inverse of `resolve_browser_capabilities`, so the runner's
+   `allowed_tool_names=CORE_BROWSER_TOOL_NAMES` still means `core`.
+6. **Argument normalisation by dialect.** Only a tool whose schema addresses elements by `target` (the MCP dialect)
+   gets the ref aliases, `[ref=e12]`, `target_id` and `generation_id` rewrites; the browser dialect decodes
+   `target_id` itself and needs its `generation_id`. The card primary-link rewrite is gated on the decoded `Click`.
+7. **`field`, `fields` and `element` are dropped by schema.** All 69 server schemas of 0.0.78 forbid extra
+   properties, and the rail validates arguments against them; the keys are dropped only where the schema lacks them
+   (the evidence hints are read first). For `browser_drag` this also drops `element`, which the old path forwarded.
+8. **Observation reuse (Q14):** `capture_browser_state` takes `page_state.fresh_observation` and observes only
+   otherwise; the free observation of the last mutating command is what the next capture reads. `observations_reused`
+   counts them for P4-T9. The metadata script runs after the observation and outdates it for `browser_find`, which
+   is fine: the next capture follows the next mutation, whose own free observation is fresh again.
+9. **Capture errors.** A `DriverError` on the observation becomes `dom_error` (`page observation failed: …`); the
+   session's task failure after a second lost connection propagates instead of being folded into the state.
+10. **The core imports the browser helpers.** `runtime.py` imports `CUSTOM_ACTIONS`, `probe_for_policy`,
+    `activate_page` and `page_metadata` from `surfaces/browser/helpers`, as the switch plan says, against plan
+    invariant 2 (core never imports a concrete surface). Phase 9's done-criterion is where the invariant must hold
+    ("`runtime/` never imports `surfaces/` except through the registry"); the import-boundary allowlist carries the
+    one entry (count 4) with that reason. The alternative, a hooks slot on `SurfaceProfile`, is a contract change
+    for Aleh to decide.
+11. **URLs come from the record.** `_update_last_page`, `_evidence_variant_and_url` and the navigation completion
+    evidence read `url` from the record's surface context (`extract_result_url` is gone with the text parsing).
+12. **A partial batch with a successful mutating step still counts as a state change** in the rail (the batch
+    record says `ok=False`, so its metadata alone would not refresh the browser state).
+13. **The old goldens of the seven views with no-command tools are regenerated** (unsafe_dev, vision, devtools,
+    config, network, storage, testing): exactly the C7/C20/C25 removals; `core`, `runner`, `advanced_code`,
+    `extended_interaction` and `pdf` are byte-identical. The factory golden test compares byte for byte again and
+    keeps the removed names as the record of the decision.
+14. **Batch typing on a driver without key-by-key typing (S1):** `TypeText(slowly=True)` refused with
+    `Unsupported(dispatched=False)` is sent again as `TypeText(clear=False)`, in the single-step path and the loop
+    (where the field was emptied first). A refusal the driver dispatched is not retried.
+15. **`AgentParts.builders`** (appended, default empty) hands the factory's decoders to the runtime.
+
+### Rejected options
+
+- **Extra tools at construction with a lazily started session**: a `ToolContext` needs the started driver, and
+  `browser_find`'s native description is byte-identical only from the driver's tool list.
+- **Keeping the name-based classifiers with prefix stripping**: the point of the switch; the kind carries the
+  command type and the effect on both dialects.
+- **Normalising `target_id` for every tool**: breaks the browser dialect, whose decoders take `target_id` and need
+  `generation_id`.
+- **Dropping `element` everywhere**: `browser_click` declares it; the schema decides.
+- **A hooks slot on the profile for the policy and metadata helpers**: a contract change outside this session's
+  mandate; recorded as the open question.
+- **Replacing `inputs.tool_result` with a dict in `after_tool_call`** (the old normalisation): the record rails
+  after this one need the `ToolOutput` with its record.
+
+### Golden status
+
+| View | Result |
+|---|---|
+| `core`, `runner`, `advanced_code`, `extended_interaction`, `pdf` | byte for byte |
+| `unsafe_dev`, `vision`, `devtools`, `config`, `network`, `storage`, `testing` | regenerated: the 43 no-command tools of C7/C20/C25 removed, the prompt unchanged |
+| runner contract (`test_wv_runner_contract.py`) | green |
+| factory goldens | `core` 18/18, `runner` 14/14, every view byte for byte |
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q` on `p4-switch`: **2406 passed, 123 skipped,
+  2 xfailed** (architecture, old goldens, factory goldens and the runner contract included), before the batch
+  fallback; `surfaces/test_browser_batch.py` 56 after it.
+- The ten harness test files outside `browser_move` that build the browser agent: **234 passed**.
+- Live: `test_assembly_live.py` 4 and Playwright MCP conformance 51 (**55 passed**); browser-use conformance
+  **45 passed**; live helpers on both drivers after the batch change **8 passed**.
+- Deleted tests, each covered elsewhere or testing removed behaviour: the canonicalisation of tool names (gone);
+  the MCP text classifier, the RPC envelope and `extract_result_url` (records carry ok, error, value and surface);
+  the runtime's probe, batch, code-executor and MCP lookup cases (`surfaces/test_browser_helpers.py`,
+  `surfaces/test_browser_batch.py`); the single-step batch primitive through the client and rail; the controller's
+  LLM-fallback and script-builder cases (not ported, C28); the status-logging test that read the batch script.
+
+### Known leftovers
+
+1. S2: the worker still builds on `mcp_cfg` through the service (`ensure_started`, heartbeat, client patch);
+   `runtime_tools.py` helper classes call deleted runtime methods and serve only the worker's tool cards until the
+   worker gets the factory tools; `test_browser_runtime_tools.py` cases that invoke them through a mock runtime
+   still pass. `runtime_health` reports the service's flags, not `session.health()`.
+2. S3: the context processors and `status_logging.py` still key on tool names; the old rail classes and their
+   tests stay next to the record rails; the client patch is still called in the facade constructor (row 4 of the
+   P5-T1 inventory).
+3. A `browser_settings` given to the facade reaches the service only; the session's surface settings come from
+   the process environment through the surface registry.
+4. The core import of the browser helpers (decision 10) is allowlisted until Phase 9.
+5. `release_task_resources` keeps the session (and its browser) across tasks; the old path dropped the MCP
+   registration between tasks.
+
 ## Batch and custom actions over commands
 
 The last helpers task before the switch (design section 6 and Q7, Q8; phase-0 decisions C28, C29; wave-5 review R1,

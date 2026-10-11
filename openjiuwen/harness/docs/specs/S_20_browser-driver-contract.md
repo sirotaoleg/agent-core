@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `helpers/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/runtime.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `helpers/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
 | Last revised | 2026-10-11 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -19,7 +19,8 @@ The contract is the only thing the agent core and a driver both know. The core s
 results and errors; a driver translates commands for one library and declares which commands it handles. As of
 this revision the browser-use and Playwright MCP drivers implement the contract and pass the conformance suite
 live, the middleware wraps any driver and the composition root builds a started driver stack, and an agent over
-it, by name; the browser agent does not build through it yet.
+it, by name; the browser agent (`create_browser_agent`) runs on it: its runtime facade starts the driver
+session and builds the factory tools at the first invoke. The WebVoyager worker still runs the old path.
 
 The browser surface profile (tool specs, renderer, capability catalog) is specified under "Browser surface
 profile"; the tool factory that turns it and the driver's native tools into model-facing tools under "Tool
@@ -540,7 +541,8 @@ extension flags. An instance `provisioning` / `driver_mode` other than `remote`,
 `assemble_driver(core: CoreSettings, environ, *, instance=None, registries=None) -> DriverAssembly` builds the driver
 stack from names only and returns it started. `registries` is `Registries(drivers, surfaces, provisioners)`; `None`
 means the three default registries with the built-ins. The module imports no concrete driver, surface or
-provisioner, names none, and holds no state. `create_browser_agent` and the Playwright MCP path do not call it yet.
+provisioner, names none, and holds no state. `BrowserAgentRuntime.ensure_runtime_ready` calls it for the main
+agent; the worker path (`ensure_started`, the service) still registers the MCP server itself.
 
 1. `surface = registries.surfaces.create(core.surface, environ)`, a `SurfaceBundle`.
 2. With an `instance` (the surface's per-agent identity, `BrowserInstanceConfig` for the browser):
@@ -568,10 +570,12 @@ again from `surface_settings` and builds the new stack with `rebuild`. Assemblie
 
 ### Agent construction
 
-`build_agent_parts(session, bundle, *, capabilities, image_support, language, workspace=None) -> AgentParts`:
+`build_agent_parts(session, bundle, *, capabilities, image_support, language, workspace=None) -> AgentParts`
+(`tools`, `prompt_sections`, `rails`, `builders`):
 
 - `tools`, `prompt_sections`: `ToolFactory(bundle.profile, session.assembly.stack.info).build(capabilities,
   image_support=, session=, page_state=session.page_state, workspace=, language=)`.
+- `builders`: the factory's `AgentTools.builders`, for the runtime's `tool_kind`.
 - `rails`, in this order: `ActionPolicy(<the factory's builders>, profile.policy_rules, session.page_state)`,
   `CommandRepeatGuardRail()`, `CommandInterceptedHintRail()`, then `factory(context)` for each `profile.rails`
   entry, `context` being the `ToolContext` of the same session, profile, driver info, image support, workspace and
@@ -678,10 +682,11 @@ unchanged public API) to those of its tool names that a spec or the `browser_fin
 ### Helpers (`surfaces/browser/helpers/`)
 
 Browser tools and functions built on the driver session through a `ToolContext` (see "Tool factory"); every command
-they send goes through `context.execute` / `context.observe`, which record it in the page state. The runtime's own
-helpers (MCP code runner) still serve the agent; nothing calls these yet except the factory, which appends the five
-tools (`EXTRA_TOOLS`: both probes, the batch, find, recall) to every build. `CUSTOM_ACTIONS` are not tools: they are
-the controller's custom actions as functions of the context, for `browser_custom_action`.
+they send goes through `context.execute` / `context.observe`, which record it in the page state. The factory appends
+the five tools (`EXTRA_TOOLS`: both probes, the batch, find, recall) to every build, so the main agent gets them at
+its first invoke; the runtime facade calls `probe_for_policy`, `activate_page` and `page_metadata` itself.
+`CUSTOM_ACTIONS` are not tools: they are the controller's custom actions as functions of the context, registered
+on the controller by the runtime when its session starts, for `browser_custom_action`.
 
 Each helper tool declares `flags: ToolFlags` (class attribute): the probes and find `ToolFlags()` (`READ`, not exempt
 from budgets, progress), the batch `ToolFlags(effect=ACT)`, the recall tool `ToolFlags(exempt_from_budget=True)`. A probe or find result is
@@ -772,8 +777,8 @@ text; a `DriverError` while observing is the same error text with `CommandRecord
 
 ## Runtime state and recovery (`playwright_runtime/`)
 
-Three pieces sit between the model-facing tools and the driver stack. None is wired into an agent yet; they are
-reached only from their tests until the agent switches to commands.
+Three pieces sit between the model-facing tools and the driver stack; the runtime facade (below) wires them into
+the main agent.
 
 ### Page state (`page_state.py`, `BrowserPageState`)
 
@@ -840,8 +845,7 @@ Tools without a decoder pass unchecked.
 `ToolFactory(profile, driver_info).build(capabilities, *, image_support, session, page_state, workspace=None,
 language="cn") -> AgentTools` turns the selected tool specs into one `CommandTool` each; `workspace` and `language`
 only reach the `ToolContext`. `capabilities` are resolved entry names (the caller adds `core`, as
-`resolve_browser_capabilities` does). The module names no surface, driver or tool (architecture tests). No agent
-uses it yet.
+`resolve_browser_capabilities` does). The module names no surface, driver or tool (architecture tests).
 
 ### Selection and the four rules
 
@@ -940,8 +944,9 @@ attribute, for the rails that today decide by tool name (state change, replan bu
 
 ## Rails on command records
 
-Two worker rails read `CommandRecord`s, never tool text. They sit next to the text-based rails of the same modules,
-which still serve the agent. Neither adds a model call: each rewrites the tool message in `after_tool_call`, or
+Two rails read `CommandRecord`s, never tool text. `build_agent_parts` hands them to the main agent, which registers
+them at its first invoke; the worker still runs the text-based rails of the same modules until the switch
+reaches it. Neither adds a model call: each rewrites the tool message in `after_tool_call`, or
 empties the tools of the next model call (invariant: a rail never adds a model round trip).
 
 ### `CommandRepeatGuardRail` (`repeated_call_guard.py`)
@@ -974,6 +979,83 @@ Then retry the action (take a fresh browser_snapshot if the page changed).
 `<target>` is the `DriverRef` id, the `Locator` css (or text), `(x, y)` for a `PointRef`, else `the target`.
 `<hint>` is the cookie-consent hint when `blocked_by` matches the consent pattern, else the generic one. The tool
 output (`tool_result`) keeps the driver's own error. Other records and messages without a record are left alone.
+
+## The browser agent runtime (`playwright_runtime/runtime.py`)
+
+`BrowserAgentRuntime` is the facade `create_browser_agent` builds and the WebVoyager runner constructs the same way
+(`provider, api_key, api_base, model_name, mcp_cfg, guardrails, instance=None, allowed_tool_names=None, *,
+core_settings=None, browser_settings=None, workspace=None, language="cn"`). It owns one `BrowserPageState` for its
+lifetime and, from `ensure_runtime_ready()` on, one `DriverSession`; the main agent reaches the driver only through
+them.
+
+- `ensure_runtime_ready()`, once: `assemble_driver(core, process_environ(), instance=)` with the given
+  `CoreSettings` or the process environment; `DriverSession(assembly, page_state, profile.messages)` with
+  `begin_task()`; a `ToolContext` for the runtime's own calls (no image support, the given workspace and language);
+  the controller's builtin actions and `CUSTOM_ACTIONS` registered on the controller as
+  `functools.partial(handler, context)`. `mcp_cfg` is carried for the worker path (`ensure_started`, the service)
+  and not read by the session.
+- Capabilities are derived from `allowed_tool_names`: the entries of `DEFAULT_BROWSER_CAPABILITIES` whose tool
+  names are all allowed (the inverse of `resolve_browser_capabilities`).
+- `agent_parts(image_support=)`: `build_agent_parts(session, assembly.surface, ...)`, built once per image-support
+  value. The facade keeps the parts' `builders` and each extra tool's `flags` to answer `tool_kind`.
+- `tool_kind(tool_name, tool_args) -> ToolKind`: for a factory command tool, the command decoded from the arguments
+  with the page state as resolver (`action`, `effect = action.effect`, `fields` = the schema's property names;
+  arguments that do not decode leave `action` `None`, `effect` `ACT`); for an extra tool its `ToolFlags`
+  (`helper=True`); for an unknown tool `ToolKind()` (`known=False`, `ACT`). `command` and `read_only` are derived.
+  `progress` is `True` for every factory tool and as declared for a helper.
+- `capture_browser_state(action_group_id="")`, the browser state processor's provider: `page_state.fresh_observation`,
+  else one `Observe()` through the context (a `DriverError` becomes `dom_error`, `page observation failed: …`);
+  `observations_reused` counts the reuses; then `page_metadata(context)`. The result keeps its keys (`ok`, `error`,
+  `url`, `title`, `tabs`, `page_position`, `semantic_state`, `semantic_progress`, `field_coverage`, `page_state`,
+  `dom=""`, `dom_error`, `audit`). `capture_reconciliation_browser_state` runs `page_metadata` only;
+  `capture_compact_browser_state` sends nothing. A task failure from the session propagates.
+- `probe_for_policy(source, params)` and `activate_page(url)`, the `DecisionPolicyModel` hooks, call the helpers of
+  the same name on the context; `run_custom_action` binds the runtime to the controller and dispatches.
+- `resolve_model_target_id`, `target_recovery_state`, `resolve_primary_link`, `export_page_state`,
+  `set_task_requested_fields`: the page-state views the rail reads.
+- `acquire_task_resources`: the service binding and `session.begin_task()`; `release_task_resources`:
+  `page_state.reset()` when the last binding goes (the session and its browser stay); `reset()` and `shutdown()`
+  close the session (stop, release) after the service, `reset()` also resets the page state.
+
+Timing is the old path's: the driver starts and the tools are added at the first invoke, in
+`BrowserRuntimeRail.before_invoke`, where the MCP tools were added before; the deep agent is built with no browser
+tools and gets both the command tools and the extra tools there (`browser_find` takes its description from the
+driver's native tools, which exist only after `start()`).
+
+### `BrowserRuntimeRail`
+
+The main agent's rail, built with the runtime and registered by `create_browser_agent`. It reads `ToolKind`s before
+a call and `CommandRecord`s after it, never tool text.
+
+- `before_invoke`: `ensure_runtime_ready()`, then `agent_parts(image_support=<the agent's read-image support>)`:
+  every tool through `ability_manager.add_ability(card, tool)` on every invoke (a re-add refreshes the instance),
+  and the parts' rails (`ActionPolicy`, `CommandRepeatGuardRail`, `CommandInterceptedHintRail`, the profile's)
+  through `agent.register_rail` once per agent.
+- `before_tool_call`: a factory tool whose schema addresses elements by `target`, `startTarget` or `endTarget`
+  (the Playwright MCP dialect) has its arguments normalised: the `ref`, `startRef` and `endRef` aliases renamed,
+  `[ref=e12]` and `ref=e12` reduced to the ref, a `target_id` resolved through the page state to the target's ref
+  or selector (with `element` filled from its text), `generation_id` dropped, and `field`, `fields` and `element`
+  dropped when the schema does not declare them (the evidence hints are read first; every server schema forbids
+  extra properties). A `Click` whose target is a card's primary link becomes the navigation tool (`browser_click`
+  → `browser_navigate` in the name) with `{"url": <link>}`; a `t_g…` target left without a locator is denied. The
+  browser-dialect tools (`target_id`, `ref`, `selector`, a required `generation_id`) are left to their decoders.
+  Then the schema check, the batch screenshot gate without image support, and the phase budget as before, with the
+  kind in place of the name.
+- `after_tool_call`: a `PolicyDenied` result or the rail's own denial sets `executed=False, denied=True`. Otherwise
+  `command_record(tool_result)`: with a record the tool message gets `record.message_metadata` (O5), a partial
+  batch with a successful mutating step counting as `state_changed`; without one, a known tool sent nothing
+  (`executed=False`) and an unknown tool is read from `ToolOutput.success`. The evidence machinery reads one dict:
+  a helper's payload as is, else `{ok, error, result, url, title, generation_id, page_state}` with `result` the
+  script value of a `RunScript` or the rendered text, and `url`/`title` from `record.surface`. An `Observe` that is
+  not a screenshot replaces the message content with the compact page state; a `NAVIGATE` effect appends
+  `<browser_page_state>`; `Observe` and `RunScript` results and read-only helpers that count against budgets are
+  bounded at 12,000 characters. Progress is persisted for tools with `progress`.
+- Classifiers by kind: `NAVIGATE` → navigation; `TypeText`, `PressKey`, `SelectOption`, `FillForm`, `UploadFile` →
+  form; `RunScript` → script, its intent from the code as before; a read-only tool that counts against budgets →
+  extraction; a batch by its ops; `Scroll` → viewport exploration; `Observe` and read-only helpers → target
+  discovery (`browser_probe_cards` → structured extraction); `Click`, `Hover`, `Drag`, `Drop` → interaction;
+  `exempt_from_budget` → no phase or replan budget; read-only recovery for `READ`, `SwitchContext`, a script that
+  does not mutate, a batch of read-only ops.
 
 ## Drivers
 
