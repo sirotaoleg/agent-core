@@ -62,7 +62,6 @@ from .browser_logging import (
     browser_agent_log_warning,
     write_browser_agent_audit_artifact,
 )
-from .browser_tools import ensure_browser_runtime_client_patch
 from .browser_working_context import (
     BROWSER_TASK_STATE_KEY,
     BrowserWorkingContextStore,
@@ -422,7 +421,6 @@ class BrowserAgentRuntime:
         workspace: Any = None,
         language: str = "cn",
     ) -> None:
-        ensure_browser_runtime_client_patch()
         self._instance = instance
         self._core_settings = core_settings
         self._browser_settings = browser_settings or browser_surface_settings()
