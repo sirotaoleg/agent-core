@@ -635,8 +635,8 @@ def test_batch_interact_returns_compact_condition_observations() -> None:
 
 
 def test_a_condition_waits_until_its_value_holds_still_for_the_stable_time() -> None:
-    answers = [_condition(True, "A"), _condition(True, "B"), _condition(True, "B"), _condition(True, "B")]
-    context = _context(*answers)
+    # The clock decides whether the loop polls three or four times, and the sleep step sends a Wait of its own.
+    context = _context(_condition(True, "A"), *[_condition(True, "B")] * 5)
 
     payload = _batch(
         context,
