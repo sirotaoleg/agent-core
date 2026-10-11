@@ -483,8 +483,22 @@ class PlaywrightMcpDriver(HandlerDriver):
 
 
 def create_playwright_mcp_driver(device: ProvisionedDevice, surface_settings: Any) -> PlaywrightMcpDriver:
-    """Driver factory (registry signature): the server attaches to ``device.endpoint`` over CDP on ``start()``."""
+    """Driver factory (registry signature): the server attaches to ``device.endpoint`` over CDP on ``start()``.
+
+    A server config in ``surface_settings.mcp_server`` keeps its command line; the factory's name, id and the
+    device environment win, so the tool prefix never changes with the caller.
+    """
     server = playwright_mcp_config(surface_settings, BrowserInstanceConfig(cdp_url=device.endpoint))
+    given = getattr(surface_settings, "mcp_server", None)
+    if given is not None:
+        env = {**(given.params.get("env") or {}), **(server.params.get("env") or {})}
+        server = McpServerConfig(
+            server_id=server.server_id,
+            server_name=server.server_name,
+            server_path=given.server_path,
+            client_type=given.client_type,
+            params={**given.params, "env": env},
+        )
     return PlaywrightMcpDriver(PlaywrightMcpConfig(server))
 
 

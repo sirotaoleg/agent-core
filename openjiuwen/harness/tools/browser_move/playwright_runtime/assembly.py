@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -83,26 +82,21 @@ def _stack_builder(core: CoreSettings, surface: SurfaceBundle, drivers: Registry
     return build
 
 
-def _with_instance(surface: SurfaceBundle, instance: Any) -> SurfaceBundle:
-    settings = surface.settings.with_instance(instance)
-    return SurfaceBundle(settings, dataclasses.replace(surface.profile, settings=settings))
-
-
 async def assemble_driver(
     core: CoreSettings,
     environ: Mapping[str, str],
     *,
     instance: Any = None,
     registries: Registries | None = None,
+    settings: Any = None,
 ) -> DriverAssembly:
     """Surface, provisioner, driver and middleware by name from ``core``; returns the started stack.
 
-    ``instance`` (the surface's own per-agent identity) is applied to the surface settings before anything is built.
+    The surface factory gets ``instance`` (the surface's own per-agent identity) and ``settings`` (used instead of
+    parsing ``environ``), so both reach provisioning, the driver factory and the tool context.
     """
     registries = registries or Registries(DRIVERS, SURFACES, PROVISIONERS)
-    surface = registries.surfaces.create(core.surface, environ)
-    if instance is not None:
-        surface = _with_instance(surface, instance)
+    surface = registries.surfaces.create(core.surface, environ, instance, settings)
     provisioner = registries.provisioners.create(surface.settings.provisioning)
     build_stack = _stack_builder(core, surface, registries.drivers)
     device = await asyncio.to_thread(provisioner.provision, surface.settings)
@@ -128,6 +122,7 @@ def build_agent_parts(
     image_support: bool,
     language: str,
     workspace: Any = None,
+    worker: bool = False,
 ) -> AgentParts:
     """Tools and prompt sections from the profile and the driver; the core rails, then the profile's rails."""
     profile = bundle.profile
@@ -139,6 +134,7 @@ def build_agent_parts(
         page_state=session.page_state,
         workspace=workspace,
         language=language,
+        worker=worker,
     )
     context = ToolContext(
         session, session.page_state, profile.renderer, info, profile.settings, image_support, workspace, language

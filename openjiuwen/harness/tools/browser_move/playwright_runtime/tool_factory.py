@@ -78,11 +78,12 @@ class ToolContext:
 
 @dataclass(frozen=True)
 class ToolFlags:
-    """What an extra tool declares for the rails in place of its name."""
+    """What an extra tool declares for the rails in place of its name; ``worker``: offered to a delegated worker too."""
 
     effect: Effect = Effect.READ
     exempt_from_budget: bool = False
     progress: bool = True
+    worker: bool = True
 
 
 @dataclass(frozen=True)
@@ -266,6 +267,7 @@ class ToolFactory:
         page_state: BrowserPageState,
         workspace: Any = None,
         language: str = "cn",
+        worker: bool = False,
     ) -> AgentTools:
         context = ToolContext(
             session,
@@ -297,7 +299,9 @@ class ToolFactory:
             builders[card.name] = build
             if spec.prompt_section:
                 sections.append(spec.prompt_section)
-        tools.extend(factory(context) for factory in self._profile.extra_tools)
+        tools.extend(
+            factory(context) for factory in self._profile.extra_tools if not worker or _flags(factory).worker
+        )
         names = {tool.card.name for tool in tools}
         for name in self._unserved(capabilities):
             if name not in names and self._info.tool_name_prefix + name not in names:
@@ -373,6 +377,11 @@ class ToolFactory:
         if name not in self._reported:
             self._reported.add(name)
             tool_logger.info("tool %s skipped: %s", name, reason)
+
+
+def _flags(factory: Any) -> ToolFlags:
+    flags = getattr(factory, "flags", None)
+    return flags if isinstance(flags, ToolFlags) else ToolFlags()
 
 
 class _NoRefs:

@@ -12,6 +12,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Mapping
 
+from openjiuwen.core.foundation.tool import McpServerConfig
+
 from ...utils.env import (
     DEFAULT_PLAYWRIGHT_MCP_ARGS,
     DEFAULT_PLAYWRIGHT_MCP_COMMAND,
@@ -115,6 +117,8 @@ class BrowserSettings:
     mcp_extension: bool = False
     mcp_extension_token: str = ""
     mcp_env: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+    # A server config given by the caller (the WebVoyager runner's): its command line wins over the fields above.
+    mcp_server: McpServerConfig | None = None
     upload_root: Path | None = None
     sidecar_python: Path | None = None
     selector_cache_path: Path | None = None

@@ -53,10 +53,7 @@ from ..controllers import ActionController, BaseController
 from ..surfaces.browser.helpers import CUSTOM_ACTIONS, activate_page, page_metadata, probe_for_policy
 from ..utils.parsing import extract_json_object
 from .assembly import AgentParts, assemble_driver, build_agent_parts
-from .browser_capabilities import (
-    CORE_BROWSER_TOOL_NAMES,
-    DEFAULT_BROWSER_CAPABILITIES,
-)
+from .browser_capabilities import CORE_BROWSER_TOOL_NAMES, capabilities_of
 from .browser_logging import (
     browser_agent_log_info,
     browser_agent_log_warning,
@@ -404,11 +401,6 @@ def _tool_args(value: Any) -> Dict[str, Any]:
     return {}
 
 
-def _capabilities_of(tool_names: Iterable[str]) -> tuple[str, ...]:
-    allowed = set(tool_names)
-    return tuple(entry.name for entry in DEFAULT_BROWSER_CAPABILITIES if set(entry.tool_names) <= allowed)
-
-
 class BrowserAgentRuntime:
     """Runtime kernel for browser lifecycle and deterministic helper actions."""
 
@@ -437,7 +429,7 @@ class BrowserAgentRuntime:
         resolved_allowed_tool_names = (
             CORE_BROWSER_TOOL_NAMES if allowed_tool_names is None else tuple(dict.fromkeys(allowed_tool_names))
         )
-        self._capabilities = _capabilities_of(resolved_allowed_tool_names)
+        self._capabilities = capabilities_of(resolved_allowed_tool_names)
         self._service = BrowserService(
             provider=provider,
             api_key=api_key,
