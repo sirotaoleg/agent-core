@@ -40,7 +40,7 @@ class Registries:
 
 @dataclass(frozen=True)
 class DriverAssembly:
-    """A started driver stack, the device under it and the settings that device was provisioned from.
+    """A started driver stack, the device under it and the surface it serves.
 
     ``rebuild`` makes a new stack for another device of the same surface.
     """
@@ -48,7 +48,6 @@ class DriverAssembly:
     stack: Driver
     device: ProvisionedDevice
     provisioner: Provisioner
-    surface_settings: Any
     rebuild: Callable[[ProvisionedDevice], Driver] | None = field(default=None, compare=False)
     surface: SurfaceBundle | None = None
 
@@ -105,7 +104,7 @@ async def assemble_driver(
     except BaseException:
         await asyncio.to_thread(provisioner.release, device)
         raise
-    assembly = DriverAssembly(stack, device, provisioner, surface.settings, build_stack, surface)
+    assembly = DriverAssembly(stack, device, provisioner, build_stack, surface)
     try:
         await stack.start()
     except BaseException:

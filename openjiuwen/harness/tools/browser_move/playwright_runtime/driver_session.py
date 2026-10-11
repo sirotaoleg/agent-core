@@ -65,7 +65,7 @@ class DriverSession:
             return
         provisioner = assembly.provisioner
         await asyncio.to_thread(provisioner.release, assembly.device)
-        device = await asyncio.to_thread(provisioner.provision, assembly.surface_settings)
+        device = await asyncio.to_thread(provisioner.provision, assembly.surface.settings)
         try:
             stack = assembly.rebuild(device)
         except BaseException:
