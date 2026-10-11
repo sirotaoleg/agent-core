@@ -287,23 +287,6 @@ def test_status_logger_partial_batch_result_flags() -> None:
     assert summary["steps_failed"] == 1
 
 
-def test_batch_interact_select_option_accepts_values_alias() -> None:
-    action_path = (
-        Path(__file__).resolve().parents[5]
-        / "openjiuwen"
-        / "harness"
-        / "tools"
-        / "browser_move"
-        / "controllers"
-        / "action.py"
-    )
-    source = action_path.read_text(encoding="utf-8")
-
-    assert "step.values !== undefined" in source
-    assert "target.selectOption(values" in source
-    assert "requires value, values," in source
-
-
 def test_react_agent_redacts_browser_tool_arguments() -> None:
     react_agent_path = (
         Path(__file__).resolve().parents[5]

@@ -118,7 +118,6 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
 # file relative to the package -> number of MCP tool-name matches.
 KNOWN_MCP_TOOL_NAMES: dict[str, int] = {
     # legacy code, removed with the old paths
-    "controllers/action.py": 14,
     "playwright_runtime/agents.py": 11,
     "playwright_runtime/browser_capabilities.py": 69,
     "playwright_runtime/browser_state_context_processor.py": 46,
