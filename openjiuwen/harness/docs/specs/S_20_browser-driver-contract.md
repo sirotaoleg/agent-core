@@ -176,7 +176,9 @@ exist raises `ModuleNotFoundError` "<kind> '<name>' is registered but not built 
 *by* that module is raised unchanged. Three default registries — `DRIVERS`, `SURFACES`, `PROVISIONERS` — with
 `register_driver`, `register_surface`, `register_provisioner`, so a driver, surface or provisioner can live in
 another repository. Factory signatures: driver `factory(device, surface_settings) -> Driver`, surface
-`factory(environ) -> SurfaceBundle`, provisioner `factory(**kwargs) -> Provisioner`.
+`factory(environ, instance=None, settings=None) -> SurfaceBundle` (`settings` is used instead of parsing `environ`;
+`instance`, the surface's per-agent identity, is applied to the settings last), provisioner
+`factory(**kwargs) -> Provisioner`.
 
 Nothing is registered in `contract/`; the packages that own the built-ins register them with lazy strings and
 re-export the registry, so `from ..drivers import DRIVERS` gives a registry with the built-ins in it:
@@ -402,8 +404,11 @@ Public facades; their signatures do not change:
   `managed_port` = the instance port when above 0, else 0 (a free port) for a keyed instance, else the settings
   port; `profile_name` = the instance profile name, else the sanitized key, else the settings'; `cdp_url`,
   `user_data_dir`, `browser_binary` = the instance's when not blank; `launch_args` = the instance's parsed
-  `PLAYWRIGHT_MCP_ARGS`-style string when not blank. `instance.driver` is not read. An empty instance returns equal
-  settings.
+  `PLAYWRIGHT_MCP_ARGS`-style string when not blank. `instance.driver` is read by the browser service (below), not
+  here. An empty instance returns equal settings. `create_browser_surface(environ, instance, settings)` applies it:
+  the bundle's settings and `profile.settings` are the instance-applied settings.
+- `BrowserSettings.mcp_server: McpServerConfig | None` carries a server config given by a caller (the WebVoyager
+  runner's `mcp_cfg`, through the service); the Playwright MCP driver factory keeps its command line (below).
 
 ### Environment boundary (invariant 9)
 
@@ -434,8 +439,8 @@ value from one.
   `resolve_upload_file_paths(paths, *, upload_root)`, `register_builtin_actions(controller, *, upload_root)`,
   `get_selector_cache(path)`, `discover_sidecar_python(override)`.
 - The env-read architecture test allows two exceptions: the browser-use sidecar (a separate process with its own
-  config boundary) and the three `env_map` accesses in `service.py`, which touch the Playwright MCP child's env
-  mapping, not the process environment.
+  config boundary) and the one `env_map` read in `service.py` (the CDP endpoint of the given server config, part of
+  the lifecycle identity), which touches the Playwright MCP child's env mapping, not the process environment.
 
 ### Browser-agent log and the tool-call logging hook
 
@@ -515,41 +520,45 @@ there is nothing to probe or to provision again.
 ### The browser service (`playwright_runtime/service.py`)
 
 `BrowserService` takes the keywords `browser_settings: SurfaceSettings | None` (`None` means
-`browser_surface_settings()`, read once at construction) and `core_settings: CoreSettings | None`, which it
-hands to the worker agent (`None`: the worker reads `CoreSettings.from_process_env()` when it is built). The service
-reads no environment variable itself.
-In managed mode, before it registers or refreshes the Playwright MCP server, it:
+`browser_surface_settings()`, read once at construction), `core_settings: CoreSettings | None` and
+`page_state: BrowserPageState | None` (the facade's; `None` makes one). The service reads no environment variable
+itself; `service.core` is the core settings (`None`: `CoreSettings.from_process_env()`, read at first use) with the
+instance's `driver`, when set, in place of `core.driver`.
 
-1. adopts a live Chrome recorded in its profile store (and in the legacy store when no store path is configured)
-   whose arguments and binary match the settings: the selected profile first, then the one with its own name; a
-   keyed instance adopts only the profile with its own name;
-2. otherwise keeps its managed driver while that driver's endpoint answers;
-3. otherwise calls `PROVISIONERS.create("managed", profile_store=<its store>).provision(settings)`, writes the
-   endpoint into the Playwright MCP config, keeps the provisioner as its managed driver and registers it with the
-   process registry.
+The service holds the `DriverSession` the worker runs on and provisions nothing itself:
 
-The settings handed to the provisioner are the service settings with the instance overrides applied:
-`provisioning` (instance `provisioning` / `driver_mode`), `profile_name` (instance profile name, else the key),
-`managed_port` (instance port; a keyed instance without one gets 0; else the settings port), `user_data_dir` and
-`browser_binary` (instance first), `mcp_cwd` (the MCP server config's `cwd`, else the settings). With `remote` and
-`extension` the service provisions nothing: the Playwright MCP config already carries the CDP endpoint or the
-extension flags. An instance `provisioning` / `driver_mode` other than `remote`, `managed` or `extension` raises
-`ValueError` naming `BrowserInstanceConfig.provisioning` and `BROWSER_PROVISIONING`.
+- `ensure_runtime_ready()`: without a session, `assemble_driver(service.core, process_environ(), instance=,
+  settings=)` with the service settings carrying `mcp_server` (the given `mcp_cfg`) and `mcp_cwd` (the config's
+  `cwd`, else the settings'); the assembly's provisioner is registered with the process registry as the identity's
+  managed driver; `DriverSession(assembly, page_state, profile.messages)`. With a session whose stack was stopped by
+  a task release, `session.start()`. Then `begin_task()`. `started` is "the stack runs".
+- `ensure_started()`: `ensure_runtime_ready()`, then the worker once: `build_agent_parts(session, surface,
+  capabilities=<from the allowlist>, image_support=False, language="en", worker=True)` and
+  `build_browser_worker_agent(..., tools=parts.tools, settings=service.core)`; the parts' rails and
+  `FinalAnswerRecoveryRail` through `register_rail`, in that order.
+- `acquire_task_binding()` counts a task and calls `session.begin_task()`; `release_task_binding()` on the last
+  binding stops the stack (`session.stop()`, the device and its Chrome stay), forgets the worker and the task
+  state. `reset()` closes the session (stop, release) and stops the identity's registered provisioners;
+  `detach_lifecycle_resources()` is the per-service part of that. `shutdown()` is `reset()` plus the release.
+
+An instance `provisioning` / `driver_mode` other than `remote`, `managed` or `extension` raises `ValueError` naming
+`BrowserInstanceConfig.provisioning` and `BROWSER_PROVISIONING` (the lifecycle identity needs it before a session
+exists). A live Chrome is adopted only by the provisioner, through the profile with the settings' name; the
+store's selected profile and the legacy store path are not consulted any more.
 
 ## Composition root (`playwright_runtime/assembly.py`)
 
-`assemble_driver(core: CoreSettings, environ, *, instance=None, registries=None) -> DriverAssembly` builds the driver
-stack from names only and returns it started. `registries` is `Registries(drivers, surfaces, provisioners)`; `None`
-means the three default registries with the built-ins. The module imports no concrete driver, surface or
-provisioner, names none, and holds no state. `BrowserAgentRuntime.ensure_runtime_ready` calls it for the main
-agent; the worker path (`ensure_started`, the service) still registers the MCP server itself.
+`assemble_driver(core: CoreSettings, environ, *, instance=None, registries=None, settings=None) -> DriverAssembly`
+builds the driver stack from names only and returns it started. `registries` is `Registries(drivers, surfaces,
+provisioners)`; `None` means the three default registries with the built-ins. The module imports no concrete
+driver, surface or provisioner, names none, and holds no state. `BrowserService.ensure_runtime_ready` calls it for
+the one session the main agent and the worker share.
 
-1. `surface = registries.surfaces.create(core.surface, environ)`, a `SurfaceBundle`.
-2. With an `instance` (the surface's per-agent identity, `BrowserInstanceConfig` for the browser):
-   `settings = surface.settings.with_instance(instance)`, and the bundle is replaced by
-   `SurfaceBundle(settings, replace(profile, settings=settings))`, so provisioning, the driver factory and the tool
-   context all see the instance. `with_instance` is not part of the `SurfaceSettings` protocol; a surface without it
-   cannot take an instance.
+1. `surface = registries.surfaces.create(core.surface, environ, instance, settings)`, a `SurfaceBundle`: the surface
+   factory parses `environ` unless `settings` is given, and applies `instance` (the surface's per-agent identity,
+   `BrowserInstanceConfig` for the browser) to the settings, so provisioning, the driver factory and the tool
+   context all see it. The composition root never touches the settings.
+2. (merged into step 1.)
 3. `provisioner = registries.provisioners.create(surface.settings.provisioning)`.
 4. `device = provisioner.provision(surface.settings)`, run in a worker thread.
 5. The stack for the device: `driver = registries.drivers.create(core.driver, device, surface.settings)`; when
@@ -570,11 +579,12 @@ again from `surface_settings` and builds the new stack with `rebuild`. Assemblie
 
 ### Agent construction
 
-`build_agent_parts(session, bundle, *, capabilities, image_support, language, workspace=None) -> AgentParts`
-(`tools`, `prompt_sections`, `rails`, `builders`):
+`build_agent_parts(session, bundle, *, capabilities, image_support, language, workspace=None, worker=False) ->
+AgentParts` (`tools`, `prompt_sections`, `rails`, `builders`):
 
 - `tools`, `prompt_sections`: `ToolFactory(bundle.profile, session.assembly.stack.info).build(capabilities,
-  image_support=, session=, page_state=session.page_state, workspace=, language=)`.
+  image_support=, session=, page_state=session.page_state, workspace=, language=, worker=)`; with `worker=True`
+  the extra tools flagged `worker=False` are left out.
 - `builders`: the factory's `AgentTools.builders`, for the runtime's `tool_kind`.
 - `rails`, in this order: `ActionPolicy(<the factory's builders>, profile.policy_rules, session.page_state)`,
   `CommandRepeatGuardRail()`, `CommandInterceptedHintRail()`, then `factory(context)` for each `profile.rails`
@@ -683,13 +693,16 @@ unchanged public API) to those of its tool names that a spec or the `browser_fin
 
 Browser tools and functions built on the driver session through a `ToolContext` (see "Tool factory"); every command
 they send goes through `context.execute` / `context.observe`, which record it in the page state. The factory appends
-the five tools (`EXTRA_TOOLS`: both probes, the batch, find, recall) to every build, so the main agent gets them at
-its first invoke; the runtime facade calls `probe_for_policy`, `activate_page` and `page_metadata` itself.
+the five tools (`EXTRA_TOOLS`: both probes, the batch, find, recall) to a main-agent build, so the main agent gets
+them at its first invoke; a worker build (`worker=True`) leaves out the tools flagged `worker=False` (recall), so
+the worker gets both probes, the batch and find; the runtime facade calls `probe_for_policy`, `activate_page` and
+`page_metadata` itself.
 `CUSTOM_ACTIONS` are not tools: they are the controller's custom actions as functions of the context, registered
 on the controller by the runtime when its session starts, for `browser_custom_action`.
 
 Each helper tool declares `flags: ToolFlags` (class attribute): the probes and find `ToolFlags()` (`READ`, not exempt
-from budgets, progress), the batch `ToolFlags(effect=ACT)`, the recall tool `ToolFlags(exempt_from_budget=True)`. A probe or find result is
+from budgets, progress, offered to a worker), the batch `ToolFlags(effect=ACT)`, the recall tool
+`ToolFlags(exempt_from_budget=True, worker=False)`. A probe or find result is
 `ToolOutput(success, data={"content": <payload>, "command": CommandRecord}, error)`: the model reads `content` as
 before (a probe's payload dict is rendered as JSON, find's text as is), and `command_record` finds the record. The
 record's `effect` is the declared one (`READ`), not the command's: a probe runs `RunScript` but changes nothing the
@@ -820,10 +833,14 @@ hold `driver_restarted` and `driver_lost` (read at construction). `page_state` i
 | restart fails (`start`, `provision`, `rebuild`) | task failure: `BaseError` `DEEPAGENT_RUNTIME_ERROR` with `driver_lost`, the restart error as cause |
 | second `ConnectionLost` in the same task | task failure, no restart |
 | `begin_task()` | resets the loss counter |
+| `stop()` | `stack.stop()`; the device stays (between tasks) |
+| `start()` | after `stop()`: `provisioner.is_alive(device)` → alive: `stack.start()`; dead: release, provision again, `rebuild`, start the new stack (the restart above without the stop) |
+| `health()` | `stack.health()` |
 | `close()` | `assembly.close()` with the current (possibly rebuilt) stack and device |
 
-The failed command is never sent again. `health()` is not polled. Liveness is asked of the provisioner, not of
-the driver: a driver may start without touching its device (Playwright MCP connects over CDP lazily).
+The failed command is never sent again. `health()` is not polled: the facade's `runtime_health` asks it. Liveness is
+asked of the provisioner, not of the driver: a driver may start without touching its device (Playwright MCP
+connects over CDP lazily).
 
 ### Policy rail (`action_policy.py`, `ActionPolicy`)
 
@@ -939,8 +956,9 @@ it from its arguments, `profile.renderer` and `profile.settings`.
   a command (the batch tool too).
 - `await context.observe(command)`: `driver.observe`, then `page_state.record`.
 
-`ToolFlags(effect=READ, exempt_from_budget=False, progress=True)`: what an extra tool declares, as its `flags`
-attribute, for the rails that today decide by tool name (state change, replan budgets, progress).
+`ToolFlags(effect=READ, exempt_from_budget=False, progress=True, worker=True)`: what an extra tool declares, as its
+`flags` attribute, for the rails that today decide by tool name (state change, replan budgets, progress) and for the
+factory (`worker`: offered to a delegated worker too).
 
 ## Rails on command records
 
@@ -985,15 +1003,29 @@ output (`tool_result`) keeps the driver's own error. Other records and messages 
 `BrowserAgentRuntime` is the facade `create_browser_agent` builds and the WebVoyager runner constructs the same way
 (`provider, api_key, api_base, model_name, mcp_cfg, guardrails, instance=None, allowed_tool_names=None, *,
 core_settings=None, browser_settings=None, workspace=None, language="cn"`). It owns one `BrowserPageState` for its
-lifetime and, from `ensure_runtime_ready()` on, one `DriverSession`; the main agent reaches the driver only through
-them.
+lifetime, hands it to its `BrowserService`, and from `ensure_runtime_ready()` on works on the service's
+`DriverSession`: one session for the main agent and the worker. `mcp_cfg` reaches the session through the service
+(`BrowserSettings.mcp_server`); `browser_settings` reach it as the surface settings override.
 
-- `ensure_runtime_ready()`, once: `assemble_driver(core, process_environ(), instance=)` with the given
-  `CoreSettings` or the process environment; `DriverSession(assembly, page_state, profile.messages)` with
-  `begin_task()`; a `ToolContext` for the runtime's own calls (no image support, the given workspace and language);
-  the controller's builtin actions and `CUSTOM_ACTIONS` registered on the controller as
-  `functools.partial(handler, context)`. `mcp_cfg` is carried for the worker path (`ensure_started`, the service)
-  and not read by the session.
+- `ensure_runtime_ready()`: `service.ensure_runtime_ready()`; when the service's session is a new one, a
+  `ToolContext` for the runtime's own calls (no image support, the given workspace and language), the controller's
+  builtin actions and `CUSTOM_ACTIONS` registered on the controller as `functools.partial(handler, context)`, and
+  the cached parts dropped.
+- `ensure_started()` and `run_browser_task(task, session_id=, request_id=, timeout_s=)`, the runner's entry points,
+  by `service.core.topology`: on Playwright MCP (`delegated_worker`) `service.ensure_started()` builds the worker
+  and `run_browser_task` is `service.run_task` (JSON contract, retries, recovery unchanged); on browser-use
+  (`direct`) `ensure_started()` builds the main agent on this facade through `create_browser_agent(model,
+  runtime=self, language=, temperature=core.worker_temperature, max_iterations=guardrails.max_steps,
+  browser_capabilities=<from the allowlist>)` with a `Model` from the facade's provider, key, base and model name
+  (`temperature` / `top_p` from the core settings' worker values), and `run_browser_task` runs it once through
+  `Runner.run_agent` under the guardrails' timeout and maps the result: `ok` (no error, `result_type` not
+  `"error"`), `final` (the output), `page` from `page_state.surface_context`, `screenshot=None`, `error`, and
+  `status` / `progress` from the rail's `authoritative_browser_result` / `progress_state` when present. The
+  session opens at the main agent's first invoke, as for `create_browser_agent`.
+- `runtime_health()`: `session.health()` when the stack runs, else `ok=False, detail="not started"`, with
+  `started` and the model settings.
+- `shutdown()`: `service.shutdown()`, the facade's session view dropped, then `OpenAIModelClient.aclose()` so the
+  next event loop (the runner runs one per task) gets fresh clients.
 - Capabilities are derived from `allowed_tool_names`: the entries of `DEFAULT_BROWSER_CAPABILITIES` whose tool
   names are all allowed (the inverse of `resolve_browser_capabilities`).
 - `agent_parts(image_support=)`: `build_agent_parts(session, assembly.surface, ...)`, built once per image-support
@@ -1013,9 +1045,9 @@ them.
   the same name on the context; `run_custom_action` binds the runtime to the controller and dispatches.
 - `resolve_model_target_id`, `target_recovery_state`, `resolve_primary_link`, `export_page_state`,
   `set_task_requested_fields`: the page-state views the rail reads.
-- `acquire_task_resources`: the service binding and `session.begin_task()`; `release_task_resources`:
-  `page_state.reset()` when the last binding goes (the session and its browser stay); `reset()` and `shutdown()`
-  close the session (stop, release) after the service, `reset()` also resets the page state.
+- `acquire_task_resources`: the service binding (which calls `session.begin_task()`); `release_task_resources`:
+  the service release (the last binding stops the driver stack and keeps the device) and `page_state.reset()`;
+  `reset()` closes the session through the service and resets the page state.
 
 Timing is the old path's: the driver starts and the tools are added at the first invoke, in
 `BrowserRuntimeRail.before_invoke`, where the MCP tools were added before; the deep agent is built with no browser
@@ -1209,7 +1241,9 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
 
 - `create_playwright_mcp_driver(device, surface_settings)` builds the `@playwright/mcp` server config with
   `playwright_runtime.config.playwright_mcp_config` (the same builder `build_playwright_mcp_config` uses), with
-  `device.endpoint` as the CDP endpoint. The composition root never sees the command line.
+  `device.endpoint` as the CDP endpoint. A config in `surface_settings.mcp_server` keeps its `params` (command,
+  args, cwd, timeout) and `client_type`; the factory's server name and id and the device environment win, so the
+  tool prefix never depends on the caller. The composition root never sees the command line.
 - `start()` owns one MCP client (`BrowserMoveStdioClient`, or `BrowserMoveStreamableHttpClient` for
   `streamable-http`) and calls it directly, never through `ToolMgr`; it reads `tools/list` once and keeps each
   mapped tool's description as `DriverInfo.tool_hints`, and every listed tool that has a decoder (`tools.py`) as

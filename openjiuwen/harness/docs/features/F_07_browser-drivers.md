@@ -1944,3 +1944,107 @@ paths; the fenced coordinate result, empty paths and the default file input are 
    runtime's target contract on the old path; nothing replaces it here.
 4. `type` and `autocomplete` steps need a driver that types key by key (not browser-use).
 5. `wait_for_url` and `wait_for_tab` observe at every poll (a full snapshot on Playwright MCP).
+
+## The switch, step 2: the worker and the runner facade on the driver session
+
+The second switch session (design section 7; decisions P1, R2, R3, R9, Q10, Q11, Q12, F7; the S1 review's T2, T3,
+T4; `switch-plan.md` S2), on `p4-switch`. The WebVoyager worker runs on the same `DriverSession` as the main
+agent, built from the factory; `BrowserService` holds that session and provisions nothing itself; the facade
+serves the runner on both drivers.
+
+### Decisions
+
+1. **One session, owned by the service.** `BrowserService` takes the facade's `BrowserPageState` and opens the
+   session in `ensure_runtime_ready` through `assemble_driver`; the facade asks the service for its session and
+   builds its tool context on it. The S1 interim state (a session on the facade and an MCP server registered by the
+   service, two servers during a runner task) is gone (T4).
+2. **Task release stops the stack and keeps the device (T2).** `DriverSession.stop()` / `start()`: the last task
+   binding stops the driver stack (the MCP server with its `--isolated` context, the browser-use sidecar); the next
+   task starts it again, re-provisioning first when the device died. `begin_task()` runs in
+   `acquire_task_binding`. The worker is built again after a release (its tools are bound to the session, which
+   stays).
+3. **The surface factory takes the instance and a settings override (R2, T3).** `factory(environ, instance=None,
+   settings=None)`; `assemble_driver(..., settings=)`; the composition root stops calling `with_instance`. A caller's
+   `browser_settings` reach the session, with the given `mcp_cfg` as `BrowserSettings.mcp_server` and the config's
+   `cwd` as `mcp_cwd`.
+4. **A given `mcp_cfg` is honoured (Q11) without changing the prefix (Q2).** The Playwright MCP factory keeps the
+   given command line (`params`, `client_type`) under its own server name and id and the device environment.
+5. **The instance's `driver` overrides `core.driver` (R3)** in `service.core`, which the facade uses to pick the
+   topology.
+6. **Worker tools and rails (R9, P1).** `build_agent_parts(..., worker=True)`: the `core` catalog tools, both probes,
+   the batch and find; `browser_recall_offload` is flagged `ToolFlags(worker=False)` and stays main-agent only, so the
+   runner's fixed removal list keeps the worker at the golden's 14 tools. Rails: `ActionPolicy`,
+   `CommandRepeatGuardRail`, `CommandInterceptedHintRail` (the parts' order), then `FinalAnswerRecoveryRail`; the
+   two strict xfails flipped. `build_browser_worker_agent` takes `tools` and no MCP config or allowlist.
+7. **The browser-use facade is the main agent (Q12).** `ensure_started()` on `direct` builds the agent through
+   `create_browser_agent(model, runtime=self, ...)` (new keyword: an existing facade to build on), the model from
+   the facade's settings with the core worker temperature and top-p; `run_browser_task` runs it once under the
+   guardrails' timeout and maps the answer (`ok`, `final`, `page` from the page state, `screenshot=None`, `error`,
+   `status` / `progress` from the rail's terminal payload). Option B (phase-0 T4-Q1) is `create_browser_agent` plus
+   `Runner.run_agent`, so the runner's browser-use path is that same agent, not a bare `build_agent` DeepAgent.
+8. **Heartbeat, health (Q10).** The heartbeat loop, `_check_connection`, the client-patch call and the MCP
+   registration are gone from the service; `runtime_health` reports `session.health()` and `started`; the MCP
+   server's `browser_runtime_health` reads it.
+9. **`shutdown()` closes the model clients (F7)** after the service: `OpenAIModelClient.aclose()`.
+10. **The service no longer provisions.** `_ensure_managed_driver_started`, the profile-store adoption, the
+    managed-driver bookkeeping and `_validate_mcp_command` are gone; the provisioner (through the root) provisions
+    and adopts the profile with the settings' name. The registry keeps coordinating per identity: the session's
+    provisioner is its managed driver, so `reset_managed_browser_runtime` still stops a preserved Chrome.
+11. `runtime_tools.py` keeps only the cancel, clear-cancel, custom-action, list-actions and health tools; the probe
+    and batch classes and `build_browser_runtime_tools` are gone (the factory's extra tools serve the worker).
+    `capabilities_of` moved next to the catalog.
+
+### Rejected options
+
+- **Direct = `build_agent` without `BrowserRuntimeRail`**: no `<browser_progress>` protocol, no page-state
+  context, and not the option-B agent the smoke compares with.
+- **Per-agent extra-tool selection by name in the service**: a browser word in core and a name list to maintain;
+  the tool declares it.
+- **Keeping the service's own provisioning next to the root's**: two provisioning paths for one device.
+- **Stopping the stack only when the registry's binding count drops** (the old MCP-binding rule): every service
+  now has its own stack.
+- **Closing the session between tasks**: the old path kept Chrome (T2).
+
+### Behaviour changes to know
+
+- An unkeyed service no longer adopts the store's globally selected live Chrome when its own profile name differs
+  (the Phase 3 H1 order); the provisioner reuses the profile with its own name only, and the legacy store path
+  (`~/.jiuwenclaw/browser-move/.browser/profiles.json`) is not read.
+- `runtime_health` has `detail` instead of `last_heartbeat_ok`.
+- The worker's helper cards come from the factory (`language="en"` as before); `browser_custom_action` and
+  `browser_list_custom_actions` are still registered as runtime tools only.
+
+### Golden status
+
+| View | Result |
+|---|---|
+| every MCP view, prompts included | byte for byte (`test_tool_prompt_snapshot.py`) |
+| runner contract (`test_wv_runner_contract.py`) | green: 17 tools before removal (14 core, probes, batch), 14 after, answer dict unchanged |
+| factory goldens | `core` 18/18, `runner` 14/14 |
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q` on `p4-switch`: **2359 passed, 123 skipped,
+  25 failed**; the 25 are the three old-rail test files S3 deletes (`test_browser_repeated_call_guard.py`,
+  `test_browser_intercepted_action_hint.py`, `test_browser_final_answer_recovery.py`), which build the worker with
+  the old signature and mock `ensure_runtime_ready` without a session. No xfail remains.
+- The ten harness test files outside `browser_move` that build the browser agent: **234 passed**.
+- Live: see the report (`.hq/reports/P4-T8-S2.md`).
+- Rewritten under their names: `test_service.py` (the session in place of the managed driver),
+  `test_browser_service_registry.py`, `test_browser_instance_isolation.py` (the instance through the surface
+  factory and the provisioner), `test_browser_worker_allowlist.py`, `test_browser_prompt_tool_surface.py` (the
+  worker from the service), the three records tests (`assemble_driver` patched instead of `ensure_runtime_ready`).
+- Deleted tests: the service's MCP command validation, registration, refresh and heartbeat cases (no MCP
+  registration, no heartbeat); its managed-driver and profile-adoption cases (the provisioner's, covered by
+  `test_provisioning.py` and the surface settings tests); the runtime-tool probe and batch cases and the two card
+  parity tests (the factory goldens pin the cards); `test_legacy_instance_still_adopts_selected_profile` (behaviour
+  dropped, above).
+
+### Known leftovers
+
+1. S3: the context processors and `status_logging.py` still key on tool names; the old rail classes and their
+   three test files remain (red on `p4-switch`); the client patch is still called in the facade constructor.
+2. `main.py` lists the worker's tools through `Runner.resource_mgr.get_mcp_tool_infos`, which now returns none.
+3. The registry's heartbeat-owner bookkeeping is unused (every service stops its own stack).
+4. `OpenAIModelClient.aclose()` on `shutdown()` closes every cached client in the process; a host that keeps model
+   clients alive across a facade shutdown rebuilds them on the next call.
