@@ -29,6 +29,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     RunScript,
     SwitchContext,
     TypeText,
+    Unsupported,
     Wait,
 )
 from openjiuwen.harness.tools.browser_move.contract.refs import REF_KINDS
@@ -434,6 +435,51 @@ def test_realistic_booking_steps_run_as_commands_one_after_another() -> None:
     assert {"text": "Singapore (SIN)", "exact": False}.items() <= options[2].items()
     assert {"role": "option", "name": "Kuala Lumpur (KUL)", "exact": False}.items() <= options[4].items()
     assert payload["extracted"] == {"field_8": "John"}
+
+
+def test_a_type_step_types_the_value_at_once_on_a_driver_without_key_by_key_typing() -> None:
+    refused = Unsupported("BrowserUseDriver cannot type slowly", dispatched=False)
+    context = _context(refused, DONE)
+    [target_id] = _targets(context, "#save")
+
+    payload = _batch(context, [{"op": "type", "target_id": target_id, "value": "John"}]).data["content"]
+
+    assert payload["ok"] is True, payload
+    assert _commands(context) == [
+        TypeText(Locator("#save", None, "g0"), "John", slowly=True),
+        TypeText(Locator("#save", None, "g0"), "John", clear=False),
+    ]
+
+
+def test_a_type_step_in_a_loop_falls_back_after_clearing_the_field() -> None:
+    refused = Unsupported("BrowserUseDriver cannot type slowly", dispatched=False)
+    context = _context(_located(READY, READY), _located(), DONE, DONE, refused, DONE, _located(), DONE)
+    ids = _targets(context, "#first", "#second")
+
+    payload = _batch(
+        context,
+        [{"op": "type", "target_id": ids[0], "value": "John"}, {"op": "fill", "target_id": ids[1], "value": "Doe"}],
+    ).data["content"]
+
+    assert payload["ok"] is True, payload
+    typed = [command for command in _commands(context) if isinstance(command, TypeText)]
+    assert [(command.text, command.clear, command.slowly) for command in typed] == [
+        ("", True, False),
+        ("John", False, True),
+        ("John", False, False),
+        ("Doe", True, False),
+    ]
+
+
+def test_a_refusal_the_driver_dispatched_is_not_retried() -> None:
+    context = _context(Unsupported("typing broke half way", dispatched=True))
+    [target_id] = _targets(context, "#save")
+
+    payload = _batch(context, [{"op": "type", "target_id": target_id, "value": "John"}]).data["content"]
+
+    assert payload["ok"] is False
+    assert "typing broke half way" in payload["error"]
+    assert len(_commands(context)) == 1
 
 
 def test_batch_click_retries_only_transient_actionability_failures_within_same_timeout() -> None:
