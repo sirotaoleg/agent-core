@@ -6,7 +6,7 @@
 |---|---|
 | Type | feature |
 | Date | 2026-10-12 |
-| Scope | `openjiuwen/harness/tools/browser_move/` (`contract/`, `drivers/`, `provisioning/`, `surfaces/browser/`, `playwright_runtime/`, `controllers/action.py`, `utils/`, `playwright_runtime_mcp_server.py`), `openjiuwen/harness/subagents/browser_agent.py`, `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/single_agent/agents/react_agent.py`, `tests/unit_tests/harness/tools/browser_move/` |
+| Scope | `openjiuwen/harness/tools/browser_move/` (`contract/`, `drivers/`, `provisioning/`, `surfaces/browser/`, `runtime/`, `runtime/controllers/action.py`, `runtime/utils/`, `playwright_runtime_mcp_server.py`), `openjiuwen/harness/subagents/browser_agent.py`, `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/single_agent/agents/react_agent.py`, `tests/unit_tests/harness/tools/browser_move/` |
 | Test baseline | see "Verification" in each section |
 | Related spec | [[S_20_browser-driver-contract]] |
 | Refs | #driver-architecture |
@@ -30,7 +30,7 @@ records the decisions taken while the pieces land, one section per piece; S_20 d
 - **Safety net.** Before production code moved: architecture tests with allowlists of today's violations (imports,
   driver names, browser words, env reads, module size), golden tool and prompt snapshots per path, a test that pins
   what the WebVoyager runner imports and sets, recorded `@playwright/mcp@0.0.78` answers, and rail tests on a
-  command-level fake driver. The env-read test counts reads through `utils/env.py` helpers and key tuples, not only
+  command-level fake driver. The env-read test counts reads through `runtime/utils/env.py` helpers and key tuples, not only
   `os.getenv` literals. Variables the runner sets but the package never reads (`BROWSER_INSTRUCTION`,
   `BROWSER_LOGS_DIR`) stay in the pinned list, marked as such. The browser-use sidecar is a separate process with
   its own configuration; its env reads are a named exemption.
@@ -114,7 +114,7 @@ Three wrappers in `drivers/middleware.py`, each a `Driver` around an inner `Driv
 
 ## Settings
 
-`CoreSettings` in `playwright_runtime/config.py` and `BrowserSettings` in `surfaces/browser/config.py` parse the
+`CoreSettings` in `runtime/config.py` and `BrowserSettings` in `surfaces/browser/config.py` parse the
 environment variables, split by owner (S_20 "Settings"). This step adds the parsers and moves the public facades
 (`RuntimeSettings`, `build_runtime_settings`, `build_playwright_mcp_config`, `build_browser_guardrails`,
 `resolve_playwright_mcp_cwd`, `BrowserInstanceConfig`) onto them; no other module reads them yet.
@@ -148,15 +148,15 @@ environment variables, split by owner (S_20 "Settings"). This step adds the pars
 9. **Lazy where the old code was lazy.** `selector_cache_path=None` means the default under the home directory, and
    `log_file` defaults to a relative path the logger resolves: computing `Path.home()` at parse time fails when the
    home variables are absent (the existing tests clear the environment).
-10. **The parsers do not call `utils/env.py`.** Its helpers keep serving the callers not switched yet; the parsing
+10. **The parsers do not call `runtime/utils/env.py`.** Its helpers keep serving the callers not switched yet; the parsing
     logic is private to each config module. (Superseded by "Environment boundary", decision 2: both parsers now share
-    the pure helpers of `utils/env.py`.) `playwright_runtime/config.py` still re-exports `parse_command_args`,
+    the pure helpers of `runtime/utils/env.py`.) `runtime/config.py` still re-exports `parse_command_args`,
     `load_repo_dotenv` and the defaults it always exported.
-11. **One allowlisted import.** `playwright_runtime/config.py` imports `surfaces.browser.config`, because the public
+11. **One allowlisted import.** `runtime/config.py` imports `surfaces.browser.config`, because the public
     `RuntimeSettings` facade composes `BrowserSettings`; recorded in the import-boundary allowlist as legacy until
     the facade can take the surface settings from the surface registry. The env-read test also learns env names
     from the string constants of the config modules: parsers that read a mapping no longer show up as `os.getenv`
-    or `utils/env` calls, and the names must stay known for reads elsewhere to be caught. (The import is gone since
+    or `runtime/utils/env` calls, and the names must stay known for reads elsewhere to be caught. (The import is gone since
     "Composition root", decision 4.)
 
 ### Rejected options
@@ -178,29 +178,29 @@ today, relative to `browser_move/`.
 
 | Variables (precedence order) | Read in | Meaning | Default | Owner | Field |
 |---|---|---|---|---|---|
-| `BROWSER_DRIVER` | `playwright_runtime/config.py`, `service.py` | driver; legacy values = provisioning | `playwright_mcp` | core (browser reads legacy values) | `driver` |
-| `BROWSER_TOPOLOGY` | `playwright_runtime/config.py` | `direct` / `delegated_worker`; empty = the driver's registered default | `""` | core | `topology` |
-| `MODEL_PROVIDER`, `MODEL_CLIENT_PROVIDER` | `utils/env.py`, `browser_tools.py` | model provider | inferred from base URL, then keys, then `openai` | core | `provider` |
-| `API_KEY`, `MODEL_API_KEY`, then per provider `OPENROUTER_API_KEY` / `SILICONFLOW_API_KEY` / `DASHSCOPE_API_KEY` / `OPENAI_API_KEY` | `utils/env.py`, `browser_tools.py` | model API key | `""` | core | `api_key` |
-| `API_BASE`, `MODEL_API_BASE`, then per provider `OPENROUTER_BASE_URL`, `OPENROUTER_API_BASE`, `SILICONFLOW_BASE_URL`, `SILICONFLOW_API_BASE`, `DASHSCOPE_BASE_URL`, `DASHSCOPE_API_BASE`, `OPENAI_BASE_URL`, `OPENAI_API_BASE` | `utils/env.py`, `browser_tools.py` | model API base; also infers the provider | the provider's public URL | core | `api_base` |
-| `MODEL_NAME` | `utils/env.py` | model name | `anthropic/claude-sonnet-4.5` | core | `model_name` |
+| `BROWSER_DRIVER` | `runtime/config.py`, `service.py` | driver; legacy values = provisioning | `playwright_mcp` | core (browser reads legacy values) | `driver` |
+| `BROWSER_TOPOLOGY` | `runtime/config.py` | `direct` / `delegated_worker`; empty = the driver's registered default | `""` | core | `topology` |
+| `MODEL_PROVIDER`, `MODEL_CLIENT_PROVIDER` | `runtime/utils/env.py`, `browser_tools.py` | model provider | inferred from base URL, then keys, then `openai` | core | `provider` |
+| `API_KEY`, `MODEL_API_KEY`, then per provider `OPENROUTER_API_KEY` / `SILICONFLOW_API_KEY` / `DASHSCOPE_API_KEY` / `OPENAI_API_KEY` | `runtime/utils/env.py`, `browser_tools.py` | model API key | `""` | core | `api_key` |
+| `API_BASE`, `MODEL_API_BASE`, then per provider `OPENROUTER_BASE_URL`, `OPENROUTER_API_BASE`, `SILICONFLOW_BASE_URL`, `SILICONFLOW_API_BASE`, `DASHSCOPE_BASE_URL`, `DASHSCOPE_API_BASE`, `OPENAI_BASE_URL`, `OPENAI_API_BASE` | `runtime/utils/env.py`, `browser_tools.py` | model API base; also infers the provider | the provider's public URL | core | `api_base` |
+| `MODEL_NAME` | `runtime/utils/env.py` | model name | `anthropic/claude-sonnet-4.5` | core | `model_name` |
 | `BROWSER_WORKER_TEMPERATURE`, `BROWSER_MODEL_TEMPERATURE`, `MODEL_TEMPERATURE` | `agents.py` | worker sampling, 0–2 | `0.2` | core | `worker_temperature` |
 | `BROWSER_WORKER_TOP_P`, `BROWSER_MODEL_TOP_P`, `MODEL_TOP_P` | `agents.py` | worker sampling, 0–1 | `0.1` | core | `worker_top_p` |
 | `PLAYWRIGHT_TOOL_TIMEOUT_S`, `PLAYWRIGHT_MCP_TIMEOUT_S`, `BROWSER_TIMEOUT_S` | `agents.py` | worker per-tool-call timeout, s | `240` | core | `tool_timeout_s` |
-| `BROWSER_TIMEOUT_S`, `PLAYWRIGHT_TOOL_TIMEOUT_S` | `utils/env.py`, `playwright_runtime_mcp_server.py` | task timeout, s (≥ 1) | `600` | core | `guardrails.timeout_s` |
-| `BROWSER_GUARDRAIL_MAX_STEPS` | `playwright_runtime/config.py` | step limit (≥ 1) | `100` | core | `guardrails.max_steps` |
-| `BROWSER_GUARDRAIL_MAX_FAILURES` | `playwright_runtime/config.py` | failure limit (≥ 0) | `4` | core | `guardrails.max_failures` |
-| `BROWSER_GUARDRAIL_RETRY_ONCE` | `playwright_runtime/config.py` | retry once | `true` | core | `guardrails.retry_once` |
-| `BROWSER_GUARDRAIL_RESUME_ON_MAX_ITERATIONS` | `playwright_runtime/config.py` | resume at the step limit | `false` | core | `guardrails.resume_on_max_iterations` |
+| `BROWSER_TIMEOUT_S`, `PLAYWRIGHT_TOOL_TIMEOUT_S` | `runtime/utils/env.py`, `playwright_runtime_mcp_server.py` | task timeout, s (≥ 1) | `600` | core | `guardrails.timeout_s` |
+| `BROWSER_GUARDRAIL_MAX_STEPS` | `runtime/config.py` | step limit (≥ 1) | `100` | core | `guardrails.max_steps` |
+| `BROWSER_GUARDRAIL_MAX_FAILURES` | `runtime/config.py` | failure limit (≥ 0) | `4` | core | `guardrails.max_failures` |
+| `BROWSER_GUARDRAIL_RETRY_ONCE` | `runtime/config.py` | retry once | `true` | core | `guardrails.retry_once` |
+| `BROWSER_GUARDRAIL_RESUME_ON_MAX_ITERATIONS` | `runtime/config.py` | resume at the step limit | `false` | core | `guardrails.resume_on_max_iterations` |
 | `OPENJIUWEN_BROWSER_AGENT_LOG_FILE` | `browser_logging.py` | agent log file; false word = none | `logs/browser_agent.log` | core | `log_file` |
 | `OPENJIUWEN_BROWSER_AGENT_LOG_LEVEL` | `browser_logging.py` | agent log level | `INFO` | core | `log_level` |
 | `OPENJIUWEN_BROWSER_AGENT_LOG_MIRROR_COMMON` | `browser_logging.py` | also log to the common logger | `false` | core | `log_mirror_common` |
 | `OPENJIUWEN_BROWSER_AGENT_AUDIT_RAW` | `browser_logging.py` | store raw audit payloads | `false` | core | `log_audit_raw` |
 | `BROWSER_SUBAGENT_STATUS_LOG` | `status_logging.py` | subagent status log | on | core | `status_log` |
 | `BROWSER_PROVISIONING` (new), legacy `BROWSER_DRIVER` | — | where the browser comes from | `remote` | browser | `provisioning` |
-| `PLAYWRIGHT_MCP_CDP_ENDPOINT`, `PLAYWRIGHT_CDP_URL` | `playwright_runtime/config.py` | CDP endpoint | `""` | browser | `cdp_url` |
-| `PLAYWRIGHT_MCP_CDP_HEADERS`, `PLAYWRIGHT_CDP_HEADERS` | `playwright_runtime/config.py` | CDP headers | `""` | browser | `cdp_headers` |
-| `PLAYWRIGHT_MCP_CDP_TIMEOUT`, `PLAYWRIGHT_CDP_TIMEOUT_MS` | `playwright_runtime/config.py` | CDP connect timeout | `""` | browser | `cdp_timeout` |
+| `PLAYWRIGHT_MCP_CDP_ENDPOINT`, `PLAYWRIGHT_CDP_URL` | `runtime/config.py` | CDP endpoint | `""` | browser | `cdp_url` |
+| `PLAYWRIGHT_MCP_CDP_HEADERS`, `PLAYWRIGHT_CDP_HEADERS` | `runtime/config.py` | CDP headers | `""` | browser | `cdp_headers` |
+| `PLAYWRIGHT_MCP_CDP_TIMEOUT`, `PLAYWRIGHT_CDP_TIMEOUT_MS` | `runtime/config.py` | CDP connect timeout | `""` | browser | `cdp_timeout` |
 | `BROWSER_MANAGED_HOST` | `service.py` | managed Chrome host | `127.0.0.1` | browser | `managed_host` |
 | `BROWSER_MANAGED_PORT` | `service.py` | managed Chrome debug port | `9333` | browser | `managed_port` |
 | `BROWSER_MANAGED_KILL_EXISTING` | `service.py` | kill a running Chrome, use its default profile | `false` | browser | `managed_kill_existing` |
@@ -209,23 +209,23 @@ today, relative to `browser_move/`.
 | `BROWSER_PROFILE_NAME` | `service.py` | profile name | `jiuwenclaw` | browser | `profile_name` |
 | `BROWSER_PROFILE_STORE_PATH` | `service.py` | profile store file | `<mcp_cwd>/.browser/profiles.json` | browser | `profile_store_path` |
 | `BROWSER_MANAGED_BINARY` | `service.py` | Chrome binary | discovered | browser | `browser_binary` |
-| `PLAYWRIGHT_MCP_ARGS` | `playwright_runtime/config.py` | Playwright MCP arguments | `-y @playwright/mcp@0.0.78` | browser | `launch_args` |
-| `PLAYWRIGHT_MCP_COMMAND` | `playwright_runtime/config.py` | Playwright MCP command | `npx` | browser | `mcp_command` |
-| `PLAYWRIGHT_MCP_TIMEOUT_S`, `BROWSER_TIMEOUT_S` | `playwright_runtime/config.py` | MCP client timeout, s (≥ 1) | `600` | browser | `mcp_timeout_s` |
-| `PLAYWRIGHT_RUNTIME_MCP_CWD`, `BROWSER_RUNTIME_MCP_CWD`, `PLAYWRIGHT_RUNTIME_WORKDIR`, `BROWSER_RUNTIME_WORKDIR` | `playwright_runtime/config.py` | Playwright MCP working dir, profile root | current dir | browser | `mcp_cwd` |
-| `PLAYWRIGHT_MCP_BROWSER` | `playwright_runtime/config.py` | Playwright browser name | `""` (`chrome` with CDP) | browser | `mcp_browser` |
-| `PLAYWRIGHT_MCP_DEVICE` | `playwright_runtime/config.py`, `service.py` | device emulation (not with CDP) | `""` | browser | `mcp_device` |
-| `PLAYWRIGHT_MCP_EXTENSION` | `playwright_runtime/config.py` | extension mode | `false` | browser | `mcp_extension` |
-| `PLAYWRIGHT_MCP_EXTENSION_TOKEN` | `playwright_runtime/config.py` | extension token | `""` | browser | `mcp_extension_token` |
-| `PLAYWRIGHT_BROWSERS_PATH`, `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `PLAYWRIGHT_MCP_ENV_JSON` | `playwright_runtime/config.py` | Playwright MCP child env (JSON wins) | `{}` | browser | `mcp_env` |
-| `BROWSER_UPLOAD_ROOT` | `utils/env.py`, `drivers/browser_use/transport.py` | upload sandbox root | none | browser | `upload_root` |
+| `PLAYWRIGHT_MCP_ARGS` | `runtime/config.py` | Playwright MCP arguments | `-y @playwright/mcp@0.0.78` | browser | `launch_args` |
+| `PLAYWRIGHT_MCP_COMMAND` | `runtime/config.py` | Playwright MCP command | `npx` | browser | `mcp_command` |
+| `PLAYWRIGHT_MCP_TIMEOUT_S`, `BROWSER_TIMEOUT_S` | `runtime/config.py` | MCP client timeout, s (≥ 1) | `600` | browser | `mcp_timeout_s` |
+| `PLAYWRIGHT_RUNTIME_MCP_CWD`, `BROWSER_RUNTIME_MCP_CWD`, `PLAYWRIGHT_RUNTIME_WORKDIR`, `BROWSER_RUNTIME_WORKDIR` | `runtime/config.py` | Playwright MCP working dir, profile root | current dir | browser | `mcp_cwd` |
+| `PLAYWRIGHT_MCP_BROWSER` | `runtime/config.py` | Playwright browser name | `""` (`chrome` with CDP) | browser | `mcp_browser` |
+| `PLAYWRIGHT_MCP_DEVICE` | `runtime/config.py`, `service.py` | device emulation (not with CDP) | `""` | browser | `mcp_device` |
+| `PLAYWRIGHT_MCP_EXTENSION` | `runtime/config.py` | extension mode | `false` | browser | `mcp_extension` |
+| `PLAYWRIGHT_MCP_EXTENSION_TOKEN` | `runtime/config.py` | extension token | `""` | browser | `mcp_extension_token` |
+| `PLAYWRIGHT_BROWSERS_PATH`, `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `PLAYWRIGHT_MCP_ENV_JSON` | `runtime/config.py` | Playwright MCP child env (JSON wins) | `{}` | browser | `mcp_env` |
+| `BROWSER_UPLOAD_ROOT` | `runtime/utils/env.py`, `drivers/browser_use/transport.py` | upload sandbox root | none | browser | `upload_root` |
 | `BROWSER_USE_SIDECAR_PYTHON` | `drivers/browser_use/transport.py` | sidecar interpreter | `.venvs/browser-use` | browser | `sidecar_python` |
 | `OPENJIUWEN_BROWSER_SELECTOR_CACHE` | `site_profiles.py` | site selector cache | `~/.openjiuwen/browser_selector_cache.json` | browser (prefix: question 5) | `selector_cache_path` |
 | `BROWSER_UPLOAD_ROOT` | `drivers/browser_use/sidecar/session_adapter.py` | upload root inside the sidecar | none | exempt | — |
 | `PLAYWRIGHT_RUNTIME_MCP_*` / `BROWSER_RUNTIME_MCP_*` (`ENABLED`, `SERVER_ID`, `SERVER_NAME`, `CLIENT_TYPE`, `SERVER_PATH`, `HOST`, `PORT`, `PATH`, `COMMAND`, `ARGS`, `TIMEOUT_S`), `PLAYWRIGHT_RUNTIME_MCP_AUTO_HTTP_FALLBACK`, `PLAYWRIGHT_RUNTIME_MCP_TRANSPORT`, `PLAYWRIGHT_RUNTIME_MCP_LOG_LEVEL`, `PLAYWRIGHT_RUNTIME_MCP_STATELESS_HTTP`, `PLAYWRIGHT_RUNTIME_LOG_DIR`, `BROWSER_RUNTIME_LOG_DIR` | `browser_tools.py`, `playwright_runtime_mcp_server.py` | the browser runtime served as an MCP server | various | core (G2) | `runtime_server` (`RuntimeServerSettings`) |
 | whole environment copy; `ALL_PROXY`; `PATH`, `SystemRoot`, `TEMP`, `TMP`, `USERPROFILE`, `HOMEDRIVE`, `HOMEPATH`, `LOCALAPPDATA`, `APPDATA`, `HOME`, `TMPDIR`; every `BROWSER_USE_*` | `browser_tools.py`, `drivers/browser_use/transport.py` | environment handed to child processes | — | pure functions of a passed mapping (G3) | — |
 | `LOCALAPPDATA`, `ProgramFiles`, `ProgramFiles(x86)`, `ProgramW6432` | `provisioning/managed_browser.py` | where Chrome is installed; default Chrome user-data dir | — | browser (G4) | `browser_binary_candidates`, `local_app_data` |
-| `AGENT_QUERY`, `AGENT_SESSION_ID` | `playwright_runtime/main.py` | demo entry point input | `""`, `demo-browser-session` | core reader (G5) | `read_demo_inputs()` |
+| `AGENT_QUERY`, `AGENT_SESSION_ID` | `runtime/main.py` | demo entry point input | `""`, `demo-browser-session` | core reader (G5) | `read_demo_inputs()` |
 
 "Read in" is the state before the environment boundary step; owners of the former question rows were decided in
 the wave 1 review (G2–G5). Counts at the settings step: 37 core names, 33 browser names plus the new
@@ -301,7 +301,7 @@ the same Chrome, flags, ports and profiles.
    arguments); Chrome's arguments are `managed_args`, following the settings naming.
 8. **The service receives `BrowserSettings`** through the new keyword `browser_settings`; when it is absent the
    service builds them once with `from_process_env()` at construction. `mcp_cwd` also comes from them instead of the
-   `resolve_playwright_mcp_cwd` facade. The type is imported from `playwright_runtime/config.py`, which already
+   `resolve_playwright_mcp_cwd` facade. The type is imported from `runtime/config.py`, which already
    imports it (allowlisted), so the core gains no import of the surface.
 9. **Chrome install paths from the environment move to settings** (review decision G4):
    `BrowserSettings.browser_binary_candidates` holds the `chrome.exe` paths under `LOCALAPPDATA`, `ProgramFiles`,
@@ -351,7 +351,7 @@ the same Chrome, flags, ports and profiles.
    go when the MCP driver owns its config.
 3. The service stops Chrome through the handle API, not `release(device)`: the process registry shares handles
    among services and calls `stop` itself.
-4. `service.py` imports `BrowserSettings` through `playwright_runtime/config.py`; when that module stops importing
+4. `service.py` imports `BrowserSettings` through `runtime/config.py`; when that module stops importing
    the surface (review decision G1), the service needs another way to the type. (Settled by "Composition root",
    decision 4.)
 5. Visible differences, all from reading settings once: the browser variables are read at service construction,
@@ -368,7 +368,7 @@ the same Chrome, flags, ports and profiles.
 
 ## Environment boundary
 
-Only `playwright_runtime/config.py` and `surfaces/browser/config.py` read the process environment (plan invariant
+Only `runtime/config.py` and `surfaces/browser/config.py` read the process environment (plan invariant
 9); every other module receives settings or values from them (S_20 "Environment boundary"). Wave 1 review decisions
 G2, G3, G5, G7 are implemented here, together with the two middleware follow-ups G10 and G11.
 
@@ -379,12 +379,12 @@ G2, G3, G5, G7 are implemented here, together with the two middleware follow-ups
    take them as keywords. Public functions that are called without settings today (tests, the harness subagent
    factory, `browser_agent.py`) fall back to `X.from_process_env()` at the moment they read the environment before,
    so the read timing does not move. `browser_agent.py` is not changed in this step.
-2. **`utils/env.py` is pure (G7).** It keeps the defaults and one set of parse helpers used by both config
+2. **`runtime/utils/env.py` is pure (G7).** It keeps the defaults and one set of parse helpers used by both config
    modules; the duplicated `_first` / `_int` / argument split / truthy sets / provider aliases in the config modules
    are gone. Helpers that read the environment and have no caller left are deleted (`first_non_empty_env`,
    `resolve_int_env`, `resolve_bool_env`, `resolve_model_name`, `resolve_browser_timeout_s`, `resolve_upload_root`,
    `resolve_model_settings`); `load_repo_dotenv` and `resolve_repo_dotenv_path` move to
-   `playwright_runtime/config.py`, which already re-exported the former.
+   `runtime/config.py`, which already re-exported the former.
 3. **`RuntimeServerSettings` nested in `CoreSettings` (G2)**, with two parsers keeping the client and server
    readers apart: the client takes the `BROWSER_RUNTIME_*` aliases, the server does not (except the log dir, which
    it always took). `port` stays a string and `args` a raw string, so an invalid port still fails where it is used,
@@ -415,7 +415,7 @@ G2, G3, G5, G7 are implemented here, together with the two middleware follow-ups
 - **Configuring `browser_logging` from settings now** (decision 7).
 - **Child-environment builders left in `browser_tools.py` / `transport.py` as allowlisted "mapping, not process
   env" entries.** The names they spell are env names; the config modules are where env names are spelled.
-- **Leaf defaults read from settings inside `controllers/` or `utils/`.** Both are core; they would import the
+- **Leaf defaults read from settings inside `runtime/controllers/` or `runtime/utils/`.** Both are core; they would import the
   browser surface settings. They take the value; `None` means not configured.
 - **A sentinel to tell "not passed" from "not configured" for the upload root.** Every caller in the package
   passes the value.
@@ -445,13 +445,13 @@ G2, G3, G5, G7 are implemented here, together with the two middleware follow-ups
 - Fix after review: on Windows a `dict` snapshot of `os.environ` keeps only upper-case names, so the sidecar lost
   `SystemRoot` (it exited before its hello; every live browser-use case failed) and the Chrome install roots lost
   `ProgramFiles*`. `utils.env.env_value` looks a name up as given and upper-cased; the env-read rule now counts only
-  `utils/env.py` helpers that read the process environment. Live browser-use conformance: **45 passed**.
+  `runtime/utils/env.py` helpers that read the process environment. Live browser-use conformance: **45 passed**.
 
 ### Known leftovers
 
 1. `browser_logging` reads the environment (decision 7). Resolved in "Tool-call logging hook".
 2. The three `env_map` entries of `service.py` (Provisioning leftover 2).
-3. `controllers/action.py` `list_upload_files`: ruff now reports ASYNC240 on its existing `upload_root.exists()`,
+3. `runtime/controllers/action.py` `list_upload_files`: ruff now reports ASYNC240 on its existing `upload_root.exists()`,
    because the root became a typed parameter; behaviour unchanged.
 4. Invalid input fails earlier in a few places: `ensure_execute_signature_compat`, `build_browser_worker_agent` and
    `is_browser_subagent_status_log_enabled` without settings build `CoreSettings`, so an unknown `BROWSER_DRIVER`
@@ -466,7 +466,7 @@ G2, G3, G5, G7 are implemented here, together with the two middleware follow-ups
 
 ## Composition root
 
-`playwright_runtime/assembly.py` builds the driver stack from registry names: surface, provisioner, device,
+`runtime/assembly.py` builds the driver stack from registry names: surface, provisioner, device,
 driver, middleware, start (S_20 "Composition root"). The built-in drivers, surfaces and provisioners are
 registered with lazy strings. The core no longer imports the browser surface. In this step the root ends at a
 started driver; `create_browser_agent` and the Playwright MCP path keep their wiring.
@@ -1013,7 +1013,7 @@ agent switch wires them.
   surface context passed (D15), other commands and unknown tools, decode error, no driver call through the ability
   manager).
 - Existing `test_browser_page_state.py` (25) unchanged and green.
-- Browser-word allowlist: `playwright_runtime/page_state.py` 26 → 29 (the address backstop); the two new modules
+- Browser-word allowlist: `runtime/page_state.py` 26 → 29 (the address backstop); the two new modules
   have none.
 - `pytest tests/unit_tests/harness/tools/browser_move tests/unit_tests/harness/rails
   tests/unit_tests/harness/test_deep_agent_rail_event_routing.py` (live assembly deselected): **2762 passed, 111
@@ -1639,7 +1639,7 @@ Six assertions on one scripted run (`look`, an off-board `poke`, `click`, a `pok
 | lost connection | the driver sees `stop`, `start` once after the failing `click` (the device is alive, nothing provisioned again), the model reads `driver_restarted` |
 | registries only | surface, driver and provisioner are registered in test-scoped `Registry` objects; no package file was changed for the test |
 
-**No seam needed a change:** nothing in `playwright_runtime/` besides the two files of this task, nothing in
+**No seam needed a change:** nothing in `runtime/` besides the two files of this task, nothing in
 `contract/` or `drivers/middleware.py`.
 
 ### Verification
@@ -2767,9 +2767,9 @@ in, each agent kind keeps one builder that takes the neutral pieces.
 - `build_browser_worker_system_prompt`, `build_browser_worker_agent` and `refresh_browser_worker_system_prompt`
   require `driver_name`; `build_agent_parts(...).rails` holds the profile's rails only; `ActionPolicy.get_tools()`
   is empty.
-- `WORKER_LANGUAGE` is imported from `playwright_runtime.agents`, no longer from `service`.
+- `WORKER_LANGUAGE` is imported from `runtime.agents`, no longer from `service`.
 - `BrowserService` imports neither `assemble_driver` nor `build_browser_worker_agent`: tests that stub either
-  patch `playwright_runtime.assembly.assemble_driver` or `playwright_runtime.agents.build_browser_worker_agent`.
+  patch `runtime.assembly.assemble_driver` or `runtime.agents.build_browser_worker_agent`.
 
 ### Verification
 
@@ -2793,9 +2793,9 @@ in, each agent kind keeps one builder that takes the neutral pieces.
   `test_browser_runtime_facade.py`: a session that cannot start on browser-use now awaits `assemble_driver` twice.
   `test_browser_final_answer_recovery.py` opens a session before injecting its worker (the prompt refresh reads the
   driver's name from the session).
-- Architecture: `KNOWN_DRIVER_NAMES` ratcheted `playwright_runtime/agents.py` 4 → 1 (the worker card's
-  description, not model-facing, stays for Phase 7) and `playwright_runtime/service.py` 14 → 1;
-  `KNOWN_BROWSER_WORDS` `playwright_runtime/service.py` 92 → 82. `assembly.py` stays off both allowlists.
+- Architecture: `KNOWN_DRIVER_NAMES` ratcheted `runtime/agents.py` 4 → 1 (the worker card's
+  description, not model-facing, stays for Phase 7) and `runtime/service.py` 14 → 1;
+  `KNOWN_BROWSER_WORDS` `runtime/service.py` 92 → 82. `assembly.py` stays off both allowlists.
 - `uv run pytest tests/unit_tests/harness/tools/browser_move -q`: **2349 passed, 118 skipped** (2337 / 118
   before; 12 new tests).
 - Goldens: `snapshots/golden/` unchanged (no file in `git status`); the MCP `runner` prompt renders byte for byte
@@ -2901,7 +2901,7 @@ the worker itself through `ensure_started`.
   rails before the first invoke; the policy's mapping is the facade's live `builders`.
 - After `shutdown()` the next `ensure_started()` picks the topology again (an env change between tasks of one
   process is not read: `service.core` is cached).
-- `WORKER_LANGUAGE` is importable from `playwright_runtime.topology` and `playwright_runtime.agents`.
+- `WORKER_LANGUAGE` is importable from `runtime.topology` and `runtime.agents`.
 
 ### The other topology (D8): what differs
 
@@ -3063,7 +3063,7 @@ changed; every golden is byte for byte what it was at the Phase 6 close.
 - **`register_browser_runtime_mcp_server`** and the local-server launcher it fell back to (`_start_local_server`,
   `stop_local_browser_runtime_server`, `restart_local_browser_runtime_server`, port probing, the stdout/stderr log
   handles, the http fallback and retry configs). The three public names leave `browser_move.__all__` and
-  `playwright_runtime.__all__`; `build_browser_runtime_mcp_config` stays as the client-side config of the runtime
+  `runtime.__all__`; `build_browser_runtime_mcp_config` stays as the client-side config of the runtime
   server, and the system test registers that config through the core calls the wrapper made
   (`Runner.resource_mgr.add_mcp_server`, `ability_manager.add`).
 - **`_build_dialogue_compressor_config`** (`agents.py`), without a caller since Phase 4, and its three imports.
@@ -3072,7 +3072,7 @@ changed; every golden is byte for byte what it was at the Phase 6 close.
   three had no caller outside their tests; no golden carried any of the three cards. The facade's `cancel_run`,
   `clear_cancel` and `runtime_health` stay for the server entry point.
 - **The Playwright MCP launch defaults** (`DEFAULT_PLAYWRIGHT_MCP_COMMAND`, `DEFAULT_PLAYWRIGHT_MCP_ARGS`) moved
-  from `utils/env.py` into `surfaces/browser/config.py`, their only reader, and left the `utils` exports.
+  from `runtime/utils/env.py` into `surfaces/browser/config.py`, their only reader, and left the `utils` exports.
 - **Driver names in wording**: the probe builders' docstrings ("the JavaScript", not the tool that once ran it),
   the upload-path and action-controller docstrings and the package comment ("the server entry point"), the demo
   entry's log lines ("Server command"), `browser_tools.py`'s own description.
@@ -3116,18 +3116,18 @@ changed; every golden is byte for byte what it was at the Phase 6 close.
 
 | File | Driver names | MCP names | Why it stays | Goes with |
 |---|---|---|---|---|
-| `playwright_runtime/runtime.py` | 0 (was 2) | 9 | `browser_take_screenshot` ×4 in the image-capability guidance (model-facing prompt bytes, en/cn); `browser_resume` ×2 (a public run-context key, not the tool); `browser_click` → `browser_navigate` ×2 (the primary-link rewrite needs the dialect's navigation tool by name); `"source": "browser_evaluate"` ×1 (evidence provenance the model reads) | Phase 9: the browser rail and its prompt text move to `surfaces/browser/` |
-| `playwright_runtime/agents.py` | 0 (was 1) | 11 | the worker prompt names the tools it governs; pinned byte for byte by the `runner` golden | Phase 9: prompt sections move to `surfaces/browser/` |
-| `playwright_runtime/browser_capabilities.py` | 2 | 69 | the capability catalog (tool names per capability; descriptions the main agent chooses from) | Phase 9: `surfaces/browser/capabilities.py` |
-| `playwright_runtime/browser_tools.py` | 3 (was 23) | 0 | `resolve_playwright_mcp_cwd` ×2 (the config facade's name) and `"/mcp"` (the runtime server's own streamable-http path); the module is about the runtime served over MCP, not the driver | Phase 8 (the facade's name) |
-| `playwright_runtime/service.py` | 1 | 0 | `PLAYWRIGHT_MCP_CDP_ENDPOINT` read from the given server config's env map, part of the lifecycle identity (S_20 names it) | Phase 9: the service split |
+| `runtime/runtime.py` | 0 (was 2) | 9 | `browser_take_screenshot` ×4 in the image-capability guidance (model-facing prompt bytes, en/cn); `browser_resume` ×2 (a public run-context key, not the tool); `browser_click` → `browser_navigate` ×2 (the primary-link rewrite needs the dialect's navigation tool by name); `"source": "browser_evaluate"` ×1 (evidence provenance the model reads) | Phase 9: the browser rail and its prompt text move to `surfaces/browser/` |
+| `runtime/agents.py` | 0 (was 1) | 11 | the worker prompt names the tools it governs; pinned byte for byte by the `runner` golden | Phase 9: prompt sections move to `surfaces/browser/` |
+| `runtime/browser_capabilities.py` | 2 | 69 | the capability catalog (tool names per capability; descriptions the main agent chooses from) | Phase 9: `surfaces/browser/capabilities.py` |
+| `runtime/browser_tools.py` | 3 (was 23) | 0 | `resolve_playwright_mcp_cwd` ×2 (the config facade's name) and `"/mcp"` (the runtime server's own streamable-http path); the module is about the runtime served over MCP, not the driver | Phase 8 (the facade's name) |
+| `runtime/service.py` | 1 | 0 | `PLAYWRIGHT_MCP_CDP_ENDPOINT` read from the given server config's env map, part of the lifecycle identity (S_20 names it) | Phase 9: the service split |
 | `surfaces/browser/helpers/batch_steps.py` | 1 | — | card text pinned by the golden tool list | stays |
 | import `runtime.py` → `surfaces.browser.helpers` | — | 4 | the facade's decision-policy hooks, page metadata and custom actions | Phase 9 |
 
 Counts, before → after this phase: driver names 15 entries / 52 hits → 4 entries / 7 hits; MCP tool names
 5 entries / 92 hits → 3 entries / 89 hits; core imports of concrete modules 5 entries / 8 → 1 entry / 4; browser
 words: `browser_tools.py` gone (10 → 0), nothing grew. Against the Phase 0 measurements (`runtime.py` 110 MCP
-tool-name literals, `controllers/action.py` 16, `agents.py` 9): `controllers/action.py` 0, `runtime.py` 9 (the
+tool-name literals, `runtime/controllers/action.py` 16, `agents.py` 9): `runtime/controllers/action.py` 0, `runtime.py` 9 (the
 four items above), `agents.py` 11 (the prompt), `browser_capabilities.py` 69 (the catalog); zero elsewhere outside
 `drivers/playwright_mcp/`.
 
@@ -3141,9 +3141,9 @@ four items above), `agents.py` 11 (the prompt), `browser_capabilities.py` 69 (th
 - Goldens: `git diff cb3e9065d --stat -- tests/unit_tests/harness/tools/browser_move/snapshots/golden/` is empty.
 - `ruff check` clean on every touched line; unchanged pre-existing findings: `E402`/`I001` in
   `playwright_runtime_mcp_server.py` and `main.py`, `ASYNC250` in `main.py`, 17 in `probes.py`, 2 in
-  `controllers/action.py`, `I001` in the system test.
+  `runtime/controllers/action.py`, `I001` in the system test.
 - `python -m …playwright_runtime_mcp_server --help` still fails on the script-style import
-  (`playwright_runtime.config` → `from ..contract import SurfaceSettings`), as since P5-T1; not touched.
+  (`runtime.config` → `from ..contract import SurfaceSettings`), as since P5-T1; not touched.
 
 ### Known leftovers
 
@@ -3151,8 +3151,109 @@ four items above), `agents.py` 11 (the prompt), `browser_capabilities.py` 69 (th
 2. No explicit once-per-process guard on the legacy `BROWSER_DRIVER` warning (decision 5).
 3. Noticed, not touched (outside the plan's list of old MCP helpers): `BrowserService.build_progress_context` has
    no caller; `record_tool_progress`, `record_worker_progress`, `get_progress_state` and `export_progress_state`
-   are called by tests only; `DEFAULT_BROWSER_UPLOAD_ROOT` (`utils/env.py`), `browser_agent_log_error`,
+   are called by tests only; `DEFAULT_BROWSER_UPLOAD_ROOT` (`runtime/utils/env.py`), `browser_agent_log_error`,
    `install_browser_subagent_status_logging_async`, `BrowserPageState.replace_ax_snapshot` and four
    `BrowserProfileStore` methods have no production caller.
 4. The browser-use goldens were not re-recorded (Phase 6 verification leftover 4 named Phase 7; the task did not).
 5. The server entry point's script-style imports (above).
+
+## Phase 8: renames
+
+`playwright_runtime/` is `runtime/`, with `controllers/` and `utils/` nested under it; `playwright_runtime_mcp_server.py`
+keeps its name as the entry point. One `git mv` commit carries every import with it, so each file's history follows
+(`git log --follow`); the old package name stays for one release as an alias package. No golden changed.
+
+### What moved
+
+- `playwright_runtime/*` → `runtime/*` (30 files), `controllers/*` → `runtime/controllers/*` (3), `utils/*` →
+  `runtime/utils/*` (4), `tests/system_tests/…/test_playwright_runtime.py` → `test_runtime.py`: 38 renames, 30 at
+  100 % similarity, the rest differ by their imports only.
+- Imports. Inside the package, the relative imports that crossed the old folder boundaries (`..controllers` and
+  `..utils` become `.controllers` and `.utils` in `config.py`, `runtime.py`, `service.py`; `..playwright_runtime.profiles`
+  becomes `..runtime.profiles` in `provisioning/managed_browser.py`; `...utils.env` and `...playwright_runtime.config`
+  become `...runtime.utils.env` and `...runtime.config` in the surface's `config.py` and `profile.py`;
+  `....utils.parsing` becomes `....runtime.utils.parsing` in the stdio client) and the absolute ones in the drivers, the
+  helpers, `status_logging.py` and the two `__init__.py`. The four harness callers (`rails/subagent/subagent_rail.py`,
+  `schema/decision_policy.py`, `subagents/browser_agent.py`, `tools/subagent/task_tool.py`). The unit tests,
+  `test_deep_agent_terminal_stream.py` and the two system tests. The server's script-style imports read
+  `runtime.config`, `runtime.controllers.action` and `runtime.runtime`, and the bare-name `sys.modules` aliases they
+  rely on are renamed with them (`runtime`, `runtime.controllers`, `runtime.controllers.action`).
+- Architecture tests: the allowlist keys follow the files, counts unchanged; `_scan.py` knows one core folder
+  (`runtime`), one config-module pattern and one assembly module; the env-read test's env module is
+  `runtime/utils/env.py`.
+- The 25 import blocks the rename left unsorted were re-sorted in the move commit; no other line changed.
+
+### The alias package
+
+`playwright_runtime/__init__.py` is the only file left under the old name. On import it walks `runtime/` with
+`pkgutil.walk_packages`, imports every module (36: the top-level ones, `controllers.*`, `utils.*`) and registers each
+under its old dotted name in `sys.modules`; it re-exports `runtime.__all__` through a module `__getattr__`; and it
+warns once per process with a `DeprecationWarning` (`stacklevel=2`, so the importer is named). The flag is read
+through `globals()`, so `importlib.reload` warns no second time. The runner-contract mirror
+(`snapshots/test_wv_runner_contract.py`) keeps the old import path on purpose: it stands in for the WebVoyager
+runner, the alias's real consumer, and is green unchanged.
+
+### Decisions
+
+1. **Eager aliasing, not a lazy proxy.** `import a.b.c` and `from a.b import c` resolve through `sys.modules`, and an
+   entry has to be the module object itself for `playwright_runtime.runtime.BrowserAgentRuntime is
+   runtime.runtime.BrowserAgentRuntime` to hold; a module can only be aliased once it exists. Importing all of
+   `runtime/` costs what the old consumers paid anyway (`runtime.py` pulls most of the package), and no module under
+   `runtime/` has import-time side effects (`main.py` only defines).
+2. **An explicit once-per-process flag**, unlike the legacy `BROWSER_DRIVER` warning (Phase 7 decision 5): the plan
+   asks for a `DeprecationWarning` once. The flag lives in the alias's own namespace and survives `importlib.reload`;
+   evicting the module from `sys.modules` and importing it again counts as a fresh process (the test does exactly that
+   to see the first warning).
+3. **The alias is outside the core scan.** `_scan.py` names `runtime` as the only core folder, so the alias is seen by
+   the env-read rule only (it has no reads); it spells neither browser words nor driver names.
+4. **The bare-name aliases are renamed, not dropped.** `sys.modules["runtime"]`, `["runtime.controllers"]` and
+   `["runtime.controllers.action"]` replace the old three. They exist for the server's script-style imports; the
+   rename carries them, it does not change them.
+5. **Removal.** The alias package goes one release after this one; its docstring says so. With it go
+   `test_playwright_runtime_shim.py` and the old path in the runner-contract mirror, once the WebVoyager runner imports
+   `runtime`.
+
+### Rejected options
+
+- **A `__path__` alias** (`__path__ = runtime.__path__`): the import system would load a second copy of each module
+  under the old name, not the same object.
+- **A `sys.meta_path` finder** handing back the existing module from `create_module`: `_init_module_attrs` rewrites
+  `__spec__` on the module it is given, so the real module would carry the alias's spec.
+- **Lazy module proxies in `sys.modules`**: not identity on the first access, and `importlib.import_module` returns
+  the proxy.
+- **Fixing the server's script-style import failure** (`from ..contract import` under a top-level package, failing
+  since P5-T1): not in the task; the imports are renamed as they were.
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q`: **2374 passed, 122 skipped** (2362 / 122 at the
+  Phase 7 close plus the twelve alias tests).
+- The eleven harness files outside `browser_move` that build the browser agent, `test_deep_agent_terminal_stream.py`
+  among them: **248 passed** (as at the Phase 7 close).
+- Both live sets, one run, `BROWSER_MOVE_LIVE_MCP=1` and `BROWSER_USE_SIDECAR_PYTHON` set (MCP conformance,
+  browser-use conformance, helpers, assembly, rails, topology): **119 passed in 355.75s (0:05:55)** (51 MCP conformance, 45 browser-use conformance, helpers, assembly, rails, the four topology cases; as at the Phase 7 close).
+- `uv run python -W always -c "import openjiuwen.harness.tools.browser_move.playwright_runtime.runtime"` prints one
+  `DeprecationWarning` from the alias. (A second one, `probes.py:265: invalid escape sequence`, is the pre-existing
+  compile-time warning, shown only when no bytecode is cached.)
+- Goldens: `git diff 322a4f4d6 --stat -- tests/unit_tests/harness/tools/browser_move/snapshots/golden/` is empty.
+- `git log --follow` on `runtime/runtime.py` (41 commits) and `runtime/utils/env.py` lists the history across the
+  move; the alias package is the only file under `playwright_runtime/`.
+- `ruff check --select I` on the moved files: seven pre-existing `I001` before, six after (the server's import block
+  happens to be sorted under the new names; `controllers/action.py`, `browser_working_context_processor.py`,
+  `browser_working_context_rail.py`, `semantic_state.py`, `site_profiles.py`, `status_logging.py` stay). The alias
+  and its test are clean. The other pre-existing findings in touched files are unchanged (`E402` in the server, 12
+  and 9 in the two MCP clients, 17 in `probes.py`, the test files).
+
+### Known leftovers
+
+1. `python -m …playwright_runtime_mcp_server` still fails on its script-style import, now `runtime.config` →
+   `from ..contract import SurfaceSettings`, as since P5-T1.
+2. The server's `browser_custom_action` description still reads "Register your own via
+   controllers.action.register_action" (model-facing text of the runtime server, in no golden; not an import).
+3. The server docstring's usage lines (`uv run python src/playwright_runtime_mcp_server.py`) predate the package
+   layout.
+4. `test_runtime.py` keeps its function name `test_playwright_runtime_end_to_end`.
+5. `sys.modules["runtime"]` is a more generic top-level name than `playwright_runtime` was: `setdefault` never
+   displaces a real top-level `runtime` module, but a later bare `import runtime` in the same process gets this
+   package.
+6. The alias package and its test: remove in the next release (decision 5).

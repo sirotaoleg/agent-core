@@ -6,7 +6,7 @@
 |---|---|
 | 类型 | feature |
 | 日期 | 2026-09-19 |
-| 范围 | `openjiuwen/harness/schema/decision_policy.py`（新增）、`openjiuwen/harness/subagents/browser_agent.py`（`create_browser_agent` 直通）、`openjiuwen/harness/tools/browser_move/playwright_runtime/runtime.py`（`probe_for_policy` / `activate_page`）、`tests/unit_tests/harness/tools/browser_move/` |
+| 范围 | `openjiuwen/harness/schema/decision_policy.py`（新增）、`openjiuwen/harness/subagents/browser_agent.py`（`create_browser_agent` 直通）、`openjiuwen/harness/tools/browser_move/runtime/runtime.py`（`probe_for_policy` / `activate_page`）、`tests/unit_tests/harness/tools/browser_move/` |
 | 测试基线 | 见「验证」 |
 | 关联 spec | [[S_18_subagents-and-lifecycle]]（不变量 6 增补） |
 | Refs | 首个仓库外实现：agtai/jiuwen-jev（结构化决策模型接入 `model` 槽位） |

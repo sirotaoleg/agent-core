@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/runtime.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/topology.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_state_context_processor.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_working_context.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/status_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `helpers/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/runtime/runtime.py`, `openjiuwen/harness/tools/browser_move/runtime/topology.py`, `openjiuwen/harness/tools/browser_move/runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/runtime/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/runtime/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/runtime/browser_state_context_processor.py`, `openjiuwen/harness/tools/browser_move/runtime/browser_working_context.py`, `openjiuwen/harness/tools/browser_move/runtime/status_logging.py`, `openjiuwen/harness/tools/browser_move/runtime/config.py`, `openjiuwen/harness/tools/browser_move/runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/runtime/service.py`, `openjiuwen/harness/tools/browser_move/runtime/utils/env.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/__init__.py` (alias), `openjiuwen/harness/tools/browser_move/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `helpers/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
 | Last revised | 2026-10-12 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -21,6 +21,11 @@ this revision the browser-use and Playwright MCP drivers implement the contract 
 live, the middleware wraps any driver and the composition root builds a started driver stack, and an agent over
 it, by name; the browser agent (`create_browser_agent`) runs on it: its runtime facade starts the driver
 session and builds the factory tools at the first invoke. The WebVoyager worker still runs the old path.
+
+The runtime package is `runtime/`, with `controllers/` and `utils/` under it; `playwright_runtime_mcp_server.py`
+keeps its name as the entry point. `playwright_runtime/` is an alias package for one release: importing it or any
+`playwright_runtime.<module>` yields the same module objects as `runtime.<module>`, it re-exports `runtime.__all__`
+and emits one `DeprecationWarning` per process.
 
 The browser surface profile (tool specs, renderer, capability catalog) is specified under "Browser surface
 profile"; the tool factory that turns it and the driver's native tools into model-facing tools under "Tool
@@ -353,7 +358,7 @@ finally produced, and the re-observe of `RetryOnStale` runs under the READ bound
   `FillForm` included); other values are copied unchanged. It is the one masking rule: `Tracing` traces its
   output and `CommandTool` stores it as `CommandRecord.action`.
 
-## Settings (`playwright_runtime/config.py`, `surfaces/browser/config.py`)
+## Settings (`runtime/config.py`, `surfaces/browser/config.py`)
 
 Environment variables are parsed into two frozen dataclasses, split by owner. Each has
 `from_env(environ: Mapping[str, str])`, which reads only the mapping it is given, and `from_process_env()`, which
@@ -448,20 +453,20 @@ Public facades; their signatures do not change:
 Only the two config modules touch the process environment: `from_process_env()` of each settings class,
 `browser_surface_settings()` without a mapping, `process_environ()` (a snapshot dict) and `load_repo_dotenv()`
 (loads the repo `.env`), all in
-`playwright_runtime/config.py` or `surfaces/browser/config.py`. Everything else receives a settings object or a
+`runtime/config.py` or `surfaces/browser/config.py`. Everything else receives a settings object or a
 value from one.
 
-- `utils/env.py` holds pure parse helpers shared by both config modules (`first_value`, `int_value`,
+- `runtime/utils/env.py` holds pure parse helpers shared by both config modules (`first_value`, `int_value`,
   `parse_command_args`, `is_truthy_env` / `is_falsy_env`, `normalize_provider`, `infer_provider_from_api_base`)
   and driver-free defaults; it has no environment access. The Playwright MCP launch defaults (`npx`,
   `-y @playwright/mcp@0.0.78`) live in `surfaces/browser/config.py`, their only reader.
 - Environments of child processes are pure functions of a mapping the caller passes:
   `runtime_server_child_env(environ)` (the runtime MCP server child: the whole mapping, API key and base copied to
   the provider names, blocked proxies removed) and `runtime_server_environ(environ)` (the server's tool timeout
-  defaults, 600 s) in `playwright_runtime/config.py`; the browser-use sidecar's minimal environment in
+  defaults, 600 s) in `runtime/config.py`; the browser-use sidecar's minimal environment in
   `drivers/browser_use/transport.py`, built from OS and `BROWSER_USE_*` names of the given mapping plus
   `BrowserSettings.upload_root`.
-- Entry points build settings once: `playwright_runtime/main.py` from `process_environ()` (its own inputs through
+- Entry points build settings once: `runtime/main.py` from `process_environ()` (its own inputs through
   `read_demo_inputs(environ)`), `playwright_runtime_mcp_server.py` from `runtime_server_environ(process_environ())`.
   They pass `core_settings` / `browser_settings` to `BrowserAgentRuntime`, which hands them to `BrowserService` and
   takes `upload_root` and `selector_cache_path` for its builtin actions and selector cache.
@@ -487,7 +492,7 @@ value from one.
   it routes to: agents are built by callers that never see the harness.
 - `ReActAgent` writes one line per tool call, `Executing tool: %s with args: %s` (name, redacted arguments), to
   `tool_call_logger(name)` when one is registered and to the core logger otherwise.
-- `configure_browser_agent_logging(settings: CoreSettings)` (`playwright_runtime/browser_logging.py`) applies
+- `configure_browser_agent_logging(settings: CoreSettings)` (`runtime/browser_logging.py`) applies
   `log_file`, `log_level`, `log_mirror_common` and `log_audit_raw` to the stdlib logger `openjiuwen.browser_agent`
   and registers browser tool names with the hook: `browser_` anywhere in the name or a `mcp_playwright` prefix,
   case-insensitive. It is called where a browser agent is built: `create_browser_agent` and
@@ -557,7 +562,7 @@ there is nothing to probe or to provision again.
 
 `ManagedBrowserDriver` stays a deprecated alias of the class.
 
-### The browser service (`playwright_runtime/service.py`)
+### The browser service (`runtime/service.py`)
 
 `BrowserService` takes the keywords `browser_settings: SurfaceSettings | None` (`None` means
 `browser_surface_settings()`, read once at construction), `core_settings: CoreSettings | None` and
@@ -591,7 +596,7 @@ An instance `provisioning` / `driver_mode` other than `remote`, `managed` or `ex
 exists). A live Chrome is adopted only by the provisioner, through the profile with the settings' name; the
 store's selected profile and the legacy store path are not consulted any more.
 
-## Composition root (`playwright_runtime/assembly.py`)
+## Composition root (`runtime/assembly.py`)
 
 `assemble_driver(core: CoreSettings, environ, *, instance=None, registries=None, settings=None) -> DriverAssembly`
 builds the driver stack from names only and returns it started. `registries` is `Registries(drivers, surfaces,
@@ -637,7 +642,7 @@ session").
 Every agent gets its session, tools and rails from this module and is built by exactly one builder: the main agent
 by `create_browser_agent` (`openjiuwen/harness/subagents/browser_agent.py`), which queues
 `BrowserRuntimeRail(runtime)` and `runtime.core_rails()` as rails at construction (before the first invoke; the
-tools arrive at the first invoke), the worker by `build_worker` (`playwright_runtime/agents.py`). The `Direct`
+tools arrive at the first invoke), the worker by `build_worker` (`runtime/agents.py`). The `Direct`
 topology builds the main agent through `create_browser_agent(..., runtime=<the facade>)`, `DelegatedWorker` the
 worker through `build_worker` ("Topology"). Nothing else creates an agent or opens a session.
 
@@ -674,7 +679,7 @@ failure in steps 2–4 closes the session (stop, release). The caller owns the s
 `close()` when the agent is done. Neither function names a driver, a surface or a provisioner.
 
 `build_worker(session, bundle, *, provider, api_key, api_base, model_name, max_steps, core, capabilities,
-tool_result_observer, screenshot_subdir, artifacts_subdir) -> ReActAgent` (`playwright_runtime/agents.py`, async)
+tool_result_observer, screenshot_subdir, artifacts_subdir) -> ReActAgent` (`runtime/agents.py`, async)
 is the worker's builder, called by `DelegatedWorker.start`: `build_agent_parts(session, bundle, capabilities=, image_support=False,
 language=WORKER_LANGUAGE, worker=True)`; `build_browser_worker_agent(provider=, api_key=, api_base=, model_name=,
 max_steps=, tools=parts.tools, screenshot_subdir=, artifacts_subdir=, tool_result_observer=, settings=core,
@@ -769,7 +774,7 @@ text produces no block.
 
 ### Capability catalog (`capabilities.py`)
 
-`CAPABILITY_TOOLS` maps every entry of `DEFAULT_BROWSER_CAPABILITIES` (`playwright_runtime/browser_capabilities.py`,
+`CAPABILITY_TOOLS` maps every entry of `DEFAULT_BROWSER_CAPABILITIES` (`runtime/browser_capabilities.py`,
 unchanged public API) to those of its tool names that a spec or the `browser_find` extra tool serves: `core` equals
 `CORE_BROWSER_TOOL_NAMES`; `vision` keeps the screenshot and the four `xy`/wheel tools; `extended_interaction` keeps
 `browser_close`, `browser_drag`, `browser_drop`; `pdf`, `devtools`, `network` keep one tool each; `advanced_code`,
@@ -798,7 +803,7 @@ rails count.
 
 | Helper | Commands | Contract |
 |---|---|---|
-| `ProbeInteractivesTool` (`browser_probe_interactives`) | `RunScript(code=<page function>, args=<params>)`, a second time if the value is not a JSON object | card equals the runtime helper's; `max_items` 1–30 (default 30); the probe page function of `playwright_runtime/probes.py` without its `async (page) => page.evaluate(...)` wrapper; result dict as the runtime helper's (`ok`, `error`, `url`, `title`, `generation_id`, `count`, `elements`, `page_state`, `diagnostics`, `audit`) |
+| `ProbeInteractivesTool` (`browser_probe_interactives`) | `RunScript(code=<page function>, args=<params>)`, a second time if the value is not a JSON object | card equals the runtime helper's; `max_items` 1–30 (default 30); the probe page function of `runtime/probes.py` without its `async (page) => page.evaluate(...)` wrapper; result dict as the runtime helper's (`ok`, `error`, `url`, `title`, `generation_id`, `count`, `elements`, `page_state`, `diagnostics`, `audit`) |
 | `ProbeCardsTool` (`browser_probe_cards`) | same | card equals the runtime helper's; `max_cards` 1–12 (default 12); selector cache records go in and out as before; primary links registered in `selector_primary_links` |
 | `BatchTool` (`browser_batch_interact`) | one command for a step that maps to one; otherwise page scripts and one command per step | see below |
 | `FindTool` (`browser_find`) | none, or one `Observe` when the page state has no fresh observation | see below |
@@ -876,7 +881,7 @@ lines are skipped off the match paths), snippets separated by `----`; `<query>` 
 The record: `command=Observe`, `effect=READ`, `ok=True`, `dispatched` = whether it observed, `value` = the answer
 text; a `DriverError` while observing is the same error text with `CommandRecord.failed`.
 
-## Runtime state and recovery (`playwright_runtime/`)
+## Runtime state and recovery (`runtime/`)
 
 Three pieces sit between the model-facing tools and the driver stack; the runtime facade (below) wires them into
 the main agent.
@@ -955,7 +960,7 @@ A reason, or a `ValueError` from parsing or decoding, denies the call:
 
 Tools without a decoder pass unchecked.
 
-## Tool factory (`playwright_runtime/tool_factory.py`)
+## Tool factory (`runtime/tool_factory.py`)
 
 `ToolFactory(profile, driver_info).build(capabilities, *, image_support, session, page_state, workspace=None,
 language="cn") -> AgentTools` turns the selected tool specs into one `CommandTool` each; `workspace` and `language`
@@ -1101,7 +1106,7 @@ message, it replaces the message with `explain_blocked_command(record, retry)`:
 the sentence given at construction. The tool
 output (`tool_result`) keeps the driver's own error. Other records and messages without a record are left alone.
 
-## The browser agent runtime (`playwright_runtime/runtime.py`)
+## The browser agent runtime (`runtime/runtime.py`)
 
 `BrowserAgentRuntime` is the facade `create_browser_agent` builds and the WebVoyager runner constructs the same way
 (`provider, api_key, api_base, model_name, mcp_cfg, guardrails, instance=None, allowed_tool_names=None, *,
@@ -1179,7 +1184,7 @@ tools and the extra tools there (`browser_find` takes its description from the d
 only after `start()`). The rails are queued at construction (`create_browser_agent`), so every rail, the
 repeated-call guard included, sees the first invoke's `before_invoke`.
 
-### Topology (`playwright_runtime/topology.py`)
+### Topology (`runtime/topology.py`)
 
 Who runs a task behind the facade's entry points. `Topology` is a `Protocol`: `name`, `async start(runtime)`,
 `async run(runtime, task, session_id, request_id, timeout_s) -> dict`, `drop()`. `topology_for(core)` maps
@@ -1431,7 +1436,7 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
 #### The driver (`drivers/playwright_mcp/driver.py`)
 
 - `create_playwright_mcp_driver(device, surface_settings)` builds the `@playwright/mcp` server config with
-  `playwright_runtime.config.playwright_mcp_config` (the same builder `build_playwright_mcp_config` uses), with
+  `runtime.config.playwright_mcp_config` (the same builder `build_playwright_mcp_config` uses), with
   `device.endpoint` as the CDP endpoint. A config in `surface_settings.mcp_server` keeps its `params` (command,
   args, cwd, timeout, env) and `client_type`; the factory's server name and id win, so the tool prefix never depends
   on the caller. In the given env `PLAYWRIGHT_MCP_DEVICE` is dropped (no device emulation over CDP) and, when the
@@ -1441,7 +1446,7 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   `streamable-http`) and calls it directly, never through `ToolMgr`; it reads `tools/list` once and keeps each
   mapped tool's description as `DriverInfo.tool_hints`, and every listed tool that has a decoder (`tools.py`) as
   `DriverInfo.native_tools[name] = NativeTool(description, schema, build)`: the description verbatim, the schema
-  as the client lists it (`inputSchema` through `utils/parsing.sanitize_json_schema`, so without `$schema`);
+  as the client lists it (`inputSchema` through `runtime/utils/parsing.sanitize_json_schema`, so without `$schema`);
   `browser_find` is listed the same way with `build=None` (no command backs it; the surface's `FindTool` takes its
   description and schema). Before
   `start()` `native_tools` is empty. `tool_name_prefix` is `mcp_model_tool_prefix(server_name)`
