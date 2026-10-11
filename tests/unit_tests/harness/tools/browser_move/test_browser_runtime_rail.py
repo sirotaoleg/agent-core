@@ -21,11 +21,14 @@ from openjiuwen.harness.tools.browser_move.contract import (
     ActionTimeout,
     Click,
     DriverError,
+    DriverInfo,
     DriverRef,
     Observe,
     RunScript,
     StaleRef,
 )
+from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
+from openjiuwen.harness.tools.browser_move.contract.testing.fake import DEFAULT_ACTIONS
 from openjiuwen.harness.tools.browser_move.playwright_runtime.action_policy import ActionPolicy
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
     CORE_BROWSER_TOOL_NAMES,
@@ -335,6 +338,19 @@ def test_before_tool_call_rewrites_card_primary_link_click_to_navigation() -> No
 
     assert ctx.inputs.tool_name == NAVIGATE
     assert ctx.inputs.tool_args == {"url": "https://example.com/item/1"}
+
+
+def test_before_tool_call_leaves_the_browser_dialects_ref_and_generation_alone() -> None:
+    driver = FakeDriver(info=DriverInfo(name="fake", surfaces=frozenset({"browser"}), actions=DEFAULT_ACTIONS))
+    rail = BrowserRuntimeRail(make_runtime(driver))
+    arguments = {"ref": "bnid:8", "generation_id": "g0"}
+    ctx = AgentCallbackContext(
+        agent=MagicMock(), inputs=ToolCallInputs(tool_name="browser_click", tool_args=dict(arguments))
+    )
+
+    _run(rail.before_tool_call(ctx))
+
+    assert (ctx.inputs.tool_name, ctx.inputs.tool_args) == ("browser_click", arguments)
 
 
 def test_before_tool_call_rejects_batch_screenshot_without_image_support() -> None:
