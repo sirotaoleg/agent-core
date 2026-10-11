@@ -6,15 +6,18 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from openjiuwen.core.common.logging.browser_context import is_browser_agent_log_context
 from openjiuwen.core.foundation.tool import McpServerConfig
+from openjiuwen.core.single_agent.rail.base import AgentCallbackContext
 from openjiuwen.harness.subagents import browser_agent as browser_agent_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime import runtime as runtime_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails, CoreSettings
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime, BrowserRuntimeRail
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     DEVICE,
     MCP_PREFIX,
@@ -178,6 +181,22 @@ def test_on_browser_use_the_facade_runs_the_main_agent_on_itself_and_maps_the_an
         "status": "completed",
         "progress": {"status": "completed", "completed_steps": ["read the heading"]},
     }
+
+
+def test_the_direct_agent_runs_outside_the_browser_log_context_like_the_worker() -> None:
+    direct = _runtime(CoreSettings(driver="browser_use"))
+    with patch.object(browser_agent_module, "create_browser_agent", return_value=MagicMock()):
+        run(direct.ensure_started())
+
+    async def invoked(runtime: BrowserAgentRuntime) -> tuple[bool, bool]:
+        agent = MagicMock(deep_config=SimpleNamespace(enable_read_image_multimodal=False), register_rail=AsyncMock())
+        ctx = AgentCallbackContext(agent=agent)
+        await BrowserRuntimeRail(runtime).before_invoke(ctx)
+        return is_browser_agent_log_context(), runtime_module._BROWSER_LOG_CONTEXT_TOKEN_KEY in ctx.extra
+
+    with _assembling():
+        assert (direct.dedicated_log, run(invoked(direct))) == (False, (False, False))
+        assert (_runtime().dedicated_log, run(invoked(_runtime()))) == (True, (True, True))
 
 
 def test_on_browser_use_a_failed_run_is_reported_in_the_answer() -> None:
