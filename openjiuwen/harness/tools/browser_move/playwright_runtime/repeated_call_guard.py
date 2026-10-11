@@ -97,10 +97,15 @@ class RepeatedCallGuardRail(AgentRail):
     """Warn on the 3rd identical or no-op call in a row; withhold tools for the next model call after the 5th."""
 
     async def before_invoke(self, ctx: AgentCallbackContext) -> None:
-        ctx.extra[_STATE_KEY] = _RepeatState()
+        self._start(ctx)
+
+    @staticmethod
+    def _start(ctx: AgentCallbackContext) -> _RepeatState:
+        state = ctx.extra[_STATE_KEY] = _RepeatState()
         builder = getattr(ctx.agent, "system_prompt_builder", None)
         if builder is not None:
             builder.remove_section(_FINISH_SECTION)
+        return state
 
     async def after_tool_call(self, ctx: AgentCallbackContext) -> None:
         state = ctx.extra.get(_STATE_KEY)
@@ -133,8 +138,11 @@ class RepeatedCallGuardRail(AgentRail):
             inputs.tool_msg = tool_msg.model_copy(update={"content": f"{tool_msg.content.rstrip()}\n{note}"})
 
     async def before_model_call(self, ctx: AgentCallbackContext) -> None:
+        # A deep agent fires before_invoke on an outer context; its inner agent's first model call starts the run.
         state = ctx.extra.get(_STATE_KEY)
-        if not isinstance(state, _RepeatState) or not state.withhold_tools:
+        if not isinstance(state, _RepeatState):
+            state = self._start(ctx)
+        if not state.withhold_tools:
             return
         count = max(state.repeat_count, state.noop_count)
         logger.info(
