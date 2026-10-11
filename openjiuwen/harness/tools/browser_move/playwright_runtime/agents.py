@@ -13,8 +13,6 @@ import anyio
 
 from openjiuwen.core.common.logging import logger
 from openjiuwen.core.common.utils.schema_utils import SchemaUtils
-from openjiuwen.core.context_engine import DialogueCompressorConfig
-from openjiuwen.core.foundation.llm import ModelClientConfig, ModelRequestConfig
 from openjiuwen.core.foundation.tool import Tool
 from openjiuwen.core.single_agent.agents.react_agent import ReActAgent, ReActAgentConfig
 from openjiuwen.core.single_agent.schema.agent_card import AgentCard
@@ -28,30 +26,6 @@ from .final_answer_recovery import FinalAnswerRecoveryRail
 
 WORKER_LANGUAGE = "en"
 ToolResultObserver = Callable[[str, Any], Awaitable[None]]
-
-
-def _build_dialogue_compressor_config(
-    provider: str,
-    api_key: str,
-    api_base: str,
-    model_name: str,
-) -> Optional[DialogueCompressorConfig]:
-    compressor_model = (model_name or "").strip()
-    if not compressor_model:
-        logger.warning("DialogueCompressor disabled: model_name is empty.")
-        return None
-    return DialogueCompressorConfig(
-        messages_to_keep=10,
-        keep_last_round=True,
-        model_client=ModelClientConfig(
-            client_provider=provider,
-            api_key=api_key,
-            api_base=api_base,
-            verify_ssl=False,
-        ),
-        # Use alias field `model` for compatibility with strict alias parsing.
-        model=ModelRequestConfig(model=compressor_model),
-    )
 
 
 def _format_tool_names(tool_call: Any) -> str:

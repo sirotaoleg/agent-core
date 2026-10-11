@@ -11,11 +11,8 @@ from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime_tools import (
-    BrowserCancelTool,
-    BrowserClearCancelTool,
     BrowserCustomActionTool,
     BrowserListActionsTool,
-    BrowserRuntimeHealthTool,
 )
 
 
@@ -39,28 +36,6 @@ def _make_runtime() -> BrowserAgentRuntime:
         mcp_cfg=mcp_cfg,
         guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
     )
-
-
-def test_cancel_tool_calls_cancel_run() -> None:
-    runtime = _make_runtime()
-    runtime.ensure_runtime_ready = AsyncMock()
-    runtime.cancel_run = AsyncMock(return_value={"ok": True, "session_id": "s1", "request_id": None, "error": None})
-    tool = BrowserCancelTool(runtime)
-    result = _run(tool.invoke({"session_id": "s1"}))
-    runtime.ensure_runtime_ready.assert_called_once()
-    runtime.cancel_run.assert_called_once_with(session_id="s1", request_id=None)
-    assert result.success is True
-
-
-def test_clear_cancel_tool_calls_runtime_clear_cancel() -> None:
-    runtime = _make_runtime()
-    runtime.ensure_runtime_ready = AsyncMock()
-    runtime.clear_cancel = AsyncMock(return_value={"ok": True, "session_id": "s1", "request_id": "r1", "error": None})
-    tool = BrowserClearCancelTool(runtime)
-    result = _run(tool.invoke({"session_id": "s1", "request_id": "r1"}))
-    runtime.ensure_runtime_ready.assert_called_once()
-    runtime.clear_cancel.assert_called_once_with(session_id="s1", request_id="r1")
-    assert result.success is True
 
 
 def test_list_actions_tool_uses_runtime_api() -> None:
@@ -94,22 +69,3 @@ def test_custom_action_tool_uses_runtime_api() -> None:
         params={"text": "hello"},
     )
     assert result.success is True
-
-
-def test_runtime_health_tool_uses_runtime_api() -> None:
-    runtime = _make_runtime()
-    runtime.runtime_health = AsyncMock(
-        return_value={
-            "ok": False,
-            "started": False,
-            "detail": "not started",
-            "provider": "openai",
-            "api_base": "https://example.invalid/v1",
-            "model_name": "test-model",
-        }
-    )
-    tool = BrowserRuntimeHealthTool(runtime)
-    result = _run(tool.invoke({}))
-    runtime.runtime_health.assert_called_once()
-    assert result.success is True
-    assert result.data["started"] is False

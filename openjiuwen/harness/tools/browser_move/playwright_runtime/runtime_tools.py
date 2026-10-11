@@ -22,33 +22,6 @@ _ctx_parent_request_id: contextvars.ContextVar[str] = contextvars.ContextVar(
     default="",
 )
 
-_CANCEL_DESC = (
-    "Cancel an in-progress browser task by session_id. "
-    "Optionally pass request_id to target a specific request within the session. "
-    "Returns JSON with ok/session_id/request_id/error."
-)
-_CANCEL_PARAMS: Dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "session_id": {"type": "string", "description": "Session ID of the task to cancel"},
-        "request_id": {"type": "string", "description": "Optional: specific request ID to cancel"},
-    },
-    "required": ["session_id"],
-}
-
-_CLEAR_CANCEL_DESC = (
-    "Clear the cancellation flag for a browser session or request. "
-    "Returns JSON with ok/session_id/request_id/error."
-)
-_CLEAR_CANCEL_PARAMS: Dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "session_id": {"type": "string", "description": "Session ID to clear"},
-        "request_id": {"type": "string", "description": "Optional: specific request ID to clear"},
-    },
-    "required": ["session_id"],
-}
-
 _CUSTOM_ACTION_DESC = (
     "Run a registered custom browser action by name. "
     "Use for deterministic helpers such as drag-and-drop or coordinate resolution "
@@ -81,83 +54,6 @@ _LIST_ACTIONS_PARAMS: Dict[str, Any] = {
     "properties": {},
     "required": [],
 }
-
-_RUNTIME_HEALTH_DESC = (
-    "Return runtime readiness, heartbeat status, and selected provider/model configuration."
-)
-_RUNTIME_HEALTH_PARAMS: Dict[str, Any] = {
-    "type": "object",
-    "properties": {},
-    "required": [],
-}
-
-class BrowserCancelTool(Tool):
-    """Cancel an in-progress browser task."""
-
-    def __init__(self, runtime: "BrowserAgentRuntime") -> None:
-        super().__init__(
-            ToolCard(
-                name="browser_cancel_run",
-                description=_CANCEL_DESC,
-                input_params=_CANCEL_PARAMS,
-            )
-        )
-        self._runtime = runtime
-
-    async def invoke(self, inputs: Dict[str, Any], **kwargs: Any) -> ToolOutput:
-        del kwargs
-        await self._runtime.ensure_runtime_ready()
-        session_id = inputs.get("session_id", "")
-        request_id = inputs.get("request_id") or None
-        try:
-            result = await self._runtime.cancel_run(session_id=session_id, request_id=request_id)
-            return ToolOutput(
-                success=bool(result.get("ok", True)),
-                data=result,
-                error=result.get("error"),
-            )
-        except Exception as exc:
-            return ToolOutput(success=False, error=str(exc))
-
-    async def stream(self, inputs: Dict[str, Any], **kwargs: Any) -> AsyncIterator[Any]:
-        del inputs, kwargs
-        if False:
-            yield None
-
-
-class BrowserClearCancelTool(Tool):
-    """Clear a cancellation flag for a browser task."""
-
-    def __init__(self, runtime: "BrowserAgentRuntime") -> None:
-        super().__init__(
-            ToolCard(
-                name="browser_clear_cancel",
-                description=_CLEAR_CANCEL_DESC,
-                input_params=_CLEAR_CANCEL_PARAMS,
-            )
-        )
-        self._runtime = runtime
-
-    async def invoke(self, inputs: Dict[str, Any], **kwargs: Any) -> ToolOutput:
-        del kwargs
-        await self._runtime.ensure_runtime_ready()
-        session_id = inputs.get("session_id", "")
-        request_id = inputs.get("request_id") or None
-        try:
-            result = await self._runtime.clear_cancel(session_id=session_id, request_id=request_id)
-            return ToolOutput(
-                success=bool(result.get("ok", True)),
-                data=result,
-                error=result.get("error"),
-            )
-        except Exception as exc:
-            return ToolOutput(success=False, error=str(exc))
-
-    async def stream(self, inputs: Dict[str, Any], **kwargs: Any) -> AsyncIterator[Any]:
-        del inputs, kwargs
-        if False:
-            yield None
-
 
 class BrowserCustomActionTool(Tool):
     """Run a registered custom browser action."""
@@ -216,33 +112,6 @@ class BrowserListActionsTool(Tool):
         del inputs, kwargs
         try:
             data = await self._runtime.list_actions()
-            return ToolOutput(success=True, data=data)
-        except Exception as exc:
-            return ToolOutput(success=False, error=str(exc))
-
-    async def stream(self, inputs: Dict[str, Any], **kwargs: Any) -> AsyncIterator[Any]:
-        del inputs, kwargs
-        if False:
-            yield None
-
-
-class BrowserRuntimeHealthTool(Tool):
-    """Return runtime readiness and heartbeat metadata."""
-
-    def __init__(self, runtime: "BrowserAgentRuntime") -> None:
-        super().__init__(
-            ToolCard(
-                name="browser_runtime_health",
-                description=_RUNTIME_HEALTH_DESC,
-                input_params=_RUNTIME_HEALTH_PARAMS,
-            )
-        )
-        self._runtime = runtime
-
-    async def invoke(self, inputs: Dict[str, Any], **kwargs: Any) -> ToolOutput:
-        del inputs, kwargs
-        try:
-            data = await self._runtime.runtime_health()
             return ToolOutput(success=True, data=data)
         except Exception as exc:
             return ToolOutput(success=False, error=str(exc))
