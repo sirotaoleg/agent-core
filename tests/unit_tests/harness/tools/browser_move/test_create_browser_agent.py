@@ -24,19 +24,19 @@ from openjiuwen.harness.subagents.browser_agent import (
     build_browser_agent_config,
     create_browser_agent,
 )
+from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
+    CORE_BROWSER_TOOL_NAMES,
+)
+from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_working_context_rail import (
+    BrowserWorkingContextRail,
+)
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserRunGuardrails,
     RuntimeSettings,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
-    CORE_BROWSER_TOOL_NAMES,
-)
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import (
     BrowserAgentRuntime,
     BrowserRuntimeRail,
-)
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_working_context_rail import (
-    BrowserWorkingContextRail,
 )
 
 
@@ -553,6 +553,21 @@ def test_decision_policy_model_is_used_as_is_and_bound_to_the_runtime() -> None:
     assert policy.bound is runtime_cls.return_value
     assert calls[0]["enable_model_anomaly_detection_rail"] is False
     assert not any(isinstance(rail, ContextProcessorRail) for rail in calls[0]["rails"])
+
+
+def test_the_core_rails_come_from_the_runtime_at_construction() -> None:
+    calls, fake = _capture_create_deep_agent()
+    runtime = MagicMock(spec=BrowserAgentRuntime)
+    core = (object(), object(), object())
+    runtime.core_rails.return_value = core
+    ctx, _ = _patch_all(fake, runtime_mock=runtime)
+    with ctx:
+        create_browser_agent(_fake_model(), settings=_fake_settings())
+
+    rails = calls[0]["rails"]
+    assert [rail for rail in rails if rail in core] == list(core)
+    assert rails.index(core[0]) > rails.index(next(r for r in rails if isinstance(r, BrowserRuntimeRail)))
+    runtime.core_rails.assert_called_once_with()
 
 
 def test_a_given_runtime_is_used_instead_of_a_new_facade() -> None:

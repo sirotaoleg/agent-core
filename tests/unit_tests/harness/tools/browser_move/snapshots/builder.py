@@ -22,6 +22,14 @@ REGENERATE_COMMAND = "uv run python -m tests.unit_tests.harness.tools.browser_mo
 DRIVER = "playwright_mcp"
 BROWSER_USE = "browser_use"
 RUNNER_VIEW = "runner"
+RUNNER_DIRECT_VIEW = "runner_direct"
+RUNNER_WORKER_VIEW = "runner_worker"
+# The runner mirror in each topology: the view's BROWSER_TOPOLOGY (None: the driver's default) and the agent's role.
+RUNNER_VIEWS: dict[str, tuple[str | None, str]] = {
+    RUNNER_VIEW: (None, "worker"),
+    RUNNER_DIRECT_VIEW: ("direct", "main"),
+    RUNNER_WORKER_VIEW: ("delegated_worker", "worker"),
+}
 
 # Baseline model config. Values are only carried in configs; nothing is sent.
 MODEL_NAME = "anthropic/claude-sonnet-5.5"
@@ -394,12 +402,14 @@ def render(doc: Any) -> str:
     return json.dumps(doc, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
 
 
-def list_views() -> list[str]:
+def list_views(driver: str = DRIVER) -> list[str]:
+    """The capability views, the runner in the driver's default topology and the runner in the other one."""
     from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
         DEFAULT_BROWSER_CAPABILITIES,
     )
 
-    return [c.name for c in DEFAULT_BROWSER_CAPABILITIES] + [RUNNER_VIEW]
+    other = RUNNER_DIRECT_VIEW if driver == DRIVER else RUNNER_WORKER_VIEW
+    return [c.name for c in DEFAULT_BROWSER_CAPABILITIES] + [RUNNER_VIEW, other]
 
 
 async def _capability_view(view: str, captured: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -429,7 +439,7 @@ async def _capability_view(view: str, captured: list[dict[str, Any]]) -> list[di
     return [agent_entry("main", captured[0])]
 
 
-async def _runner_view(captured: list[dict[str, Any]], notes: dict[str, Any]) -> list[dict[str, Any]]:
+async def _runner_view(captured: list[dict[str, Any]], notes: dict[str, Any], role: str) -> list[dict[str, Any]]:
     # Same imports, constructor arguments, helper removal and call as run_one_task.
     from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
         CORE_BROWSER_TOOL_NAMES,
@@ -461,14 +471,14 @@ async def _runner_view(captured: list[dict[str, Any]], notes: dict[str, Any]) ->
         await runtime.shutdown()
     if not captured:
         raise RuntimeError(f"no model call captured for the runner view; answer={notes.get('answer')!r}")
-    return [agent_entry("worker", captured[0])]
+    return [agent_entry(role, captured[0])]
 
 
 async def _build_view_async(view: str, captured: list[dict[str, Any]], notes: dict[str, Any]) -> list[dict[str, Any]]:
     await reset_process_state()
     try:
-        if view == RUNNER_VIEW:
-            return await _runner_view(captured, notes)
+        if view in RUNNER_VIEWS:
+            return await _runner_view(captured, notes, RUNNER_VIEWS[view][1])
         return await _capability_view(view, captured)
     finally:
         await reset_process_state()
@@ -480,7 +490,10 @@ def build_view(view: str, workdir: Path, driver: str = DRIVER) -> tuple[dict[str
     captured: list[dict[str, Any]] = []
     mcp_calls: list[str] = []
     notes: dict[str, Any] = {}
-    extra_env = {"BROWSER_DRIVER": driver} if driver != DRIVER else None
+    extra_env = {"BROWSER_DRIVER": driver} if driver != DRIVER else {}
+    topology = RUNNER_VIEWS.get(view, (None, ""))[0]
+    if topology:
+        extra_env["BROWSER_TOPOLOGY"] = topology
     with isolated_env(workdir, extra_env), io_stubs(captured, mcp_calls, driver=driver), fresh_checkpointer():
         agents = asyncio.run(_build_view_async(view, captured, notes))
     notes.update({"model_calls": len(captured), "mcp_calls": sorted(set(mcp_calls)), "captured": captured})

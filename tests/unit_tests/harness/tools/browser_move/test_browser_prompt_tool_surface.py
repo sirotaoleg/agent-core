@@ -9,22 +9,21 @@ import hashlib
 import json
 import re
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from openjiuwen.core.foundation.llm import AssistantMessage
-from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_system_prompt
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
     CORE_BROWSER_TOOL_NAMES,
 )
+from openjiuwen.harness.tools.browser_move.playwright_runtime.config import CoreSettings
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime_tools import (
     BrowserCustomActionTool,
     BrowserListActionsTool,
 )
-from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import MCP_PREFIX, fake_assembly, mcp_fake_driver
-from tests.unit_tests.harness.tools.browser_move.test_service import _make_service
+from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import MCP_PREFIX, make_runtime
 
 # The runtime tools a caller may still add to the worker by card.
 RUNTIME_TOOLS = {
@@ -68,9 +67,9 @@ class _RecordingLLM:
 
 def _run_worker_request(helpers_added: tuple[str, ...], helpers_removed: tuple[str, ...]) -> tuple[str, set[str]]:
     """Build the worker as the service does, run one task, return (system prompt, tool names) of the request."""
-    service = _make_service()
-    with patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))):
-        asyncio.run(service.ensure_started())
+    runtime = make_runtime(image_support=None, core_settings=CoreSettings(driver="playwright_mcp"))
+    asyncio.run(runtime.ensure_started())
+    service = runtime.service
     worker = service.browser_agent
     llm = _RecordingLLM()
     worker.set_llm(llm)
@@ -79,12 +78,17 @@ def _run_worker_request(helpers_added: tuple[str, ...], helpers_removed: tuple[s
             worker.ability_manager.remove_ability(name)
     for name in helpers_added:
         if name in RUNTIME_TOOLS:
-            worker.ability_manager.add(RUNTIME_TOOLS[name](MagicMock(), language="en").card)
+            worker.ability_manager.add(RUNTIME_TOOLS[name](MagicMock()).card)
     # Mirrors the WebVoyager harness, which strips helpers after ensure_started().
     for name in helpers_removed:
         worker.ability_manager.remove_ability(name)
 
-    result = asyncio.run(service.run_task_once(task="Open example.com", session_id="s-1", request_id="r-1"))
+    async def current() -> Any:
+        return service.browser_agent
+
+    result = asyncio.run(
+        service.run_task_once(task="Open example.com", session_id="s-1", request_id="r-1", worker=current)
+    )
 
     assert result["ok"] is True
     assert llm.requests, "the worker never called the model"

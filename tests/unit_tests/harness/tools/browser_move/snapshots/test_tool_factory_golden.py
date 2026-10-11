@@ -26,7 +26,7 @@ from tests.unit_tests.harness.tools.browser_move.snapshots import builder
 
 MCP_PREFIX = "mcp_playwright-official_"
 DEVICE = ProvisionedDevice(kind="chrome", endpoint="http://127.0.0.1:9222", extras={})
-CAPABILITY_VIEWS = [view for view in builder.list_views() if view != builder.RUNNER_VIEW]
+CAPABILITY_VIEWS = [view for view in builder.list_views() if view not in builder.RUNNER_VIEWS]
 
 # Extra tools the worker removes after the build.
 PROBES = frozenset({"browser_probe_interactives", "browser_probe_cards"})

@@ -150,7 +150,7 @@ def _snapshot_runtime(driver) -> tuple[BrowserAgentRuntime, dict, _FakeSession]:
 def test_raw_snapshot_evidence_uses_live_page_generation():
     driver = mcp_fake_driver(observations=[observation(text=WEATHER_TEXT, url=WEATHER_URL)])
     runtime, state, session = _snapshot_runtime(driver)
-    tool = next(t for t in runtime.agent_parts(image_support=False).tools if t.card.name == SNAPSHOT)
+    tool = next(t for t in runtime.agent_parts(image_support=False, language="en").tools if t.card.name == SNAPSHOT)
     output = _run(tool.invoke({}))
     ctx = _tool_ctx(runtime, SNAPSHOT, {}, output, session=session)
     _run(BrowserRuntimeRail(runtime).after_tool_call(ctx))
@@ -164,7 +164,7 @@ def test_string_error_is_not_promoted_to_page_evidence_when_wrapped():
     driver = mcp_fake_driver()
     driver.fail_next(ActionTimeout("TimeoutError: waiting for weather panel", dispatched=True))
     runtime, state, session = _snapshot_runtime(driver)
-    tool = next(t for t in runtime.agent_parts(image_support=False).tools if t.card.name == SNAPSHOT)
+    tool = next(t for t in runtime.agent_parts(image_support=False, language="en").tools if t.card.name == SNAPSHOT)
     output = _run(tool.invoke({}))
     assert output.error.startswith("### Error")
     ctx = _tool_ctx(runtime, SNAPSHOT, {}, output, session=session)

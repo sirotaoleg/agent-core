@@ -19,7 +19,7 @@ from openjiuwen.harness.tools.browser_move.contract import Observation, Observe
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_agent
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
+from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails, CoreSettings
 from openjiuwen.harness.tools.browser_move.playwright_runtime.final_answer_recovery import (
     RECOVERY_MESSAGE,
     STEP_LIMIT_SENTENCE,
@@ -28,7 +28,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.final_answer_recov
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
 
 from .command_tools import HOME, command_tools
-from .runtime_fixtures import fake_assembly, mcp_fake_driver
+from .runtime_fixtures import fake_assembly, make_runtime
 
 ANSWER = {
     "ok": True,
@@ -120,12 +120,22 @@ def _service(
     return service, llm, driver
 
 
+def _worker_of(service: BrowserService) -> Callable[[], Awaitable[Any]]:
+    async def worker() -> Any:
+        return service.browser_agent
+
+    return worker
+
+
 def _run(service: BrowserService, rail: bool = True, request_id: str = "r-1") -> dict[str, Any]:
     async def scenario() -> dict[str, Any]:
         if rail:
             await service.browser_agent.register_rail(FinalAnswerRecoveryRail())
         return await service.run_task_once(
-            task="Find a vegetarian lasagna", session_id="s-records-1", request_id=request_id
+            task="Find a vegetarian lasagna",
+            session_id="s-records-1",
+            request_id=request_id,
+            worker=_worker_of(service),
         )
 
     return asyncio.run(scenario())
@@ -249,19 +259,15 @@ def test_run_task_response_keeps_the_recovery_reason(recovered_from: str | None)
     service, _, _ = _service(_replies())
     parsed = {**ANSWER, "recovered_from": recovered_from} if recovered_from else dict(ANSWER)
 
-    async def fake_ensure_started() -> None:
-        return None
-
-    async def fake_run_task_once(*, task: str, session_id: str, request_id: str) -> dict[str, Any]:
-        del task, session_id, request_id
+    async def fake_run_task_once(*, task: str, session_id: str, request_id: str, worker: Any) -> dict[str, Any]:
+        del task, session_id, request_id, worker
         return parsed
 
-    with (
-        patch.object(service, "ensure_started", fake_ensure_started),
-        patch.object(service, "run_task_once", fake_run_task_once),
-    ):
+    with patch.object(service, "run_task_once", fake_run_task_once):
         response = asyncio.run(
-            service.run_task(task="Find a vegetarian lasagna", session_id="s-records-1", request_id="r-1")
+            service.run_task(
+                task="Find a vegetarian lasagna", session_id="s-records-1", request_id="r-1", worker=_worker_of(service)
+            )
         )
 
     assert response["ok"] is True
@@ -319,9 +325,10 @@ class TestIsolation:
             events["a_recovering"] = asyncio.Event()
             events["b_second_request"] = asyncio.Event()
             await service.browser_agent.register_rail(FinalAnswerRecoveryRail())
+            worker = _worker_of(service)
             return await asyncio.gather(
-                service.run_task_once(task="Task A", session_id="s-records-a", request_id="run-a"),
-                service.run_task_once(task="Task B", session_id="s-records-b", request_id="run-b"),
+                service.run_task_once(task="Task A", session_id="s-records-a", request_id="run-a", worker=worker),
+                service.run_task_once(task="Task B", session_id="s-records-b", request_id="run-b", worker=worker),
             )
 
         service, llm, _ = _service(respond, driver=_SnapshotDriver(before_tool_result))
@@ -339,22 +346,12 @@ class TestIsolation:
 
 @pytest.mark.parametrize("other_rails", [0, 2])
 def test_service_registers_the_recovery_rail(other_rails: int) -> None:
-    service = BrowserService(
-        provider="openai",
-        api_key="mock-api-key",
-        api_base="https://example.invalid/v1",
-        model_name="mock-model",
-        mcp_cfg=_mcp_cfg(),
-        guardrails=BrowserRunGuardrails(max_steps=2, max_failures=1, timeout_s=30),
-    )
+    runtime = make_runtime(image_support=None, core_settings=CoreSettings(driver="playwright_mcp"))
     worker = MagicMock()
     worker.register_rail = AsyncMock()
     module = "openjiuwen.harness.tools.browser_move.playwright_runtime.agents"
-    with (
-        patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))),
-        patch(f"{module}.build_browser_worker_agent", return_value=worker),
-    ):
-        asyncio.run(service.ensure_started())
+    with patch(f"{module}.build_browser_worker_agent", return_value=worker):
+        asyncio.run(runtime.ensure_started())
         for _ in range(other_rails):
             asyncio.run(worker.register_rail(object()))
 

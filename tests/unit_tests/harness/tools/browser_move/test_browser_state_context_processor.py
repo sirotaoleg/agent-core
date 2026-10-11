@@ -689,7 +689,8 @@ async def test_runtime_reuses_the_free_observation_of_the_last_command() -> None
         ]
     )
     runtime = make_runtime(driver)
-    tool = next(t for t in runtime.agent_parts(image_support=False).tools if t.card.name.endswith("browser_click"))
+    tools = runtime.agent_parts(image_support=False, language="en").tools
+    tool = next(t for t in tools if t.card.name.endswith("browser_click"))
     await tool.invoke({"target": "e5"})
 
     state = await runtime.capture_browser_state(action_group_id="click")

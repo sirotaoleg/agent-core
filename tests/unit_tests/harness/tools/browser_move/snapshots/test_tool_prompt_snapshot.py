@@ -18,7 +18,8 @@ from tests.unit_tests.harness.tools.browser_move.snapshots.test_tool_factory_gol
 )
 
 VIEWS = builder.list_views()
-CAPABILITY_VIEWS = [view for view in VIEWS if view != builder.RUNNER_VIEW]
+CAPABILITY_VIEWS = [view for view in VIEWS if view not in builder.RUNNER_VIEWS]
+RECORDED_BROWSER_USE_VIEWS = CAPABILITY_VIEWS + [builder.RUNNER_VIEW]
 
 
 @pytest.fixture(scope="module")
@@ -57,6 +58,9 @@ def test_golden_files_cover_exactly_the_views() -> None:
     assert on_disk == sorted(VIEWS), (
         f"golden views {on_disk} != built views {sorted(VIEWS)}; run {builder.REGENERATE_COMMAND}"
     )
+    browser_use_views = builder.list_views(builder.BROWSER_USE)
+    on_disk = sorted(p.stem for p in builder.BROWSER_USE_GOLDEN_DIR.glob("*.json"))
+    assert on_disk == sorted(browser_use_views)
 
 
 @pytest.mark.parametrize("view", VIEWS)
@@ -77,7 +81,7 @@ def test_playwright_mcp_snapshot_is_deterministic(
     assert builder.render(again) == built_views[view]
 
 
-@pytest.mark.parametrize("view", VIEWS)
+@pytest.mark.parametrize("view", RECORDED_BROWSER_USE_VIEWS)
 def test_browser_use_golden_is_well_formed(view: str) -> None:
     path = builder.BROWSER_USE_GOLDEN_DIR / f"{view}.json"
     text = path.read_text(encoding="utf-8")
@@ -122,3 +126,13 @@ def test_browser_use_prompt_equals_the_playwright_mcp_prompt(
     built = built_browser_use_views[view]["agents"][0]
     assert built["role"] == "main"
     assert built["system_prompt"] == _golden_agent(builder.GOLDEN_DIR, view)["system_prompt"]
+
+
+def test_browser_use_runner_worker_matches_golden(tmp_path_factory: pytest.TempPathFactory) -> None:
+    view = builder.RUNNER_WORKER_VIEW
+    golden = builder.BROWSER_USE_GOLDEN_DIR / f"{view}.json"
+    assert golden.exists(), f"missing {golden.name}; run {builder.REGENERATE_COMMAND}"
+    expected = golden.read_text(encoding="utf-8")
+    actual = builder.render(builder.build_view(view, tmp_path_factory.mktemp(view), driver=builder.BROWSER_USE)[0])
+    if actual != expected:
+        pytest.fail(_mismatch_message(f"browser_use/{view}", expected, actual), pytrace=False)

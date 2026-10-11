@@ -1,5 +1,7 @@
 # coding: utf-8
-"""Rewrite the Playwright MCP golden files from the current code; run by hand, never automatically.
+"""Rewrite the Playwright MCP golden files, and the browser-use runner_worker view, from the current code; by hand only.
+
+The other browser-use goldens were recorded from the reference commit and are never rewritten here.
 
 ``--results`` rewrites the tool-result goldens instead and prints each one's diff against the recorded model text.
 """
@@ -10,7 +12,15 @@ import sys
 import tempfile
 from pathlib import Path
 
-from tests.unit_tests.harness.tools.browser_move.snapshots.builder import GOLDEN_DIR, build_all
+from tests.unit_tests.harness.tools.browser_move.snapshots.builder import (
+    BROWSER_USE,
+    BROWSER_USE_GOLDEN_DIR,
+    GOLDEN_DIR,
+    RUNNER_WORKER_VIEW,
+    build_all,
+    build_view,
+    render,
+)
 from tests.unit_tests.harness.tools.browser_move.snapshots.results import (
     RESULTS_DIR,
     list_cases,
@@ -22,6 +32,7 @@ from tests.unit_tests.harness.tools.browser_move.snapshots.results import (
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="browser-snapshot-", ignore_cleanup_errors=True) as tmp:
         texts = build_all(Path(tmp))
+        worker_text = render(build_view(RUNNER_WORKER_VIEW, Path(tmp) / BROWSER_USE, driver=BROWSER_USE)[0])
     GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
     for stale in sorted(set(p.stem for p in GOLDEN_DIR.glob("*.json")) - set(texts)):
         (GOLDEN_DIR / f"{stale}.json").unlink()
@@ -31,6 +42,10 @@ def main() -> int:
         changed = not path.exists() or path.read_text(encoding="utf-8") != text
         path.write_text(text, encoding="utf-8", newline="\n")
         print(f"{'updated' if changed else 'unchanged'} {view}.json")
+    path = BROWSER_USE_GOLDEN_DIR / f"{RUNNER_WORKER_VIEW}.json"
+    changed = not path.exists() or path.read_text(encoding="utf-8") != worker_text
+    path.write_text(worker_text, encoding="utf-8", newline="\n")
+    print(f"{'updated' if changed else 'unchanged'} {BROWSER_USE}/{RUNNER_WORKER_VIEW}.json")
     return 0
 
 

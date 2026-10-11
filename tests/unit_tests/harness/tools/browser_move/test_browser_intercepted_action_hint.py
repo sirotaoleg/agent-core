@@ -13,7 +13,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from openjiuwen.core.foundation.llm import AssistantMessage, ToolCall, ToolMessage
-from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.foundation.tool.schema import ToolOutput
 from openjiuwen.core.runner import Runner
 from openjiuwen.core.single_agent.rail.base import ToolCallInputs
@@ -25,19 +24,17 @@ from openjiuwen.harness.tools.browser_move.contract import (
     ElementNotFound,
 )
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
-from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_agent
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
+from openjiuwen.harness.tools.browser_move.playwright_runtime.config import CoreSettings
 from openjiuwen.harness.tools.browser_move.playwright_runtime.intercepted_action import (
     InterceptedActionHintRail,
     explain_blocked_command,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
 from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import command_record
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import MESSAGES
 
 from .command_tools import command_tools, fake_driver, result, tool_message
-from .runtime_fixtures import fake_assembly, mcp_fake_driver
+from .runtime_fixtures import make_runtime
 
 RETRY = MESSAGES["retry"]
 
@@ -239,22 +236,12 @@ def test_worker_model_sees_compact_error_and_observer_sees_raw_result() -> None:
 
 
 def test_service_registers_the_rail_on_the_worker() -> None:
-    service = BrowserService(
-        provider="openai",
-        api_key="mock-api-key",
-        api_base="https://example.invalid/v1",
-        model_name="mock-model",
-        mcp_cfg=McpServerConfig(server_id="pw-test", server_name="pw-test", server_path="stdio://pw"),
-        guardrails=BrowserRunGuardrails(max_steps=2, max_failures=1, timeout_s=30),
-    )
+    runtime = make_runtime(image_support=None, core_settings=CoreSettings(driver="playwright_mcp"))
     worker = MagicMock()
     worker.register_rail = AsyncMock()
     module = "openjiuwen.harness.tools.browser_move.playwright_runtime.agents"
-    with (
-        patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))),
-        patch(f"{module}.build_browser_worker_agent", return_value=worker),
-    ):
-        asyncio.run(service.ensure_started())
+    with patch(f"{module}.build_browser_worker_agent", return_value=worker):
+        asyncio.run(runtime.ensure_started())
 
     rails = [call.args[0] for call in worker.register_rail.await_args_list]
     assert any(isinstance(rail, InterceptedActionHintRail) for rail in rails)

@@ -1,31 +1,21 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""``BrowserAgentRuntime`` as the WebVoyager runner's facade: one session for the main agent and the worker."""
+"""``BrowserAgentRuntime`` as the WebVoyager runner's facade: one session, live builders, parts and core rails."""
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
-from openjiuwen.core.common.logging.browser_context import is_browser_agent_log_context
-from openjiuwen.core.foundation.llm.model_clients.openai_model_client import OpenAIModelClient
 from openjiuwen.core.foundation.tool import McpServerConfig
-from openjiuwen.core.single_agent.rail.base import AgentCallbackContext
-from openjiuwen.harness import deep_agent as deep_agent_module
-from openjiuwen.harness.rails.context_engineer import ContextProcessorRail
-from openjiuwen.harness.subagents import browser_agent as browser_agent_module
-from openjiuwen.harness.subagents.browser_agent import DEFAULT_BROWSER_AGENT_SYSTEM_PROMPT
-from openjiuwen.harness.tools.browser_move.contract import ConnectionLost
 from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime import runtime as runtime_module
-from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import WORKER_LANGUAGE
+from openjiuwen.harness.tools.browser_move.playwright_runtime.action_policy import ActionPolicy
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails, CoreSettings
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime, BrowserRuntimeRail
+from openjiuwen.harness.tools.browser_move.playwright_runtime.intercepted_action import InterceptedActionHintRail
+from openjiuwen.harness.tools.browser_move.playwright_runtime.repeated_call_guard import RepeatedCallGuardRail
+from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     DEVICE,
     MCP_PREFIX,
@@ -69,7 +59,7 @@ def test_the_main_agent_and_the_worker_share_the_services_session() -> None:
     with _assembling() as assemble:
         run(runtime.ensure_started())
         run(runtime.ensure_runtime_ready())
-        parts = runtime.agent_parts(image_support=False)
+        parts = runtime.agent_parts(image_support=False, language="en")
 
     assert assemble.await_count == 1
     assert runtime.session is runtime.service.session is not None
@@ -121,7 +111,7 @@ def test_capture_reuses_the_models_full_snapshot_but_never_a_scoped_one() -> Non
         run(runtime.ensure_runtime_ready())
         snapshot = next(
             tool
-            for tool in runtime.agent_parts(image_support=False).tools
+            for tool in runtime.agent_parts(image_support=False, language="en").tools
             if tool.card.name == f"{MCP_PREFIX}browser_snapshot"
         )
         run(snapshot.invoke({}))
@@ -149,137 +139,54 @@ def test_shutdown_closes_the_session_and_the_model_clients() -> None:
     assert assemble.await_count == 1
 
 
-@pytest.mark.parametrize(
-    ("driver", "topology", "direct"),
-    [
-        ("playwright_mcp", "", False),
-        ("browser_use", "", True),
-        ("playwright_mcp", "direct", True),
-        ("browser_use", "delegated_worker", False),
-    ],
-)
-def test_ensure_started_takes_the_topology_setting_and_falls_back_to_the_drivers_default(
-    driver: str, topology: str, direct: bool
-) -> None:
-    runtime = _runtime(CoreSettings(driver=driver, topology=topology))
-    with (
-        patch.object(browser_agent_module, "create_browser_agent", return_value=MagicMock()) as create,
-        _assembling() as assemble,
-    ):
-        run(runtime.ensure_started())
+def test_the_surface_is_built_once_from_the_settings_before_any_driver() -> None:
+    runtime = _runtime(CoreSettings(driver="browser_use"))
 
-    assert (create.call_count, assemble.await_count) == ((1, 0) if direct else (0, 1))
-    assert (runtime.service.browser_agent is None) is direct
+    with _assembling() as assemble:
+        bundle = runtime.surface
+
+    assert assemble.await_count == 0
+    assert bundle is runtime.surface
+    assert bundle.profile.name == "browser" and bundle.settings is runtime.service._settings
 
 
-def test_on_browser_use_the_facade_runs_the_main_agent_on_itself_and_maps_the_answer() -> None:
-    runtime = _runtime(CoreSettings(driver="browser_use", worker_temperature=0.3, worker_top_p=0.9))
-    agent = MagicMock()
-    result = {
-        "output": "The main heading is Example Domain.",
-        "result_type": "answer",
-        "error": None,
-        "authoritative_browser_result": {"status": "completed"},
-        "progress_state": {"status": "completed", "completed_steps": ["read the heading"]},
-    }
-    with (
-        patch.object(browser_agent_module, "create_browser_agent", return_value=agent) as create,
-        patch.object(runtime_module.Runner, "run_agent", AsyncMock(return_value=result)) as run_agent,
-        _assembling() as assemble,
-    ):
-        run(runtime.ensure_started())
-        answer = run(runtime.run_browser_task(task="Report the heading", session_id="wv-agent"))
+def test_core_rails_read_the_profile_and_the_facades_live_builders() -> None:
+    runtime = _runtime(CoreSettings(driver="browser_use"))
 
-    assert assemble.await_count == 0, "the main agent opens the session at its first invoke"
-    assert runtime.service.browser_agent is None
-    kwargs = create.call_args.kwargs
-    assert kwargs["runtime"] is runtime
-    assert (kwargs["language"], kwargs["max_iterations"], kwargs["browser_capabilities"]) == ("en", 7, ["core"])
-    assert kwargs["temperature"] == 0.3
-    model = create.call_args.args[0]
-    assert (model.model_client_config.api_key, model.model_config.model_name) == ("test-key", "test-model")
-    assert (model.model_config.temperature, model.model_config.top_p) == (0.3, 0.9)
-    inputs = run_agent.await_args.args[1]
-    assert inputs["query"] == "Report the heading" and inputs["conversation_id"].startswith("wv-agent:direct:")
-    assert answer == {
-        "ok": True,
-        "session_id": "wv-agent",
-        "request_id": inputs["request_id"],
-        "final": "The main heading is Example Domain.",
-        "page": {"url": "", "title": ""},
-        "screenshot": None,
-        "error": None,
-        "status": "completed",
-        "progress": {"status": "completed", "completed_steps": ["read the heading"]},
-    }
-
-
-def test_the_direct_agent_speaks_the_workers_language_when_the_facade_got_none() -> None:
-    runtime = _runtime(CoreSettings(driver="browser_use"), language=None)
-    built: list[dict[str, Any]] = []
-
-    def capture(**kwargs: Any) -> MagicMock:
-        built.append(kwargs)
-        return MagicMock()
-
-    with patch.object(browser_agent_module, "create_deep_agent", side_effect=capture):
-        run(runtime.ensure_started())
-
-    (agent,) = built
-    context_rail = next(rail for rail in agent["rails"] if isinstance(rail, ContextProcessorRail))
-    working_context = dict(context_rail._user_processors)["BrowserWorkingContextProcessor"]
-    assert (agent["language"], working_context.language) == (WORKER_LANGUAGE, "en")
-    assert agent["system_prompt"] == DEFAULT_BROWSER_AGENT_SYSTEM_PROMPT["en"]
-
-
-def test_the_direct_agent_runs_outside_the_browser_log_context_like_the_worker() -> None:
-    direct = _runtime(CoreSettings(driver="browser_use"))
-    with patch.object(browser_agent_module, "create_browser_agent", return_value=MagicMock()):
-        run(direct.ensure_started())
-
-    async def invoked(runtime: BrowserAgentRuntime) -> tuple[bool, bool]:
-        agent = MagicMock(deep_config=SimpleNamespace(enable_read_image_multimodal=False), register_rail=AsyncMock())
-        ctx = AgentCallbackContext(agent=agent)
-        await BrowserRuntimeRail(runtime).before_invoke(ctx)
-        return is_browser_agent_log_context(), runtime_module._BROWSER_LOG_CONTEXT_TOKEN_KEY in ctx.extra
-
+    rails = runtime.core_rails()
     with _assembling():
-        assert (direct.dedicated_log, run(invoked(direct))) == (False, (False, False))
-        assert (_runtime().dedicated_log, run(invoked(_runtime()))) == (True, (True, True))
+        run(runtime.ensure_runtime_ready())
+        runtime.agent_parts(image_support=False, language="en")
+
+    assert [type(rail) for rail in rails] == [ActionPolicy, RepeatedCallGuardRail, InterceptedActionHintRail]
+    assert rails[0]._builders is runtime.builders
+    assert rails[0]._rules == runtime.surface.profile.policy_rules
+    assert rails[0]._page_state is runtime.page_state
+    assert rails[2]._retry == runtime.surface.profile.messages["retry"]
+    assert MCP_PREFIX + "browser_click" in runtime.builders
 
 
-def test_on_browser_use_a_session_that_cannot_start_fails_the_task_before_any_model_call() -> None:
-    runtime = _runtime(CoreSettings(driver="browser_use"))
-    failing = AsyncMock(side_effect=ConnectionLost("connect: No valid agent focus available", dispatched=True))
-    model_calls = AsyncMock(side_effect=RuntimeError("the model was called"))
-    with (
-        patch.object(assembly_module, "assemble_driver", failing),
-        patch.object(OpenAIModelClient, "invoke", model_calls),
-        patch.object(OpenAIModelClient, "stream", model_calls),
-        patch.object(deep_agent_module, "schedule_image_support_probe"),
-    ):
-        answer = run(runtime.run_browser_task(task="Report the heading", session_id="s", request_id="r"))
+def test_agent_parts_are_built_once_per_image_support_and_language() -> None:
+    runtime = _runtime()
+    with _assembling():
+        run(runtime.ensure_runtime_ready())
+        en = runtime.agent_parts(image_support=False, language="en")
+        cn = runtime.agent_parts(image_support=False, language="cn")
+        vision = runtime.agent_parts(image_support=True, language="en")
 
-    assert (answer["ok"], answer["error"]) == (False, "connect: No valid agent focus available")
-    assert failing.await_count == 2
-    model_calls.assert_not_awaited()
+    assert runtime.agent_parts(image_support=False, language="en") is en
+    assert en is not cn and en is not vision
+    assert {tool.card.name for tool in en.tools} == {tool.card.name for tool in cn.tools}
+    assert en.rails == () and cn.rails == ()
 
 
-def test_on_browser_use_a_failed_run_is_reported_in_the_answer() -> None:
-    runtime = _runtime(CoreSettings(driver="browser_use"))
-    with (
-        patch.object(browser_agent_module, "create_browser_agent", return_value=MagicMock()),
-        patch.object(runtime_module.Runner, "run_agent", AsyncMock(side_effect=RuntimeError("model gone"))),
-    ):
-        failed = run(runtime.run_browser_task(task="Report the heading", session_id="s", request_id="r"))
-    async def slow(agent: Any, inputs: Any) -> None:
-        await asyncio.sleep(10)
+def test_register_runtime_tools_adds_the_two_custom_action_tools_once() -> None:
+    runtime = _runtime()
+    with patch.object(runtime_module.Runner.resource_mgr, "add_tool", MagicMock(return_value=None)) as add_tool:
+        runtime.register_runtime_tools()
+        runtime.register_runtime_tools()
 
-    with (
-        patch.object(browser_agent_module, "create_browser_agent", return_value=MagicMock()),
-        patch.object(runtime_module.Runner, "run_agent", AsyncMock(side_effect=slow)),
-    ):
-        timed_out = run(runtime.run_browser_task(task="Report the heading", session_id="s", timeout_s=1))
-
-    assert (failed["ok"], failed["error"], failed["request_id"]) == (False, "model gone", "r")
-    assert (timed_out["ok"], timed_out["error"]) == (False, "task_timeout: exceeded 1s")
+    assert [call.args[0].card.name for call in add_tool.call_args_list] == [
+        "browser_custom_action",
+        "browser_list_custom_actions",
+    ]

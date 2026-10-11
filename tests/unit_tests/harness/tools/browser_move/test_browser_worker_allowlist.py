@@ -5,26 +5,24 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
 
-from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_system_prompt
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
     CORE_BROWSER_TOOL_NAMES,
     PDF_BROWSER_TOOL_NAMES,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
-from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import MCP_PREFIX, fake_assembly, mcp_fake_driver
-from tests.unit_tests.harness.tools.browser_move.test_service import _make_service
+from openjiuwen.harness.tools.browser_move.playwright_runtime.config import CoreSettings
+from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import MCP_PREFIX, make_runtime
 
 WORKER_HELPERS = {"browser_probe_interactives", "browser_probe_cards", "browser_batch_interact"}
 
 
 def _worker_tool_names(allowed_tool_names: tuple[str, ...] | None) -> set[str]:
-    service: BrowserService = _make_service(allowed_tool_names=allowed_tool_names)
-    with patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))):
-        asyncio.run(service.ensure_started())
-    worker = service.browser_agent
+    runtime = make_runtime(
+        allowed_tool_names=allowed_tool_names, image_support=None, core_settings=CoreSettings(driver="playwright_mcp")
+    )
+    asyncio.run(runtime.ensure_started())
+    worker = runtime.service.browser_agent
     return {tool.name for tool in asyncio.run(worker.ability_manager.list_tool_info())}
 
 

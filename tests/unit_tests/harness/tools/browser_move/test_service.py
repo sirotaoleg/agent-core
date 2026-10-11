@@ -15,28 +15,27 @@ import pytest
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.contract.registry import default_topology
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
-from openjiuwen.harness.tools.browser_move.playwright_runtime import agents as agents_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
-from openjiuwen.harness.tools.browser_move.playwright_runtime.action_policy import ActionPolicy
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserInstanceConfig,
     BrowserRunGuardrails,
     CoreSettings,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.final_answer_recovery import FinalAnswerRecoveryRail
-from openjiuwen.harness.tools.browser_move.playwright_runtime.intercepted_action import InterceptedActionHintRail
-from openjiuwen.harness.tools.browser_move.playwright_runtime.repeated_call_guard import RepeatedCallGuardRail
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     DEVICE,
-    MCP_PREFIX,
     FakeProvisioner,
     fake_assembly,
     mcp_fake_driver,
 )
 
 WORKER_HELPERS = {"browser_probe_interactives", "browser_probe_cards", "browser_batch_interact"}
+_AGENT = object()
+
+
+async def _worker() -> Any:
+    return _AGENT
 
 
 def _make_service(
@@ -114,30 +113,33 @@ def test_failure_summary_is_reused_then_cleared() -> None:
         },
     ]
 
-    async def fake_ensure_started() -> None:
-        return None
-
-    async def fake_run_task_once(*, task: str, session_id: str, request_id: str):
+    async def fake_run_task_once(*, task: str, session_id: str, request_id: str, worker: Any):
         del session_id, request_id
         observed_tasks.append(task)
         return responses[len(observed_tasks) - 1]
 
-    with patch.object(service, "ensure_started", fake_ensure_started), patch.object(
+    with patch.object(
         service, "run_task_once", fake_run_task_once
     ):
-        first = _run(service.run_task(task="Submit onboarding form", session_id="session-1", request_id="req-1"))
+        first = _run(
+            service.run_task(worker=_worker, task="Submit onboarding form", session_id="session-1", request_id="req-1")
+        )
         assert first["ok"] is False
         assert isinstance(first.get("failure_summary"), str)
         assert "submit button not found" in first["failure_summary"]
         assert "Previous failed attempt context:" not in observed_tasks[0]
 
-        second = _run(service.run_task(task="Submit onboarding form", session_id="session-1", request_id="req-2"))
+        second = _run(
+            service.run_task(worker=_worker, task="Submit onboarding form", session_id="session-1", request_id="req-2")
+        )
         assert second["ok"] is True
         assert second["failure_summary"] is None
         assert "Previous failed attempt context:" in observed_tasks[1]
         assert "submit button not found" in observed_tasks[1]
 
-        third = _run(service.run_task(task="Submit onboarding form", session_id="session-1", request_id="req-3"))
+        third = _run(
+            service.run_task(worker=_worker, task="Submit onboarding form", session_id="session-1", request_id="req-3")
+        )
         assert third["ok"] is True
         assert third["failure_summary"] is None
         assert "Previous failed attempt context:" not in observed_tasks[2]
@@ -148,10 +150,7 @@ def test_timeout_failure_generates_summary() -> None:
     observed_tasks: list[str] = []
     calls = {"count": 0}
 
-    async def fake_ensure_started() -> None:
-        return None
-
-    async def fake_run_task_once(*, task: str, session_id: str, request_id: str):
+    async def fake_run_task_once(*, task: str, session_id: str, request_id: str, worker: Any):
         del session_id, request_id
         observed_tasks.append(task)
         calls["count"] += 1
@@ -165,15 +164,24 @@ def test_timeout_failure_generates_summary() -> None:
             "error": None,
         }
 
-    with patch.object(service, "ensure_started", fake_ensure_started), patch.object(
+    with patch.object(
         service, "run_task_once", fake_run_task_once
     ):
-        failed = _run(service.run_task(task="Check status", session_id="session-timeout", request_id="req-timeout"))
+        failed = _run(
+            service.run_task(
+                worker=_worker,
+                task="Check status",
+                session_id="session-timeout",
+                request_id="req-timeout",
+            )
+        )
         assert failed["ok"] is False
         assert "task_timeout:" in str(failed["error"])
         assert "task_timeout:" in str(failed["failure_summary"])
 
-        recovered = _run(service.run_task(task="Check status", session_id="session-timeout", request_id="req-retry"))
+        recovered = _run(
+            service.run_task(worker=_worker, task="Check status", session_id="session-timeout", request_id="req-retry")
+        )
         assert recovered["ok"] is True
         assert recovered["failure_summary"] is None
         assert len(observed_tasks) == 2
@@ -186,10 +194,7 @@ def test_retryable_runtime_error_retries_once() -> None:
     calls = {"count": 0}
     restart_calls = {"count": 0}
 
-    async def fake_ensure_started() -> None:
-        return None
-
-    async def fake_run_task_once(*, task: str, session_id: str, request_id: str):
+    async def fake_run_task_once(*, task: str, session_id: str, request_id: str, worker: Any):
         del session_id, request_id
         observed_tasks.append(task)
         calls["count"] += 1
@@ -213,10 +218,17 @@ def test_retryable_runtime_error_retries_once() -> None:
         restart_calls["count"] += 1
         return None
 
-    with patch.object(service, "ensure_started", fake_ensure_started), patch.object(
+    with patch.object(
         service, "run_task_once", fake_run_task_once
     ), patch.object(service, "_restart", fake_restart):
-        result = _run(service.run_task(task="Open Lazada homepage", session_id="session-retry", request_id="req-retry"))
+        result = _run(
+            service.run_task(
+                worker=_worker,
+                task="Open Lazada homepage",
+                session_id="session-retry",
+                request_id="req-retry",
+            )
+        )
         assert result["ok"] is True
         assert result["attempt"] == 2
         assert result["failure_summary"] is None
@@ -229,9 +241,6 @@ def test_retry_attempts_share_one_task_timeout_budget() -> None:
     service = _make_service(retry_once=True)
     observed_timeouts: list[float] = []
     calls = 0
-
-    async def fake_ensure_started() -> None:
-        return None
 
     async def fake_run_task_once(**kwargs):
         nonlocal calls
@@ -257,13 +266,14 @@ def test_retry_attempts_share_one_task_timeout_budget() -> None:
         observed_timeouts.append(float(timeout))
         return await awaitable
 
-    with patch.object(service, "ensure_started", fake_ensure_started), patch.object(
+    with patch.object(
         service, "run_task_once", fake_run_task_once
     ), patch.object(service, "_restart", AsyncMock()), patch.object(
         asyncio, "wait_for", fake_wait_for
     ):
         result = _run(
             service.run_task(
+                worker=_worker,
                 task="Open example",
                 session_id="session-shared-timeout",
                 request_id="req-shared-timeout",
@@ -280,10 +290,7 @@ def test_max_iteration_failure_preserves_worker_output_without_progress_summary(
     service = _make_service()
     call_count = {"count": 0}
 
-    async def fake_ensure_started() -> None:
-        return None
-
-    async def fake_run_task_once(*, task: str, session_id: str, request_id: str):
+    async def fake_run_task_once(*, task: str, session_id: str, request_id: str, worker: Any):
         del task, session_id, request_id
         call_count["count"] += 1
         return {
@@ -294,11 +301,12 @@ def test_max_iteration_failure_preserves_worker_output_without_progress_summary(
             "error": "max_iterations_reached",
         }
 
-    with patch.object(service, "ensure_started", fake_ensure_started), patch.object(
+    with patch.object(
         service, "run_task_once", fake_run_task_once
     ):
         result = _run(
             service.run_task(
+                worker=_worker,
                 task="Add carbonara ingredients to cart",
                 session_id="session-max-iter",
                 request_id="req-max-iter",
@@ -317,10 +325,7 @@ def test_max_iteration_resume_requires_opt_in_guardrail() -> None:
     observed_tasks: list[str] = []
     call_count = {"count": 0}
 
-    async def fake_ensure_started() -> None:
-        return None
-
-    async def fake_run_task_once(*, task: str, session_id: str, request_id: str):
+    async def fake_run_task_once(*, task: str, session_id: str, request_id: str, worker: Any):
         del session_id, request_id
         observed_tasks.append(task)
         call_count["count"] += 1
@@ -340,11 +345,12 @@ def test_max_iteration_resume_requires_opt_in_guardrail() -> None:
             "error": None,
         }
 
-    with patch.object(service, "ensure_started", fake_ensure_started), patch.object(
+    with patch.object(
         service, "run_task_once", fake_run_task_once
     ):
         result = _run(
             service.run_task(
+                worker=_worker,
                 task="Open Baidu homepage",
                 session_id="session-max-iter-resume",
                 request_id="req-max-iter-resume",
@@ -372,10 +378,7 @@ def test_max_iteration_failure_includes_observed_tool_progress() -> None:
         },
     )
 
-    async def fake_ensure_started() -> None:
-        return None
-
-    async def fake_run_task_once(*, task: str, session_id: str, request_id: str):
+    async def fake_run_task_once(*, task: str, session_id: str, request_id: str, worker: Any):
         del task, session_id, request_id
         return {
             "ok": False,
@@ -385,11 +388,12 @@ def test_max_iteration_failure_includes_observed_tool_progress() -> None:
             "error": "max_iterations_reached",
         }
 
-    with patch.object(service, "ensure_started", fake_ensure_started), patch.object(
+    with patch.object(
         service, "run_task_once", fake_run_task_once
     ):
         result = _run(
             service.run_task(
+                worker=_worker,
                 task="Add item to cart",
                 session_id="session-progress",
                 request_id="req-progress-1",
@@ -429,19 +433,20 @@ def test_structured_progress_is_reused_on_next_invocation() -> None:
         },
     ]
 
-    async def fake_ensure_started() -> None:
-        return None
-
-    async def fake_run_task_once(*, task: str, session_id: str, request_id: str):
+    async def fake_run_task_once(*, task: str, session_id: str, request_id: str, worker: Any):
         del session_id, request_id
         observed_tasks.append(task)
         return responses[len(observed_tasks) - 1]
 
-    with patch.object(service, "ensure_started", fake_ensure_started), patch.object(
+    with patch.object(
         service, "run_task_once", fake_run_task_once
     ):
-        first = _run(service.run_task(task="Checkout cart", session_id="session-reuse", request_id="req-1"))
-        second = _run(service.run_task(task="Checkout cart", session_id="session-reuse", request_id="req-2"))
+        first = _run(
+            service.run_task(worker=_worker, task="Checkout cart", session_id="session-reuse", request_id="req-1")
+        )
+        second = _run(
+            service.run_task(worker=_worker, task="Checkout cart", session_id="session-reuse", request_id="req-2")
+        )
 
     assert first["ok"] is False
     assert first["progress_state"]["status"] == "partial"
@@ -457,10 +462,7 @@ def test_structured_progress_is_reused_on_next_invocation() -> None:
 def test_completed_status_overrides_false_ok_when_evidence_is_present() -> None:
     service = _make_service()
 
-    async def fake_ensure_started() -> None:
-        return None
-
-    async def fake_run_task_once(*, task: str, session_id: str, request_id: str):
+    async def fake_run_task_once(*, task: str, session_id: str, request_id: str, worker: Any):
         del task, session_id, request_id
         return {
             "ok": False,
@@ -475,10 +477,17 @@ def test_completed_status_overrides_false_ok_when_evidence_is_present() -> None:
             },
         }
 
-    with patch.object(service, "ensure_started", fake_ensure_started), patch.object(
+    with patch.object(
         service, "run_task_once", fake_run_task_once
     ):
-        result = _run(service.run_task(task="Place order", session_id="session-complete", request_id="req-complete"))
+        result = _run(
+            service.run_task(
+                worker=_worker,
+                task="Place order",
+                session_id="session-complete",
+                request_id="req-complete",
+            )
+        )
 
     assert result["ok"] is True
     assert result["error"] is None
@@ -502,8 +511,12 @@ def test_run_task_once_uses_fresh_worker_conversation_ids() -> None:
         }
 
     with patch("openjiuwen.harness.tools.browser_move.playwright_runtime.service.Runner.run_agent", fake_run_agent):
-        first = _run(service.run_task_once(task="Open page", session_id="session-1", request_id="req-1"))
-        second = _run(service.run_task_once(task="Open page", session_id="session-1", request_id="req-1"))
+        first = _run(
+            service.run_task_once(task="Open page", session_id="session-1", request_id="req-1", worker=_worker)
+        )
+        second = _run(
+            service.run_task_once(task="Open page", session_id="session-1", request_id="req-1", worker=_worker)
+        )
 
     assert first["ok"] is True
     assert second["ok"] is True
@@ -560,64 +573,31 @@ def test_ensure_runtime_ready_opens_one_session_and_the_next_task_restarts_its_s
     assert (driver.kinds(), service.started) == (["stop", "start"], True)
 
 
-def test_ensure_started_builds_the_worker_from_the_factory_with_the_probes_the_batch_and_the_rails() -> None:
-    service = _make_service()
-    worker = MagicMock()
-    worker.register_rail = AsyncMock()
-    with (
-        patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))),
-        patch.object(agents_module, "build_browser_worker_agent", return_value=worker) as build,
-    ):
-        _run(service.ensure_started())
-        _run(service.ensure_started())
+def test_run_task_awaits_the_worker_per_attempt_and_restarts_through_reset_alone() -> None:
+    service = _make_service(retry_once=True)
+    workers: list[Any] = []
 
-    build.assert_called_once()
-    kwargs = build.call_args.kwargs
-    names = {tool.card.name for tool in kwargs["tools"]}
-    assert {name for name in names if name.startswith(MCP_PREFIX)} == {
-        MCP_PREFIX + name
-        for name in (
-            "browser_click",
-            "browser_evaluate",
-            "browser_file_upload",
-            "browser_fill_form",
-            "browser_find",
-            "browser_handle_dialog",
-            "browser_hover",
-            "browser_navigate",
-            "browser_navigate_back",
-            "browser_press_key",
-            "browser_select_option",
-            "browser_snapshot",
-            "browser_tabs",
-            "browser_type",
-        )
-    }
-    assert {name for name in names if not name.startswith(MCP_PREFIX)} == WORKER_HELPERS
-    assert (kwargs["max_steps"], kwargs["settings"], kwargs["tool_result_observer"]) == (
-        3,
-        service.core,
-        service._observe_worker_tool_result,
+    async def worker() -> Any:
+        workers.append(MagicMock())
+        return workers[-1]
+
+    run_agent = AsyncMock(
+        side_effect=[
+            RuntimeError(""),
+            {"output": '{"ok": true, "final": "done", "page": {"url": "", "title": ""}, "screenshot": null}'},
+        ]
     )
-    assert [type(call.args[0]) for call in worker.register_rail.await_args_list] == [
-        ActionPolicy,
-        RepeatedCallGuardRail,
-        InterceptedActionHintRail,
-        FinalAnswerRecoveryRail,
-    ]
+    with (
+        patch.object(service, "reset", AsyncMock()) as reset,
+        patch("openjiuwen.harness.tools.browser_move.playwright_runtime.service.Runner.run_agent", run_agent),
+    ):
+        result = _run(service.run_task(worker=worker, task="Open page", session_id="s", request_id="r"))
 
-
-def test_the_worker_is_built_again_after_a_task_release() -> None:
-    service = _make_service()
-    with patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))):
-        _run(service.ensure_started())
-        first = service.browser_agent
-        _run(service.release_task_binding())
-        assert service.browser_agent is None
-        _run(service.ensure_started())
-
-    assert service.browser_agent is not first
-    assert service.started is True
+    assert (result["ok"], result["attempt"]) == (True, 2)
+    assert len(workers) == 2
+    assert [call.args[0] for call in run_agent.await_args_list] == workers
+    reset.assert_awaited_once_with()
+    assert not hasattr(service, "ensure_started")
 
 
 def test_given_browser_settings_win_over_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -672,10 +652,7 @@ def test_run_task_does_not_reset_browser_runtime_after_completion() -> None:
     service = _make_service()
     reset_calls = {"count": 0}
 
-    async def fake_ensure_started() -> None:
-        return None
-
-    async def fake_run_task_once(*, task: str, session_id: str, request_id: str):
+    async def fake_run_task_once(*, task: str, session_id: str, request_id: str, worker: Any):
         del task, session_id, request_id
         return {
             "ok": True,
@@ -688,10 +665,12 @@ def test_run_task_does_not_reset_browser_runtime_after_completion() -> None:
     async def fake_reset_browser_runtime() -> None:
         reset_calls["count"] += 1
 
-    with patch.object(service, "ensure_started", fake_ensure_started), patch.object(
+    with patch.object(
         service, "run_task_once", fake_run_task_once
     ), patch.object(service, "reset", fake_reset_browser_runtime):
-        result = _run(service.run_task(task="Open Baidu", session_id="keep-after-task", request_id="req-keep"))
+        result = _run(
+            service.run_task(worker=_worker, task="Open Baidu", session_id="keep-after-task", request_id="req-keep")
+        )
 
     assert result["ok"] is True
     assert reset_calls["count"] == 0

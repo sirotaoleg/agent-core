@@ -50,7 +50,10 @@ TAB_1 = ContextRef("B", "tab", "Second")
 def _golden_tools() -> list[tuple[str, dict[str, Any]]]:
     tools = []
     for path in sorted(GOLDEN_DIR.glob("*.json")):
-        for agent in json.loads(path.read_text(encoding="utf-8"))["agents"]:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        if "source_commit" not in doc:
+            continue
+        for agent in doc["agents"]:
             tools += [(f"{path.stem}:{tool['name']}", tool) for tool in agent["tools"]]
     return tools
 

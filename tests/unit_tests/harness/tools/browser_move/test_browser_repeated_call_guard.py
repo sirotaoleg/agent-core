@@ -14,7 +14,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from openjiuwen.core.foundation.llm import AssistantMessage, ToolCall
-from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.runner import Runner
 from openjiuwen.core.single_agent.prompts.builder import PromptSection, SystemPromptBuilder
 from openjiuwen.core.single_agent.rail.base import ModelCallInputs, ToolCallInputs
@@ -26,18 +25,16 @@ from openjiuwen.harness.tools.browser_move.contract import (
     Observation,
 )
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
-from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_agent
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
+from openjiuwen.harness.tools.browser_move.playwright_runtime.config import CoreSettings
 from openjiuwen.harness.tools.browser_move.playwright_runtime.repeated_call_guard import (
     RepeatedCallGuardRail,
     _is_noop_script,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
 from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import command_record
 
 from .command_tools import HOME, command_tools, fake_driver, result, tool_message
-from .runtime_fixtures import fake_assembly, mcp_fake_driver
+from .runtime_fixtures import make_runtime
 
 NOTE = "### Repeated call"
 NOOP_WORDING = "only returned constants or the page title/URL"
@@ -493,22 +490,12 @@ def test_worker_loop_with_a_counter_in_the_argument_also_ends() -> None:
 
 
 def test_service_registers_the_guard_on_the_worker() -> None:
-    service = BrowserService(
-        provider="openai",
-        api_key="mock-api-key",
-        api_base="https://example.invalid/v1",
-        model_name="mock-model",
-        mcp_cfg=McpServerConfig(server_id="pw-test", server_name="pw-test", server_path="stdio://pw"),
-        guardrails=BrowserRunGuardrails(max_steps=2, max_failures=1, timeout_s=30),
-    )
+    runtime = make_runtime(image_support=None, core_settings=CoreSettings(driver="playwright_mcp"))
     worker = MagicMock()
     worker.register_rail = AsyncMock()
     module = "openjiuwen.harness.tools.browser_move.playwright_runtime.agents"
-    with (
-        patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))),
-        patch(f"{module}.build_browser_worker_agent", return_value=worker),
-    ):
-        asyncio.run(service.ensure_started())
+    with patch(f"{module}.build_browser_worker_agent", return_value=worker):
+        asyncio.run(runtime.ensure_started())
 
     rails = [call.args[0] for call in worker.register_rail.await_args_list]
     assert any(isinstance(rail, RepeatedCallGuardRail) for rail in rails)

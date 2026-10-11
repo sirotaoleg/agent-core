@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import os
 import uuid
@@ -27,7 +28,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.final_answer_recov
     RECOVERY_MESSAGE,
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
-from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
+from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import MESSAGES
@@ -182,7 +183,7 @@ class _OnEachDriver:
     ) -> None:
         async def scenario() -> tuple[str, set[str], ScriptedModel, dict[str, Any]]:
             settings = BrowserSettings.from_env(environ)
-            service = BrowserService(
+            runtime = BrowserAgentRuntime(
                 provider="openai",
                 api_key="mock-api-key",
                 api_base="https://example.invalid/v1",
@@ -190,19 +191,26 @@ class _OnEachDriver:
                 mcp_cfg=playwright_mcp_config(settings),
                 guardrails=BrowserRunGuardrails(max_steps=4, max_failures=1, timeout_s=120),
                 browser_settings=settings,
-                core_settings=CoreSettings.from_env(environ),
+                core_settings=dataclasses.replace(CoreSettings.from_env(environ), topology="delegated_worker"),
             )
-            await service.ensure_started()
+            await runtime.ensure_started()
             try:
+                service = runtime.service
                 worker = service.browser_agent
                 prefix = service.session.assembly.stack.info.tool_name_prefix
                 names = {tool.name for tool in await worker.ability_manager.list_tool_info()}
                 model = ScriptedModel([_step("browser_navigate", {"url": scene_url})], ("I opened the scene.", ANSWER))
                 worker.set_llm(model)
-                result = await service.run_task_once(task="Open the scene", session_id="rails-live", request_id="r-1")
+
+                async def current() -> Any:
+                    return service.browser_agent
+
+                result = await service.run_task_once(
+                    task="Open the scene", session_id="rails-live", request_id="r-1", worker=current
+                )
                 return prefix, names, model, result
             finally:
-                await service.shutdown()
+                await runtime.shutdown()
 
         prefix, names, model, result = asyncio.run(scenario())
 

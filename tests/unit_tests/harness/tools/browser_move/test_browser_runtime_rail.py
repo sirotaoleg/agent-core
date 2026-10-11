@@ -14,9 +14,16 @@ import pytest
 
 from openjiuwen.core.foundation.llm import ToolCall
 from openjiuwen.core.foundation.llm.schema.message import ToolMessage, UserMessage
+from openjiuwen.core.runner.callback.errors import AbortError
 from openjiuwen.core.single_agent.ability_manager import AbilityManager
 from openjiuwen.core.single_agent.prompts.builder import SystemPromptBuilder
-from openjiuwen.core.runner.callback.errors import AbortError
+from openjiuwen.core.single_agent.rail.base import (
+    AgentCallbackContext,
+    AgentRail,
+    InvokeInputs,
+    ModelCallInputs,
+    ToolCallInputs,
+)
 from openjiuwen.harness.tools.browser_move.contract import (
     ActionResult,
     ActionTimeout,
@@ -31,7 +38,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
 )
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.contract.testing.fake import DEFAULT_ACTIONS
-from openjiuwen.harness.tools.browser_move.playwright_runtime.action_policy import ActionPolicy
+from openjiuwen.harness.tools.browser_move.playwright_runtime import runtime as runtime_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
     CORE_BROWSER_TOOL_NAMES,
     resolve_browser_capabilities,
@@ -39,13 +46,10 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabiliti
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_working_context import (
     BrowserWorkingContextStore,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime import runtime as runtime_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime, BrowserRuntimeRail
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import MAX_ITERATION_MESSAGE
 from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import CommandRecord, command_record
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate
-from openjiuwen.core.single_agent.rail.base import AgentCallbackContext, AgentRail
-from openjiuwen.core.single_agent.rail.base import InvokeInputs, ModelCallInputs, ToolCallInputs
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     BATCH,
     MCP_PREFIX,
@@ -72,7 +76,7 @@ def _run(coro):
 
 def _make_ctx() -> AgentCallbackContext:
     agent = MagicMock()
-    agent.deep_config = SimpleNamespace(enable_read_image_multimodal=True)
+    agent.deep_config = SimpleNamespace(enable_read_image_multimodal=True, language="en")
     agent.register_rail = AsyncMock()
     return AgentCallbackContext(agent=agent)
 
@@ -99,7 +103,7 @@ def _mock_runtime() -> MagicMock:
 
 
 def _tools(runtime: BrowserAgentRuntime) -> dict:
-    return {tool.card.name: tool for tool in runtime.agent_parts(image_support=False).tools}
+    return {tool.card.name: tool for tool in runtime.agent_parts(image_support=False, language="en").tools}
 
 
 def _invoke(runtime: BrowserAgentRuntime, name: str, args: dict):
@@ -161,11 +165,22 @@ def test_before_invoke_calls_ensure_runtime_ready() -> None:
     _run(rail.before_invoke(ctx))
 
     runtime.ensure_runtime_ready.assert_called_once_with()
-    parts = runtime.agent_parts(image_support=True)
+    parts = runtime.agent_parts(image_support=True, language="en")
     assert _added_names(ctx) == {tool.card.name for tool in parts.tools}
-    registered = [call.args[0] for call in ctx.agent.register_rail.await_args_list]
-    assert [type(rail) for rail in registered] == [type(rail) for rail in parts.rails]
-    assert isinstance(registered[0], ActionPolicy)
+    ctx.agent.register_rail.assert_not_awaited()
+
+
+def test_before_invoke_builds_the_parts_in_the_agents_language() -> None:
+    runtime = make_runtime(image_support=None)
+    runtime.ensure_runtime_ready = AsyncMock()
+    rail = BrowserRuntimeRail(runtime)
+    ctx = _make_ctx()
+    ctx.agent.deep_config.language = "cn"
+
+    with patch.object(runtime, "agent_parts", wraps=runtime.agent_parts) as parts:
+        _run(rail.before_invoke(ctx))
+
+    parts.assert_called_once_with(image_support=True, language="cn")
 
 
 def test_before_invoke_with_none_allowlist_defaults_to_core() -> None:
@@ -228,7 +243,7 @@ def test_pdf_allowlist_filters_active_browser_agent_schemas() -> None:
 
 
 def test_before_invoke_called_twice_delegates_twice() -> None:
-    """The tools are added on every invoke; the rails of one agent are registered once."""
+    """The tools are added on every invoke; the rail registers no rail (they are queued at construction)."""
     runtime = make_runtime(image_support=None)
     runtime.ensure_runtime_ready = AsyncMock()
     rail = BrowserRuntimeRail(runtime)
@@ -239,9 +254,9 @@ def test_before_invoke_called_twice_delegates_twice() -> None:
     _run(rail.before_invoke(ctx2))
 
     assert runtime.ensure_runtime_ready.call_count == 2
-    parts = runtime.agent_parts(image_support=True)
+    parts = runtime.agent_parts(image_support=True, language="en")
     assert ctx1.agent.ability_manager.add_ability.call_count == 2 * len(parts.tools)
-    assert ctx1.agent.register_rail.await_count == len(parts.rails)
+    assert ctx1.agent.register_rail.await_count == 0
 
 
 def test_a_session_that_cannot_start_aborts_the_invoke_before_any_tool_is_added() -> None:
@@ -373,7 +388,7 @@ def test_before_tool_call_leaves_the_browser_dialects_ref_and_generation_alone()
 def test_before_tool_call_rejects_batch_screenshot_without_image_support() -> None:
     rail = BrowserRuntimeRail(make_runtime())
     agent = MagicMock()
-    agent.deep_config = SimpleNamespace(enable_read_image_multimodal=False)
+    agent.deep_config = SimpleNamespace(enable_read_image_multimodal=False, language="en")
     ctx = AgentCallbackContext(
         agent=agent,
         inputs=ToolCallInputs(
@@ -2043,7 +2058,7 @@ def test_before_model_call_explains_screenshot_is_disabled_without_image_support
     runtime = MagicMock(spec=BrowserAgentRuntime)
     builder = SystemPromptBuilder(language="en")
     agent = MagicMock()
-    agent.deep_config = SimpleNamespace(enable_read_image_multimodal=False)
+    agent.deep_config = SimpleNamespace(enable_read_image_multimodal=False, language="en")
     agent.system_prompt_builder = builder
     rail = BrowserRuntimeRail(runtime)
 
@@ -2059,7 +2074,7 @@ def test_before_model_call_limits_screenshot_use_for_multimodal_model() -> None:
     runtime = MagicMock(spec=BrowserAgentRuntime)
     builder = SystemPromptBuilder(language="en")
     agent = MagicMock()
-    agent.deep_config = SimpleNamespace(enable_read_image_multimodal=True)
+    agent.deep_config = SimpleNamespace(enable_read_image_multimodal=True, language="en")
     agent.system_prompt_builder = builder
     rail = BrowserRuntimeRail(runtime)
 
