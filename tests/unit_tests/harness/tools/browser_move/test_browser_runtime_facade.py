@@ -10,6 +10,8 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from openjiuwen.core.common.logging.browser_context import is_browser_agent_log_context
 from openjiuwen.core.foundation.llm.model_clients.openai_model_client import OpenAIModelClient
 from openjiuwen.core.foundation.tool import McpServerConfig
@@ -145,6 +147,29 @@ def test_shutdown_closes_the_session_and_the_model_clients() -> None:
     assert (runtime.session, runtime.service.session, runtime.service.browser_agent) == (None, None, None)
     aclose.assert_awaited_once()
     assert assemble.await_count == 1
+
+
+@pytest.mark.parametrize(
+    ("driver", "topology", "direct"),
+    [
+        ("playwright_mcp", "", False),
+        ("browser_use", "", True),
+        ("playwright_mcp", "direct", True),
+        ("browser_use", "delegated_worker", False),
+    ],
+)
+def test_ensure_started_takes_the_topology_setting_and_falls_back_to_the_drivers_default(
+    driver: str, topology: str, direct: bool
+) -> None:
+    runtime = _runtime(CoreSettings(driver=driver, topology=topology))
+    with (
+        patch.object(browser_agent_module, "create_browser_agent", return_value=MagicMock()) as create,
+        _assembling() as assemble,
+    ):
+        run(runtime.ensure_started())
+
+    assert (create.call_count, assemble.await_count) == ((1, 0) if direct else (0, 1))
+    assert (runtime.service.browser_agent is None) is direct
 
 
 def test_on_browser_use_the_facade_runs_the_main_agent_on_itself_and_maps_the_answer() -> None:

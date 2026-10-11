@@ -31,7 +31,7 @@ def test_empty_environment_gives_the_defaults() -> None:
     assert settings == CoreSettings()
     assert settings.driver == "playwright_mcp"
     assert settings.surface == "browser"
-    assert settings.topology == "delegated_worker"
+    assert settings.topology == ""
     assert (settings.provider, settings.api_key, settings.api_base) == ("openai", "", "https://api.openai.com/v1")
     assert settings.model_name == DEFAULT_MODEL_NAME
     assert (settings.worker_temperature, settings.worker_top_p, settings.tool_timeout_s) == (0.2, 0.1, 240.0)
@@ -46,17 +46,32 @@ def test_empty_environment_gives_the_defaults() -> None:
 
 
 @pytest.mark.parametrize(
-    ("raw", "driver", "topology"),
-    [
-        ("playwright_mcp", "playwright_mcp", "delegated_worker"),
-        (" Browser_Use ", "browser_use", "direct"),
-        ("", "playwright_mcp", "delegated_worker"),
-    ],
+    ("raw", "driver"),
+    [("playwright_mcp", "playwright_mcp"), (" Browser_Use ", "browser_use"), ("", "playwright_mcp")],
 )
-def test_browser_driver_selects_the_driver_and_its_topology(raw: str, driver: str, topology: str) -> None:
-    settings = _core(BROWSER_DRIVER=raw)
+def test_browser_driver_selects_the_driver(raw: str, driver: str) -> None:
+    assert _core(BROWSER_DRIVER=raw).driver == driver
 
-    assert (settings.driver, settings.topology) == (driver, topology)
+
+@pytest.mark.parametrize(
+    ("raw", "topology"),
+    [("direct", "direct"), (" Delegated_Worker ", "delegated_worker"), ("DIRECT", "direct"), ("", ""), ("  ", "")],
+)
+def test_browser_topology_is_trimmed_and_lower_cased_and_unset_means_the_drivers_default(
+    raw: str, topology: str
+) -> None:
+    assert _core(BROWSER_TOPOLOGY=raw).topology == topology
+
+
+@pytest.mark.parametrize("raw", ["worker", "delegated-worker", "Direct agent"])
+def test_unknown_browser_topology_is_a_clear_error(raw: str) -> None:
+    with pytest.raises(ValueError, match="BROWSER_TOPOLOGY must be one of: direct, delegated_worker"):
+        _core(BROWSER_TOPOLOGY=raw)
+
+
+def test_browser_topology_does_not_depend_on_the_driver() -> None:
+    assert _core(BROWSER_DRIVER="browser_use").topology == ""
+    assert _core(BROWSER_DRIVER="playwright_mcp", BROWSER_TOPOLOGY="direct").topology == "direct"
 
 
 @pytest.mark.parametrize("legacy", ["managed", "remote", "extension"])

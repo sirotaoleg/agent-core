@@ -14,6 +14,7 @@ from openjiuwen.harness.tools.browser_move.contract.registry import (
     PROVISIONERS,
     SURFACES,
     Registry,
+    default_topology,
     register_driver,
     register_provisioner,
     register_surface,
@@ -124,3 +125,31 @@ def test_register_functions_use_the_default_registries(
     register("mine", f"{LAZY_MODULE}:make_thing")
 
     assert fresh.names() == ("mine",)
+
+
+@pytest.fixture
+def fresh_drivers(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(registry_module, "DRIVERS", Registry("driver"))
+    monkeypatch.setattr(registry_module, "DRIVER_TOPOLOGIES", {})
+
+
+def test_register_driver_records_the_default_topology_and_direct_when_none_is_given(fresh_drivers: None) -> None:
+    register_driver("plain", f"{LAZY_MODULE}:make_thing")
+    register_driver("delegating", f"{LAZY_MODULE}:make_thing", default_topology="delegated_worker")
+
+    assert (default_topology("plain"), default_topology("delegating")) == ("direct", "delegated_worker")
+
+
+def test_default_topology_of_an_unknown_driver_lists_the_registered_ones(fresh_drivers: None) -> None:
+    register_driver("known", f"{LAZY_MODULE}:make_thing")
+
+    with pytest.raises(KeyError, match="unknown driver 'missing'; registered: known"):
+        default_topology("missing")
+
+
+def test_a_duplicate_driver_is_refused_before_its_default_topology_is_recorded(fresh_drivers: None) -> None:
+    register_driver("x", dict)
+
+    with pytest.raises(ValueError, match="driver 'x' is already registered"):
+        register_driver("x", list, default_topology="delegated_worker")
+    assert default_topology("x") == "direct"

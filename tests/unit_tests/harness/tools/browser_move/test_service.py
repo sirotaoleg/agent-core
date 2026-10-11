@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from openjiuwen.core.foundation.tool import McpServerConfig
+from openjiuwen.harness.tools.browser_move.contract.registry import default_topology
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.action_policy import ActionPolicy
@@ -536,7 +537,7 @@ def test_the_session_takes_the_given_mcp_config_the_instance_and_the_core_settin
 def test_the_instance_driver_overrides_the_core_driver() -> None:
     service = _make_service(instance=BrowserInstanceConfig(driver="browser_use"), core_settings=CoreSettings())
 
-    assert (service.core.driver, service.core.topology) == ("browser_use", "direct")
+    assert (service.core.driver, default_topology(service.core.driver)) == ("browser_use", "direct")
     assert _handed(service)["core"].driver == "browser_use"
 
 
