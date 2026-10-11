@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/runtime.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `helpers/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/playwright_runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/runtime.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/action_policy.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_state_context_processor.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_working_context.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/status_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/config.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/service.py`, `openjiuwen/harness/tools/browser_move/utils/env.py`, `openjiuwen/harness/tools/browser_move/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `helpers/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
 | Last revised | 2026-10-11 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -570,12 +570,11 @@ the one session the main agent and the worker share.
 A failure in step 5 releases the device; a failure in `start` calls `close()`. A failure in `provision` leaves
 nothing to release.
 
-`DriverAssembly(stack, device, provisioner, surface_settings, rebuild=None, surface=None)`: `close()` stops the stack,
-then releases the device with `provisioner.release` in a worker thread, also when `stop` raises.
-`surface_settings` is what `provision` was called with; `rebuild(device)` is step 5 for another device (same driver
-factory, surface check and middleware), not started; `surface` is the bundle of step 2. `DriverSession` provisions
-again from `surface_settings` and builds the new stack with `rebuild`. Assemblies built by hand (tests) may leave
-`rebuild` and `surface` out.
+`DriverAssembly(stack, device, provisioner, rebuild=None, surface=None)`: `close()` stops the stack, then releases
+the device with `provisioner.release` in a worker thread, also when `stop` raises. `rebuild(device)` is step 5 for
+another device (same driver factory, surface check and middleware), not started; `surface` is the bundle of step 2,
+whose `settings` are what `provision` was called with. `DriverSession` provisions again from `surface.settings` and
+builds the new stack with `rebuild`. Assemblies built by hand (tests) may leave `rebuild` and `surface` out.
 
 ### Agent construction
 
@@ -587,8 +586,8 @@ AgentParts` (`tools`, `prompt_sections`, `rails`, `builders`):
   the extra tools flagged `worker=False` are left out.
 - `builders`: the factory's `AgentTools.builders`, for the runtime's `tool_kind`.
 - `rails`, in this order: `ActionPolicy(<the factory's builders>, profile.policy_rules, session.page_state)`,
-  `CommandRepeatGuardRail()`, `CommandInterceptedHintRail()`, then `factory(context)` for each `profile.rails`
-  entry, `context` being the `ToolContext` of the same session, profile, driver info, image support, workspace and
+  `RepeatedCallGuardRail()`, `InterceptedActionHintRail(profile.messages["retry"])`, then `factory(context)` for
+  each `profile.rails` entry, `context` being the `ToolContext` of the same session, profile, driver info, image support, workspace and
   language.
 
 `build_agent(core, environ, *, model, capabilities, image_support, language, system_prompt="", workspace=None,
@@ -616,7 +615,7 @@ failure in steps 2–4 closes the session (stop, release). The caller owns the s
 | `tool_specs` | `BROWSER_TOOL_SPECS` (`tools.py`) |
 | `capability_catalog`, `capability_tools` | `capabilities.py` |
 | `timeouts` | 240 s for every `Effect` |
-| `messages` | `driver_restarted`: "the browser restarted; take a fresh observation"; `driver_lost`: "the browser connection was lost again; the task cannot continue"; `context_changed`: "Call browser_snapshot again and use refs from generation {generation}." (a format string) |
+| `messages` | `driver_restarted`: "the browser restarted; take a fresh observation"; `driver_lost`: "the browser connection was lost again; the task cannot continue"; `context_changed`: "Call browser_snapshot again and use refs from generation {generation}." (a format string); `retry`: "Then retry the action (take a fresh browser_snapshot if the page changed)." (the last line of the intercepted-action hint) |
 | `extra_tools` | `helpers.EXTRA_TOOLS`: `ProbeInteractivesTool`, `ProbeCardsTool`, `FindTool` (see "Helpers") |
 | `policy_rules`, `rails`, `native_tools` | empty |
 | `scene` | `None` (the conformance suite takes `browser_scene()` directly) |
@@ -937,7 +936,9 @@ Frozen; never parsed from text.
 ok` for a `READ` record (a find over a current observation sent nothing but answered, as the server call did) and
 `dispatched` for any other effect, `state_changed = context_changed or (effect != READ and (ok or error == "ActionTimeout"))`, `denied =
 False` (denials come from `ActionPolicy`). A tool cannot set `ToolMessage.metadata` (core builds the message from
-`render_for_llm` after `invoke`); a rail copies `message_metadata` onto it in `after_tool_call`.
+`render_for_llm` after `invoke`); a rail copies `message_metadata` onto it in `after_tool_call`. `BrowserRuntimeRail`
+adds `effect` (the kind's `Effect` value) for the surface's budgeted tools, that is the factory tools and the extra
+tools without `exempt_from_budget`; a message without `effect` belongs to a tool the context processors leave alone.
 
 `CommandRecord.of(action, result, *, effect=None, value=None)` builds the record of a result,
 `CommandRecord.failed(action, error, page_state, *, effect=None)` the record of a `DriverError`; `CommandTool` and the
@@ -962,15 +963,15 @@ factory (`worker`: offered to a delegated worker too).
 
 ## Rails on command records
 
-Two rails read `CommandRecord`s, never tool text. `build_agent_parts` hands them to the main agent, which registers
-them at its first invoke; the worker still runs the text-based rails of the same modules until the switch
-reaches it. Neither adds a model call: each rewrites the tool message in `after_tool_call`, or
-empties the tools of the next model call (invariant: a rail never adds a model round trip).
+Two rails read `CommandRecord`s, never tool text; the text-based rails of the same names are gone.
+`build_agent_parts` hands them to the main agent (registered at its first invoke) and to the worker. Neither adds a
+model call: each rewrites the tool message in `after_tool_call`, or empties the tools of the next model call
+(invariant: a rail never adds a model round trip).
 
-### `CommandRepeatGuardRail` (`repeated_call_guard.py`)
+### `RepeatedCallGuardRail` (`repeated_call_guard.py`)
 
-A subclass of `RepeatedCallGuardRail` that replaces only `after_tool_call`; state reset per invoke, the finish
-section and the withholding in `before_model_call` are inherited.
+State reset per invoke (`before_invoke`), the streak counted in `after_tool_call`, the finish section and the
+withholding in `before_model_call`.
 
 - **Identity.** Two calls are identical when their commands and their results are: `record.action` (masked) and
   `(ok, error, value, surface)`. A `RunScript` compares its code without whitespace and with digits replaced by
@@ -982,20 +983,22 @@ section and the withholding in `before_model_call` are inherited.
   after the 5th the next model call gets no tools and a finish instruction. Any other call resets the streak.
   Calls of one model turn are counted in the order their `after_tool_call` runs, like separate turns.
 
-### `CommandInterceptedHintRail` (`intercepted_action.py`)
+### `InterceptedActionHintRail` (`intercepted_action.py`)
 
-For a record with `error == "ActionIntercepted"` and a non-empty `blocked_by`, and a string tool message, it
-replaces the message with `explain_blocked_command(record)`:
+`InterceptedActionHintRail(retry)` takes the surface's retry sentence (`profile.messages["retry"]`; the core names
+no browser tool). For a record with `error == "ActionIntercepted"` and a non-empty `blocked_by`, and a string tool
+message, it replaces the message with `explain_blocked_command(record, retry)`:
 
 ```
 ### Error
 <command type> not delivered: <target> is covered by <blocked_by>.
 <hint>
-Then retry the action (take a fresh browser_snapshot if the page changed).
+<retry>
 ```
 
 `<target>` is the `DriverRef` id, the `Locator` css (or text), `(x, y)` for a `PointRef`, else `the target`.
-`<hint>` is the cookie-consent hint when `blocked_by` matches the consent pattern, else the generic one. The tool
+`<hint>` is the cookie-consent hint when `blocked_by` matches the consent pattern, else the generic one; `<retry>` is
+the sentence given at construction. The tool
 output (`tool_result`) keeps the driver's own error. Other records and messages without a record are left alone.
 
 ## The browser agent runtime (`playwright_runtime/runtime.py`)
@@ -1061,7 +1064,7 @@ a call and `CommandRecord`s after it, never tool text.
 
 - `before_invoke`: `ensure_runtime_ready()`, then `agent_parts(image_support=<the agent's read-image support>)`:
   every tool through `ability_manager.add_ability(card, tool)` on every invoke (a re-add refreshes the instance),
-  and the parts' rails (`ActionPolicy`, `CommandRepeatGuardRail`, `CommandInterceptedHintRail`, the profile's)
+  and the parts' rails (`ActionPolicy`, `RepeatedCallGuardRail`, `InterceptedActionHintRail`, the profile's)
   through `agent.register_rail` once per agent.
 - `before_tool_call`: a factory tool whose schema addresses elements by `target`, `startTarget` or `endTarget`
   (the Playwright MCP dialect) has its arguments normalised: the `ref`, `startRef` and `endRef` aliases renamed,
@@ -1075,7 +1078,8 @@ a call and `CommandRecord`s after it, never tool text.
   kind in place of the name.
 - `after_tool_call`: a `PolicyDenied` result or the rail's own denial sets `executed=False, denied=True`. Otherwise
   `command_record(tool_result)`: with a record the tool message gets `record.message_metadata` (O5), a partial
-  batch with a successful mutating step counting as `state_changed`; without one, a known tool sent nothing
+  batch with a successful mutating step counting as `state_changed`, and `effect` for a budgeted kind; without one,
+  a known tool sent nothing
   (`executed=False`) and an unknown tool is read from `ToolOutput.success`. The evidence machinery reads one dict:
   a helper's payload as is, else `{ok, error, result, url, title, generation_id, page_state}` with `result` the
   script value of a `RunScript` or the rendered text, and `url`/`title` from `record.surface`. An `Observe` that is
@@ -1088,6 +1092,26 @@ a call and `CommandRecord`s after it, never tool text.
   discovery (`browser_probe_cards` → structured extraction); `Click`, `Hover`, `Drag`, `Drop` → interaction;
   `exempt_from_budget` → no phase or replan budget; read-only recovery for `READ`, `SwitchContext`, a script that
   does not mutate, a batch of read-only ops.
+
+### Context processors and the status log
+
+They read tool-message metadata and command records, never tool names or result text.
+
+- `BrowserStateContextProcessor` (`browser_state_context_processor.py`) groups the completed tool calls of one model
+  turn by their messages' `effect`: a call with an effect other than `READ` whose message has `state_changed` not
+  `False` is a mutation (a full capture after the group, or the reconciliation capture when its `success` is
+  `False`); a group of `READ` effects alone with `success` not `False` is an observation (the compact capture, no
+  browser round trip). Messages without `effect`, with `denied`, or with `executed=False` are skipped. The name sets
+  and the JSON content parsing are gone.
+- `BrowserWorkingContextStore` (`browser_working_context.py`) retains a tool error from the message when the metadata
+  says `success` is `False` (the `error` field of a JSON payload, else the text) or the content starts with one of
+  the harness's execution-error prefixes; it no longer scans for `ok`, `success`, `isError` or `success=false` text.
+- `BrowserSubagentStatusLogger` (`status_logging.py`) takes `command_of(tool_name, tool_args) -> str`, the rail's
+  decoder (the command type name, `""` for a helper or an unknown tool), and shapes `tool_start` arguments by the
+  command (`RunScript`: code length only; `Navigate`: the URL without its query) and `tool_end` results by the
+  command record (`kind="command"`, `command`, `effect`, `ok`, `dispatched`, `error`, the text length, `line_count`
+  for `Observe`, the value kind and length for `RunScript`). A helper's dict payload is shaped by its keys;
+  `browser_batch_interact`, the surface's own extra tool, keeps its step summaries by name.
 
 ## Drivers
 
@@ -1242,8 +1266,10 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
 - `create_playwright_mcp_driver(device, surface_settings)` builds the `@playwright/mcp` server config with
   `playwright_runtime.config.playwright_mcp_config` (the same builder `build_playwright_mcp_config` uses), with
   `device.endpoint` as the CDP endpoint. A config in `surface_settings.mcp_server` keeps its `params` (command,
-  args, cwd, timeout) and `client_type`; the factory's server name and id and the device environment win, so the
-  tool prefix never depends on the caller. The composition root never sees the command line.
+  args, cwd, timeout, env) and `client_type`; the factory's server name and id win, so the tool prefix never depends
+  on the caller. In the given env `PLAYWRIGHT_MCP_DEVICE` is dropped (no device emulation over CDP) and, when the
+  device has an endpoint, `PLAYWRIGHT_MCP_CDP_ENDPOINT` is set and `PLAYWRIGHT_MCP_BROWSER` defaults to `chrome`, as
+  the old service injection did. The composition root never sees the command line.
 - `start()` owns one MCP client (`BrowserMoveStdioClient`, or `BrowserMoveStreamableHttpClient` for
   `streamable-http`) and calls it directly, never through `ToolMgr`; it reads `tools/list` once and keeps each
   mapped tool's description as `DriverInfo.tool_hints`, and every listed tool that has a decoder (`tools.py`) as

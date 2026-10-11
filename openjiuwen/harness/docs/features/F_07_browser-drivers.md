@@ -2048,3 +2048,120 @@ serves the runner on both drivers.
 3. The registry's heartbeat-owner bookkeeping is unused (every service stops its own stack).
 4. `OpenAIModelClient.aclose()` on `shutdown()` closes every cached client in the process; a host that keeps model
    clients alive across a facade shutdown rebuilds them on the next call.
+
+## The switch, step 3: processors, logging, dead code, renames
+
+The third switch session (design sections 1(e) and 8; decisions P1, P2, R4; the S2 review's U4, U5, U6;
+`switch-plan.md` S3), on `p4-switch`. Nothing in the agent keys on a tool name or parses result text any more; the
+old rails and the last client-patch consumers are gone; the browser-use golden is compared for real.
+
+### Decisions
+
+1. **The rail writes the effect onto the tool message.** `BrowserRuntimeRail.after_tool_call` adds `effect` (the
+   `Effect` value) to the metadata of the surface's budgeted tools (factory tools and non-exempt helpers); a tool
+   outside the surface, or an exempt one (`browser_recall_offload`), gets none. The 46-name refresh set and the
+   4-name observation set of `BrowserStateContextProcessor` become "effect other than `READ`" and "`READ`"; the
+   JSON content parsing of `success`/`ok`/`state_changed`/`denied` goes, metadata alone decides.
+2. **The working context trusts the metadata** for tool errors (`success is False` → the payload's `error` or the
+   text); the harness's own execution-error prefixes stay (they carry no metadata); the `ok`/`success`/`isError`
+   markers and the `success=false`/`error=` scan go.
+3. **The status log is keyed by command type.** `BrowserSubagentStatusLogger(command_of=)` gets the rail's decoder
+   for `tool_start` (`RunScript` → code redacted, `Navigate` → URL without query) and reads the command record for
+   `tool_end` (`kind="command"`, command, effect, ok, dispatched, error, text length, line count, script value
+   kind). `browser_batch_interact` keeps its step summaries by name: it is the surface's own extra tool, not a
+   driver name (design 1(c) row 24). The command summary carries no URL: that would put a browser word into core.
+4. **Old rails deleted, new rails take the old names (P1).** `RepeatedCallGuardRail` and `InterceptedActionHintRail`
+   on MCP text (call-log parsing, `### Events` masking, evaluate name checks) are gone; `CommandRepeatGuardRail` and
+   `CommandInterceptedHintRail` are renamed to those names, the guard no longer a subclass. The three old test
+   files are deleted; their records twins, which hold every old test name, take the old file names.
+5. **The retry sentence is the surface's (P2).** `profile.messages["retry"]` = "Then retry the action (take a fresh
+   browser_snapshot if the page changed)."; `InterceptedActionHintRail(retry)` and `explain_blocked_command(record,
+   retry)` take it; `build_agent_parts` passes the profile's. The fake surface says "Then poke again.".
+6. **`DriverAssembly.surface_settings` dropped (R4)**; the session re-provisions from `assembly.surface.settings`.
+7. **Client patch consumer 4 gone**: the facade constructor no longer calls `ensure_browser_runtime_client_patch`;
+   `test_heartbeat.py` (one test, the stdio client patch) is deleted. The patch itself (`browser_tools.py`) and the
+   module-level copies in `main.py` and the MCP server entry stay for Phase 7 (J1, J3).
+8. **Registry heartbeat ownership deleted (U6)**: `heartbeat_owner`, `is_heartbeat_owner`, `_live_owner` and
+   `BrowserServiceRelease` (`close_mcp_binding`, `next_heartbeat_owner`) are gone; `activate_binding` and `release`
+   return nothing. Every service stops its own stack on its last release, so nothing read them since S2.
+9. **`main.py` lists the factory tools (U5)**: `runtime.agent_parts(image_support=False).tools` after
+   `ensure_started()`, instead of `Runner.resource_mgr.get_mcp_tool_infos` (empty since S2); the `Runner` import
+   goes. The listing is informational and stays.
+10. **A given MCP config keeps the old env semantics (U4).** `create_playwright_mcp_driver` keeps the given env,
+    drops `PLAYWRIGHT_MCP_DEVICE`, sets the CDP endpoint and defaults `PLAYWRIGHT_MCP_BROWSER` to `chrome` only when
+    the device has an endpoint, as `_inject_cdp_endpoint` did; the surface-computed env no longer overrides a given
+    `PLAYWRIGHT_MCP_BROWSER`.
+11. **The browser-use golden is a real comparison.** The snapshot builder builds a view on browser-use
+    (`build_view(view, workdir, driver="browser_use")`, `BROWSER_DRIVER` set, the sidecar transport stubbed with a
+    blank page as the MCP transport is). `test_tool_prompt_snapshot.py` asserts, per capability view, the tools equal
+    the 857239db golden except the one catalog's differences (Q3: run control, screenshot, close, drag and drop
+    missing; the probes and the batch added; Q6: `browser_tabs` gains `new`) and the system prompt equals the
+    Playwright MCP golden's (Q4: one prompt). The browser-use `runner` golden has no agents (the old runner never ran
+    browser-use), so the runner view is not compared; the WebVoyager smoke on browser-use is P4-T9's.
+
+### Rejected options
+
+- **A processor rule on `state_changed` alone**: the rail sets it `True` for any unknown tool that ran (a file write
+  on the main agent would refresh the browser state); the `effect` key marks the surface's tools.
+- **Counting exempt tools (`browser_recall_offload`) as observations**: a recall-only turn would run the compact
+  capture and advance the semantic no-progress count; they were in neither name set before.
+- **Keying the status log by argument shape** (`code`/`url` keys): names the dialect instead of the command.
+- **Keeping `_normalise_call_key`'s evaluate handling** for no-record calls: a call that decoded to no command has
+  no script to mask; tool name and canonical arguments are enough.
+- **Fixing the heartbeat wording of the `browser_runtime_health` tool description**: model-facing text of a runtime
+  tool; left for a benchmark-phase prompt review.
+
+### Behaviour changes to know
+
+- The browser-state processor refreshes after the surface's non-`READ` tools only; `browser_custom_action`
+  (a runtime tool the factory does not know, so it carries no `effect`) no longer triggers a refresh, where the old
+  name set listed it. `GetConsole`/`GetNetwork` results (`READ` commands) now count as observations and run the
+  compact merge; the old observation set did not list them.
+- A helper's failed JSON payload is retained in the working context by its `error` field, as before, but only when
+  the rail marked the message `success=False`.
+- The status log's `tool_end` summary of a command tool changed shape: `kind="command"` with the record's fields
+  instead of `{"kind": "dict", "keys": ["command", "content"]}` (which S1 had left it at).
+
+### Golden status
+
+| Check | Result |
+|---|---|
+| every MCP view, prompts included (`test_tool_prompt_snapshot.py`) | byte for byte, no golden touched |
+| runner contract (`test_wv_runner_contract.py`) | green |
+| factory goldens (`test_tool_factory_golden.py`) | `core` 18/18, `runner` 14/14 |
+| browser-use views through the agent | tools = golden minus Q3 plus the helpers, tabs + `new` (Q6); prompt = MCP golden (Q4), all 11 capability views |
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q` on `p4-switch`: **2287 passed, 111 skipped**
+  (whole suite green; the three old-rail files gone, 22 browser-use golden tests added, the 12 browser-use
+  well-formedness tests no longer skipped). One timing test,
+  `surfaces/test_browser_batch.py::test_a_condition_waits_until_its_value_holds_still_for_the_stable_time`, failed
+  twice out of about ten runs ("no scripted answer left for `Wait`"; the stable-time loop polled once more on a slow
+  run); untouched by this step.
+- Architecture tests: the allowlists shrank for every removed entry (`intercepted_action.py`,
+  `repeated_call_guard.py`, `service_registry.py`, `status_logging.py` driver names; `browser_state_context_processor.py`
+  and `intercepted_action.py` MCP names; `runtime.py` lowered to its actual counts). No entry grew.
+- The ten harness test files outside `browser_move` that build the browser agent: **234 passed**.
+- Live: MCP conformance + live assembly + live helpers **63 passed**; browser-use conformance + live helpers + live
+  assembly **56 passed, 1 failed** (the MCP half of the assembly test counted two OneDrive updater processes that
+  started during its window as Chrome children; alone, both halves pass **4/4**).
+- Rewritten under their names: `test_browser_state_context_processor.py` (effects on the tool messages; the 46-name
+  case is the three mutating effects), `test_browser_subagent_status_logging.py` (commands and a record),
+  `test_browser_runtime_rail.py` (the `effect` key), `test_browser_result_contracts.py` (a decodable mock runtime),
+  `test_browser_service_registry.py`, `test_settings_passing.py` (`main.py` lists the facade's parts),
+  `test_browser_profile.py` untouched (the new message is additive). Added: a working-context error from metadata, a
+  command result summary, the args summary keyed by the decoded command, a given MCP env keeping its browser, the
+  browser-use view comparisons.
+- Deleted tests: the three MCP-text rail files (89 tests; every name lives on in the renamed twins);
+  `test_registry_assigns_one_heartbeat_owner_and_transfers_it`; `test_heartbeat.py`.
+
+### Known leftovers
+
+1. `BrowserRuntimeRail._emit_status` logs a status-logger failure with `exc_info=True`, which
+   `browser_agent_log_warning` does not accept; a logger exception would surface as a `TypeError` from the rail.
+   Pre-existing, found when a test's mock runtime could not decode a command; not changed here.
+2. `browser_runtime_health`'s card description still says "heartbeat status".
+3. `main.py` and `playwright_runtime_mcp_server.py` keep their module-level client-patch copies; `browser_tools.py`
+   keeps the patch and the public `register_browser_runtime_mcp_server` wrapper (Phase 7).
+4. The browser-use `runner` golden has no agents: no golden pins the runner's browser-use (Direct) view.
