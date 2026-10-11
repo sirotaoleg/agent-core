@@ -32,6 +32,7 @@ from openjiuwen.core.foundation.llm import Model, ModelClientConfig, ModelReques
 from openjiuwen.core.foundation.llm.model_clients.openai_model_client import OpenAIModelClient
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.runner import Runner
+from openjiuwen.core.runner.callback.errors import AbortError
 from openjiuwen.core.single_agent.prompts.builder import PromptSection
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext, AgentRail
 from openjiuwen.harness.rails._multimodal import (
@@ -1127,7 +1128,10 @@ class BrowserRuntimeRail(AgentRail):
         if ctx.steering_queue is None:
             ctx.bind_steering_queue(asyncio.Queue())
         self._emit_status("before_invoke", ctx)
-        await self._runtime.ensure_runtime_ready()
+        try:
+            await self._runtime.ensure_runtime_ready()
+        except Exception as exc:
+            raise AbortError(str(exc), cause=exc) from exc
         await self._add_agent_parts(ctx)
         session = getattr(ctx, "session", None)
         if session is None:

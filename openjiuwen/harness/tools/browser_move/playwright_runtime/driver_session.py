@@ -59,6 +59,12 @@ class DriverSession:
 
     async def start(self) -> None:
         """Start the stack again on a live device; a dead one is released and provisioned again first."""
+        try:
+            await self._start()
+        except ConnectionLost as error:
+            await self._restart(error)
+
+    async def _start(self) -> None:
         assembly = self.assembly
         if await asyncio.to_thread(assembly.provisioner.is_alive, assembly.device):
             await assembly.stack.start()
@@ -84,18 +90,18 @@ class DriverSession:
         self._losses += 1
         if self._losses > 1:
             raise build_error(StatusCode.DEEPAGENT_RUNTIME_ERROR, error_msg=self._lost, cause=error) from error
+        await self._restart(error)
+        raise ConnectionLost(self._restarted, dispatched=error.dispatched) from error
+
+    async def _restart(self, error: ConnectionLost) -> None:
         try:
-            await self._restart()
+            with contextlib.suppress(DriverError):
+                await self.assembly.stack.stop()
+            # A driver may start without touching its device (lazy connect), so a clean start does not prove it alive.
+            await self._start()
         except Exception as restart_error:
             raise build_error(StatusCode.DEEPAGENT_RUNTIME_ERROR, error_msg=self._lost, cause=restart_error) from error
         self._page_state.reset()
-        raise ConnectionLost(self._restarted, dispatched=error.dispatched) from error
-
-    async def _restart(self) -> None:
-        with contextlib.suppress(DriverError):
-            await self.assembly.stack.stop()
-        # A driver may start without touching its device (lazy connect), so a clean start does not prove it alive.
-        await self.start()
 
 
 __all__ = ["DriverSession"]
