@@ -191,15 +191,22 @@ another repository. Factory signatures: driver `factory(device, surface_settings
 `instance`, the surface's per-agent identity, is applied to the settings last), provisioner
 `factory(**kwargs) -> Provisioner`.
 
+`register_driver(name, factory, *, default_topology="direct")` also records the driver's default topology in
+`DRIVER_TOPOLOGIES: dict[str, str]`, module state next to `DRIVERS` (the `Registry` class is generic over the three
+kinds and carries no driver-only field). `default_topology(name)` returns the recorded string or raises the
+`KeyError` of an unknown driver, listing the registered names. A duplicate name is refused before anything is
+recorded. `contract/` stores and returns the string without judging it: the settings parser validates the
+environment value and the core maps the name to a behaviour.
+
 Nothing is registered in `contract/`; the packages that own the built-ins register them with lazy strings and
 re-export the registry, so `from ..drivers import DRIVERS` gives a registry with the built-ins in it:
 
-| Package | Names | Factory |
-|---|---|---|
-| `drivers/__init__.py` | `browser_use` | `drivers.browser_use.driver:create_browser_use_driver` |
-| | `playwright_mcp` | `drivers.playwright_mcp.driver:create_playwright_mcp_driver` (module not written yet: "not built yet") |
-| `surfaces/__init__.py` | `browser` | `surfaces.browser.profile:create_browser_surface` |
-| `provisioning/__init__.py` | `managed`, `remote`, `extension` | `provisioning.managed_browser:ManagedBrowserProvisioner` |
+| Package | Names | Factory | Default topology |
+|---|---|---|---|
+| `drivers/__init__.py` | `browser_use` | `drivers.browser_use.driver:create_browser_use_driver` | `direct` |
+| | `playwright_mcp` | `drivers.playwright_mcp.driver:create_playwright_mcp_driver` | `delegated_worker` |
+| `surfaces/__init__.py` | `browser` | `surfaces.browser.profile:create_browser_surface` | — |
+| `provisioning/__init__.py` | `managed`, `remote`, `extension` | `provisioning.managed_browser:ManagedBrowserProvisioner` | — |
 
 Importing the package, a registry package or the composition root imports no concrete driver, surface or
 provisioner module and not `browser_use`.
@@ -351,8 +358,8 @@ is `from_env(os.environ)` and the only place that touches the process environmen
 reads only the current directory (the default of `BrowserSettings.mcp_cwd`). Which variable feeds which field is
 listed in [[F_07_browser-drivers]] ("Settings", inventory).
 
-- **`CoreSettings`** (core): `driver`, `surface` (`"browser"`, a registry name), `topology` (derived from
-  `driver`: `delegated_worker` for `playwright_mcp`, `direct` for `browser_use`), `provider`, `api_key`,
+- **`CoreSettings`** (core): `driver`, `surface` (`"browser"`, a registry name), `topology` (`direct`,
+  `delegated_worker`, or `""` = the driver's registered default; see `BROWSER_TOPOLOGY` below), `provider`, `api_key`,
   `api_base`, `model_name`, `worker_temperature`, `worker_top_p`, `tool_timeout_s`, `guardrails`
   (`BrowserRunGuardrails`), `log_file` (`None` = no dedicated file), `log_level`, `log_mirror_common`,
   `log_audit_raw`, `status_log`, `runtime_server` (`RuntimeServerSettings`, client side). It has no field that only
@@ -390,7 +397,16 @@ listed in [[F_07_browser-drivers]] ("Settings", inventory).
 Values are compared after trimming and lower-casing. An explicit `BROWSER_PROVISIONING` or a legacy value wins over
 `PLAYWRIGHT_MCP_EXTENSION`; without one, the provisioner and the Playwright MCP config agree on extension mode. `BROWSER_DRIVER_BACKEND` is not read.
 
-Errors: `ValueError` for an unknown `BROWSER_DRIVER` or `BROWSER_PROVISIONING`, a `BROWSER_MANAGED_PORT` that is not
+`BROWSER_TOPOLOGY` selects how the runner's facade runs a task, independently of the driver: `direct` (the main
+agent on the facade) or `delegated_worker` (the worker through the browser service), compared after trimming and
+lower-casing; `TOPOLOGIES = ("direct", "delegated_worker")` in `config.py` is the allowed set. Unset or blank gives
+`CoreSettings.topology == ""`, which means the driver's registered default (`default_topology(driver)`, "Registries").
+The parser cannot resolve it: `config.py` imports only `contract` and `surfaces`, and the built-in registrations
+happen when the composition root imports `drivers/`, so a `CoreSettings` built alone would see an empty registry.
+The resolution happens where the driver is known, in the facade's `ensure_started()` ("The browser agent runtime"),
+on `service.core`, so an instance's `driver` override takes its own default.
+
+Errors: `ValueError` for an unknown `BROWSER_DRIVER`, `BROWSER_TOPOLOGY` or `BROWSER_PROVISIONING`, a `BROWSER_MANAGED_PORT` that is not
 a positive integer, and a `PLAYWRIGHT_MCP_ENV_JSON` that is not JSON. Every other invalid value falls back to the
 next key or the default. `CoreSettings` keeps an unsupported `MODEL_PROVIDER` as given (the harness path takes its
 model from the parent agent and must not fail on it); `build_runtime_settings` rejects it as before.
@@ -1040,9 +1056,10 @@ lifetime, hands it to its `BrowserService`, and from `ensure_runtime_ready()` on
   builtin actions and `CUSTOM_ACTIONS` registered on the controller as `functools.partial(handler, context)`, and
   the cached parts dropped.
 - `ensure_started()` and `run_browser_task(task, session_id=, request_id=, timeout_s=)`, the runner's entry points,
-  by `service.core.topology`: on Playwright MCP (`delegated_worker`) `service.ensure_started()` builds the worker
-  and `run_browser_task` is `service.run_task` (JSON contract, retries, recovery unchanged); on browser-use
-  (`direct`) `ensure_started()` builds the main agent on this facade through `create_browser_agent(model,
+  by the topology, `service.core.topology or default_topology(service.core.driver)` ("Settings",
+  `BROWSER_TOPOLOGY`): in `delegated_worker` (the Playwright MCP default) `service.ensure_started()` builds the worker
+  and `run_browser_task` is `service.run_task` (JSON contract, retries, recovery unchanged); in `direct` (the
+  browser-use default) `ensure_started()` builds the main agent on this facade through `create_browser_agent(model,
   runtime=self, language=WORKER_LANGUAGE, temperature=core.worker_temperature, max_iterations=guardrails.max_steps,
   browser_capabilities=<from the allowlist>)` with a `Model` from the facade's provider, key, base and model name
   (`temperature` / `top_p` from the core settings' worker values), and `run_browser_task` runs it once through

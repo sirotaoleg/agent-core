@@ -137,7 +137,8 @@ environment variables, split by owner (S_20 "Settings"). This step adds the pars
    for another tool must not break it. `build_runtime_settings` raises as before.
 6. **`topology` is derived from `driver`**, a property, not a field read from the environment: the default per
    driver is decided (delegated worker for Playwright MCP, direct for browser-use) and no variable exists; the
-   choice is measured in the benchmark phase.
+   choice is measured in the benchmark phase. (Superseded by "Phase 6: topology setting": `topology` is a field
+   read from `BROWSER_TOPOLOGY`, and `""` means the default the driver's registration declares.)
 7. **No `tracing` field.** No variable switches tracing; the composition root passes the `Tracing` sink. The
    existing raw-audit switch is `log_audit_raw`.
 8. **`driver_mode` stays a field.** `BrowserInstanceConfig` appends `provisioning` and `driver` after its eight
@@ -165,7 +166,8 @@ environment variables, split by owner (S_20 "Settings"). This step adds the pars
   depend on the browser surface; it keeps the three legacy names as a private literal.
 - **`driver_mode` as a read-only property over `provisioning`.** Breaks the keyword argument and the dict coercion
   that callers outside the package use.
-- **New `BROWSER_TOPOLOGY` / tracing variables.** Not in the plan and nothing would read them.
+- **New `BROWSER_TOPOLOGY` / tracing variables.** Not in the plan and nothing would read them. (`BROWSER_TOPOLOGY`
+  exists since "Phase 6: topology setting"; no tracing variable.)
 - **Moving the runtime-MCP-server and child-process variables now.** Their owner is not clear (questions below).
 
 ### Inventory
@@ -177,6 +179,7 @@ today, relative to `browser_move/`.
 | Variables (precedence order) | Read in | Meaning | Default | Owner | Field |
 |---|---|---|---|---|---|
 | `BROWSER_DRIVER` | `playwright_runtime/config.py`, `service.py` | driver; legacy values = provisioning | `playwright_mcp` | core (browser reads legacy values) | `driver` |
+| `BROWSER_TOPOLOGY` | `playwright_runtime/config.py` | `direct` / `delegated_worker`; empty = the driver's registered default | `""` | core | `topology` |
 | `MODEL_PROVIDER`, `MODEL_CLIENT_PROVIDER` | `utils/env.py`, `browser_tools.py` | model provider | inferred from base URL, then keys, then `openai` | core | `provider` |
 | `API_KEY`, `MODEL_API_KEY`, then per provider `OPENROUTER_API_KEY` / `SILICONFLOW_API_KEY` / `DASHSCOPE_API_KEY` / `OPENAI_API_KEY` | `utils/env.py`, `browser_tools.py` | model API key | `""` | core | `api_key` |
 | `API_BASE`, `MODEL_API_BASE`, then per provider `OPENROUTER_BASE_URL`, `OPENROUTER_API_BASE`, `SILICONFLOW_BASE_URL`, `SILICONFLOW_API_BASE`, `DASHSCOPE_BASE_URL`, `DASHSCOPE_API_BASE`, `OPENAI_BASE_URL`, `OPENAI_API_BASE` | `utils/env.py`, `browser_tools.py` | model API base; also infers the provider | the provider's public URL | core | `api_base` |
@@ -2593,3 +2596,93 @@ page whose only visible change is its title. No fix.
    language-free.
 3. Leftovers of the previous section stand (the `runtime.py` MCP-name hits, no raw audit on the Direct path, the
    rails registered in `before_invoke`, the import order of `test_browser_runtime_rail.py`).
+
+## Phase 6: topology setting
+
+The topology, who runs a task behind the runner's facade (the main agent on the facade, or a worker through the
+browser service), was `CoreSettings.topology`, a property derived from the driver: `delegated_worker` iff
+`playwright_mcp`. That was the one comparison with a driver name left in the core's settings, and it made the
+other topology unreachable for either driver. This step turns it into a setting with a per-driver default declared
+by the driver's registration; it supersedes "Settings" decision 6 and its rejected `BROWSER_TOPOLOGY`. The strategy
+objects that run each topology, and the facade rewire onto them, are the next step of the phase.
+
+### Decisions
+
+1. **`topology` is a field read from `BROWSER_TOPOLOGY`.** `direct` or `delegated_worker` after trimming and
+   lower-casing, `""` when unset or blank, `ValueError` naming both values otherwise: the shape of the
+   `BROWSER_DRIVER` parser, with `TOPOLOGIES` next to `DRIVERS` in `config.py`. The field does not depend on the
+   driver: `BROWSER_DRIVER=browser_use` alone still gives `""`.
+2. **Unset means the driver's default, resolved where the driver is known.** `config.py` cannot ask the registry:
+   it imports only `contract` and `surfaces`, and the built-in registrations run when the composition root imports
+   `drivers/`, so a `CoreSettings` built in a settings test would see an empty registry and differ from one built
+   by the composition root. The parser keeps `""`; the facade's `ensure_started` reads
+   `core.topology or default_topology(core.driver)` on `service.core`, so an instance's `driver` override takes
+   its own default. This inline bridge is the smallest change that keeps the runner working; `topology.py`
+   (`topology_for(core)`) replaces it in the next step.
+3. **The default lives in the registry, not in a table.** `register_driver(name, factory, *,
+   default_topology="direct")` records a string in `DRIVER_TOPOLOGIES`, module state next to `DRIVERS` in
+   `contract/registry.py`; `default_topology(name)` returns it or raises the `KeyError` of an unknown driver with
+   the registered names, like `Registry._factory`. A string keeps `contract/` stdlib-only; the `Registry` class is
+   generic over drivers, surfaces and provisioners and gets no driver-only field; a driver registered from another
+   repository declares its default in the same call. A duplicate name is refused by `DRIVERS.register` before the
+   default is recorded.
+4. **Validation is split by layer.** `config.py` validates the environment value against `TOPOLOGIES`; `contract/`
+   stores and returns the string without judging it; the core maps a name to a behaviour (today the facade's
+   comparison with `direct`, next step `topology.py`, which raises for a default name no strategy implements).
+5. **Both registrations spell their default.** `browser_use` passes `default_topology="direct"` although it is the
+   parameter's default, so the two facts sit side by side in `drivers/__init__.py`.
+
+### Rejected options
+
+- **A `DEFAULT_TOPOLOGY` dict in `drivers/__init__.py`.** The same two facts in a second structure keyed by the
+  same names; the core would import the `drivers` package to read it (today only the composition root does); a
+  third-party `register_driver` call could not declare its default.
+- **Resolving the default in `CoreSettings.from_env`.** The registry may be empty at parse time (decision 2); the
+  settings would depend on import order.
+- **A `default_topology` field on `Registry` or on `DriverInfo`.** The registry is generic over the three kinds;
+  `DriverInfo` exists only once a driver is built, and the default is needed before the session opens.
+- **Keeping the property and reading the variable as an override only.** The property's `driver ==
+  "playwright_mcp"` is the driver-name knowledge the registration now owns; the core keeps no table of drivers.
+- **An enum of topologies in `contract/`.** The contract would judge a value that only the core gives meaning to;
+  `TOPOLOGIES` in `config.py` is the one allowed set.
+
+### Behaviour changes to know
+
+- `CoreSettings().topology` is `""`, not `"delegated_worker"`; a reader resolves it through `default_topology`.
+- `BROWSER_TOPOLOGY` is read; an invalid value fails `CoreSettings.from_env`, so `from_process_env`, the runtime
+  MCP server and the WebVoyager runner fail at start, like an invalid `BROWSER_DRIVER`.
+- With the variable unset nothing changes: Playwright MCP runs the delegated worker, browser-use runs the main agent
+  on the facade.
+- `contract` exports `DRIVER_TOPOLOGIES` and `default_topology`; `register_driver` takes the keyword-only
+  `default_topology`.
+
+### Verification
+
+- `test_core_settings.py`: `BROWSER_TOPOLOGY` trimmed and lower-cased for both values, unset and blank give `""`,
+  an unknown value raises naming both values, the field does not depend on `BROWSER_DRIVER`; the defaults test
+  asserts `""`; the driver test no longer asserts a derived topology.
+- `contract/test_registry.py`: `register_driver` records the given default and `direct` when none is given; an
+  unknown name lists the registered ones; a duplicate registration is refused before its default is recorded.
+- `test_service.py`: the instance's driver override resolves to `direct` through `default_topology`.
+- `test_browser_runtime_facade.py`: `ensure_started` on each driver with the field unset takes the registered
+  default (MCP: the worker through the service, browser-use: the main agent through `create_browser_agent`) and
+  with the field set takes the setting (MCP + `direct`, browser-use + `delegated_worker`).
+- Architecture: green without an allowlist change. `config.py` is outside the driver-name scan (config modules are
+  exempt), so the deleted comparison changes no count; `BROWSER_TOPOLOGY` is learned as an env name from the
+  constants of `config.py`, and no other module reads it; `contract/` stays stdlib-only.
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q`: **2337 passed, 118 skipped** (2321 / 118 before;
+  16 new tests).
+- Goldens: `snapshots/golden/` unchanged (no file in `git status`).
+- `ruff check` clean on every touched file. `ruff format --check` reports hunks in `runtime.py`, `test_service.py`
+  and `test_browser_runtime_facade.py` that predate this step (context-manager layout, a quote style); left as they
+  are.
+- No live suite: no driver, provisioning or surface code changed.
+
+### Known leftovers
+
+1. The facade resolves the default inline in `ensure_started`; `topology.py` takes it over in the next step, with
+   the `ValueError` for a registered default name that no strategy implements.
+2. The S_20 paragraph on the runner's entry points still describes the two branches inside the facade; it moves to
+   the `Topology` strategies with that step.
+3. `create_browser_agent` (the harness main agent, which always calls the tools itself) is outside
+   `BROWSER_TOPOLOGY`'s scope; the variable governs the runner's facade only.
