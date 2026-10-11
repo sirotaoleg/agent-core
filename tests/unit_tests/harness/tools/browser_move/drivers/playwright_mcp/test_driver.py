@@ -463,6 +463,55 @@ def test_observe_while_a_dialog_is_open_reads_the_tab_list_and_takes_no_screensh
     assert observation.surface.dialog == "confirm: Delete order?"
 
 
+def test_a_depth_limited_observe_sends_the_depth_alone_and_reads_the_servers_text(tmp_path: Path) -> None:
+    raw = _raw("snapshot_depth_1")
+
+    observation, calls = _run(tmp_path, {"browser_snapshot": raw}, lambda driver: driver.observe(Observe(depth=1)))
+
+    assert calls == [("browser_snapshot", {"depth": 1})]
+    assert observation.native_text == result_text(raw)
+    refs = [element.ref.ref for element in observation.elements]
+    assert refs == ["e1", "e2", "e3", "e7", "e13", "e14", "e15", "e16", "e17", "e18"]
+    assert all(element.bounds is None for element in observation.elements)
+    assert observation.context == _tab(0, "Fixture form page")
+
+
+def test_an_observe_rooted_at_a_ref_sends_the_target_and_reads_only_the_subtree(tmp_path: Path) -> None:
+    raw = _raw("snapshot_target")
+
+    observation, calls = _run(
+        tmp_path, {"browser_snapshot": raw}, lambda driver: driver.observe(Observe(root=DriverRef("e3", "g3")))
+    )
+
+    assert calls == [("browser_snapshot", {"target": "e3"})]
+    assert observation.native_text == result_text(raw)
+    assert [element.ref.ref for element in observation.elements] == ["e3", "e4", "e5", "e6"]
+
+
+def test_an_observe_rooted_at_a_css_locator_with_a_depth_sends_both(tmp_path: Path) -> None:
+    raw = _raw("snapshot_target")
+
+    _observation, calls = _run(
+        tmp_path, {"browser_snapshot": raw}, lambda driver: driver.observe(Observe(depth=2, root=CSS))
+    )
+
+    assert calls == [("browser_snapshot", {"depth": 2, "target": "#save"})]
+
+
+def test_an_observe_rooted_at_a_point_is_unsupported_before_any_call(tmp_path: Path) -> None:
+    async def body(driver: PlaywrightMcpDriver) -> DriverError:
+        try:
+            await driver.observe(Observe(root=POINT))
+        except DriverError as exc:
+            return exc
+        raise AssertionError("observe accepted a PointRef root")
+
+    error, calls = _run(tmp_path, {}, body)
+
+    assert isinstance(error, Unsupported) and error.dispatched is False
+    assert calls == []
+
+
 # --- handlers ---------------------------------------------------------------------------------------------------------
 
 SENT = [

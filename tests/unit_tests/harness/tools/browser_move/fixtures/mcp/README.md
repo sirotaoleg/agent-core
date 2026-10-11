@@ -52,6 +52,8 @@ in brackets.
 | File | What it records |
 |---|---|
 | `snapshot_form_page` [1] | `browser_snapshot` of `index.html`: text input, select, checkbox, links, a download link, an iframe (refs `f1e*`), alert/confirm triggers |
+| `snapshot_depth_1` | `browser_snapshot` `depth: 1` of `index.html`: the root and its children only; the navigation, the form container and the iframe appear without their subtrees |
+| `snapshot_target` | `browser_snapshot` `target: <navigation ref>` of `index.html`: the navigation subtree alone, under the usual `### Page` header |
 | `click_success` [2] | `browser_click` on "Save"; the page text changes |
 | `events_console_message` [6] | `browser_click` that runs `console.log`; result has `### Events` with `New console entries: …` |
 | `events_download` [6] | `browser_click` on a `download` link; `### Events` reports the download start and the saved file |

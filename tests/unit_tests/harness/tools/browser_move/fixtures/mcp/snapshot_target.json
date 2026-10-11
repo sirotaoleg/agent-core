@@ -1,0 +1,20 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "snapshot_target",
+  "request": {
+    "tool": "browser_snapshot",
+    "arguments": {
+      "target": "e3"
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Page\n- Page URL: http://127.0.0.1:<PORT>/index.html\n- Page Title: Fixture form page\n### Snapshot\n```yaml\n- navigation [ref=e3]:\n  - link \"Second page\" [ref=e4] [cursor=pointer]:\n    - /url: second.html\n  - link \"Blocked page\" [ref=e5] [cursor=pointer]:\n    - /url: blocked.html\n  - link \"Download report\" [ref=e6] [cursor=pointer]:\n    - /url: report.csv\n```"
+      }
+    ],
+    "isError": false
+  },
+  "model_text": "### Page\n- Page URL: http://127.0.0.1:<PORT>/index.html\n- Page Title: Fixture form page\n### Snapshot\n```yaml\n- navigation [ref=e3]:\n  - link \"Second page\" [ref=e4] [cursor=pointer]:\n    - /url: second.html\n  - link \"Blocked page\" [ref=e5] [cursor=pointer]:\n    - /url: blocked.html\n  - link \"Download report\" [ref=e6] [cursor=pointer]:\n    - /url: report.csv\n```"
+}

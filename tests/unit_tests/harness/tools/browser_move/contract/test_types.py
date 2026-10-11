@@ -34,6 +34,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     TypeText,
     Viewport,
     Wait,
+    iter_refs,
 )
 from openjiuwen.harness.tools.browser_move.contract import actions as contract_actions
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
@@ -146,8 +147,14 @@ def test_shared_commands_are_exactly_the_approved_list() -> None:
     }, "GetText, Forward and Reload were removed (decision C14)"
 
 
+def test_an_observe_is_scoped_by_a_depth_or_a_root_the_stale_check_sees() -> None:
+    assert not Observe().scoped and not Observe(include_screenshot=True).scoped
+    assert Observe(depth=1).scoped and Observe(root=E1).scoped
+    assert list(iter_refs(Observe(root=E1))) == [E1]
+
+
 def test_command_defaults() -> None:
-    assert Observe() == Observe(include_screenshot=False, full_page=False)
+    assert Observe() == Observe(include_screenshot=False, full_page=False, depth=None, root=None)
     assert Click(E1) == Click(E1, button="left", modifiers=(), count=1)
     typed = TypeText(None, "hi")
     assert (typed.submit, typed.sensitive, typed.clear, typed.slowly) == (False, False, True, False)

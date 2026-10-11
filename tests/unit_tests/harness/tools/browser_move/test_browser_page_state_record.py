@@ -146,6 +146,46 @@ def test_observation_elements_become_ax_targets_and_replace_missing_refs() -> No
     assert state.resolve(interactives[0]["target_id"], "g0") == DriverRef("e2", "g0")
 
 
+def test_a_scoped_observation_keeps_the_generation_and_the_last_full_observation() -> None:
+    state = _state("e1", "e2", "e3", "e4")
+    full = state.last_observation
+
+    scoped = state.record(Observe(depth=1), _observation("e9"))
+
+    assert state.generation_id == "g0"
+    assert state.last_observation is state.fresh_observation is full
+    assert scoped.generation == "g0" and scoped.elements[0].ref == DriverRef("e9", "g0")
+
+
+def test_a_scoped_observation_adds_its_refs_and_keeps_the_refs_it_does_not_show() -> None:
+    state = _state("e1", "e2")
+
+    state.record(Observe(root=DriverRef("e2", "g0")), _observation("e2", "e3"))
+
+    assert state.generation_of("e1") == state.generation_of("e3") == "g0"
+    state.check(Click(DriverRef("e1", "g0")))
+    assert [item["text"] for item in state.export()["interactives"]] == ["name e1", "name e2", "name e3"]
+
+
+def test_a_scoped_observation_does_not_make_an_outdated_observation_fresh_again() -> None:
+    state = _state("e1")
+    state.record(RunScript(code="() => 1"), ActionResult(ok=True, value=1))
+
+    state.record(Observe(depth=1), _observation("e1"))
+
+    assert state.fresh_observation is None
+    state.record(Observe(), _observation("e1"))
+    assert state.fresh_observation is not None
+
+
+def test_check_rejects_a_scoped_observe_rooted_at_a_stale_ref() -> None:
+    state = _state("e1")
+    state.reset()
+
+    with pytest.raises(StaleRef, match="Stale AX ref e1 belongs to g0"):
+        state.check(Observe(root=DriverRef("e1", "g0")))
+
+
 def test_check_finds_stale_refs_nested_in_fill_form() -> None:
     state = _state("e1", "e2")
     fields = tuple(

@@ -16,6 +16,8 @@ SERVER = "@playwright/mcp@0.0.78"
 KEYS = {"server", "case", "request", "raw_result", "model_text"}
 CASES = {
     "snapshot_form_page",
+    "snapshot_depth_1",
+    "snapshot_target",
     "click_success",
     "click_intercepted_by_overlay",
     "navigate_second_page",

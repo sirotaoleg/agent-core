@@ -1,0 +1,20 @@
+{
+  "server": "@playwright/mcp@0.0.78",
+  "case": "snapshot_depth_1",
+  "request": {
+    "tool": "browser_snapshot",
+    "arguments": {
+      "depth": 1
+    }
+  },
+  "raw_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "### Page\n- Page URL: http://127.0.0.1:<PORT>/index.html\n- Page Title: Fixture form page\n### Snapshot\n```yaml\n- generic [active] [ref=e1]:\n  - heading \"Fixture form page\" [level=1] [ref=e2]\n  - navigation [ref=e3]\n  - generic [ref=e7]\n  - paragraph [ref=e13]: Not saved\n  - button \"Show alert\" [ref=e14]\n  - button \"Delete order\" [ref=e15]\n  - paragraph [ref=e16]: No answer\n  - button \"Log to console\" [ref=e17]\n  - iframe [ref=e18]:\n    \n```"
+      }
+    ],
+    "isError": false
+  },
+  "model_text": "### Page\n- Page URL: http://127.0.0.1:<PORT>/index.html\n- Page Title: Fixture form page\n### Snapshot\n```yaml\n- generic [active] [ref=e1]:\n  - heading \"Fixture form page\" [level=1] [ref=e2]\n  - navigation [ref=e3]\n  - generic [ref=e7]\n  - paragraph [ref=e13]: Not saved\n  - button \"Show alert\" [ref=e14]\n  - button \"Delete order\" [ref=e15]\n  - paragraph [ref=e16]: No answer\n  - button \"Log to console\" [ref=e17]\n  - iframe [ref=e18]:\n    \n```"
+}

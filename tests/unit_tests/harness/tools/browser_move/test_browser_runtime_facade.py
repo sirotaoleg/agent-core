@@ -18,8 +18,11 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import Bro
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     DEVICE,
     MCP_PREFIX,
+    element,
     fake_assembly,
     mcp_fake_driver,
+    observation,
+    result,
     run,
 )
 
@@ -96,6 +99,28 @@ def test_runtime_health_reports_the_session_health() -> None:
     run(runtime.session.start())
     assert run(runtime.runtime_health())["ok"] is True
     assert after["model_name"] == "test-model"
+
+
+def test_capture_reuses_the_models_full_snapshot_but_never_a_scoped_one() -> None:
+    runtime = _runtime()
+    page = observation([element("e1")])
+    metadata = result(value={"page_position": {}, "semantic_state": {}})
+    driver = mcp_fake_driver(observations=[page, page, page], results=[metadata, metadata])
+    with _assembling(driver):
+        run(runtime.ensure_runtime_ready())
+        snapshot = next(
+            tool
+            for tool in runtime.agent_parts(image_support=False).tools
+            if tool.card.name == f"{MCP_PREFIX}browser_snapshot"
+        )
+        run(snapshot.invoke({}))
+        run(runtime.capture_browser_state())
+        reused_after_full = runtime.observations_reused
+        run(snapshot.invoke({"depth": 1}))
+        run(runtime.capture_browser_state())
+
+    assert reused_after_full == runtime.observations_reused == 1
+    assert driver.kinds() == ["observe", "execute", "observe", "observe", "execute"]
 
 
 def test_shutdown_closes_the_session_and_the_model_clients() -> None:

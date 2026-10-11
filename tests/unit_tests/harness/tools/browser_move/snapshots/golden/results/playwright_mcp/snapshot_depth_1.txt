@@ -1,0 +1,17 @@
+### Page
+- Page URL: http://127.0.0.1:<PORT>/index.html
+- Page Title: Fixture form page
+### Snapshot
+```yaml
+- generic [active] [ref=e1]:
+  - heading "Fixture form page" [level=1] [ref=e2]
+  - navigation [ref=e3]
+  - generic [ref=e7]
+  - paragraph [ref=e13]: Not saved
+  - button "Show alert" [ref=e14]
+  - button "Delete order" [ref=e15]
+  - paragraph [ref=e16]: No answer
+  - button "Log to console" [ref=e17]
+  - iframe [ref=e18]:
+    
+```

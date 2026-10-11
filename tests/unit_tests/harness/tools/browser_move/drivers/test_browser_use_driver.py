@@ -659,6 +659,16 @@ def test_observe_without_screenshot_has_none():
     assert asyncio.run(driver.observe(Observe())).screenshot is None
 
 
+def test_a_scoped_observe_is_unsupported_before_anything_is_sent():
+    driver, request = _driver()
+
+    with pytest.raises(Unsupported) as raised:
+        asyncio.run(driver.observe(Observe(depth=1)))
+
+    assert raised.value.dispatched is False
+    assert _calls(request) == []
+
+
 def test_observe_without_an_active_tab_falls_back_to_the_page():
     tabs = [{"target_id": "T1", "url": "http://other/", "title": "O", "active": False}]
     driver, _request = _driver(_wire_observation(tabs=tabs), "X")

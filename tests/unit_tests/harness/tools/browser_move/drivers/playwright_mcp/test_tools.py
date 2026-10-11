@@ -114,7 +114,7 @@ def test_typing_slowly_keeps_the_content() -> None:
     ("tool", "arguments", "action"),
     [
         ("browser_click", {"target": "e1", "element": "Save button"}, Click(DriverRef("e1", "g3"))),
-        ("browser_snapshot", {"target": "e1", "depth": 2, "boxes": True, "filename": "a.md"}, Observe()),
+        ("browser_snapshot", {"boxes": True, "filename": "a.md"}, Observe()),
         (
             "browser_take_screenshot",
             {"target": "e1", "element": "logo", "type": "jpeg", "scale": "device", "filename": "a.png"},
@@ -128,6 +128,17 @@ def test_typing_slowly_keeps_the_content() -> None:
 )
 def test_cosmetic_and_dropped_arguments_do_not_change_the_command(tool: str, arguments: dict, action: Any) -> None:
     assert _decode(tool, arguments) == action
+
+
+def test_snapshot_depth_and_target_scope_the_observation() -> None:
+    assert _decode("browser_snapshot", {}) == Observe()
+    assert _decode("browser_snapshot", {"depth": 1}) == Observe(depth=1)
+    assert _decode("browser_snapshot", {"target": "e3"}) == Observe(root=DriverRef("e3", "g3"))
+    assert _decode("browser_snapshot", {"target": "nav", "depth": 2.0}) == Observe(
+        depth=2, root=Locator("nav", None, "g3")
+    )
+    with pytest.raises(ValueError, match="'depth' must be a number"):
+        _decode("browser_snapshot", {"depth": "shallow"})
 
 
 def test_points_take_rounded_screenshot_pixels_and_no_generation_before_a_screenshot() -> None:
