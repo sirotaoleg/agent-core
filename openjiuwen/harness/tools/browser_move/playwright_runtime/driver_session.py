@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, NoReturn
 from openjiuwen.core.common.exception.codes import StatusCode
 from openjiuwen.core.common.exception.errors import build_error
 
-from ..contract import Action, ActionResult, ConnectionLost, DriverError, Observation, Observe
+from ..contract import Action, ActionResult, ConnectionLost, DriverError, Health, Observation, Observe
 from .page_state import BrowserPageState
 
 if TYPE_CHECKING:
@@ -53,6 +53,30 @@ class DriverSession:
         except ConnectionLost as error:
             await self._recover(error)
 
+    async def stop(self) -> None:
+        """Stop the stack and keep the device, between tasks."""
+        await self.assembly.stack.stop()
+
+    async def start(self) -> None:
+        """Start the stack again on a live device; a dead one is released and provisioned again first."""
+        assembly = self.assembly
+        if await asyncio.to_thread(assembly.provisioner.is_alive, assembly.device):
+            await assembly.stack.start()
+            return
+        provisioner = assembly.provisioner
+        await asyncio.to_thread(provisioner.release, assembly.device)
+        device = await asyncio.to_thread(provisioner.provision, assembly.surface_settings)
+        try:
+            stack = assembly.rebuild(device)
+        except BaseException:
+            await asyncio.to_thread(provisioner.release, device)
+            raise
+        self.assembly = dataclasses.replace(assembly, stack=stack, device=device)
+        await stack.start()
+
+    async def health(self) -> Health:
+        return await self.assembly.stack.health()
+
     async def close(self) -> None:
         await self.assembly.close()
 
@@ -68,23 +92,10 @@ class DriverSession:
         raise ConnectionLost(self._restarted, dispatched=error.dispatched) from error
 
     async def _restart(self) -> None:
-        assembly = self.assembly
         with contextlib.suppress(DriverError):
-            await assembly.stack.stop()
+            await self.assembly.stack.stop()
         # A driver may start without touching its device (lazy connect), so a clean start does not prove it alive.
-        if await asyncio.to_thread(assembly.provisioner.is_alive, assembly.device):
-            await assembly.stack.start()
-            return
-        provisioner = assembly.provisioner
-        await asyncio.to_thread(provisioner.release, assembly.device)
-        device = await asyncio.to_thread(provisioner.provision, assembly.surface_settings)
-        try:
-            stack = assembly.rebuild(device)
-        except BaseException:
-            await asyncio.to_thread(provisioner.release, device)
-            raise
-        self.assembly = dataclasses.replace(assembly, stack=stack, device=device)
-        await stack.start()
+        await self.start()
 
 
 __all__ = ["DriverSession"]
