@@ -491,12 +491,10 @@ def create_playwright_mcp_driver(device: ProvisionedDevice, surface_settings: An
     server = playwright_mcp_config(surface_settings, BrowserInstanceConfig(cdp_url=device.endpoint))
     given = getattr(surface_settings, "mcp_server", None)
     if given is not None:
-        env = dict(given.params.get("env") or {})
         # A device emulation cannot drive a CDP-attached browser; CDP mode is Chromium-only.
-        env.pop("PLAYWRIGHT_MCP_DEVICE", None)
+        env = {key: value for key, value in (given.params.get("env") or {}).items() if key != "PLAYWRIGHT_MCP_DEVICE"}
         if device.endpoint:
-            env["PLAYWRIGHT_MCP_CDP_ENDPOINT"] = device.endpoint
-            env.setdefault("PLAYWRIGHT_MCP_BROWSER", "chrome")
+            env = {"PLAYWRIGHT_MCP_BROWSER": "chrome", **env, "PLAYWRIGHT_MCP_CDP_ENDPOINT": device.endpoint}
         server = McpServerConfig(
             server_id=server.server_id,
             server_name=server.server_name,
