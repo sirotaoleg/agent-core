@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
-"""System test for browser_move browser_tools registration flow."""
+"""System test: an agent uses browser_move served as an MCP server."""
 
 from __future__ import annotations
 
@@ -120,10 +120,7 @@ async def _run_browser_tools_check(query: str, session_id: str) -> Dict[str, obj
     from openjiuwen.core.runner import Runner
     from openjiuwen.core.single_agent.agents.react_agent import ReActAgent, ReActAgentConfig
     from openjiuwen.core.single_agent.schema.agent_card import AgentCard
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_tools import (
-        build_browser_runtime_mcp_config,
-        register_browser_runtime_mcp_server,
-    )
+    from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_tools import build_browser_runtime_mcp_config
 
     settings = build_runtime_settings()
     if not settings.api_key:
@@ -168,7 +165,9 @@ async def _run_browser_tools_check(query: str, session_id: str) -> Dict[str, obj
         )
     )
 
-    registered = await register_browser_runtime_mcp_server(agent, tag="agent.main")
+    added = await Runner.resource_mgr.add_mcp_server(browser_tools_cfg, tag="agent.main")
+    registered = added is None or added.is_ok()
+    agent.ability_manager.add(browser_tools_cfg)
     result = await Runner.run_agent(agent, {"query": query}, session=session_id)
 
     result_type = result.get("result_type") if isinstance(result, dict) else None

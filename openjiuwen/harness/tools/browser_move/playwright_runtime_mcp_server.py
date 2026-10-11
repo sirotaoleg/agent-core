@@ -26,8 +26,6 @@ for _p in (str(_REPO_ROOT), str(_SRC_ROOT)):
         sys.path.append(_p)
 
 from fastmcp import Context, FastMCP
-from drivers.playwright_mcp.clients.stdio_client import BrowserMoveStdioClient
-from drivers.playwright_mcp.clients.streamable_http_client import BrowserMoveStreamableHttpClient
 from playwright_runtime.config import (
     MISSING_API_KEY_MESSAGE,
     CoreSettings,
@@ -47,14 +45,8 @@ from controllers.action import (
     run_action,
 )
 
-# Use browser_move client subclasses for MCP transport retry and timeout handling.
-import openjiuwen.core.runner.resources_manager.tool_manager as _tool_mgr_mod
-
 if TYPE_CHECKING:
     from playwright_runtime.runtime import BrowserAgentRuntime
-
-_tool_mgr_mod.StdioClient = BrowserMoveStdioClient
-_tool_mgr_mod.StreamableHttpClient = BrowserMoveStreamableHttpClient
 
 _runtime: Optional["BrowserAgentRuntime"] = None
 _runtime_lock = asyncio.Lock()

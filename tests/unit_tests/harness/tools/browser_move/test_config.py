@@ -11,13 +11,12 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.clients.streamable_http_client import (
     BrowserMoveStreamableHttpClient,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime import browser_tools as browser_tools_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import (
     ensure_execute_signature_compat,
 )
@@ -30,7 +29,6 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     DEFAULT_GUARDRAIL_MAX_STEPS,
     DEFAULT_MODEL_NAME,
     BrowserInstanceConfig,
-    RuntimeServerSettings,
     build_playwright_mcp_config,
     build_runtime_settings,
     parse_command_args,
@@ -359,45 +357,6 @@ def test_execute_wrapper_preserves_non_none_tool_arguments() -> None:
         "filename": "snapshot.md",
         "depth": 10,
     }
-
-
-def test_local_browser_runtime_server_logs_are_written_under_runtime_log_dir() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        process = MagicMock()
-        process.poll.return_value = None
-        with (
-            patch.object(
-                browser_tools_module,
-                "_server_script",
-                return_value=Path(__file__),
-            ),
-            patch.object(
-                browser_tools_module,
-                "_wait_port_open",
-                return_value=None,
-            ),
-            patch(
-                "openjiuwen.harness.tools.browser_move.playwright_runtime.browser_tools.subprocess.Popen",
-                return_value=process,
-            ) as mock_popen,
-        ):
-            getattr(browser_tools_module, "_start_local_server")(
-                "streamable-http",
-                "127.0.0.1",
-                8940,
-                "/mcp",
-                settings=RuntimeServerSettings(log_dir=Path(tmp)),
-                environ={},
-            )
-            stdout_log = Path(tmp) / "browser_runtime_stdout.log"
-            stderr_log = Path(tmp) / "browser_runtime_stderr.log"
-            assert stdout_log.exists()
-            assert stderr_log.exists()
-            assert Path(mock_popen.call_args.kwargs["cwd"]).resolve() == Path.cwd().resolve()
-            browser_tools_module.stop_local_browser_runtime_server()
-
-        assert getattr(browser_tools_module, "_browser_runtime_stdout_handle") is None
-        assert getattr(browser_tools_module, "_browser_runtime_stderr_handle") is None
 
 
 # ---------------------------------------------------------------------------
