@@ -13,20 +13,20 @@ import pytest
 
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
-from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
-from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
+from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
+from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
+from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserInstanceConfig,
     BrowserRunGuardrails,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import (
+from openjiuwen.harness.tools.browser_move.runtime.runtime import (
     _ACTIVE_BROWSER_RUNTIMES,
     BrowserAgentRuntime,
     reset_active_browser_runtimes,
     reset_managed_browser_runtime,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
-from openjiuwen.harness.tools.browser_move.playwright_runtime.service_registry import (
+from openjiuwen.harness.tools.browser_move.runtime.service import BrowserService
+from openjiuwen.harness.tools.browser_move.runtime.service_registry import (
     BROWSER_SERVICE_REGISTRY,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface

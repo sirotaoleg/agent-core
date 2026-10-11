@@ -8,11 +8,11 @@ from openjiuwen.core.common.logging import logger
 from openjiuwen.core.foundation.tool import McpToolCard
 from openjiuwen.core.foundation.tool.mcp.base import NO_TIMEOUT, preserve_mcp_tool_result_status
 from openjiuwen.core.foundation.tool.mcp.client.stdio_client import StdioClient
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging import (
+from openjiuwen.harness.tools.browser_move.runtime.browser_logging import (
     browser_agent_log_info,
     browser_agent_log_warning,
 )
-from ....utils.parsing import sanitize_json_schema
+from ....runtime.utils.parsing import sanitize_json_schema
 from .logging_utils import summarize_tool_arguments_for_log
 
 

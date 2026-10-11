@@ -56,11 +56,12 @@ from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.driver import 
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.result import result_text
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.snapshot import without_boxes
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import DECODERS
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
+from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserInstanceConfig,
     build_playwright_mcp_config,
 )
-from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.runtime.utils.parsing import sanitize_json_schema
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     Back,
     Drop,
@@ -76,7 +77,6 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     UploadFile,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
-from openjiuwen.harness.tools.browser_move.utils.parsing import sanitize_json_schema
 from tests.unit_tests.harness.tools.browser_move.snapshots.builder import FakeMcpSession, load_mcp_tools
 
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "mcp"

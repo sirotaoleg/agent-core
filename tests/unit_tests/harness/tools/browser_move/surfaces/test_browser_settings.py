@@ -12,8 +12,8 @@ from unittest.mock import patch
 
 import pytest
 
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserInstanceConfig
 from openjiuwen.harness.tools.browser_move.provisioning import managed_browser
+from openjiuwen.harness.tools.browser_move.runtime.config import BrowserInstanceConfig
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import ENV_PREFIXES, BrowserSettings
 
 

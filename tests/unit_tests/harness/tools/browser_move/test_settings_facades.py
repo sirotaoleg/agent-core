@@ -13,8 +13,8 @@ from unittest.mock import patch
 import pytest
 
 from openjiuwen.harness.tools.browser_move.contract import Registry, SurfaceBundle
-from openjiuwen.harness.tools.browser_move.playwright_runtime import config as config_module
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
+from openjiuwen.harness.tools.browser_move.runtime import config as config_module
+from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserInstanceConfig,
     CoreSettings,
     build_browser_guardrails,

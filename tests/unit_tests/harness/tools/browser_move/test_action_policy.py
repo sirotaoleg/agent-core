@@ -23,8 +23,8 @@ from openjiuwen.harness.tools.browser_move.contract import (
     RefResolver,
 )
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
-from openjiuwen.harness.tools.browser_move.playwright_runtime.action_policy import ActionPolicy
-from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
+from openjiuwen.harness.tools.browser_move.runtime.action_policy import ActionPolicy
+from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
 

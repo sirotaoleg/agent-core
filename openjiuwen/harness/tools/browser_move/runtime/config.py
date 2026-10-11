@@ -16,7 +16,13 @@ from openjiuwen.core.foundation.tool import McpServerConfig
 
 from ..contract import SurfaceSettings
 from ..surfaces import SURFACES
-from ..utils.env import (
+from . import REPO_ROOT
+from .browser_capabilities import (
+    CORE_BROWSER_CAPABILITY_NAME,
+    DEFAULT_BROWSER_CAPABILITIES,
+    POLICY_ONLY_BROWSER_CAPABILITY_NAMES,
+)
+from .utils.env import (
     DEFAULT_BROWSER_TIMEOUT_S,
     DEFAULT_GUARDRAIL_MAX_FAILURES,
     DEFAULT_GUARDRAIL_MAX_STEPS,
@@ -32,12 +38,6 @@ from ..utils.env import (
     is_truthy_env,
     normalize_provider,
     parse_command_args,
-)
-from . import REPO_ROOT
-from .browser_capabilities import (
-    CORE_BROWSER_CAPABILITY_NAME,
-    DEFAULT_BROWSER_CAPABILITIES,
-    POLICY_ONLY_BROWSER_CAPABILITY_NAMES,
 )
 
 _playwright_mcp_capability_names: list[str] = []

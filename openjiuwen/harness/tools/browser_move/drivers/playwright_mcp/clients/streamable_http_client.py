@@ -7,7 +7,7 @@ from typing import Any, List, Optional, Dict
 from openjiuwen.core.common.logging import logger
 from openjiuwen.core.foundation.tool import McpServerConfig, McpToolCard
 from openjiuwen.core.foundation.tool.mcp.base import NO_TIMEOUT
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging import (
+from openjiuwen.harness.tools.browser_move.runtime.browser_logging import (
     browser_agent_log_info,
     browser_agent_log_warning,
 )

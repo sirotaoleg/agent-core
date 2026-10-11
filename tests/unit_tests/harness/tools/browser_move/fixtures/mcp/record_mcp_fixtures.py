@@ -20,7 +20,7 @@ from typing import Any
 
 from openjiuwen.core.foundation.tool.mcp.base import MCPTool
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.clients import BrowserMoveStdioClient
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import build_playwright_mcp_config
+from openjiuwen.harness.tools.browser_move.runtime.config import build_playwright_mcp_config
 
 SERVER = "@playwright/mcp@0.0.78"
 HERE = Path(__file__).resolve().parent

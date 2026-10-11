@@ -19,11 +19,11 @@ from urllib.request import urlopen
 import pytest
 
 from openjiuwen.harness.tools.browser_move.contract import ConnectionLost, Observe
-from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import assemble_driver
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import CoreSettings
-from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
-from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import _candidate_chrome_binaries
+from openjiuwen.harness.tools.browser_move.runtime.assembly import assemble_driver
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
+from openjiuwen.harness.tools.browser_move.runtime.driver_session import DriverSession
+from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
 

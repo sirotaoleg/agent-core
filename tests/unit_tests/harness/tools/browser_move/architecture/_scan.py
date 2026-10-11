@@ -17,15 +17,15 @@ PKG_DOTTED = "openjiuwen.harness.tools.browser_move"
 PKG_DIR = REPO_ROOT.joinpath(*PKG_DOTTED.split("."))
 CORE_DIR = REPO_ROOT / "openjiuwen" / "core"
 
-CORE_FOLDERS = ("runtime", "playwright_runtime", "controllers", "utils")
+CORE_FOLDERS = ("runtime",)
 # Wraps every driver, so it obeys the core rules although it lives under drivers/.
 CORE_MODULES = frozenset({"drivers/middleware.py"})
 CONTRACT_FOLDER = "contract"
 SURFACES_FOLDER = "surfaces"
 # Modules allowed to parse settings (and, for the driver-name rule, name drivers).
-CONFIG_MODULE_RE = re.compile(r"^(?:runtime/config\.py|playwright_runtime/config\.py|surfaces/[^/]+/config\.py)$")
+CONFIG_MODULE_RE = re.compile(r"^(?:runtime/config\.py|surfaces/[^/]+/config\.py)$")
 # The composition root, under its current and its future folder.
-ASSEMBLY_MODULES = frozenset({"runtime/assembly.py", "playwright_runtime/assembly.py"})
+ASSEMBLY_MODULES = frozenset({"runtime/assembly.py"})
 
 
 def rel(path: Path) -> str:
@@ -104,7 +104,7 @@ def resolve_import(relpath: str, module: str | None, level: int) -> tuple[str, .
         return None
     if module == PKG_DOTTED or module.startswith(PKG_DOTTED + "."):
         return tuple(module[len(PKG_DOTTED) + 1 :].split(".")) if module != PKG_DOTTED else ()
-    # The stand-alone MCP server puts the package directory on sys.path (``from utils.env import ...``).
+    # The stand-alone MCP server puts the package directory on sys.path (``from runtime.config import ...``).
     first = module.split(".")[0]
     if first in _top_level_names():
         return tuple(module.split("."))

@@ -22,7 +22,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     SurfaceProfile,
     SwitchContext,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
+from openjiuwen.harness.tools.browser_move.runtime.browser_capabilities import (
     CORE_BROWSER_TOOL_NAMES,
     DEFAULT_BROWSER_CAPABILITIES,
 )

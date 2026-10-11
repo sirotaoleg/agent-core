@@ -10,12 +10,12 @@ from typing import TYPE_CHECKING, Any
 
 from openjiuwen.core.common.logging import tool_logger
 from openjiuwen.harness.tools.browser_move.contract import ContextRef, DriverError, Observe, RunScript, SwitchContext
-from openjiuwen.harness.tools.browser_move.playwright_runtime.probes import build_browser_state_metadata_js
+from openjiuwen.harness.tools.browser_move.runtime.probes import build_browser_state_metadata_js
+from openjiuwen.harness.tools.browser_move.runtime.utils.parsing import extract_json_object
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
-from openjiuwen.harness.tools.browser_move.utils.parsing import extract_json_object
 
 if TYPE_CHECKING:
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import ToolContext
+    from openjiuwen.harness.tools.browser_move.runtime.tool_factory import ToolContext
 
 _PAGE_METADATA = re.compile(r"const pageMetadata = await page\.evaluate\((?P<function>\(\) => \{.*?\n  \})\);\n", re.S)
 

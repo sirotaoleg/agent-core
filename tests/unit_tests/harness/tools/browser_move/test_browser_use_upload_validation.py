@@ -14,8 +14,8 @@ from unittest.mock import AsyncMock
 
 from openjiuwen.harness.tools.browser_move.contract import ActionResult, DriverRef
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import BrowserUseDriver
+from openjiuwen.harness.tools.browser_move.runtime.utils.upload_paths import resolve_upload_file_paths
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import UploadFile
-from openjiuwen.harness.tools.browser_move.utils.upload_paths import resolve_upload_file_paths
 
 _FILE_INPUT = DriverRef("bnid:5", "g1")
 

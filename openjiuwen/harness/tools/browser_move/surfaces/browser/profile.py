@@ -29,7 +29,7 @@ from .renderer import BrowserRenderer
 from .tools import BROWSER_TOOL_SPECS
 
 if TYPE_CHECKING:
-    from ...playwright_runtime.config import BrowserInstanceConfig
+    from ...runtime.config import BrowserInstanceConfig
 
 _COMMANDS = (Navigate, Back, OpenContext, SelectOption, UploadFile, FillForm, Drop, GetPdf, GetConsole, GetNetwork)
 _EFFECT_TIMEOUT_S = 240.0

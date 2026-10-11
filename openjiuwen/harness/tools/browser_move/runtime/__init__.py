@@ -9,8 +9,8 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
-# SRC_ROOT is the browser_move/ directory that contains controllers/, utils/, etc.
-# Adding it to sys.path makes bare module imports (e.g. `from controllers.base import ...`)
+# SRC_ROOT is the browser_move/ directory.
+# Adding it to sys.path makes bare module imports (e.g. `from runtime.controllers.base import ...`)
 # work both when running standalone (the server entry point) and when loaded as part of the
 # openjiuwen package.
 _HERE = Path(__file__).resolve().parent
@@ -19,7 +19,7 @@ SRC_ROOT = _HERE.parent
 REPO_ROOT = SRC_ROOT.parent.parent.parent.parent
 if str(SRC_ROOT) not in sys.path:
     sys.path.append(str(SRC_ROOT))
-sys.modules.setdefault("playwright_runtime", sys.modules[__name__])
+sys.modules.setdefault("runtime", sys.modules[__name__])
 
 __all__ = [
     "REPO_ROOT",
@@ -41,7 +41,7 @@ __all__ = [
 def __getattr__(name: str) -> Any:
     if name in {"BrowserStateContextProcessor", "BrowserStateContextProcessorConfig"}:
         module = import_module(
-            "openjiuwen.harness.tools.browser_move.playwright_runtime.browser_state_context_processor"
+            "openjiuwen.harness.tools.browser_move.runtime.browser_state_context_processor"
         )
         return getattr(module, name)
     if name in {
@@ -49,22 +49,22 @@ def __getattr__(name: str) -> Any:
         "BrowserWorkingContextProcessorConfig",
     }:
         module = import_module(
-            "openjiuwen.harness.tools.browser_move.playwright_runtime.browser_working_context_processor"
+            "openjiuwen.harness.tools.browser_move.runtime.browser_working_context_processor"
         )
         return getattr(module, name)
     if name == "BrowserWorkingContextRail":
-        module = import_module("openjiuwen.harness.tools.browser_move.playwright_runtime.browser_working_context_rail")
+        module = import_module("openjiuwen.harness.tools.browser_move.runtime.browser_working_context_rail")
         return getattr(module, name)
     if name == "controller":
-        return import_module("openjiuwen.harness.tools.browser_move.controllers")
+        return import_module("openjiuwen.harness.tools.browser_move.runtime.controllers")
     if name == "browser_tools":
-        return import_module("openjiuwen.harness.tools.browser_move.playwright_runtime.browser_tools")
+        return import_module("openjiuwen.harness.tools.browser_move.runtime.browser_tools")
     if name == "service":
-        return import_module("openjiuwen.harness.tools.browser_move.playwright_runtime.service")
+        return import_module("openjiuwen.harness.tools.browser_move.runtime.service")
     if name in {"reset_active_browser_runtimes", "reset_managed_browser_runtime"}:
-        module = import_module("openjiuwen.harness.tools.browser_move.playwright_runtime.runtime")
+        module = import_module("openjiuwen.harness.tools.browser_move.runtime.runtime")
         return getattr(module, name)
     if name == "build_browser_runtime_mcp_config":
-        module = import_module("openjiuwen.harness.tools.browser_move.playwright_runtime.browser_tools")
+        module = import_module("openjiuwen.harness.tools.browser_move.runtime.browser_tools")
         return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

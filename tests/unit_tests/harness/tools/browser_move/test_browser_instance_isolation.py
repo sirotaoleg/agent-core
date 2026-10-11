@@ -20,17 +20,17 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
-    BrowserInstanceConfig,
-    BrowserRunGuardrails,
-    build_playwright_mcp_config,
-)
-from openjiuwen.harness.tools.browser_move.playwright_runtime.profiles import BrowserProfile, BrowserProfileStore
-from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
 from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import (
     ManagedBrowserProvisioner,
     _build_profile,
 )
+from openjiuwen.harness.tools.browser_move.runtime.config import (
+    BrowserInstanceConfig,
+    BrowserRunGuardrails,
+    build_playwright_mcp_config,
+)
+from openjiuwen.harness.tools.browser_move.runtime.profiles import BrowserProfile, BrowserProfileStore
+from openjiuwen.harness.tools.browser_move.runtime.service import BrowserService
 from openjiuwen.harness.tools.browser_move.surfaces import SURFACES
 
 _ALLOCATE_FREE_PORT = "openjiuwen.harness.tools.browser_move.provisioning.managed_browser._allocate_free_port"

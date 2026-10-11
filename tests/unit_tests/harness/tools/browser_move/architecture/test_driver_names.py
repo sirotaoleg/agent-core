@@ -94,11 +94,11 @@ MCP_TOOL_NAME_RE = re.compile(
 # file relative to the package -> number of driver-name matches.
 KNOWN_DRIVER_NAMES: dict[str, int] = {
     # the capability catalog; moves to surfaces/browser/ in Phase 9
-    "playwright_runtime/browser_capabilities.py": 2,
+    "runtime/browser_capabilities.py": 2,
     # the runtime server's own transport: the config facade's name and the server's "/mcp" path
-    "playwright_runtime/browser_tools.py": 3,
+    "runtime/browser_tools.py": 3,
     # the CDP endpoint of the given server config, part of the lifecycle identity
-    "playwright_runtime/service.py": 1,
+    "runtime/service.py": 1,
     # model-facing card text, kept byte-identical to the golden tool list
     "surfaces/browser/helpers/batch_steps.py": 1,
 }
@@ -108,9 +108,9 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
 # screenshot guidance, primary-link rewrite and evaluate provenance) and the browser_resume run-context key;
 # they move to surfaces/browser/ with the prompt text in Phase 9.
 KNOWN_MCP_TOOL_NAMES: dict[str, int] = {
-    "playwright_runtime/agents.py": 11,
-    "playwright_runtime/browser_capabilities.py": 69,
-    "playwright_runtime/runtime.py": 9,
+    "runtime/agents.py": 11,
+    "runtime/browser_capabilities.py": 69,
+    "runtime/runtime.py": 9,
 }
 
 

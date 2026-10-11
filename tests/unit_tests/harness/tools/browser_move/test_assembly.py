@@ -38,17 +38,17 @@ from openjiuwen.harness.tools.browser_move.contract import (
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.drivers import DRIVERS
 from openjiuwen.harness.tools.browser_move.drivers.middleware import RetryOnStale, Timeouts, Tracing
-from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
-from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import (
+from openjiuwen.harness.tools.browser_move.provisioning import PROVISIONERS, ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
+from openjiuwen.harness.tools.browser_move.runtime.assembly import (
     DriverAssembly,
     Registries,
     assemble_driver,
     assemble_surface,
     open_session,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserInstanceConfig, CoreSettings
-from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
-from openjiuwen.harness.tools.browser_move.provisioning import PROVISIONERS, ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.runtime.config import BrowserInstanceConfig, CoreSettings
+from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.surfaces import SURFACES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 
@@ -463,7 +463,7 @@ _CONCRETE_MODULES_PROBE = """
 import json, sys
 import openjiuwen.harness.tools.browser_move
 after_package = sorted(sys.modules)
-import openjiuwen.harness.tools.browser_move.playwright_runtime.assembly
+import openjiuwen.harness.tools.browser_move.runtime.assembly
 print(json.dumps({"package": after_package, "assembly": sorted(sys.modules)}))
 """
 

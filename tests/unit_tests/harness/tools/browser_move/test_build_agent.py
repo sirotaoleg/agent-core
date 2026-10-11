@@ -27,22 +27,22 @@ from openjiuwen.harness.tools.browser_move.contract import (
     ToolSpec,
 )
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
-from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
-from openjiuwen.harness.tools.browser_move.playwright_runtime.action_policy import ActionPolicy
-from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import (
+from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
+from openjiuwen.harness.tools.browser_move.runtime.action_policy import ActionPolicy
+from openjiuwen.harness.tools.browser_move.runtime.assembly import (
     Registries,
     assemble_driver,
     build_agent,
     build_agent_parts,
     core_rails,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import CoreSettings
-from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
-from openjiuwen.harness.tools.browser_move.playwright_runtime.intercepted_action import InterceptedActionHintRail
-from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
-from openjiuwen.harness.tools.browser_move.playwright_runtime.repeated_call_guard import RepeatedCallGuardRail
-from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import ToolContext
-from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
+from openjiuwen.harness.tools.browser_move.runtime.driver_session import DriverSession
+from openjiuwen.harness.tools.browser_move.runtime.intercepted_action import InterceptedActionHintRail
+from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
+from openjiuwen.harness.tools.browser_move.runtime.repeated_call_guard import RepeatedCallGuardRail
+from openjiuwen.harness.tools.browser_move.runtime.tool_factory import ToolContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.renderer import BrowserRenderer
 
 CORE = CoreSettings(driver="fake", surface="toy")

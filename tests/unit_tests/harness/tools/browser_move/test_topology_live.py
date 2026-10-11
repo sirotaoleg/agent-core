@@ -22,14 +22,14 @@ from openjiuwen.harness import deep_agent as deep_agent_module
 # The conftests snapshot the context-processor registry per test; the browser processors must be registered
 # before the first test starts, not by Direct.start's lazy import during it.
 from openjiuwen.harness.subagents import browser_agent  # noqa: F401
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import CORE_BROWSER_TOOL_NAMES
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
+from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.runtime.browser_capabilities import CORE_BROWSER_TOOL_NAMES
+from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserRunGuardrails,
     CoreSettings,
     playwright_mcp_config,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime
-from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene import PAGES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene.server import SceneServer

@@ -21,14 +21,14 @@ from openjiuwen.harness.factory import create_deep_agent
 from openjiuwen.harness.rails.context_engineer import ContextProcessorRail
 from openjiuwen.harness.schema.config import SubAgentConfig
 from openjiuwen.harness.schema.decision_policy import DecisionPolicyModel
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_state_context_processor import (
+from openjiuwen.harness.tools.browser_move.runtime.browser_state_context_processor import (
     BrowserStateContextProcessorConfig,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_working_context_processor import (
+from openjiuwen.harness.tools.browser_move.runtime.browser_working_context_processor import (
     BrowserWorkingContextProcessorConfig,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging import configure_browser_agent_logging
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
+from openjiuwen.harness.tools.browser_move.runtime.browser_logging import configure_browser_agent_logging
+from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserInstanceConfig,
     CoreSettings,
     RuntimeSettings,
@@ -36,11 +36,11 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     build_playwright_mcp_config,
     build_runtime_settings,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
+from openjiuwen.harness.tools.browser_move.runtime.browser_capabilities import (
     DEFAULT_BROWSER_CAPABILITIES,
     resolve_browser_capabilities,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import (
+from openjiuwen.harness.tools.browser_move.runtime.runtime import (
     BrowserAgentRuntime,
     BrowserRuntimeRail,
 )

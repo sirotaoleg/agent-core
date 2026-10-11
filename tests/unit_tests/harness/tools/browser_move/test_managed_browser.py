@@ -8,11 +8,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from openjiuwen.harness.tools.browser_move.playwright_runtime.profiles import (
-    BrowserProfile,
-)
 from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import (
     ManagedBrowserProvisioner,
+)
+from openjiuwen.harness.tools.browser_move.runtime.profiles import (
+    BrowserProfile,
 )
 
 

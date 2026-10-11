@@ -11,12 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from openjiuwen.harness.tools.browser_move.playwright_runtime.probes import (
+from openjiuwen.harness.tools.browser_move.runtime.probes import (
     build_browser_state_metadata_js,
     build_card_probe_js,
     build_interactive_probe_js,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.site_profiles import (
+from openjiuwen.harness.tools.browser_move.runtime.site_profiles import (
     builtin_site_profiles,
 )
 

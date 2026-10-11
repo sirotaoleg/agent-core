@@ -16,20 +16,20 @@ from typing import Any
 import pytest
 
 from openjiuwen.core.foundation.llm import AssistantMessage, Model, ModelClientConfig, ModelRequestConfig, ToolCall
-from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import build_agent
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import CORE_BROWSER_TOOL_NAMES
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
+from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.runtime.assembly import build_agent
+from openjiuwen.harness.tools.browser_move.runtime.browser_capabilities import CORE_BROWSER_TOOL_NAMES
+from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserRunGuardrails,
     CoreSettings,
     playwright_mcp_config,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.final_answer_recovery import (
+from openjiuwen.harness.tools.browser_move.runtime.final_answer_recovery import (
     NON_JSON_OUTPUT,
     RECOVERY_MESSAGE,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime
-from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
+from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import MESSAGES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene import PAGES

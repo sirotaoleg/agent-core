@@ -17,15 +17,15 @@ from openjiuwen.core.foundation.llm import AssistantMessage, ToolCall
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.contract import Observation, Observe
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
-from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
-from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_agent
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails, CoreSettings
-from openjiuwen.harness.tools.browser_move.playwright_runtime.final_answer_recovery import (
+from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
+from openjiuwen.harness.tools.browser_move.runtime.agents import build_browser_worker_agent
+from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
+from openjiuwen.harness.tools.browser_move.runtime.final_answer_recovery import (
     RECOVERY_MESSAGE,
     STEP_LIMIT_SENTENCE,
     FinalAnswerRecoveryRail,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
+from openjiuwen.harness.tools.browser_move.runtime.service import BrowserService
 
 from .command_tools import HOME, command_tools
 from .runtime_fixtures import fake_assembly, make_runtime
@@ -349,7 +349,7 @@ def test_service_registers_the_recovery_rail(other_rails: int) -> None:
     runtime = make_runtime(image_support=None, core_settings=CoreSettings(driver="playwright_mcp"))
     worker = MagicMock()
     worker.register_rail = AsyncMock()
-    module = "openjiuwen.harness.tools.browser_move.playwright_runtime.agents"
+    module = "openjiuwen.harness.tools.browser_move.runtime.agents"
     with patch(f"{module}.build_browser_worker_agent", return_value=worker):
         asyncio.run(runtime.ensure_started())
         for _ in range(other_rails):

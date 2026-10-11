@@ -14,12 +14,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from openjiuwen.core.foundation.llm import AssistantMessage
-from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_system_prompt
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
+from openjiuwen.harness.tools.browser_move.runtime.agents import build_browser_worker_system_prompt
+from openjiuwen.harness.tools.browser_move.runtime.browser_capabilities import (
     CORE_BROWSER_TOOL_NAMES,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import CoreSettings
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime_tools import (
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
+from openjiuwen.harness.tools.browser_move.runtime.runtime_tools import (
     BrowserCustomActionTool,
     BrowserListActionsTool,
 )

@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from openjiuwen.harness.tools.browser_move.contract import Action, DriverRef, Locator, PointRef
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import DEFAULT_BROWSER_CAPABILITIES
+from openjiuwen.harness.tools.browser_move.runtime.browser_capabilities import DEFAULT_BROWSER_CAPABILITIES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import BROWSER_TOOL_SPECS
 
 _SPECS = {spec.name: spec for spec in BROWSER_TOOL_SPECS}

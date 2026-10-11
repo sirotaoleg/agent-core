@@ -22,9 +22,9 @@ __all__ = [
 
 def __getattr__(name: str) -> Any:
     if name in {"reset_active_browser_runtimes", "reset_managed_browser_runtime"}:
-        module = import_module("openjiuwen.harness.tools.browser_move.playwright_runtime.runtime")
+        module = import_module("openjiuwen.harness.tools.browser_move.runtime.runtime")
         return getattr(module, name)
     if name == "build_browser_runtime_mcp_config":
-        module = import_module("openjiuwen.harness.tools.browser_move.playwright_runtime.browser_tools")
+        module = import_module("openjiuwen.harness.tools.browser_move.runtime.browser_tools")
         return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

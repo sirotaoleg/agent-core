@@ -10,16 +10,16 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
-from openjiuwen.harness.tools.browser_move.playwright_runtime import agents as agents_module
-from openjiuwen.harness.tools.browser_move.playwright_runtime.action_policy import ActionPolicy
-from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import WORKER_LANGUAGE, build_worker
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import CORE_BROWSER_TOOL_NAMES
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import CoreSettings
-from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
-from openjiuwen.harness.tools.browser_move.playwright_runtime.final_answer_recovery import FinalAnswerRecoveryRail
-from openjiuwen.harness.tools.browser_move.playwright_runtime.intercepted_action import InterceptedActionHintRail
-from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
-from openjiuwen.harness.tools.browser_move.playwright_runtime.repeated_call_guard import RepeatedCallGuardRail
+from openjiuwen.harness.tools.browser_move.runtime import agents as agents_module
+from openjiuwen.harness.tools.browser_move.runtime.action_policy import ActionPolicy
+from openjiuwen.harness.tools.browser_move.runtime.agents import WORKER_LANGUAGE, build_worker
+from openjiuwen.harness.tools.browser_move.runtime.browser_capabilities import CORE_BROWSER_TOOL_NAMES
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
+from openjiuwen.harness.tools.browser_move.runtime.driver_session import DriverSession
+from openjiuwen.harness.tools.browser_move.runtime.final_answer_recovery import FinalAnswerRecoveryRail
+from openjiuwen.harness.tools.browser_move.runtime.intercepted_action import InterceptedActionHintRail
+from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
+from openjiuwen.harness.tools.browser_move.runtime.repeated_call_guard import RepeatedCallGuardRail
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import MCP_PREFIX, fake_assembly, mcp_driver_info
 
 WORKER_HELPERS = {"browser_probe_interactives", "browser_probe_cards", "browser_batch_interact"}

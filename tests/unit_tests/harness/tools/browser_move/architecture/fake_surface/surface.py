@@ -33,8 +33,8 @@ from openjiuwen.harness.tools.browser_move.contract import (
     ToolSpec,
     handles,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import Registries
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.runtime.assembly import Registries
 
 BOARD = 100
 SCREEN = ContextRef("screen-1", "screen", "Board")

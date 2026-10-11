@@ -12,7 +12,7 @@ from typing import Any, AsyncIterator
 from openjiuwen.core.foundation.tool import Tool, ToolCard
 from openjiuwen.core.foundation.tool.schema import ToolOutput
 from openjiuwen.harness.tools.browser_move.contract import DriverError, Observe
-from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import CommandRecord, ToolContext, ToolFlags
+from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandRecord, ToolContext, ToolFlags
 
 _FIND = "browser_find"
 _FIND_DESC = (

@@ -26,7 +26,7 @@ for _p in (str(_REPO_ROOT), str(_SRC_ROOT)):
         sys.path.append(_p)
 
 from fastmcp import Context, FastMCP
-from playwright_runtime.config import (
+from runtime.config import (
     MISSING_API_KEY_MESSAGE,
     CoreSettings,
     RuntimeServerSettings,
@@ -37,7 +37,7 @@ from playwright_runtime.config import (
     process_environ,
     runtime_server_environ,
 )
-from controllers.action import (
+from runtime.controllers.action import (
     bind_runtime,
     clear_runtime_runner,
     list_actions,
@@ -46,7 +46,7 @@ from controllers.action import (
 )
 
 if TYPE_CHECKING:
-    from playwright_runtime.runtime import BrowserAgentRuntime
+    from runtime.runtime import BrowserAgentRuntime
 
 _runtime: Optional["BrowserAgentRuntime"] = None
 _runtime_lock = asyncio.Lock()
@@ -58,7 +58,7 @@ load_repo_dotenv()
 
 
 def _build_runtime() -> "BrowserAgentRuntime":
-    from playwright_runtime.runtime import BrowserAgentRuntime
+    from runtime.runtime import BrowserAgentRuntime
 
     settings = build_runtime_settings(core_settings=_core_settings, browser_settings=_browser_settings)
     if not settings.api_key:

@@ -14,7 +14,7 @@ from . import _scan
 # (file relative to the package, imported module relative to the package) -> count.
 KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {
     # the facade's decision-policy hooks, page metadata and custom actions; moved behind the profile in Phase 9
-    ("playwright_runtime/runtime.py", "surfaces.browser.helpers"): 4,
+    ("runtime/runtime.py", "surfaces.browser.helpers"): 4,
 }
 
 # (file relative to openjiuwen/core, imported module) -> count.

@@ -23,9 +23,9 @@ from openjiuwen.harness.tools.browser_move.contract import (
     PolicyDenied,
     StaleRef,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import build_agent
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import CoreSettings
-from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import command_record
+from openjiuwen.harness.tools.browser_move.runtime.assembly import build_agent
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
+from openjiuwen.harness.tools.browser_move.runtime.tool_factory import command_record
 
 from .surface import DEVICE, MESSAGES, Poke, ScreenDriver, ScreenProvisioner, screen_registries
 

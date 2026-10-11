@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Environment variables are read only in the config modules: directly, via an env-reading ``utils/env.py`` helper
-or by a known name."""
+"""Environment variables are read only in the config modules: directly, via an env-reading
+``runtime/utils/env.py`` helper or by a known name."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from functools import lru_cache
 
 from . import _scan
 
-ENV_MODULE = ("utils", "env")
+ENV_MODULE = ("runtime", "utils", "env")
 UPPER_SNAKE_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$")
 
 # file relative to the package -> {descriptor: count}.
@@ -23,7 +23,7 @@ KNOWN_ENV_READS: dict[str, dict[str, int]] = {
         "os.environ.get(BROWSER_UPLOAD_ROOT)": 1,
     },
     # not the process environment: the env mapping of the Playwright MCP child in the MCP server config
-    "playwright_runtime/service.py": {
+    "runtime/service.py": {
         "env_map.get(PLAYWRIGHT_MCP_CDP_ENDPOINT)": 1,
     },
 }
@@ -48,7 +48,7 @@ def _reads_process_env(function: ast.AST) -> bool:
 
 @lru_cache(maxsize=None)
 def _env_functions() -> frozenset[str]:
-    """``utils/env.py`` functions that read the process environment; pure helpers over a given mapping do not count."""
+    """``runtime/utils/env.py`` functions reading the process environment; pure helpers over a mapping do not count."""
     tree = _scan.parse(_module_file(ENV_MODULE))
     return frozenset(
         n.name

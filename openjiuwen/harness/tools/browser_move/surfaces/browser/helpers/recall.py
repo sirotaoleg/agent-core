@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from openjiuwen.harness.tools.browser_move.offload_recall import BrowserOffloadRecallTool
-from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import ToolContext, ToolFlags
+from openjiuwen.harness.tools.browser_move.runtime.tool_factory import ToolContext, ToolFlags
 
 
 class RecallOffloadTool(BrowserOffloadRecallTool):

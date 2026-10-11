@@ -19,11 +19,11 @@ from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.driver import 
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.result import result_text
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.snapshot import split_sections
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import DECODERS
-from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
-from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
-from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
-from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import CommandTool, ToolContext
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
+from openjiuwen.harness.tools.browser_move.runtime.driver_session import DriverSession
+from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
+from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandTool, ToolContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate, OpenContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext

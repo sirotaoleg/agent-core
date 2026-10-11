@@ -54,9 +54,7 @@ from ..contract import (
     SurfaceBundle,
     SwitchContext,
 )
-from ..controllers import ActionController, BaseController
 from ..surfaces.browser.helpers import CUSTOM_ACTIONS, activate_page, page_metadata, probe_for_policy
-from ..utils.parsing import extract_json_object
 from .assembly import AgentParts, assemble_surface, build_agent_parts, core_rails
 from .browser_capabilities import CORE_BROWSER_TOOL_NAMES, capabilities_of
 from .browser_logging import (
@@ -77,6 +75,7 @@ from .config import (
     browser_surface_settings,
     process_environ,
 )
+from .controllers import ActionController, BaseController
 from .driver_session import DriverSession
 from .page_state import CARD_EVIDENCE_FIELDS, BrowserPageState, BrowserTarget
 from .semantic_state import SemanticStateTracker, price_interval_signature
@@ -85,6 +84,7 @@ from .site_profiles import infer_profile_evidence_entity
 from .status_logging import BrowserSubagentStatusLogger, is_browser_subagent_status_log_enabled
 from .tool_factory import Builder, CommandRecord, ToolContext, ToolFlags, command_record
 from .topology import Topology, topology_for
+from .utils.parsing import extract_json_object
 
 _BROWSER_PROGRESS_STATE_KEY = "__browser_subagent_progress_state__"
 _BROWSER_PROGRESS_TASK_KEY = "__browser_subagent_last_task__"

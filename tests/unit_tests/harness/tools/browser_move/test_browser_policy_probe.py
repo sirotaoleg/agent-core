@@ -15,9 +15,9 @@ from openjiuwen.harness.tools.browser_move.contract import (
     RunScript,
     SwitchContext,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
+from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails
+from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     fake_assembly,

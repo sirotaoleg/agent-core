@@ -600,4 +600,4 @@ __all__ = [
     "run_action",
 ]
 
-sys.modules.setdefault("controllers.action", sys.modules[__name__])
+sys.modules.setdefault("runtime.controllers.action", sys.modules[__name__])

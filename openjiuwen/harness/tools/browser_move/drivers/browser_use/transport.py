@@ -14,9 +14,9 @@ from typing import Any, Mapping
 
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import exceptions as driver_errors
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import wire
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging import get_browser_agent_logger
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import process_environ
-from openjiuwen.harness.tools.browser_move.utils.env import env_value
+from openjiuwen.harness.tools.browser_move.runtime.browser_logging import get_browser_agent_logger
+from openjiuwen.harness.tools.browser_move.runtime.config import process_environ
+from openjiuwen.harness.tools.browser_move.runtime.utils.env import env_value
 
 _logger = get_browser_agent_logger()
 

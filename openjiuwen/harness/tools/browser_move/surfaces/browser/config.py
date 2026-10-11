@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Mapping
 
 from openjiuwen.core.foundation.tool import McpServerConfig
 
-from ...utils.env import (
+from ...runtime.utils.env import (
     env_value,
     first_value,
     int_value,
@@ -23,7 +23,7 @@ from ...utils.env import (
 )
 
 if TYPE_CHECKING:
-    from ...playwright_runtime.config import BrowserInstanceConfig
+    from ...runtime.config import BrowserInstanceConfig
 
 ENV_PREFIXES = ("BROWSER_", "PLAYWRIGHT_")
 PROVISIONINGS = ("remote", "managed", "extension")

@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime
+    from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime
 
 
 @runtime_checkable

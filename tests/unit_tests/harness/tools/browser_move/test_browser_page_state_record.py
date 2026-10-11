@@ -26,7 +26,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     SwitchContext,
 )
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import DECODERS
-from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
+from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     FieldKind,
     FillForm,

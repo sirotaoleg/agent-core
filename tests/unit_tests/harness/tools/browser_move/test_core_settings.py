@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
+from openjiuwen.harness.tools.browser_move.runtime.config import (
     DEFAULT_BROWSER_TIMEOUT_S,
     DEFAULT_GUARDRAIL_MAX_FAILURES,
     DEFAULT_GUARDRAIL_MAX_STEPS,

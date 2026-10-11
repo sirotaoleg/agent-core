@@ -404,7 +404,7 @@ def render(doc: Any) -> str:
 
 def list_views(driver: str = DRIVER) -> list[str]:
     """The capability views, the runner in the driver's default topology and the runner in the other one."""
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
+    from openjiuwen.harness.tools.browser_move.runtime.browser_capabilities import (
         DEFAULT_BROWSER_CAPABILITIES,
     )
 
@@ -441,11 +441,11 @@ async def _capability_view(view: str, captured: list[dict[str, Any]]) -> list[di
 
 async def _runner_view(captured: list[dict[str, Any]], notes: dict[str, Any], role: str) -> list[dict[str, Any]]:
     # Same imports, constructor arguments, helper removal and call as run_one_task.
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
+    from openjiuwen.harness.tools.browser_move.runtime.browser_capabilities import (
         CORE_BROWSER_TOOL_NAMES,
     )
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.config import build_runtime_settings
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime
+    from openjiuwen.harness.tools.browser_move.runtime.config import build_runtime_settings
+    from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime
 
     settings = build_runtime_settings()
     runtime = BrowserAgentRuntime(

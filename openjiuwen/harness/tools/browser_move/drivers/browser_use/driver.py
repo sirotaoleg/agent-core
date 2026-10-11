@@ -50,8 +50,9 @@ from openjiuwen.harness.tools.browser_move.contract import (
     handles,
 )
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.transport import SidecarTransport
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging import get_browser_agent_logger
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.runtime.browser_logging import get_browser_agent_logger
+from openjiuwen.harness.tools.browser_move.runtime.utils.upload_paths import resolve_upload_file_paths
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     Back,
     Drop,
@@ -63,7 +64,6 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     UploadFile,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
-from openjiuwen.harness.tools.browser_move.utils.upload_paths import resolve_upload_file_paths
 
 _logger = get_browser_agent_logger()
 

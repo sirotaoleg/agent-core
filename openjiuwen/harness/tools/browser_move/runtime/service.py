@@ -23,7 +23,6 @@ from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.runner import Runner
 from openjiuwen.core.single_agent.agents.react_agent import ReActAgent
 
-from ..utils.parsing import extract_json_object
 from .agents import refresh_browser_worker_system_prompt, worker_driver_name
 from .assembly import open_session
 from .browser_capabilities import CORE_BROWSER_TOOL_NAMES, capabilities_of
@@ -43,6 +42,7 @@ from .final_answer_recovery import (
 )
 from .page_state import BrowserPageState
 from .service_registry import BROWSER_SERVICE_REGISTRY, BrowserServiceIdentity
+from .utils.parsing import extract_json_object
 
 MAX_ITERATION_MESSAGE = "Max iterations reached without completion"
 _ctx_observer_session_id: contextvars.ContextVar[str] = contextvars.ContextVar(

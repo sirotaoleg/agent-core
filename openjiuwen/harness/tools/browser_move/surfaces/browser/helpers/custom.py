@@ -19,7 +19,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     Ref,
     RunScript,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import ToolContext
+from openjiuwen.harness.tools.browser_move.runtime.tool_factory import ToolContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate, UploadFile
 
 _MARK = "data-openjiuwen-target-id"

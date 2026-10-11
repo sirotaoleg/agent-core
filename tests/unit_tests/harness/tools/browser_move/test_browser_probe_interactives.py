@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import asyncio
 
-from openjiuwen.harness.tools.browser_move.playwright_runtime.probes import (
+from openjiuwen.harness.tools.browser_move.runtime.probes import (
     build_interactive_probe_js,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.site_profiles import (
+from openjiuwen.harness.tools.browser_move.runtime.site_profiles import (
     builtin_site_profiles,
 )
 

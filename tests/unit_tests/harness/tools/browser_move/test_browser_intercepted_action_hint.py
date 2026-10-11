@@ -24,13 +24,13 @@ from openjiuwen.harness.tools.browser_move.contract import (
     ElementNotFound,
 )
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
-from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_agent
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import CoreSettings
-from openjiuwen.harness.tools.browser_move.playwright_runtime.intercepted_action import (
+from openjiuwen.harness.tools.browser_move.runtime.agents import build_browser_worker_agent
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
+from openjiuwen.harness.tools.browser_move.runtime.intercepted_action import (
     InterceptedActionHintRail,
     explain_blocked_command,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import command_record
+from openjiuwen.harness.tools.browser_move.runtime.tool_factory import command_record
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import MESSAGES
 
 from .command_tools import command_tools, fake_driver, result, tool_message
@@ -239,7 +239,7 @@ def test_service_registers_the_rail_on_the_worker() -> None:
     runtime = make_runtime(image_support=None, core_settings=CoreSettings(driver="playwright_mcp"))
     worker = MagicMock()
     worker.register_rail = AsyncMock()
-    module = "openjiuwen.harness.tools.browser_move.playwright_runtime.agents"
+    module = "openjiuwen.harness.tools.browser_move.runtime.agents"
     with patch(f"{module}.build_browser_worker_agent", return_value=worker):
         asyncio.run(runtime.ensure_started())
 

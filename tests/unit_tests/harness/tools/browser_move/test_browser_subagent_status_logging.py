@@ -13,7 +13,7 @@ from typing import Any
 
 from openjiuwen.core.foundation.tool.schema import ToolOutput
 from openjiuwen.harness.tools.browser_move.contract import ActionResult, ContextRef, Observation, Observe
-from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import CommandRecord
+from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandRecord
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
 
 _STATUS_LOGGING_PATH = (
@@ -22,7 +22,7 @@ _STATUS_LOGGING_PATH = (
     / "harness"
     / "tools"
     / "browser_move"
-    / "playwright_runtime"
+    / "runtime"
     / "status_logging.py"
 )
 _SPEC = importlib.util.spec_from_file_location("browser_status_logging", _STATUS_LOGGING_PATH)
@@ -243,7 +243,7 @@ def test_direct_browser_runtime_rail_wires_status_logger() -> None:
         / "harness"
         / "tools"
         / "browser_move"
-        / "playwright_runtime"
+        / "runtime"
         / "runtime.py"
     )
     source = runtime_path.read_text(encoding="utf-8")

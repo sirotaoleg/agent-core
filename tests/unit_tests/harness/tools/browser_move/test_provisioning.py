@@ -18,9 +18,9 @@ from unittest.mock import patch
 import pytest
 
 from openjiuwen.harness.tools.browser_move.contract.registry import PROVISIONERS
-from openjiuwen.harness.tools.browser_move.playwright_runtime.profiles import BrowserProfile, BrowserProfileStore
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice, managed_browser
 from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import ManagedBrowserProvisioner
+from openjiuwen.harness.tools.browser_move.runtime.profiles import BrowserProfile, BrowserProfileStore
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 
 _ENDPOINT = "http://127.0.0.1:9444"

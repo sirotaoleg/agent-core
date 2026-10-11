@@ -18,7 +18,7 @@ from types import MappingProxyType
 from typing import Optional
 from urllib.request import urlopen
 
-from ..playwright_runtime.profiles import BrowserProfile, BrowserProfileStore
+from ..runtime.profiles import BrowserProfile, BrowserProfileStore
 from ..surfaces.browser.config import BrowserSettings
 from . import ProvisionedDevice
 

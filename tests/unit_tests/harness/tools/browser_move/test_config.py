@@ -17,13 +17,13 @@ from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.clients.streamable_http_client import (
     BrowserMoveStreamableHttpClient,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import (
+from openjiuwen.harness.tools.browser_move.runtime.agents import (
     ensure_execute_signature_compat,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_tools import (
+from openjiuwen.harness.tools.browser_move.runtime.browser_tools import (
     build_browser_runtime_mcp_config,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
+from openjiuwen.harness.tools.browser_move.runtime.config import (
     DEFAULT_BROWSER_TIMEOUT_S,
     DEFAULT_GUARDRAIL_MAX_FAILURES,
     DEFAULT_GUARDRAIL_MAX_STEPS,
@@ -33,7 +33,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     build_runtime_settings,
     parse_command_args,
 )
-from openjiuwen.harness.tools.browser_move.utils.parsing import extract_json_object
+from openjiuwen.harness.tools.browser_move.runtime.utils.parsing import extract_json_object
 
 
 def _run(coro: Any) -> Any:

@@ -23,21 +23,21 @@ from openjiuwen.harness.subagents import browser_agent as browser_agent_module
 from openjiuwen.harness.subagents.browser_agent import DEFAULT_BROWSER_AGENT_SYSTEM_PROMPT
 from openjiuwen.harness.tools.browser_move.contract import ConnectionLost
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
-from openjiuwen.harness.tools.browser_move.playwright_runtime import agents as agents_module
-from openjiuwen.harness.tools.browser_move.playwright_runtime import assembly as assembly_module
-from openjiuwen.harness.tools.browser_move.playwright_runtime import runtime as runtime_module
-from openjiuwen.harness.tools.browser_move.playwright_runtime import topology as topology_module
-from openjiuwen.harness.tools.browser_move.playwright_runtime.action_policy import ActionPolicy
-from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
+from openjiuwen.harness.tools.browser_move.runtime import agents as agents_module
+from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
+from openjiuwen.harness.tools.browser_move.runtime import runtime as runtime_module
+from openjiuwen.harness.tools.browser_move.runtime import topology as topology_module
+from openjiuwen.harness.tools.browser_move.runtime.action_policy import ActionPolicy
+from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserInstanceConfig,
     BrowserRunGuardrails,
     CoreSettings,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.final_answer_recovery import FinalAnswerRecoveryRail
-from openjiuwen.harness.tools.browser_move.playwright_runtime.intercepted_action import InterceptedActionHintRail
-from openjiuwen.harness.tools.browser_move.playwright_runtime.repeated_call_guard import RepeatedCallGuardRail
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime, BrowserRuntimeRail
-from openjiuwen.harness.tools.browser_move.playwright_runtime.topology import (
+from openjiuwen.harness.tools.browser_move.runtime.final_answer_recovery import FinalAnswerRecoveryRail
+from openjiuwen.harness.tools.browser_move.runtime.intercepted_action import InterceptedActionHintRail
+from openjiuwen.harness.tools.browser_move.runtime.repeated_call_guard import RepeatedCallGuardRail
+from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime, BrowserRuntimeRail
+from openjiuwen.harness.tools.browser_move.runtime.topology import (
     WORKER_LANGUAGE,
     DelegatedWorker,
     Direct,

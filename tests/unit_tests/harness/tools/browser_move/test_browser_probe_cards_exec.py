@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from openjiuwen.harness.tools.browser_move.playwright_runtime.probes import build_card_probe_js
+from openjiuwen.harness.tools.browser_move.runtime.probes import build_card_probe_js
 
 _DOM_DOUBLE_JS = r"""
 // Minimal DOM double: only what build_card_probe_js() touches on this path.

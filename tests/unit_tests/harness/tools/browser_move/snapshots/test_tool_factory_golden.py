@@ -16,11 +16,11 @@ import pytest
 from openjiuwen.harness.tools.browser_move.contract import Driver, DriverInfo
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import BrowserUseDriver
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.driver import create_playwright_mcp_driver
-from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
-from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
-from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
-from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import ToolFactory
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
+from openjiuwen.harness.tools.browser_move.runtime.driver_session import DriverSession
+from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
+from openjiuwen.harness.tools.browser_move.runtime.tool_factory import ToolFactory
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import MESSAGES, create_browser_surface
 from tests.unit_tests.harness.tools.browser_move.snapshots import builder
 
