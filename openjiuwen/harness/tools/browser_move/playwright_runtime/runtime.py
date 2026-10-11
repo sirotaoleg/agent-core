@@ -161,6 +161,8 @@ _BROWSER_REF_ALIAS_KEYS = {
     "startRef": "startTarget",
     "endRef": "endTarget",
 }
+# The dialect whose schemas address elements by these keys; the other dialect has ``ref`` as a field of its own.
+_BROWSER_TARGET_FIELDS = frozenset(_BROWSER_REF_ALIAS_KEYS.values())
 # Evidence hints and element descriptions the model may add; a tool whose schema lacks them must not see them.
 _BROWSER_RUNTIME_ARG_KEYS = frozenset({"field", "fields", "element"})
 
@@ -1618,7 +1620,7 @@ class BrowserRuntimeRail(AgentRail):
         tool_args = getattr(inputs, "tool_args", None)
         kind = self._runtime.tool_kind(tool_name, tool_args)
         # Only the dialect that addresses elements by ``target`` takes the runtime's target ids and ref aliases.
-        if kind.known and not kind.helper and kind.fields & _BROWSER_REF_TARGET_KEYS:
+        if kind.known and not kind.helper and kind.fields & _BROWSER_TARGET_FIELDS:
             normalized_args = self._normalize_target_args(tool_args, kind.fields)
             if normalized_args is not tool_args:
                 inputs.tool_args = tool_args = normalized_args
