@@ -198,7 +198,7 @@ class TestEntryPoints:
         runtime._controller = controller
         bundle = create_browser_surface({})
         device = ProvisionedDevice(kind="chrome", endpoint="", extras={})
-        assembly = DriverAssembly(FakeDriver(), device, None, bundle.settings, surface=bundle)
+        assembly = DriverAssembly(FakeDriver(), device, None, surface=bundle)
         with patch.object(service_module, "assemble_driver", AsyncMock(return_value=assembly)):
             asyncio.run(runtime.ensure_runtime_ready())
         controller.register_builtin_actions.assert_called_once_with(upload_root=Path.cwd())

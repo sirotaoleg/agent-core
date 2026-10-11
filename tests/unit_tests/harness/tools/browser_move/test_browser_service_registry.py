@@ -69,7 +69,7 @@ def _provisioner() -> MagicMock:
 
 def _assembly(provisioner: Any) -> DriverAssembly:
     bundle = create_browser_surface({})
-    return DriverAssembly(mcp_fake_driver(), DEVICE, provisioner, bundle.settings, surface=bundle)
+    return DriverAssembly(mcp_fake_driver(), DEVICE, provisioner, surface=bundle)
 
 
 async def _open(service: BrowserService, provisioner: Any) -> FakeDriver:

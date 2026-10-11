@@ -11,7 +11,14 @@ from typing import Any
 import pytest
 
 from openjiuwen.core.common.exception.errors import BaseError
-from openjiuwen.harness.tools.browser_move.contract import ActionResult, Click, ConnectionLost, DriverRef, Observe
+from openjiuwen.harness.tools.browser_move.contract import (
+    ActionResult,
+    Click,
+    ConnectionLost,
+    DriverRef,
+    Observe,
+    SurfaceBundle,
+)
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
@@ -69,7 +76,7 @@ def _session(
 ) -> tuple[DriverSession, FakeProvisioner, BrowserPageState]:
     provisioner = FakeProvisioner(alive=alive)
     page_state = BrowserPageState(page_id="page-test")
-    assembly = DriverAssembly(driver, FIRST, provisioner, FakeSettings(), rebuild or Rebuilds())
+    assembly = DriverAssembly(driver, FIRST, provisioner, rebuild or Rebuilds(), SurfaceBundle(FakeSettings()))
     return DriverSession(assembly, page_state, MESSAGES), provisioner, page_state
 
 

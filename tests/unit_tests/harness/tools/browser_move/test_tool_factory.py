@@ -159,7 +159,7 @@ def _build(
     page_state: BrowserPageState | None = None,
 ) -> tuple[AgentTools, BrowserPageState]:
     page_state = page_state or BrowserPageState(page_id="page-test")
-    session = DriverSession(DriverAssembly(driver, DEVICE, _LiveDevice(), None), page_state, MESSAGES)
+    session = DriverSession(DriverAssembly(driver, DEVICE, _LiveDevice()), page_state, MESSAGES)
     built = ToolFactory(profile or _profile(), driver.info).build(
         capabilities, image_support=image_support, session=session, page_state=page_state
     )
@@ -199,7 +199,7 @@ def test_skipped_tools_and_empty_entries_are_logged_once_per_factory() -> None:
     info = _info(actions={command: refs for command, refs in DEFAULT_ACTIONS.items() if command is not RunScript})
     driver = FakeDriver(info=info)
     page_state = BrowserPageState()
-    session = DriverSession(DriverAssembly(driver, DEVICE, None, None), page_state, MESSAGES)
+    session = DriverSession(DriverAssembly(driver, DEVICE, None), page_state, MESSAGES)
     factory = ToolFactory(_profile(), driver.info)
     with patch.object(tool_factory, "tool_logger", MagicMock()) as log:
         for _ in range(2):
@@ -278,7 +278,7 @@ def test_a_worker_build_leaves_out_the_extra_tools_flagged_for_the_main_agent_on
 
     profile = _profile(extra_tools=(ForBoth, MainAgentOnly, unflagged))
     driver, page_state = FakeDriver(), BrowserPageState()
-    session = DriverSession(DriverAssembly(driver, DEVICE, None, None), page_state, MESSAGES)
+    session = DriverSession(DriverAssembly(driver, DEVICE, None), page_state, MESSAGES)
 
     def built(worker: bool) -> list[type]:
         tools = ToolFactory(profile, driver.info).build(
@@ -298,7 +298,7 @@ def test_extra_tools_get_the_workspace_and_language_the_agent_is_built_with(tmp_
         return _tool(_build(FakeDriver())[0], "toy_look")
 
     driver, page_state = FakeDriver(), BrowserPageState()
-    session = DriverSession(DriverAssembly(driver, DEVICE, None, None), page_state, MESSAGES)
+    session = DriverSession(DriverAssembly(driver, DEVICE, None), page_state, MESSAGES)
     ToolFactory(_profile(extra_tools=(extra,)), driver.info).build(
         ("core",), image_support=False, session=session, page_state=page_state, workspace=tmp_path, language="en"
     )
@@ -573,7 +573,7 @@ async def test_the_record_and_the_trace_mask_sensitive_fields_with_one_helper() 
     spec = ToolSpec("toy_type", (TypeText,), "Type.", schema={"type": "object"}, build=_type)
     profile = _profile(tool_specs=(*SPECS, spec), capability_tools={"core": ("toy_type",)})
     page_state = BrowserPageState(page_id="page-test")
-    session = DriverSession(DriverAssembly(driver, DEVICE, None, None), page_state, MESSAGES)
+    session = DriverSession(DriverAssembly(driver, DEVICE, None), page_state, MESSAGES)
     built = ToolFactory(profile, driver.info).build(
         ("core",), image_support=False, session=session, page_state=page_state
     )

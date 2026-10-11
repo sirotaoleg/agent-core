@@ -180,7 +180,7 @@ class TestAssembleDriver:
             ("provision", applied),
             ("driver", DEVICE, applied),
         ]
-        assert assembly.surface.settings == assembly.surface.profile.settings == assembly.surface_settings == applied
+        assert assembly.surface.settings == assembly.surface.profile.settings == applied
 
     def test_given_settings_replace_the_environment_and_still_take_the_instance(self) -> None:
         world = World()
@@ -190,8 +190,8 @@ class TestAssembleDriver:
 
         applied = FakeSettings(provisioning="other_provisioning", owner="agent-a")
         assert world.log[1:3] == [("provisioner", "other_provisioning"), ("provision", applied)]
-        assert assembly.surface_settings == applied
-        assert world.assemble(settings=given).surface_settings == given
+        assert assembly.surface.settings == applied
+        assert world.assemble(settings=given).surface.settings == given
 
     def test_stack_is_tracing_over_stale_retry_over_timeouts_over_the_driver(self) -> None:
         world = World()

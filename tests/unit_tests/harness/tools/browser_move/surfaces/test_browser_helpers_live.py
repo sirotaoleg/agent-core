@@ -64,7 +64,7 @@ def scene_url() -> Iterator[str]:
 def _on_page(driver: Driver, url: str, use: Callable[[ToolContext], Awaitable[Any]]) -> Any:
     async def run() -> Any:
         page_state = BrowserPageState()
-        assembly = DriverAssembly(stack=driver, device=None, provisioner=None, surface_settings=None)
+        assembly = DriverAssembly(stack=driver, device=None, provisioner=None)
         session = DriverSession(assembly, page_state, MESSAGES)
         await driver.start()
         try:

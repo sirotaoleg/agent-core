@@ -138,7 +138,7 @@ class FakeProvisioner:
 
 def fake_assembly(driver: FakeDriver) -> DriverAssembly:
     bundle = create_browser_surface({})
-    return DriverAssembly(driver, DEVICE, FakeProvisioner(), bundle.settings, surface=bundle)
+    return DriverAssembly(driver, DEVICE, FakeProvisioner(), surface=bundle)
 
 
 def make_runtime(

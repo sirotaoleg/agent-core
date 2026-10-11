@@ -75,7 +75,7 @@ def command_tools(driver: FakeDriver) -> dict[str, Tool]:
         capability_tools={"core": tuple(COMMANDS)},
     )
     page_state = BrowserPageState(page_id="page-test")
-    session = DriverSession(DriverAssembly(driver, _DEVICE, None, None), page_state, _MESSAGES)
+    session = DriverSession(DriverAssembly(driver, _DEVICE, None), page_state, _MESSAGES)
     built = ToolFactory(profile, driver.info).build(
         ("core",), image_support=False, session=session, page_state=page_state
     )

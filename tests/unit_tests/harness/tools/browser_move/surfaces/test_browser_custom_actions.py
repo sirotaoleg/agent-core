@@ -51,7 +51,7 @@ def _context(*results: ActionResult, actions: dict[type, frozenset] = ON_ELEMENT
     page_state = BrowserPageState()
     driver = FakeDriver(results=results, info=info)
     session = DriverSession(
-        DriverAssembly(stack=driver, device=None, provisioner=None, surface_settings=None), page_state, MESSAGES
+        DriverAssembly(stack=driver, device=None, provisioner=None), page_state, MESSAGES
     )
     return ToolContext(session, page_state, BrowserRenderer(), info, BrowserSettings(), False)
 

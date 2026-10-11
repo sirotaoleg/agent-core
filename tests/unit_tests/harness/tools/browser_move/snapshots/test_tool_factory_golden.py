@@ -101,7 +101,7 @@ SCREENSHOT = "browser_take_screenshot"
 
 
 def _session(driver: Driver) -> DriverSession:
-    assembly = DriverAssembly(stack=driver, device=DEVICE, provisioner=None, surface_settings=None)
+    assembly = DriverAssembly(stack=driver, device=DEVICE, provisioner=None)
     return DriverSession(assembly, BrowserPageState(), MESSAGES)
 
 
