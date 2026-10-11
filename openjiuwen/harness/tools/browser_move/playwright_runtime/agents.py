@@ -15,11 +15,10 @@ from openjiuwen.core.common.logging import logger
 from openjiuwen.core.common.utils.schema_utils import SchemaUtils
 from openjiuwen.core.context_engine import DialogueCompressorConfig
 from openjiuwen.core.foundation.llm import ModelClientConfig, ModelRequestConfig
-from openjiuwen.core.foundation.tool import McpServerConfig
+from openjiuwen.core.foundation.tool import Tool
 from openjiuwen.core.single_agent.agents.react_agent import ReActAgent, ReActAgentConfig
 from openjiuwen.core.single_agent.schema.agent_card import AgentCard
 
-from .browser_capabilities import CORE_BROWSER_TOOL_NAMES
 from .browser_logging import configure_browser_agent_logging
 from .config import CoreSettings
 
@@ -350,23 +349,14 @@ def build_browser_worker_agent(
     *,
     api_base: str,
     model_name: str,
-    mcp_cfg: McpServerConfig,
     max_steps: int,
+    tools: Iterable[Tool] = (),
     screenshot_subdir: str = "screenshots",
     artifacts_subdir: str = "artifacts",
     tool_result_observer: ToolResultObserver | None = None,
-    allowed_tool_names: Optional[Iterable[str]] = None,
     settings: CoreSettings | None = None,
 ) -> ReActAgent:
-    resolved_allowed_tool_names = (
-        CORE_BROWSER_TOOL_NAMES
-        if allowed_tool_names is None
-        else tuple(dict.fromkeys(allowed_tool_names))
-    )
-    logger.info(
-        "Playwright worker received tool allowlist: %s",
-        resolved_allowed_tool_names,
-    )
+    """The worker ReActAgent with ``tools`` as its abilities (the factory's command tools and helpers)."""
     screenshot_subdir = _normalize_output_subdir(screenshot_subdir, "screenshots")
     artifacts_subdir = _normalize_output_subdir(artifacts_subdir, "artifacts")
     card = AgentCard(
@@ -399,11 +389,8 @@ def build_browser_worker_agent(
         config.model_config_obj.temperature = settings.worker_temperature
         config.model_config_obj.top_p = settings.worker_top_p
     agent = ReActAgent(card=card).configure(config)
-    agent.ability_manager.add(mcp_cfg)
-    agent.ability_manager.set_mcp_tool_allowlist(
-        mcp_cfg,
-        resolved_allowed_tool_names,
-    )
+    for tool in tools:
+        agent.ability_manager.add_ability(tool.card, tool)
     ensure_execute_signature_compat(
         agent, tool_result_observer=tool_result_observer, tool_timeout_s=settings.tool_timeout_s
     )

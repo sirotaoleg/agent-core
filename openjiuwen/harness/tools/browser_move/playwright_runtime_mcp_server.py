@@ -275,11 +275,11 @@ async def browser_list_custom_actions() -> dict[str, Any]:
 )
 async def browser_runtime_health() -> dict[str, Any]:
     settings = build_runtime_settings(core_settings=_core_settings, browser_settings=_browser_settings)
-    svc = _runtime.service if _runtime is not None else None
+    health = await _runtime.runtime_health() if _runtime is not None else {}
     return {
-        "ok": svc.connection_healthy if svc is not None else False,
+        "ok": bool(health.get("ok", False)),
         "started": _runtime is not None,
-        "last_heartbeat_ok": svc.last_heartbeat_ok if svc is not None else None,
+        "detail": health.get("detail"),
         "provider": settings.provider,
         "api_base": settings.api_base,
         "model_name": settings.model_name,

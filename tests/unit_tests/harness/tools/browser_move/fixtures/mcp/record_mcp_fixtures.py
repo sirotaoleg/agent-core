@@ -166,10 +166,11 @@ class _Recorder:
         return model_text
 
 
-def _ref(snapshot_text: str, role: str, name: str) -> str:
-    match = re.search(rf'- {re.escape(role)} "{re.escape(name)}"[^\n]*\[ref=((?:f\d+)?e\d+)\]', snapshot_text)
+def _ref(snapshot_text: str, role: str, name: str | None) -> str:
+    named = "" if name is None else f' "{re.escape(name)}"'
+    match = re.search(rf"- {re.escape(role)}{named}[^\n]*\[ref=((?:f\d+)?e\d+)\]", snapshot_text)
     if match is None:
-        raise RuntimeError(f'no {role} "{name}" in snapshot:\n{snapshot_text}')
+        raise RuntimeError(f"no {role}{named} in snapshot:\n{snapshot_text}")
     return match.group(1)
 
 
@@ -189,6 +190,8 @@ async def _run_cases(rec: _Recorder, base_url: str, work_dir: Path, outside_dir:
         "browser_snapshot",
         {},
     )
+    await rec.record("snapshot_depth_1", "browser_snapshot", {"depth": 1})
+    await rec.record("snapshot_target", "browser_snapshot", {"target": _ref(snapshot, "navigation", None)})
     await rec.record(
         "click_success",
         "browser_click",

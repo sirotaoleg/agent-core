@@ -47,6 +47,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.contract.testing.fake import DEFAULT_ACTIONS
 from openjiuwen.harness.tools.browser_move.drivers.middleware import MASK, Tracing
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import DECODERS
 from openjiuwen.harness.tools.browser_move.playwright_runtime import tool_factory
 from openjiuwen.harness.tools.browser_move.playwright_runtime.action_policy import ActionPolicy
 from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
@@ -57,6 +58,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory impor
     CommandRecord,
     ToolContext,
     ToolFactory,
+    ToolFlags,
     command_record,
 )
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
@@ -158,7 +160,7 @@ def _build(
     page_state: BrowserPageState | None = None,
 ) -> tuple[AgentTools, BrowserPageState]:
     page_state = page_state or BrowserPageState(page_id="page-test")
-    session = DriverSession(DriverAssembly(driver, DEVICE, _LiveDevice(), None), page_state, MESSAGES)
+    session = DriverSession(DriverAssembly(driver, DEVICE, _LiveDevice()), page_state, MESSAGES)
     built = ToolFactory(profile or _profile(), driver.info).build(
         capabilities, image_support=image_support, session=session, page_state=page_state
     )
@@ -198,7 +200,7 @@ def test_skipped_tools_and_empty_entries_are_logged_once_per_factory() -> None:
     info = _info(actions={command: refs for command, refs in DEFAULT_ACTIONS.items() if command is not RunScript})
     driver = FakeDriver(info=info)
     page_state = BrowserPageState()
-    session = DriverSession(DriverAssembly(driver, DEVICE, None, None), page_state, MESSAGES)
+    session = DriverSession(DriverAssembly(driver, DEVICE, None), page_state, MESSAGES)
     factory = ToolFactory(_profile(), driver.info)
     with patch.object(tool_factory, "tool_logger", MagicMock()) as log:
         for _ in range(2):
@@ -262,6 +264,33 @@ def test_extra_tools_are_built_from_the_tool_context() -> None:
     assert isinstance(seen[0].driver, DriverSession)
 
 
+def test_a_worker_build_leaves_out_the_extra_tools_flagged_for_the_main_agent_only() -> None:
+    class ForBoth:
+        flags = ToolFlags()
+
+        def __init__(self, context: ToolContext) -> None:
+            self.card = _build(FakeDriver())[0].tools[0].card
+
+    class MainAgentOnly(ForBoth):
+        flags = ToolFlags(worker=False)
+
+    def unflagged(context: ToolContext) -> Any:
+        return ForBoth(context)
+
+    profile = _profile(extra_tools=(ForBoth, MainAgentOnly, unflagged))
+    driver, page_state = FakeDriver(), BrowserPageState()
+    session = DriverSession(DriverAssembly(driver, DEVICE, None), page_state, MESSAGES)
+
+    def built(worker: bool) -> list[type]:
+        tools = ToolFactory(profile, driver.info).build(
+            ("core",), image_support=False, session=session, page_state=page_state, worker=worker
+        )
+        return [type(tool) for tool in tools.tools[4:]]
+
+    assert built(worker=False) == [ForBoth, MainAgentOnly, ForBoth]
+    assert built(worker=True) == [ForBoth, ForBoth]
+
+
 def test_extra_tools_get_the_workspace_and_language_the_agent_is_built_with(tmp_path: Path) -> None:
     seen: list[ToolContext] = []
 
@@ -270,7 +299,7 @@ def test_extra_tools_get_the_workspace_and_language_the_agent_is_built_with(tmp_
         return _tool(_build(FakeDriver())[0], "toy_look")
 
     driver, page_state = FakeDriver(), BrowserPageState()
-    session = DriverSession(DriverAssembly(driver, DEVICE, None, None), page_state, MESSAGES)
+    session = DriverSession(DriverAssembly(driver, DEVICE, None), page_state, MESSAGES)
     ToolFactory(_profile(extra_tools=(extra,)), driver.info).build(
         ("core",), image_support=False, session=session, page_state=page_state, workspace=tmp_path, language="en"
     )
@@ -380,6 +409,46 @@ async def test_a_point_on_a_screenshot_of_an_older_generation_never_reaches_the_
 
     assert driver.kinds() == ["observe", "observe"]
     assert output.error.startswith("### Error\nStale PointRef belongs to g0; current generation is g1.")
+
+
+MCP_CLICK = _profile(
+    tool_specs=(ToolSpec("browser_click", (Click,), schema={"type": "object"}, build=DECODERS["browser_click"]),),
+    capability_tools={"core": ("browser_click",)},
+    capability_catalog={"core": frozenset({(Click, DriverRef)})},
+)
+
+
+@pytest.mark.asyncio
+async def test_a_ref_the_model_sends_on_the_mcp_dialect_reaches_the_driver_after_the_generation_moved() -> None:
+    driver = FakeDriver(results=[ActionResult(ok=True, detail="clicked")])
+    built, page_state = _build(driver, profile=MCP_CLICK)
+    page_state.record(Observe(), _observation())
+    page_state.reset()
+
+    output = await _tool(built, "browser_click").invoke({"target": "e1"})
+
+    assert driver.kinds() == ["execute"]
+    assert driver.calls[0].payload == Click(DriverRef("e1", ""))
+    assert (output.success, output.data["content"]) == (True, "clicked")
+    assert (page_state.generation_of("e1"), output.data["command"].generation) == ("g0", "g1")
+
+
+@pytest.mark.asyncio
+async def test_a_ref_the_mcp_server_no_longer_finds_answers_with_the_fresh_observation_the_error_carries() -> None:
+    fresh = _observation('- button "Saved" [ref=e2]')
+    driver = FakeDriver()
+    driver.fail_next(StaleRef("Ref e1 not found in the current page snapshot.", observation=fresh))
+    built, page_state = _build(driver, profile=MCP_CLICK)
+    page_state.record(Observe(), _observation())
+    page_state.reset()
+
+    output = await _tool(built, "browser_click").invoke({"target": "e1"})
+
+    assert driver.kinds() == ["execute"]
+    assert output.error == '### Error\nRef e1 not found in the current page snapshot.\n\n- button "Saved" [ref=e2]'
+    record = output.data["command"]
+    assert (record.error, record.dispatched) == ("StaleRef", False)
+    assert page_state.last_observation.native_text == fresh.native_text
 
 
 @pytest.mark.asyncio
@@ -545,7 +614,7 @@ async def test_the_record_and_the_trace_mask_sensitive_fields_with_one_helper() 
     spec = ToolSpec("toy_type", (TypeText,), "Type.", schema={"type": "object"}, build=_type)
     profile = _profile(tool_specs=(*SPECS, spec), capability_tools={"core": ("toy_type",)})
     page_state = BrowserPageState(page_id="page-test")
-    session = DriverSession(DriverAssembly(driver, DEVICE, None, None), page_state, MESSAGES)
+    session = DriverSession(DriverAssembly(driver, DEVICE, None), page_state, MESSAGES)
     built = ToolFactory(profile, driver.info).build(
         ("core",), image_support=False, session=session, page_state=page_state
     )

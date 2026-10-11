@@ -6,42 +6,50 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from openjiuwen.core.foundation.tool import McpServerConfig
+from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
+from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
+from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserInstanceConfig,
     BrowserRunGuardrails,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import (
-    BrowserAgentRuntime,
     _ACTIVE_BROWSER_RUNTIMES,
+    BrowserAgentRuntime,
     reset_active_browser_runtimes,
     reset_managed_browser_runtime,
 )
+from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service_registry import (
     BROWSER_SERVICE_REGISTRY,
-    BrowserServiceRegistry,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
+from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import DEVICE, mcp_fake_driver
 
 
-def _make_service(*, key: str = "shared") -> BrowserService:
-    mcp_cfg = McpServerConfig(
+def _mcp_cfg(key: str) -> McpServerConfig:
+    return McpServerConfig(
         server_id=f"test-playwright-{key}",
         server_name=f"test-playwright-{key}",
         server_path="stdio://playwright",
         client_type="stdio",
         params={"cwd": str(Path.cwd())},
     )
+
+
+def _make_service(*, key: str = "shared") -> BrowserService:
     return BrowserService(
         provider="openai",
         api_key="test-key",
         api_base="https://example.invalid/v1",
         model_name="test-model",
-        mcp_cfg=mcp_cfg,
+        mcp_cfg=_mcp_cfg(key),
         guardrails=BrowserRunGuardrails(
             max_steps=3,
             max_failures=1,
@@ -50,6 +58,25 @@ def _make_service(*, key: str = "shared") -> BrowserService:
         ),
         instance=BrowserInstanceConfig(key=key, driver_mode="managed"),
     )
+
+
+def _provisioner() -> MagicMock:
+    provisioner = MagicMock()
+    provisioner.owns_process = True
+    return provisioner
+
+
+def _assembly(provisioner: Any) -> DriverAssembly:
+    bundle = create_browser_surface({})
+    return DriverAssembly(mcp_fake_driver(), DEVICE, provisioner, surface=bundle)
+
+
+async def _open(service: BrowserService, provisioner: Any) -> FakeDriver:
+    """Open the service's session on a fresh fake driver over ``provisioner``."""
+    assembly = _assembly(provisioner)
+    with patch.object(service_module, "assemble_driver", AsyncMock(return_value=assembly)):
+        await service.ensure_runtime_ready()
+    return assembly.stack
 
 
 @pytest.fixture(autouse=True)
@@ -61,86 +88,46 @@ def _clear_process_registry():
     _ACTIVE_BROWSER_RUNTIMES.clear()
 
 
-def test_registry_assigns_one_heartbeat_owner_and_transfers_it() -> None:
-    registry = BrowserServiceRegistry()
-    identity = ("browser", "profile", "headed")
-    first = MagicMock()
-    second = MagicMock()
-
-    registry.acquire(identity, first)
-    registry.acquire(identity, second)
-    assert registry.activate_binding(identity, first) is True
-    assert registry.activate_binding(identity, second) is False
-    assert registry.is_heartbeat_owner(identity, first) is True
-
-    first_release = registry.release(identity, first)
-    assert first_release.close_mcp_binding is False
-    assert first_release.next_heartbeat_owner is second
-    assert registry.is_heartbeat_owner(identity, second) is True
-
-    second_release = registry.release(identity, second)
-    assert second_release.close_mcp_binding is True
-    assert second_release.next_heartbeat_owner is None
-
-
 @pytest.mark.asyncio
 async def test_release_last_task_binding_preserves_managed_chrome() -> None:
     service = _make_service()
-    service.acquire_task_binding()
-    assert BROWSER_SERVICE_REGISTRY.activate_binding(
-        service.lifecycle_identity,
-        service,
-    ) is True
-    service.started = True
+    provisioner = _provisioner()
+    driver = await _open(service, provisioner)
     service._browser_agent = MagicMock()
-    service._heartbeat_task = None
-    driver = MagicMock()
-    service._managed_driver = driver
-    BROWSER_SERVICE_REGISTRY.register_managed_driver(
-        service.lifecycle_identity,
-        service,
-        driver,
-    )
 
-    with patch.object(
-        service,
-        "_remove_registered_mcp_server",
-        AsyncMock(),
-    ) as remove_binding:
-        await service.release_task_binding()
+    assert await service.release_task_binding() is True
 
-    remove_binding.assert_awaited_once()
-    driver.stop.assert_not_called()
-    assert service._managed_driver is driver
+    assert driver.kinds() == ["stop"]
+    provisioner.release.assert_not_called()
+    provisioner.stop.assert_not_called()
+    assert service.session is not None
     assert service._browser_agent is None
-    assert service._heartbeat_task is None
     assert service.started is False
 
 
 @pytest.mark.asyncio
 async def test_explicit_reset_stops_browser_preserved_after_task_release() -> None:
-    runtime = object.__new__(BrowserAgentRuntime)
-    runtime._service = _make_service()
-    runtime._page_generation = 0
-    runtime._last_observed_url = "https://example.com"
-    runtime._service.acquire_task_binding()
-    runtime._service.started = True
-    runtime._service._heartbeat_task = None
-    driver = MagicMock()
-    runtime._service._managed_driver = driver
-    _ACTIVE_BROWSER_RUNTIMES.add(runtime)
+    runtime = BrowserAgentRuntime(
+        provider="openai",
+        api_key="test-key",
+        api_base="https://example.invalid/v1",
+        model_name="test-model",
+        mcp_cfg=_mcp_cfg("shared"),
+        guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
+        instance=BrowserInstanceConfig(key="shared", driver_mode="managed"),
+    )
+    provisioner = _provisioner()
+    driver = await _open(runtime.service, provisioner)
+    await runtime.ensure_runtime_ready()
 
-    with patch.object(
-        runtime._service,
-        "_remove_registered_mcp_server",
-        AsyncMock(),
-    ):
-        await runtime.release_task_resources()
-        reset_count = await reset_active_browser_runtimes()
+    await runtime.release_task_resources()
+    reset_count = await reset_active_browser_runtimes()
 
     assert reset_count == 1
-    driver.stop.assert_called_once()
-    assert runtime._service._managed_driver is None
+    assert driver.started is False
+    provisioner.release.assert_called_once_with(DEVICE)
+    provisioner.stop.assert_called_once()
+    assert (runtime.service.session, runtime.session) == (None, None)
 
 
 @pytest.mark.asyncio
@@ -150,32 +137,14 @@ async def test_identity_reset_stops_only_matching_idle_managed_browser(
     monkeypatch.setenv("BROWSER_PROFILE_NAME", "jiuwenclaw")
     monkeypatch.delenv("BROWSER_MANAGED_ARGS", raising=False)
     headed = _make_service(key="")
-    headed.acquire_task_binding()
-    headed.started = True
-    headed._heartbeat_task = None
-    headed_driver = MagicMock()
-    headed_driver.owns_process = True
-    headed._managed_driver = headed_driver
-    BROWSER_SERVICE_REGISTRY.register_managed_driver(
-        headed.lifecycle_identity,
-        headed,
-        headed_driver,
-    )
+    headed_driver = _provisioner()
+    await _open(headed, headed_driver)
     await headed.release_task_binding()
 
     monkeypatch.setenv("BROWSER_MANAGED_ARGS", "--headless=new")
     headless = _make_service(key="")
-    headless.acquire_task_binding()
-    headless.started = True
-    headless._heartbeat_task = None
-    headless_driver = MagicMock()
-    headless_driver.owns_process = True
-    headless._managed_driver = headless_driver
-    BROWSER_SERVICE_REGISTRY.register_managed_driver(
-        headless.lifecycle_identity,
-        headless,
-        headless_driver,
-    )
+    headless_driver = _provisioner()
+    await _open(headless, headless_driver)
     await headless.release_task_binding()
 
     reset_count = await reset_managed_browser_runtime(
@@ -195,97 +164,50 @@ async def test_reused_service_waits_for_last_concurrent_task_reference() -> None
     service = _make_service()
     service.acquire_task_binding()
     service.acquire_task_binding()
-    BROWSER_SERVICE_REGISTRY.activate_binding(
-        service.lifecycle_identity,
-        service,
-    )
-    service.started = True
+    driver = await _open(service, _provisioner())
     service._browser_agent = MagicMock()
 
-    with patch.object(
-        service,
-        "_remove_registered_mcp_server",
-        AsyncMock(),
-    ) as remove_binding:
-        await service.release_task_binding()
-        remove_binding.assert_not_awaited()
-        assert service.started is True
-        assert service._browser_agent is not None
+    await service.release_task_binding()
+    assert driver.kinds() == []
+    assert service.started is True
+    assert service._browser_agent is not None
 
-        await service.release_task_binding()
-        remove_binding.assert_awaited_once()
-        assert service.started is False
-        assert service._browser_agent is None
+    await service.release_task_binding()
+    assert driver.kinds() == ["stop"]
+    assert service.started is False
+    assert service._browser_agent is None
 
 
 @pytest.mark.asyncio
-async def test_releasing_heartbeat_owner_keeps_shared_binding_alive() -> None:
+async def test_releasing_one_service_leaves_the_other_services_stack_running() -> None:
     first = _make_service()
     second = _make_service()
-    for service in (first, second):
-        service.acquire_task_binding()
-        service.started = True
-        BROWSER_SERVICE_REGISTRY.activate_binding(
-            service.lifecycle_identity,
-            service,
-        )
+    first_driver = await _open(first, _provisioner())
+    second_driver = await _open(second, _provisioner())
 
-    first._heartbeat_task = None
-    second._heartbeat_task = None
-    with patch.object(
-        first,
-        "_remove_registered_mcp_server",
-        AsyncMock(),
-    ) as first_remove, patch.object(
-        second,
-        "_start_heartbeat",
-        MagicMock(),
-    ) as second_start:
-        await first.release_task_binding()
+    await first.release_task_binding()
 
-    first_remove.assert_not_awaited()
-    second_start.assert_called_once()
-    assert BROWSER_SERVICE_REGISTRY.is_heartbeat_owner(
-        second.lifecycle_identity,
-        second,
-    ) is True
+    assert (first_driver.kinds(), first.started) == (["stop"], False)
+    assert (second_driver.kinds(), second.started) == ([], True)
 
-    with patch.object(
-        second,
-        "_remove_registered_mcp_server",
-        AsyncMock(),
-    ) as second_remove:
-        await second.release_task_binding()
-    second_remove.assert_awaited_once()
+    await second.release_task_binding()
+    assert second_driver.kinds() == ["stop"]
 
 
 @pytest.mark.asyncio
 async def test_reset_stops_only_matching_browser_identity() -> None:
     first = _make_service(key="first")
     second = _make_service(key="second")
-    first_driver = MagicMock()
-    second_driver = MagicMock()
-    for service, driver in ((first, first_driver), (second, second_driver)):
-        service.acquire_task_binding()
-        service.started = True
-        service._managed_driver = driver
-        BROWSER_SERVICE_REGISTRY.activate_binding(
-            service.lifecycle_identity,
-            service,
-        )
-        BROWSER_SERVICE_REGISTRY.register_managed_driver(
-            service.lifecycle_identity,
-            service,
-            driver,
-        )
+    first_provisioner, second_provisioner = _provisioner(), _provisioner()
+    await _open(first, first_provisioner)
+    await _open(second, second_provisioner)
 
-    with patch.object(first, "_remove_registered_mcp_server", AsyncMock()):
-        await first.reset()
+    await first.reset()
 
-    first_driver.stop.assert_called_once()
-    second_driver.stop.assert_not_called()
-    assert first._managed_driver is None
-    assert second._managed_driver is second_driver
+    first_provisioner.stop.assert_called_once()
+    second_provisioner.stop.assert_not_called()
+    assert first.session is None
+    assert second.session is not None
 
 
 def test_display_mode_is_part_of_lifecycle_identity(monkeypatch) -> None:

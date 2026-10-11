@@ -659,6 +659,16 @@ def test_observe_without_screenshot_has_none():
     assert asyncio.run(driver.observe(Observe())).screenshot is None
 
 
+def test_a_scoped_observe_is_unsupported_before_anything_is_sent():
+    driver, request = _driver()
+
+    with pytest.raises(Unsupported) as raised:
+        asyncio.run(driver.observe(Observe(depth=1)))
+
+    assert raised.value.dispatched is False
+    assert _calls(request) == []
+
+
 def test_observe_without_an_active_tab_falls_back_to_the_page():
     tabs = [{"target_id": "T1", "url": "http://other/", "title": "O", "active": False}]
     driver, _request = _driver(_wire_observation(tabs=tabs), "X")
@@ -763,6 +773,7 @@ def test_unclassified_error_is_dispatched_and_logged(monkeypatch, raised):
         "[DownloadsWatchdog.on_BrowserStateRequestEvent] Reconnection failed — CDP still not connected",
         "[ScreenshotWatchdog.on_ScreenshotEvent] Reconnection wait timed out after 30.0s",
         "Cannot switch tabs - browser not connected",
+        "No valid agent focus available - target may have detached and recovery failed.",
     ],
 )
 def test_a_browser_that_went_away_is_a_lost_connection(monkeypatch, message):
@@ -848,6 +859,17 @@ def test_start_without_config_is_refused():
     with pytest.raises(DriverError) as info:
         asyncio.run(BrowserUseDriver().start())
     assert info.value.dispatched is False
+
+
+def test_a_target_that_detached_at_connect_is_a_lost_connection(monkeypatch):
+    message = "No valid agent focus available - target may have detached and recovery failed."
+    transport = _patched_transport(monkeypatch, connect_reply=_sidecar_error("DriverError", message))
+    driver = BrowserUseDriver(BrowserUseConfig(cdp_url="http://a"))
+    with pytest.raises(ConnectionLost) as info:
+        asyncio.run(driver.start())
+    assert info.value.dispatched is True
+    assert str(info.value) == "connect: " + message
+    transport.close.assert_awaited_once()
 
 
 def test_failed_connect_closes_the_sidecar_and_raises_connection_lost(monkeypatch):

@@ -18,6 +18,8 @@ KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {
     ("playwright_runtime/browser_tools.py", "drivers.playwright_mcp.clients.streamable_http_client"): 1,
     ("playwright_runtime/main.py", "drivers.playwright_mcp.clients.stdio_client"): 1,
     ("playwright_runtime/main.py", "drivers.playwright_mcp.clients.streamable_http_client"): 1,
+    # the facade's decision-policy hooks, page metadata and custom actions; moved behind the profile in Phase 9
+    ("playwright_runtime/runtime.py", "surfaces.browser.helpers"): 4,
 }
 
 # (file relative to openjiuwen/core, imported module) -> count.

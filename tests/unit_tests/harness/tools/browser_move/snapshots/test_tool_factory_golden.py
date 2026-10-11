@@ -32,7 +32,8 @@ CAPABILITY_VIEWS = [view for view in builder.list_views() if view != builder.RUN
 PROBES = frozenset({"browser_probe_interactives", "browser_probe_cards"})
 BATCH = "browser_batch_interact"
 RUNNER_REMOVED = PROBES | {BATCH, "browser_recall_offload"}
-# Server tools with no command: dropped from the agent, each selection logged once.
+# Server tools with no command: dropped from the agent, each selection logged once; gone from the goldens since the
+# switch (C7, C20, C25).
 NO_COMMAND: dict[str, frozenset[str]] = {
     "unsafe_dev": frozenset({"browser_run_code_unsafe"}),
     "vision": frozenset({"browser_mouse_down", "browser_mouse_up"}),
@@ -100,7 +101,7 @@ SCREENSHOT = "browser_take_screenshot"
 
 
 def _session(driver: Driver) -> DriverSession:
-    assembly = DriverAssembly(stack=driver, device=DEVICE, provisioner=None, surface_settings=None)
+    assembly = DriverAssembly(stack=driver, device=DEVICE, provisioner=None)
     return DriverSession(assembly, BrowserPageState(), MESSAGES)
 
 
@@ -173,19 +174,19 @@ def test_core_tools_equal_the_golden_byte_for_byte(surface: Any, mcp_driver: Dri
 
 
 @pytest.mark.parametrize("view", CAPABILITY_VIEWS)
-def test_playwright_mcp_view_equals_the_golden_but_tools_with_no_command(
-    view: str, surface: Any, mcp_driver: Driver
-) -> None:
+def test_playwright_mcp_view_equals_the_golden_byte_for_byte(view: str, surface: Any, mcp_driver: Driver) -> None:
     golden = _golden(builder.GOLDEN_DIR, view)
-    expected = _without(golden, NO_COMMAND.get(view, frozenset()), MCP_PREFIX)
 
-    assert builder.render(_built(surface.profile, mcp_driver, _capabilities(view))) == builder.render(expected)
+    assert builder.render(_built(surface.profile, mcp_driver, _capabilities(view))) == builder.render(golden)
 
 
 @pytest.mark.parametrize("view", CAPABILITY_VIEWS)
-def test_every_dropped_tool_is_a_golden_server_tool(view: str) -> None:
+def test_every_tool_without_a_command_is_a_server_tool_the_golden_no_longer_lists(view: str) -> None:
+    listed = {tool["name"] for tool in builder.load_mcp_tools()}
     names = {tool["name"].removeprefix(MCP_PREFIX) for tool in _golden(builder.GOLDEN_DIR, view)}
-    assert NO_COMMAND.get(view, frozenset()) <= names
+    dropped = NO_COMMAND.get(view, frozenset())
+    assert dropped <= listed
+    assert not dropped & names
 
 
 def test_mcp_tools_carry_the_server_prefix_description_and_schema(mcp_info: DriverInfo) -> None:

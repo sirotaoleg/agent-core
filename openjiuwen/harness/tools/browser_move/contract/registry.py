@@ -72,7 +72,8 @@ def register_driver(name: str, factory: Callable[..., Driver] | str) -> None:
 
 
 def register_surface(name: str, profile_factory: Callable[..., SurfaceBundle] | str) -> None:
-    """``profile_factory(environ) -> SurfaceBundle``."""
+    """``profile_factory(environ, instance=None, settings=None) -> SurfaceBundle``: ``settings`` replaces parsing
+    ``environ``; ``instance`` (the surface's per-agent identity) is applied to the settings."""
     SURFACES.register(name, profile_factory)
 
 

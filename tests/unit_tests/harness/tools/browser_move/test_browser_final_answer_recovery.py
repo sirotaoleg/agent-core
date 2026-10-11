@@ -1,6 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""When the browser worker ends without valid JSON, one tool-free call asks it for the final answer."""
+"""Final-answer recovery with the snapshot tool as a ``CommandTool`` over ``FakeDriver``."""
 
 from __future__ import annotations
 
@@ -12,11 +12,12 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from mcp.types import CallToolResult, TextContent
 
 from openjiuwen.core.foundation.llm import AssistantMessage, ToolCall
-from openjiuwen.core.foundation.tool import McpServerConfig, MCPTool, McpToolCard
-from openjiuwen.core.foundation.tool.mcp.base import extract_mcp_tool_result_content
+from openjiuwen.core.foundation.tool import McpServerConfig
+from openjiuwen.harness.tools.browser_move.contract import Observation, Observe
+from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
+from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.agents import build_browser_worker_agent
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.playwright_runtime.final_answer_recovery import (
@@ -25,6 +26,9 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.final_answer_recov
     FinalAnswerRecoveryRail,
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
+
+from .command_tools import HOME, command_tools
+from .runtime_fixtures import fake_assembly, mcp_fake_driver
 
 ANSWER = {
     "ok": True,
@@ -61,17 +65,16 @@ def _request_id(request: dict[str, Any]) -> str:
     return ""
 
 
-class _FakePlaywrightClient:
+class _SnapshotDriver(FakeDriver):
     def __init__(self, before_result: Callable[[], Awaitable[None]] | None = None) -> None:
-        self.calls = 0
+        super().__init__()
         self.before_result = before_result
 
-    async def call_tool(self, tool_name: str, arguments: dict[str, Any], **kwargs: Any) -> Any:
-        del tool_name, arguments, kwargs
-        self.calls += 1
+    async def observe(self, command: Observe) -> Observation:
         if self.before_result is not None:
             await self.before_result()
-        return extract_mcp_tool_result_content(CallToolResult(content=[TextContent(type="text", text=SNAPSHOT_RESULT)]))
+        self.script(observations=[Observation(context=HOME, native_text=SNAPSHOT_RESULT)])
+        return await super().observe(command)
 
 
 class _ScriptedLLM:
@@ -88,22 +91,20 @@ class _ScriptedLLM:
 
 
 def _service(
-    respond: Respond, *, max_steps: int = 10, client: _FakePlaywrightClient | None = None
-) -> tuple[BrowserService, _ScriptedLLM, _FakePlaywrightClient]:
+    respond: Respond, *, max_steps: int = 10, driver: _SnapshotDriver | None = None
+) -> tuple[BrowserService, _ScriptedLLM, _SnapshotDriver]:
     worker = build_browser_worker_agent(
         provider="openai",
         api_key="mock-api-key",
         api_base="https://example.invalid/v1",
         model_name="mock-model",
-        mcp_cfg=_mcp_cfg(),
         max_steps=max_steps,
-        allowed_tool_names=(),
     )
     llm = _ScriptedLLM(respond)
     worker.set_llm(llm)
-    client = client or _FakePlaywrightClient()
-    card = McpToolCard(id="final-recovery.browser_snapshot", name="browser_snapshot", server_name="pw-test")
-    worker.ability_manager.add_ability(card, MCPTool(client, card))
+    driver = driver or _SnapshotDriver()
+    snapshot = command_tools(driver)["browser_snapshot"]
+    worker.ability_manager.add_ability(snapshot.card, snapshot)
     service = BrowserService(
         provider="openai",
         api_key="mock-api-key",
@@ -113,14 +114,16 @@ def _service(
         guardrails=BrowserRunGuardrails(max_steps=max_steps, max_failures=1, timeout_s=30),
     )
     service.browser_agent = worker
-    return service, llm, client
+    return service, llm, driver
 
 
 def _run(service: BrowserService, rail: bool = True, request_id: str = "r-1") -> dict[str, Any]:
     async def scenario() -> dict[str, Any]:
         if rail:
             await service.browser_agent.register_rail(FinalAnswerRecoveryRail())
-        return await service.run_task_once(task="Find a vegetarian lasagna", session_id="s-1", request_id=request_id)
+        return await service.run_task_once(
+            task="Find a vegetarian lasagna", session_id="s-records-1", request_id=request_id
+        )
 
     return asyncio.run(scenario())
 
@@ -170,26 +173,26 @@ class TestRecovery:
                 return _answer(json.dumps({**ANSWER, "ok": False, "status": "partial"}))
             return _snapshot_call(index)
 
-        service, llm, client = _service(respond, max_steps=2)
+        service, llm, driver = _service(respond, max_steps=2)
 
         result = _run(service)
 
         assert result["recovered_from"] == "max_iterations_reached"
         assert result["ok"] is False, "recovery keeps what the model said about ok"
-        assert len(llm.requests) == 3 and client.calls == 2
+        assert len(llm.requests) == 3 and driver.kinds().count("observe") == 2
         last = llm.requests[-1]["messages"][-1]
         assert last.role == "user"
         assert last.content == f"{STEP_LIMIT_SENTENCE} {RECOVERY_MESSAGE}"
 
     def test_tool_call_during_recovery_is_not_executed(self) -> None:
         stray = AssistantMessage(content=json.dumps(ANSWER), tool_calls=_snapshot_call(9).tool_calls)
-        service, llm, client = _service(_replies(_answer(PROSE), stray))
+        service, llm, driver = _service(_replies(_answer(PROSE), stray))
 
         result = _run(service)
 
         assert result == {**ANSWER, "recovered_from": "non_json_output"}
         assert len(llm.requests) == 2
-        assert client.calls == 0
+        assert driver.kinds() == []
 
 
 class TestRecoveryFails:
@@ -254,7 +257,9 @@ def test_run_task_response_keeps_the_recovery_reason(recovered_from: str | None)
         patch.object(service, "ensure_started", fake_ensure_started),
         patch.object(service, "run_task_once", fake_run_task_once),
     ):
-        response = asyncio.run(service.run_task(task="Find a vegetarian lasagna", session_id="s-1", request_id="r-1"))
+        response = asyncio.run(
+            service.run_task(task="Find a vegetarian lasagna", session_id="s-records-1", request_id="r-1")
+        )
 
     assert response["ok"] is True
     assert response["final"] == ANSWER["final"]
@@ -262,6 +267,7 @@ def test_run_task_response_keeps_the_recovery_reason(recovered_from: str | None)
         assert response["recovered_from"] == recovered_from
     else:
         assert "recovered_from" not in response
+
 
 def test_valid_json_needs_no_recovery() -> None:
     service, llm, _ = _service(_replies(_snapshot_call(1), _answer(json.dumps(ANSWER))))
@@ -311,11 +317,11 @@ class TestIsolation:
             events["b_second_request"] = asyncio.Event()
             await service.browser_agent.register_rail(FinalAnswerRecoveryRail())
             return await asyncio.gather(
-                service.run_task_once(task="Task A", session_id="s-a", request_id="run-a"),
-                service.run_task_once(task="Task B", session_id="s-b", request_id="run-b"),
+                service.run_task_once(task="Task A", session_id="s-records-a", request_id="run-a"),
+                service.run_task_once(task="Task B", session_id="s-records-b", request_id="run-b"),
             )
 
-        service, llm, _ = _service(respond, client=_FakePlaywrightClient(before_tool_result))
+        service, llm, _ = _service(respond, driver=_SnapshotDriver(before_tool_result))
 
         result_a, result_b = asyncio.run(scenario())
 
@@ -342,7 +348,7 @@ def test_service_registers_the_recovery_rail(other_rails: int) -> None:
     worker.register_rail = AsyncMock()
     module = "openjiuwen.harness.tools.browser_move.playwright_runtime.service"
     with (
-        patch.object(service, "ensure_runtime_ready", AsyncMock()),
+        patch.object(service_module, "assemble_driver", AsyncMock(return_value=fake_assembly(mcp_fake_driver()))),
         patch(f"{module}.build_browser_worker_agent", return_value=worker),
     ):
         asyncio.run(service.ensure_started())
@@ -360,7 +366,7 @@ class TestRecoveryCallFails:
                 return _answer(PROSE)
             raise RuntimeError("model endpoint unavailable")
 
-        service, llm, client = _service(respond)
+        service, llm, driver = _service(respond)
 
         result = _run(service)
 
@@ -373,4 +379,4 @@ class TestRecoveryCallFails:
             "status": "failed",
         }
         assert [bool(request["tools"]) for request in llm.requests] == [True, False], "one recovery call, no retry"
-        assert client.calls == 0
+        assert driver.kinds() == []

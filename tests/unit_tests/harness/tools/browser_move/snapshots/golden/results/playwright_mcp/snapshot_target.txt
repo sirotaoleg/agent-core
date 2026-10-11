@@ -1,0 +1,13 @@
+### Page
+- Page URL: http://127.0.0.1:<PORT>/index.html
+- Page Title: Fixture form page
+### Snapshot
+```yaml
+- navigation [ref=e3]:
+  - link "Second page" [ref=e4] [cursor=pointer]:
+    - /url: second.html
+  - link "Blocked page" [ref=e5] [cursor=pointer]:
+    - /url: blocked.html
+  - link "Download report" [ref=e6] [cursor=pointer]:
+    - /url: report.csv
+```

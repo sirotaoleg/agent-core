@@ -39,7 +39,11 @@ from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 BOARD = 100
 SCREEN = ContextRef("screen-1", "screen", "Board")
 DEVICE = ProvisionedDevice(kind="fake-screen", endpoint="screen://1", extras={})
-MESSAGES = {"driver_restarted": "the screen restarted; look again", "driver_lost": "the screen is gone"}
+MESSAGES = {
+    "driver_restarted": "the screen restarted; look again",
+    "driver_lost": "the screen is gone",
+    "retry": "Then poke again.",
+}
 
 
 @dataclass(frozen=True)
@@ -158,7 +162,7 @@ class ScreenProvisioner:
 def screen_registries(driver: ScreenDriver, provisioner: ScreenProvisioner) -> Registries:
     """Test-scoped registries: the screen surface, its driver and its provisioner by name."""
     surfaces: Registry[SurfaceBundle] = Registry("surface")
-    surfaces.register("fake", lambda environ: SurfaceBundle(PROFILE.settings, PROFILE))
+    surfaces.register("fake", lambda environ, instance=None, settings=None: SurfaceBundle(PROFILE.settings, PROFILE))
     drivers: Registry[Any] = Registry("driver")
     drivers.register("screen_driver", lambda device, settings: driver)
     provisioners: Registry[Any] = Registry("provisioner")

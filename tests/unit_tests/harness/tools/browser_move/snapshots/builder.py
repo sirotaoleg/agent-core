@@ -1,5 +1,5 @@
 # coding: utf-8
-"""Tool/prompt snapshot of the Playwright MCP path; only the LLM client, MCP transport and Chrome are stubbed."""
+"""Tool/prompt snapshot of the agent on either driver; the LLM client, the driver transport and Chrome are stubbed."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ MCP_TOOLS_FIXTURE = HERE / "fixtures" / "playwright-mcp-0.0.78-tools.all-caps.js
 REGENERATE_COMMAND = "uv run python -m tests.unit_tests.harness.tools.browser_move.snapshots.regenerate"
 
 DRIVER = "playwright_mcp"
+BROWSER_USE = "browser_use"
 RUNNER_VIEW = "runner"
 
 # Baseline model config. Values are only carried in configs; nothing is sent.
@@ -66,6 +67,27 @@ CLEARED_ENV_PREFIXES = (
 
 _BLANK_SNAPSHOT = "### Page\n- Page URL: about:blank\n- Page Title: \n### Snapshot\n```yaml\n\n```"
 _BLANK_TABS = "### Open tabs\n- 0: (current) [] (about:blank)"
+_BLANK_WIRE_OBSERVATION = {
+    "url": "about:blank",
+    "title": "",
+    "tabs": [{"target_id": "T1", "url": "about:blank", "title": "", "active": True}],
+    "elements": [],
+    "ax_text": "",
+    "screenshot_b64": None,
+    "pixels_above": 0,
+    "pixels_below": 0,
+    "errors": [],
+    "is_pdf_viewer": False,
+    "captured_at": 0.0,
+    "driver_generation": 0,
+}
+_CONNECT_REPLY = {
+    "backend": "browser_use",
+    "browser_version": "Chrome/140",
+    "protocol_version": "1.3",
+    "backend_version": "0.13.10",
+    "initial_url": "about:blank",
+}
 
 
 def view_env(workdir: Path) -> dict[str, str]:
@@ -140,6 +162,32 @@ class FakeMcpSession:
         self.calls.append(name)
         text = self.replies.get(name, "### Result\nok")
         return types.CallToolResult(content=[types.TextContent(type="text", text=text)])
+
+
+class FakeSidecarTransport:
+    """Stands in for the browser-use sidecar process: a blank page that answers every request."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+
+    async def start(self, timeout_s: float | None = None) -> dict[str, Any]:
+        del timeout_s
+        return {"kind": "hello"}
+
+    async def request(self, method: str, params: Any = None, timeout_s: float | None = None) -> Any:
+        del params, timeout_s
+        if method == "connect":
+            return dict(_CONNECT_REPLY)
+        if method == "observe":
+            return dict(_BLANK_WIRE_OBSERVATION)
+        if method == "health":
+            return {"connected": True}
+        if method == "evaluate":
+            return None
+        return {}
+
+    async def close(self) -> None:
+        return None
 
 
 @contextlib.asynccontextmanager
@@ -229,12 +277,14 @@ def io_stubs(
     mcp_calls: list[str],
     answer: str = STUB_ANSWER,
     mcp_replies: dict[str, str] | None = None,
+    driver: str = DRIVER,
 ) -> Iterator[None]:
-    """Stub the LLM client, the MCP transport and Chrome start; restore them after."""
+    """Stub the LLM client, the driver transport and Chrome start; restore them after."""
     import mcp
     import mcp.client.stdio
 
     from openjiuwen.core.foundation.llm import model as model_mod
+    from openjiuwen.harness.tools.browser_move.drivers.browser_use import driver as browser_use_driver
     from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import ManagedBrowserProvisioner
 
     session_cls = type(
@@ -252,6 +302,8 @@ def io_stubs(
         )
         stack.enter_context(patch.object(mcp, "ClientSession", session_cls))
         stack.enter_context(patch.object(mcp.client.stdio, "stdio_client", _fake_stdio_client))
+        if driver == BROWSER_USE:
+            stack.enter_context(patch.object(browser_use_driver, "SidecarTransport", FakeSidecarTransport))
         stack.enter_context(patch.object(ManagedBrowserProvisioner, "start", _refuse_chrome_start))
         yield
 
@@ -422,16 +474,17 @@ async def _build_view_async(view: str, captured: list[dict[str, Any]], notes: di
         await reset_process_state()
 
 
-def build_view(view: str, workdir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Build one view; return the stabilized snapshot document and debugging notes."""
+def build_view(view: str, workdir: Path, driver: str = DRIVER) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Build one view on ``driver``; return the stabilized snapshot document and debugging notes."""
     workdir.mkdir(parents=True, exist_ok=True)
     captured: list[dict[str, Any]] = []
     mcp_calls: list[str] = []
     notes: dict[str, Any] = {}
-    with isolated_env(workdir), io_stubs(captured, mcp_calls), fresh_checkpointer():
+    extra_env = {"BROWSER_DRIVER": driver} if driver != DRIVER else None
+    with isolated_env(workdir, extra_env), io_stubs(captured, mcp_calls, driver=driver), fresh_checkpointer():
         agents = asyncio.run(_build_view_async(view, captured, notes))
     notes.update({"model_calls": len(captured), "mcp_calls": sorted(set(mcp_calls)), "captured": captured})
-    doc = {"driver": DRIVER, "view": view, "agents": agents}
+    doc = {"driver": driver, "view": view, "agents": agents}
     return stabilize(doc, workdir), notes
 
 

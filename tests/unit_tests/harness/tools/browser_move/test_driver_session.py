@@ -11,7 +11,14 @@ from typing import Any
 import pytest
 
 from openjiuwen.core.common.exception.errors import BaseError
-from openjiuwen.harness.tools.browser_move.contract import ActionResult, Click, ConnectionLost, DriverRef, Observe
+from openjiuwen.harness.tools.browser_move.contract import (
+    ActionResult,
+    Click,
+    ConnectionLost,
+    DriverRef,
+    Observe,
+    SurfaceBundle,
+)
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
@@ -69,7 +76,7 @@ def _session(
 ) -> tuple[DriverSession, FakeProvisioner, BrowserPageState]:
     provisioner = FakeProvisioner(alive=alive)
     page_state = BrowserPageState(page_id="page-test")
-    assembly = DriverAssembly(driver, FIRST, provisioner, FakeSettings(), rebuild or Rebuilds())
+    assembly = DriverAssembly(driver, FIRST, provisioner, rebuild or Rebuilds(), SurfaceBundle(FakeSettings()))
     return DriverSession(assembly, page_state, MESSAGES), provisioner, page_state
 
 
@@ -237,3 +244,69 @@ def test_close_stops_the_new_stack_and_releases_the_new_device() -> None:
     ((_, rebuilt),) = rebuilds.drivers
     assert provisioner.log[-1] == ("release", SECOND)
     assert rebuilt.kinds() == ["start", "stop"]
+
+
+def test_stop_keeps_the_device_and_start_restarts_the_same_stack_on_a_live_device() -> None:
+    driver = FakeDriver()
+    session, provisioner, _ = _session(driver)
+
+    asyncio.run(session.stop())
+    asyncio.run(session.start())
+
+    assert driver.kinds() == ["stop", "start"]
+    assert provisioner.log == []
+    assert session.assembly.device == FIRST
+
+
+def test_start_after_stop_provisions_again_when_the_device_died() -> None:
+    driver = FakeDriver()
+    rebuilds = Rebuilds()
+    session, provisioner, _ = _session(driver, alive=False, rebuild=rebuilds)
+
+    asyncio.run(session.stop())
+    asyncio.run(session.start())
+
+    ((device, rebuilt),) = rebuilds.drivers
+    assert (device, session.assembly.device) == (SECOND, SECOND)
+    assert provisioner.log == [("release", FIRST), ("provision", FakeSettings())]
+    assert (driver.kinds(), rebuilt.kinds()) == (["stop"], ["start"])
+
+
+def test_health_asks_the_stack() -> None:
+    driver = FakeDriver()
+    session, _, _ = _session(driver)
+
+    assert asyncio.run(session.health()).ok is False
+    asyncio.run(session.start())
+    assert asyncio.run(session.health()).ok is True
+
+
+class StartLosesOnceDriver(FakeDriver):
+    async def start(self, config: Any = None) -> None:
+        await super().start(config)
+        if self.kinds().count("start") == 1:
+            raise ConnectionLost("no device yet", dispatched=False)
+
+
+def test_a_start_that_loses_the_connection_restarts_once() -> None:
+    driver = StartLosesOnceDriver()
+    session, provisioner, page_state = _session(driver)
+    asyncio.run(session.stop())
+
+    asyncio.run(session.start())
+
+    assert driver.kinds() == ["stop", "start", "stop", "start"]
+    assert page_state.generation_id == "g1"
+    assert provisioner.log == []
+
+
+def test_a_start_that_loses_the_connection_twice_fails() -> None:
+    driver = StartFailsDriver()
+    session, _, page_state = _session(driver)
+
+    with pytest.raises(BaseError, match="the device is gone") as raised:
+        asyncio.run(session.start())
+
+    assert driver.kinds() == ["start", "stop", "start"]
+    assert isinstance(raised.value.cause, ConnectionLost)
+    assert page_state.generation_id == "g0"

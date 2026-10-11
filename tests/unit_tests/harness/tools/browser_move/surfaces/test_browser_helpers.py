@@ -31,10 +31,6 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime import site_profil
 from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
 from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime_tools import (
-    BrowserProbeCardsTool,
-    BrowserProbeInteractivesTool,
-)
 from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import ToolContext, ToolFlags, command_record
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
@@ -98,7 +94,7 @@ def _run(coro: Any) -> Any:
 def _context(driver: FakeDriver, info: DriverInfo | None = None, tmp_path: Path | None = None) -> ToolContext:
     page_state = BrowserPageState()
     session = DriverSession(
-        DriverAssembly(stack=driver, device=DEVICE, provisioner=None, surface_settings=None), page_state, MESSAGES
+        DriverAssembly(stack=driver, device=DEVICE, provisioner=None), page_state, MESSAGES
     )
     settings = BrowserSettings(selector_cache_path=(tmp_path / "selectors.json") if tmp_path else None)
     return ToolContext(session, page_state, BrowserRenderer(), info or driver.info, settings, False)
@@ -124,25 +120,18 @@ def _fresh_selector_cache(monkeypatch: pytest.MonkeyPatch) -> None:
 # --- cards -----------------------------------------------------------------------------------------------------------
 
 
-def test_probe_cards_equal_the_old_helper_cards() -> None:
-    context = _context(FakeDriver())
-    old = [BrowserProbeInteractivesTool(None), BrowserProbeCardsTool(None)]
-    new = [ProbeInteractivesTool(context), ProbeCardsTool(context)]
-    assert [tool.card.tool_info() for tool in new] == [tool.card.tool_info() for tool in old]
-
-
 def test_the_extra_tools_are_the_probes_the_batch_find_and_recall() -> None:
     assert EXTRA_TOOLS == (ProbeInteractivesTool, ProbeCardsTool, BatchTool, FindTool, RecallOffloadTool)
 
 
 def test_the_helpers_declare_read_progress_and_only_recall_is_exempt_from_budgets() -> None:
-    assert ToolFlags() == ToolFlags(effect=Effect.READ, exempt_from_budget=False, progress=True)
+    assert ToolFlags() == ToolFlags(effect=Effect.READ, exempt_from_budget=False, progress=True, worker=True)
     assert [tool.flags for tool in EXTRA_TOOLS] == [
         ToolFlags(),
         ToolFlags(),
         ToolFlags(effect=Effect.ACT),
         ToolFlags(),
-        ToolFlags(exempt_from_budget=True),
+        ToolFlags(exempt_from_budget=True, worker=False),
     ]
 
 

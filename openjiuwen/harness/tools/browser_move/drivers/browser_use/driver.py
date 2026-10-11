@@ -101,8 +101,12 @@ _SIDECAR_ERRORS: dict[str, tuple[type[DriverError], bool]] = {
     "DriverUnsupported": (Unsupported, False),
     "ActionIntercepted": (ActionIntercepted, False),
 }
-# A dead browser reaches the driver as a plain error once browser-use gives up reconnecting to it.
-_DISCONNECTED = re.compile(r"\bnot connected\b|Reconnection wait timed out", re.IGNORECASE)
+# A dead browser reaches the driver as a plain error once browser-use gives up reconnecting to it; a target that
+# detached under it fails the connect the same way.
+_DISCONNECTED = re.compile(
+    r"\bnot connected\b|Reconnection wait timed out|No valid agent focus available|target may have detached",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -271,6 +275,8 @@ class BrowserUseDriver(HandlerDriver):
         return Health(ok=bool(result.get("connected", False)), detail=result.get("error"))
 
     async def observe(self, command: Observe) -> Observation:
+        if command.scoped:
+            raise Unsupported("BrowserUseDriver observes the whole page only", dispatched=False)
         viewport_screenshot = command.include_screenshot and not command.full_page
         data = await self._request(
             "observe", {"include_dom": True, "include_screenshot": viewport_screenshot, "cached": False}

@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextvars
-import json
 import mimetypes
 import os
 import shutil
@@ -16,7 +15,6 @@ import uuid
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
-from urllib.request import urlopen
 
 from openjiuwen.core.common.logging import logger
 from openjiuwen.core.foundation.store.base_kv_store import BaseKVStore
@@ -25,23 +23,30 @@ from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.runner import Runner
 from openjiuwen.core.single_agent.agents.react_agent import ReActAgent
 
-from ..contract.registry import PROVISIONERS
-from ..provisioning import ProvisionedDevice  # importing the package registers the built-in provisioners
 from ..utils.parsing import extract_json_object
 from .agents import build_browser_worker_agent, refresh_browser_worker_system_prompt
-from .config import BrowserInstanceConfig, BrowserRunGuardrails, CoreSettings, SurfaceSettings, browser_surface_settings
+from .assembly import assemble_driver, build_agent_parts
+from .browser_capabilities import CORE_BROWSER_TOOL_NAMES, capabilities_of
+from .config import (
+    BrowserInstanceConfig,
+    BrowserRunGuardrails,
+    CoreSettings,
+    SurfaceSettings,
+    browser_surface_settings,
+    process_environ,
+)
+from .driver_session import DriverSession
 from .final_answer_recovery import (
     FinalAnswerRecoveryRail,
     final_answer_recovery,
     recovery_message,
     recovery_reason,
 )
-from .intercepted_action import InterceptedActionHintRail
-from .profiles import BrowserProfile, BrowserProfileStore
-from .repeated_call_guard import RepeatedCallGuardRail
+from .page_state import BrowserPageState
 from .service_registry import BROWSER_SERVICE_REGISTRY, BrowserServiceIdentity
 
 MAX_ITERATION_MESSAGE = "Max iterations reached without completion"
+WORKER_LANGUAGE = "en"
 _ctx_observer_session_id: contextvars.ContextVar[str] = contextvars.ContextVar(
     "playwright_runtime_observer_session_id",
     default="",
@@ -214,7 +219,7 @@ class BrowserTaskProgressState:
 
 
 class BrowserService:
-    """Backend browser service with sticky logical sessions."""
+    """Backend browser service with sticky logical sessions; holds the driver session the worker runs on."""
 
     def __init__(
         self,
@@ -229,6 +234,7 @@ class BrowserService:
         allowed_tool_names: Optional[Iterable[str]] = None,
         browser_settings: Optional[SurfaceSettings] = None,
         core_settings: Optional[CoreSettings] = None,
+        page_state: Optional[BrowserPageState] = None,
     ) -> None:
         self.provider = provider
         self.api_key = api_key
@@ -236,15 +242,21 @@ class BrowserService:
         self.model_name = model_name
         self.mcp_cfg = mcp_cfg
         self.guardrails = guardrails
-        self._instance = instance or BrowserInstanceConfig()
+        self._instance = instance
         self._settings = browser_settings or browser_surface_settings()
         self._core_settings = core_settings
+        self._core: Optional[CoreSettings] = None
         self._allowed_tool_names = (
             None
             if allowed_tool_names is None
             else tuple(dict.fromkeys(allowed_tool_names))
         )
+        self._capabilities = capabilities_of(
+            CORE_BROWSER_TOOL_NAMES if self._allowed_tool_names is None else self._allowed_tool_names
+        )
         self._cancel_store: BaseKVStore = cancel_store or InMemoryKVStore()
+        self._page_state = page_state or BrowserPageState()
+        self._session: Optional[DriverSession] = None
 
         self.started = False
         self._browser_agent: Optional[ReActAgent] = None
@@ -256,18 +268,10 @@ class BrowserService:
         self._mcp_cwd = self._resolve_mcp_cwd()
         self._screenshots_dir = self._mcp_cwd / self._screenshot_subdir
         self._artifacts_dir = self._mcp_cwd / self._artifacts_subdir
-        self._profile_store = BrowserProfileStore(self._resolve_profile_store_path())
         self._profile_name = self._resolve_profile_name()
         self._driver_mode = self._resolve_driver_mode()
-        self._active_profile: Optional[BrowserProfile] = None
-        self._managed_driver: Optional[Any] = None
-        self._registered_cdp_endpoint: str = ""
         self._failure_context_by_session: Dict[str, str] = {}
         self._progress_by_session: Dict[str, BrowserTaskProgressState] = {}
-        self._heartbeat_task: Optional[asyncio.Task[Any]] = None
-        self._heartbeat_interval: float = 30.0
-        self._connection_healthy: bool = False
-        self._last_heartbeat_ok: Optional[float] = None
         self._lifecycle_identity = self._build_lifecycle_identity()
         self._registry_acquired = False
         self._task_binding_ref_count = 0
@@ -290,28 +294,17 @@ class BrowserService:
         return self._artifacts_subdir
 
     @property
-    def connection_healthy(self) -> bool:
-        return self._connection_healthy
+    def session(self) -> Optional[DriverSession]:
+        return self._session
 
     @property
-    def last_heartbeat_ok(self) -> Optional[float]:
-        return self._last_heartbeat_ok
-
-    def _resolve_profile_store_path(self) -> Path:
-        return self._settings.profile_store_path or self._mcp_cwd / ".browser" / "profiles.json"
-
-    @staticmethod
-    def _legacy_profile_store_path() -> Path:
-        return Path.home() / ".jiuwenclaw" / "browser-move" / ".browser" / "profiles.json"
-
-    def _iter_profile_store_paths(self) -> list[Path]:
-        primary = self._resolve_profile_store_path()
-        paths = [primary]
-        if self._settings.profile_store_path is None:
-            legacy = self._legacy_profile_store_path()
-            if legacy.resolve() != primary.resolve():
-                paths.append(legacy)
-        return paths
+    def core(self) -> CoreSettings:
+        """The core settings the session is built from; the instance's driver, when set, wins."""
+        if self._core is None:
+            core = self._core_settings or CoreSettings.from_process_env()
+            driver = (self._instance.driver if self._instance else "").strip()
+            self._core = replace(core, driver=driver) if driver else core
+        return self._core
 
     def _resolve_profile_name(self) -> str:
         """Resolve the active profile name (per-instance key wins over env).
@@ -389,6 +382,8 @@ class BrowserService:
         """Acquire one task reference to the shared browser process resources."""
         self._task_binding_ref_count += 1
         self._acquire_registry_lease()
+        if self._session is not None:
+            self._session.begin_task()
 
     @staticmethod
     def _cancel_key(session_id: str, request_id: Optional[str] = None) -> str:
@@ -422,67 +417,6 @@ class BrowserService:
             return Path(raw).expanduser()
         return self._settings.mcp_cwd
 
-    @staticmethod
-    def _is_cdp_endpoint_ready(endpoint: str) -> bool:
-        base = str(endpoint or "").strip().rstrip("/")
-        if not base:
-            return False
-        try:
-            with urlopen(f"{base}/json/version", timeout=1.5) as response:  # nosec B310
-                payload = json.loads(response.read().decode("utf-8", errors="ignore"))
-                if isinstance(payload, dict):
-                    return bool(payload.get("webSocketDebuggerUrl") or payload.get("Browser"))
-        except (OSError, ValueError):
-            return False
-        return False
-
-    def _resolve_existing_cdp_profile(self) -> Optional[BrowserProfile]:
-        # A keyed instance must only ever reuse a browser whose profile name
-        # matches its own key. The shared store tracks a single global
-        # selected_profile; adopting it would let whoever starts second attach
-        # to another key's live Chrome, collapsing the per-key isolation.
-        keyed = bool(self._instance and self._instance.key)
-        candidates: list[BrowserProfile] = []
-        for store_path in self._iter_profile_store_paths():
-            store = BrowserProfileStore(store_path)
-            if not keyed:
-                selected = store.selected_profile()
-                if selected is not None:
-                    candidates.append(selected)
-            named = store.get_profile(self._profile_name)
-            if named is not None and all(named.name != item.name for item in candidates):
-                candidates.append(named)
-
-        _expected_extra_args = list(self._settings.managed_args)
-        expected_binary = self.normalize_browser_binary(self._configured_browser_binary())
-        for profile in candidates:
-            endpoint = str(profile.cdp_url or "").strip()
-            if not endpoint or not self._is_cdp_endpoint_ready(endpoint):
-                continue
-            # Don't reuse a live Chrome whose launch args differ from the current
-            # BROWSER_MANAGED_ARGS — e.g. a headed Chrome when headless is now on.
-            if profile.extra_args != _expected_extra_args:
-                continue
-            if self.normalize_browser_binary(profile.browser_binary) != expected_binary:
-                continue
-            try:
-                self._profile_store.upsert_profile(profile, select=True)
-            except Exception:
-                pass
-            return profile
-        return None
-
-    def _should_replace_managed_driver(self, profile: BrowserProfile) -> bool:
-        if self._managed_driver is None:
-            return False
-        if profile.driver_type != "managed":
-            return True
-        if self._active_profile is None:
-            return True
-        current_endpoint = str(self._active_profile.cdp_url or "").strip()
-        target_endpoint = str(profile.cdp_url or "").strip()
-        return current_endpoint != target_endpoint
-
     def _configured_cdp_endpoint(self) -> str:
         params = getattr(self.mcp_cfg, "params", {}) or {}
         env_map = dict(params.get("env", {}) or {})
@@ -498,80 +432,6 @@ class BrowserService:
         if not raw:
             return ""
         return os.path.normcase(os.path.normpath(str(Path(raw).expanduser())))
-
-    def _provisioning_settings(self) -> SurfaceSettings:
-        instance = self._instance
-        if instance and instance.managed_port > 0:
-            port = instance.managed_port
-        elif instance and instance.key:
-            # 0 = a free port: one env port cannot serve several keys without them colliding on one browser.
-            port = 0
-        else:
-            port = self._settings.managed_port
-        return replace(
-            self._settings,
-            provisioning=self._driver_mode,
-            profile_name=self._profile_name,
-            managed_port=port,
-            user_data_dir=str((instance.user_data_dir if instance else "") or self._settings.user_data_dir).strip(),
-            browser_binary=self._configured_browser_binary(),
-            mcp_cwd=self._mcp_cwd,
-        )
-
-    def _inject_cdp_endpoint(self, endpoint: str) -> None:
-        params = dict(getattr(self.mcp_cfg, "params", {}) or {})
-        env_map = dict(params.get("env", {}) or {})
-        env_map["PLAYWRIGHT_MCP_CDP_ENDPOINT"] = endpoint
-        env_map.setdefault("PLAYWRIGHT_MCP_BROWSER", "chrome")
-        env_map.pop("PLAYWRIGHT_MCP_DEVICE", None)
-        params["env"] = env_map
-        self.mcp_cfg.params = params
-
-    async def _ensure_managed_driver_started(self) -> bool:
-        if self._driver_mode != "managed":
-            return False
-        previous_endpoint = self._configured_cdp_endpoint()
-        reusable_profile = self._resolve_existing_cdp_profile()
-        if reusable_profile is not None:
-            replaced_driver = False
-            if self._should_replace_managed_driver(reusable_profile):
-                await self._stop_managed_driver()
-                replaced_driver = True
-            self._active_profile = reusable_profile
-            endpoint = str(reusable_profile.cdp_url or "").strip()
-            self._inject_cdp_endpoint(endpoint)
-            return replaced_driver or endpoint != previous_endpoint
-
-        if self._managed_driver is not None:
-            ready = await asyncio.to_thread(self._managed_driver.is_endpoint_ready)
-            if ready:
-                return False
-            await self._stop_managed_driver()
-
-        provisioner = PROVISIONERS.create(self._driver_mode, profile_store=self._profile_store)
-        device: ProvisionedDevice = await asyncio.to_thread(provisioner.provision, self._provisioning_settings())
-        self._active_profile = device.extras["profile"]
-        self._inject_cdp_endpoint(device.endpoint)
-        self._managed_driver = provisioner
-        BROWSER_SERVICE_REGISTRY.register_managed_driver(
-            self._lifecycle_identity,
-            self,
-            provisioner,
-        )
-        return True
-
-    async def _stop_managed_driver(self) -> None:
-        if self._managed_driver is None:
-            return
-        driver = self._managed_driver
-        self._managed_driver = None
-        try:
-            await asyncio.to_thread(driver.stop)
-        finally:
-            BROWSER_SERVICE_REGISTRY.unregister_managed_driver(
-                self._lifecycle_identity,
-                driver,
-            )
 
     def _ensure_screenshots_dir(self) -> None:
         self._screenshots_dir.mkdir(parents=True, exist_ok=True)
@@ -756,186 +616,60 @@ class BrowserService:
             self._locks[sid] = asyncio.Lock()
         return sid
 
-    def _validate_mcp_command(self) -> str:
-        command = str(self.mcp_cfg.params.get("command") or "").strip()
-        if not command:
-            raise RuntimeError(
-                "Playwright MCP command is empty. Configure PLAYWRIGHT_MCP_COMMAND "
-                "or restore the bundled runtime settings."
-            )
-        command_path = Path(command).expanduser()
-        if command_path.is_absolute():
-            resolved = str(command_path)
-        else:
-            resolved = shutil.which(command)
-        if resolved is None:
-            raise RuntimeError(
-                f"Playwright MCP command '{command}' was not found in PATH. "
-                "Install Node.js 20+ or configure an absolute executable path."
-            )
-        resolved_path = Path(os.path.abspath(resolved))
-        if not resolved_path.is_file() or not os.access(resolved_path, os.X_OK):
-            raise RuntimeError(
-                f"Playwright MCP command is not an executable file: {resolved_path}"
-            )
-        return str(resolved_path)
+    async def _open_session(self) -> DriverSession:
+        settings = replace(self._settings, mcp_server=self.mcp_cfg, mcp_cwd=self._mcp_cwd)
+        assembly = await assemble_driver(self.core, process_environ(), instance=self._instance, settings=settings)
+        BROWSER_SERVICE_REGISTRY.register_managed_driver(self._lifecycle_identity, self, assembly.provisioner)
+        return DriverSession(assembly, self._page_state, assembly.surface.profile.messages)
 
     async def ensure_runtime_ready(self) -> None:
+        """Open the driver session once; after a task release, start its stack again on the kept device."""
         if self._task_binding_ref_count <= 0:
             # Standalone BrowserAgentRuntime usage has no outer TaskTool hook.
             self.acquire_task_binding()
         self._acquire_registry_lease()
         if self.started:
-            browser_rebound = await self._ensure_managed_driver_started()
-            configured_endpoint = self._configured_cdp_endpoint()
-            if browser_rebound or configured_endpoint != self._registered_cdp_endpoint:
-                await self._refresh_mcp_server_binding()
-                self._browser_agent = None
             return
-
-        self.mcp_cfg.params["command"] = self._validate_mcp_command()
-
-        from .browser_tools import ensure_browser_runtime_client_patch
-
-        ensure_browser_runtime_client_patch()
-
-        await self._ensure_managed_driver_started()
+        if self._session is None:
+            self._session = await self._open_session()
+        else:
+            await self._session.start()
+        self._session.begin_task()
         self._ensure_screenshots_dir()
-        await Runner.start()
-
-        register_result = await Runner.resource_mgr.add_mcp_server(self.mcp_cfg, tag="browser.service")
-        if register_result is not None and not getattr(register_result, "is_ok", lambda: False)():
-            if hasattr(register_result, "error") and callable(register_result.error):
-                error_value = register_result.error()
-            elif hasattr(register_result, "msg") and callable(register_result.msg):
-                error_value = register_result.msg()
-            else:
-                error_value = getattr(register_result, "value", register_result)
-            if "already exist" not in str(error_value):
-                raise RuntimeError(f"Failed to register Playwright MCP server: {error_value}")
-
-        self._registered_cdp_endpoint = self._configured_cdp_endpoint()
         self.started = True
-        if BROWSER_SERVICE_REGISTRY.activate_binding(
-            self._lifecycle_identity,
-            self,
-        ):
-            self._start_heartbeat()
+        BROWSER_SERVICE_REGISTRY.activate_binding(self._lifecycle_identity, self)
 
     async def ensure_started(self) -> None:
         await self.ensure_runtime_ready()
         if self._browser_agent is not None:
             return
 
+        parts = build_agent_parts(
+            self._session,
+            self._session.assembly.surface,
+            capabilities=self._capabilities,
+            image_support=False,
+            language=WORKER_LANGUAGE,
+            worker=True,
+        )
         self._browser_agent = build_browser_worker_agent(
             provider=self.provider,
             api_key=self.api_key,
             api_base=self.api_base,
             model_name=self.model_name,
-            mcp_cfg=self.mcp_cfg,
             max_steps=self.guardrails.max_steps,
+            tools=parts.tools,
             screenshot_subdir=self._screenshot_subdir,
             artifacts_subdir=self._artifacts_subdir,
             tool_result_observer=self._observe_worker_tool_result,
-            allowed_tool_names=self._allowed_tool_names,
-            settings=self._core_settings,
+            settings=self.core,
         )
-        await self._browser_agent.register_rail(InterceptedActionHintRail())
-        await self._browser_agent.register_rail(RepeatedCallGuardRail())
-        await self._browser_agent.register_rail(FinalAnswerRecoveryRail())
-
-    def _start_heartbeat(self) -> None:
-        if self._heartbeat_task is None or self._heartbeat_task.done():
-            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop(), name="browser-heartbeat")
-
-    async def _check_connection(self) -> None:
-        from .browser_tools import get_registered_client
-
-        if self._managed_driver is not None:
-            driver_dict = getattr(self._managed_driver, "__dict__", {})
-            endpoint_ready_fn = driver_dict.get("is_endpoint_ready")
-            if endpoint_ready_fn is None:
-                endpoint_ready_fn = driver_dict.get("_is_endpoint_ready")
-            if endpoint_ready_fn is None:
-                endpoint_ready_fn = getattr(self._managed_driver, "is_endpoint_ready", None)
-            if endpoint_ready_fn is None:
-                endpoint_ready_fn = getattr(self._managed_driver, "_is_endpoint_ready", None)
-            ready = await asyncio.to_thread(endpoint_ready_fn)
-            if not ready:
-                if self._managed_driver:
-                    self._managed_driver.clear()
-                raise RuntimeError("Chrome CDP endpoint not responding")
-        server_id = (self.mcp_cfg.server_id or "").strip() or self.mcp_cfg.server_name
-        client = get_registered_client(server_id)
-        if client is None:
-            raise RuntimeError("Playwright MCP client not found in registry")
-        if not await client.ping():
-            raise RuntimeError("Playwright MCP subprocess not responding")
-
-    async def _heartbeat_loop(self) -> None:
-        from openjiuwen.core.common.logging import logger as _logger
-
-        while True:
-            await asyncio.sleep(self._heartbeat_interval)
-            try:
-                await self._check_connection()
-                self._connection_healthy = True
-                self._last_heartbeat_ok = asyncio.get_event_loop().time()
-                _logger.info("BrowserService heartbeat: connection healthy")
-            except Exception as exc:
-                self._connection_healthy = False
-                _logger.warning("BrowserService heartbeat: connection unhealthy — %s", exc)
-                _logger.info(
-                    "BrowserService heartbeat: restart deferred until the next browser task "
-                    "to avoid reviving manually closed browsers during idle periods"
-                )
+        for rail in (*parts.rails, FinalAnswerRecoveryRail()):
+            await self._browser_agent.register_rail(rail)
 
     async def _restart(self) -> None:
         """Tear down and reinitialize the browser service (e.g. after stdio subprocess dies)."""
         await self._restart_browser_runtime()
-
-    async def _remove_registered_mcp_server(self) -> None:
-        server_resource_id = (self.mcp_cfg.server_id or "").strip() or self.mcp_cfg.server_name
-        await Runner.resource_mgr.remove_mcp_server(
-            server_id=server_resource_id,
-            ignore_exception=True,
-        )
-
-    async def _refresh_mcp_server_binding(self) -> None:
-        await self._remove_registered_mcp_server()
-        register_result = await Runner.resource_mgr.add_mcp_server(self.mcp_cfg, tag="browser.service")
-        if register_result is not None and not getattr(register_result, "is_ok", lambda: False)():
-            if hasattr(register_result, "error") and callable(register_result.error):
-                error_value = register_result.error()
-            elif hasattr(register_result, "msg") and callable(register_result.msg):
-                error_value = register_result.msg()
-            else:
-                error_value = getattr(register_result, "value", register_result)
-            if "already exist" not in str(error_value):
-                raise RuntimeError(f"Failed to refresh Playwright MCP server binding: {error_value}")
-        self._registered_cdp_endpoint = self._configured_cdp_endpoint()
-
-    async def _reset_browser_runtime(self) -> None:
-        try:
-            if self.started:
-                await self._remove_registered_mcp_server()
-        except Exception:
-            pass
-        self.started = False
-        self._registered_cdp_endpoint = ""
-        self._browser_agent = None
-        await self._stop_managed_driver()
-
-    async def _stop_heartbeat(self) -> None:
-        heartbeat = self._heartbeat_task
-        self._heartbeat_task = None
-        if heartbeat is None or heartbeat.done():
-            return
-        heartbeat.cancel()
-        try:
-            await heartbeat
-        except asyncio.CancelledError:
-            pass
 
     def _clear_task_scoped_state(self) -> None:
         """Drop observers and task/session state without touching the profile."""
@@ -951,73 +685,29 @@ class BrowserService:
         self._progress_by_session.clear()
 
     async def release_task_binding(self) -> bool:
-        """Release task-owned MCP/observer resources and preserve Chrome state."""
+        """Release the task's resources: the last binding stops the driver stack and keeps the device."""
         if self._task_binding_ref_count > 0:
             self._task_binding_ref_count -= 1
         if self._task_binding_ref_count > 0:
             return False
-        if not self._registry_acquired:
-            await self._stop_heartbeat()
-            self._clear_task_scoped_state()
-            self.started = False
-            self._registered_cdp_endpoint = ""
-            self._connection_healthy = False
-            self._last_heartbeat_ok = None
-            return True
-
-        release = BROWSER_SERVICE_REGISTRY.release(
-            self._lifecycle_identity,
-            self,
-        )
-        self._registry_acquired = False
-        await self._stop_heartbeat()
-
-        if release.close_mcp_binding:
-            try:
-                await self._remove_registered_mcp_server()
-            except Exception:
-                pass
-
+        if self._registry_acquired:
+            BROWSER_SERVICE_REGISTRY.release(self._lifecycle_identity, self)
+            self._registry_acquired = False
+        if self.started and self._session is not None:
+            await self._session.stop()
         self.started = False
-        self._registered_cdp_endpoint = ""
-        self._connection_healthy = False
-        self._last_heartbeat_ok = None
         self._clear_task_scoped_state()
-
-        next_owner = release.next_heartbeat_owner
-        if next_owner is not None and next_owner.started:
-            next_owner.start_heartbeat_if_started()
         return True
 
-    @property
-    def managed_driver(self) -> Optional[Any]:
-        """Return the managed driver coordinated by the process registry."""
-        return self._managed_driver
-
-    def start_heartbeat_if_started(self) -> None:
-        """Start heartbeat after registry ownership is transferred."""
-        if self.started:
-            self._start_heartbeat()
-
     async def detach_lifecycle_resources(self) -> Optional[Any]:
-        """Detach this task binding while preserving the driver for reset."""
-        driver = self._managed_driver
-        await self._stop_heartbeat()
+        """Close this service's session during a coordinated reset; returns the provisioner of its device."""
+        session, self._session = self._session, None
         self.started = False
-        self._registered_cdp_endpoint = ""
         self._browser_agent = None
-        self._connection_healthy = False
-        self._last_heartbeat_ok = None
-        return driver
-
-    async def remove_registered_mcp_binding(self) -> None:
-        """Remove this service's MCP binding during coordinated reset."""
-        await self._remove_registered_mcp_server()
-
-    def clear_managed_browser_resources(self) -> None:
-        """Forget stopped managed resources after a coordinated reset."""
-        self._managed_driver = None
-        self._active_profile = None
+        if session is None:
+            return None
+        await session.close()
+        return session.assembly.provisioner
 
     @classmethod
     async def _reset_lifecycle_resources(
@@ -1036,13 +726,6 @@ class BrowserService:
             if driver is not None and all(existing is not driver for existing in drivers):
                 drivers.append(driver)
 
-        representative = services[0] if services else fallback_service
-        if representative is not None:
-            try:
-                await representative.remove_registered_mcp_binding()
-            except Exception:
-                pass
-
         for driver in drivers:
             try:
                 await asyncio.to_thread(driver.stop)
@@ -1053,8 +736,6 @@ class BrowserService:
                     identity,
                     driver,
                 )
-        for service in services:
-            service.clear_managed_browser_resources()
         return bool(services or drivers)
 
     async def reset(self) -> None:

@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -26,10 +25,10 @@ from ..surfaces import SURFACES
 from .action_policy import ActionPolicy
 from .config import CoreSettings
 from .driver_session import DriverSession
-from .intercepted_action import CommandInterceptedHintRail
+from .intercepted_action import InterceptedActionHintRail
 from .page_state import BrowserPageState
-from .repeated_call_guard import CommandRepeatGuardRail
-from .tool_factory import ToolContext, ToolFactory
+from .repeated_call_guard import RepeatedCallGuardRail
+from .tool_factory import Builder, ToolContext, ToolFactory
 
 
 @dataclass(frozen=True)
@@ -41,7 +40,7 @@ class Registries:
 
 @dataclass(frozen=True)
 class DriverAssembly:
-    """A started driver stack, the device under it and the settings that device was provisioned from.
+    """A started driver stack, the device under it and the surface it serves.
 
     ``rebuild`` makes a new stack for another device of the same surface.
     """
@@ -49,7 +48,6 @@ class DriverAssembly:
     stack: Driver
     device: ProvisionedDevice
     provisioner: Provisioner
-    surface_settings: Any
     rebuild: Callable[[ProvisionedDevice], Driver] | None = field(default=None, compare=False)
     surface: SurfaceBundle | None = None
 
@@ -65,6 +63,7 @@ class AgentParts:
     tools: tuple[Tool, ...]
     prompt_sections: tuple[str, ...]
     rails: tuple[AgentRail, ...]
+    builders: Mapping[str, Builder] = field(default_factory=dict)
 
 
 def _log_trace(record: dict[str, Any]) -> None:
@@ -82,26 +81,21 @@ def _stack_builder(core: CoreSettings, surface: SurfaceBundle, drivers: Registry
     return build
 
 
-def _with_instance(surface: SurfaceBundle, instance: Any) -> SurfaceBundle:
-    settings = surface.settings.with_instance(instance)
-    return SurfaceBundle(settings, dataclasses.replace(surface.profile, settings=settings))
-
-
 async def assemble_driver(
     core: CoreSettings,
     environ: Mapping[str, str],
     *,
     instance: Any = None,
     registries: Registries | None = None,
+    settings: Any = None,
 ) -> DriverAssembly:
     """Surface, provisioner, driver and middleware by name from ``core``; returns the started stack.
 
-    ``instance`` (the surface's own per-agent identity) is applied to the surface settings before anything is built.
+    The surface factory gets ``instance`` (the surface's own per-agent identity) and ``settings`` (used instead of
+    parsing ``environ``), so both reach provisioning, the driver factory and the tool context.
     """
     registries = registries or Registries(DRIVERS, SURFACES, PROVISIONERS)
-    surface = registries.surfaces.create(core.surface, environ)
-    if instance is not None:
-        surface = _with_instance(surface, instance)
+    surface = registries.surfaces.create(core.surface, environ, instance, settings)
     provisioner = registries.provisioners.create(surface.settings.provisioning)
     build_stack = _stack_builder(core, surface, registries.drivers)
     device = await asyncio.to_thread(provisioner.provision, surface.settings)
@@ -110,7 +104,7 @@ async def assemble_driver(
     except BaseException:
         await asyncio.to_thread(provisioner.release, device)
         raise
-    assembly = DriverAssembly(stack, device, provisioner, surface.settings, build_stack, surface)
+    assembly = DriverAssembly(stack, device, provisioner, build_stack, surface)
     try:
         await stack.start()
     except BaseException:
@@ -127,6 +121,7 @@ def build_agent_parts(
     image_support: bool,
     language: str,
     workspace: Any = None,
+    worker: bool = False,
 ) -> AgentParts:
     """Tools and prompt sections from the profile and the driver; the core rails, then the profile's rails."""
     profile = bundle.profile
@@ -138,17 +133,18 @@ def build_agent_parts(
         page_state=session.page_state,
         workspace=workspace,
         language=language,
+        worker=worker,
     )
     context = ToolContext(
         session, session.page_state, profile.renderer, info, profile.settings, image_support, workspace, language
     )
     rails = (
         ActionPolicy(tools.builders, profile.policy_rules, session.page_state),
-        CommandRepeatGuardRail(),
-        CommandInterceptedHintRail(),
+        RepeatedCallGuardRail(),
+        InterceptedActionHintRail(profile.messages["retry"]),
         *(factory(context) for factory in profile.rails),
     )
-    return AgentParts(tools.tools, tools.prompt_sections, rails)
+    return AgentParts(tools.tools, tools.prompt_sections, rails, tools.builders)
 
 
 async def build_agent(

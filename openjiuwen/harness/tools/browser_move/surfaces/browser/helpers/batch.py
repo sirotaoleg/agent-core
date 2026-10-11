@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import re
 import time
@@ -32,6 +33,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     RunScript,
     SwitchContext,
     TypeText,
+    Unsupported,
     Wait,
 )
 from openjiuwen.harness.tools.browser_move.drivers.middleware import masked
@@ -555,12 +557,23 @@ class _Run:
 
     # --- one step: one command ---------------------------------------------------------------------------------------
 
+    async def _typed(self, action: TypeText) -> ActionResult:
+        # A driver that cannot type key by key refuses before sending anything; the value then goes in at once.
+        try:
+            return await self._execute(action)
+        except Unsupported as error:
+            if error.dispatched or not action.slowly:
+                raise
+            return await self._execute(dataclasses.replace(action, slowly=False, clear=False))
+
     async def _single(self, step: _Step, command: Action) -> dict[str, Any]:
         started = time.perf_counter()
         error = ""
         try:
             if isinstance(command, Observe):
                 await self._observe(command)
+            elif isinstance(command, TypeText):
+                await self._typed(command)
             else:
                 await self._execute(command)
         except (DriverError, _StepError) as failure:
@@ -762,7 +775,7 @@ class _Run:
         # Typing key by key does not clear the field, so it is emptied first, as select-all and Backspace did.
         await self._execute(Click(locator))
         await self._execute(TypeText(locator, ""))
-        await self._execute(TypeText(locator, value, clear=False, slowly=True))
+        await self._typed(TypeText(locator, value, clear=False, slowly=True))
 
     async def _select(self, step: _Step, timeout_s: float) -> None:
         spec = step.spec

@@ -102,12 +102,9 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
     "playwright_runtime/browser_working_context.py": 2,
     "playwright_runtime/browser_working_context_rail.py": 2,
     "playwright_runtime/main.py": 5,
-    "playwright_runtime/repeated_call_guard.py": 1,
-    "playwright_runtime/runtime.py": 20,
-    "playwright_runtime/runtime_tools.py": 3,
+    "playwright_runtime/runtime.py": 2,
+    "playwright_runtime/runtime_tools.py": 1,
     "playwright_runtime/service.py": 14,
-    "playwright_runtime/service_registry.py": 2,
-    "playwright_runtime/status_logging.py": 1,
     "utils/__init__.py": 4,
     "utils/env.py": 3,
     "utils/parsing.py": 1,
@@ -118,15 +115,10 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
 # file relative to the package -> number of MCP tool-name matches.
 KNOWN_MCP_TOOL_NAMES: dict[str, int] = {
     # legacy code, removed with the old paths
-    "controllers/action.py": 14,
     "playwright_runtime/agents.py": 11,
     "playwright_runtime/browser_capabilities.py": 69,
-    "playwright_runtime/browser_state_context_processor.py": 46,
-    "playwright_runtime/intercepted_action.py": 1,
     "playwright_runtime/probes.py": 2,
-    "playwright_runtime/repeated_call_guard.py": 3,
-    "playwright_runtime/runtime.py": 57,
-    "playwright_runtime/runtime_tools.py": 2,
+    "playwright_runtime/runtime.py": 9,
     "utils/upload_paths.py": 1,
 }
 

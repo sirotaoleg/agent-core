@@ -77,11 +77,10 @@ def _target(value: Any, resolver: RefResolver) -> DriverRef | Locator:
     target = str(value or "")
     if not target:
         raise ValueError("'target' is required")
-    # The model sends no generation: a ref belongs to the observation it was last seen in.
-    generation = resolver.generation_of(target)
+    # The server resolves aria refs and css against the live page, so it, not the page state, judges staleness.
     if ARIA_REF.fullmatch(target):
-        return DriverRef(target, generation)
-    return Locator(css=target, text=None, generation=generation)
+        return DriverRef(target, "")
+    return Locator(css=target, text=None, generation="")
 
 
 def _point(args: Mapping[str, Any], x: str, y: str, resolver: RefResolver) -> PointRef:
@@ -180,7 +179,11 @@ def build_navigate_back(args: Mapping[str, Any], resolver: RefResolver) -> Actio
 
 
 def build_snapshot(args: Mapping[str, Any], resolver: RefResolver) -> Action:
-    return Observe()
+    target = args.get("target")
+    return Observe(
+        depth=None if args.get("depth") is None else _number(args, "depth"),
+        root=None if not target else _target(target, resolver),
+    )
 
 
 def build_take_screenshot(args: Mapping[str, Any], resolver: RefResolver) -> Action:
@@ -242,7 +245,7 @@ def build_network_requests(args: Mapping[str, Any], resolver: RefResolver) -> Ac
     return GetNetwork(static=bool(args.get("static")), filter=None if url_filter is None else str(url_filter))
 
 
-# Arguments not decoded here (element, filename, depth, boxes, type, scale, delay) do not change the command.
+# Arguments not decoded here (element, filename, boxes, type, scale, delay) do not change the command.
 DECODERS: Mapping[str, Builder] = MappingProxyType(
     {
         "browser_click": build_click,

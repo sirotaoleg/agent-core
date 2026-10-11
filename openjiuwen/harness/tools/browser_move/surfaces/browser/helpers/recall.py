@@ -12,7 +12,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory impor
 class RecallOffloadTool(BrowserOffloadRecallTool):
     """Reads back this session's offloaded browser results; never counts against the run's budgets."""
 
-    flags = ToolFlags(exempt_from_budget=True)
+    flags = ToolFlags(exempt_from_budget=True, worker=False)
 
     def __init__(self, context: ToolContext) -> None:
         super().__init__(context.workspace, language=context.language)

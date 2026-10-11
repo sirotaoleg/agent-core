@@ -8,7 +8,6 @@ import asyncio
 import json
 
 from openjiuwen.core.common.logging import logger
-from openjiuwen.core.runner import Runner
 
 # Use browser_move client subclasses for MCP transport retry and timeout handling.
 import openjiuwen.core.runner.resources_manager.tool_manager as _tool_mgr_mod
@@ -54,7 +53,7 @@ async def main() -> None:
 
     try:
         await runtime.ensure_started()
-        mcp_tools = await Runner.resource_mgr.get_mcp_tool_infos(server_id=settings.mcp_cfg.server_id) or []
+        tools = runtime.agent_parts(image_support=False).tools
 
         logger.info("=" * 72)
         logger.info("Playwright Browser Runtime")
@@ -63,9 +62,9 @@ async def main() -> None:
         logger.info(f"Model: {settings.model_name}")
         logger.info(f"MCP command: {settings.mcp_cfg.params.get('command')}")
         logger.info(f"MCP args: {settings.mcp_cfg.params.get('args')}")
-        logger.info(f"Discovered browser tools: {len(mcp_tools)}")
-        for item in mcp_tools:
-            logger.info(f"  - {getattr(item, 'name', 'unknown')}")
+        logger.info(f"Browser tools: {len(tools)}")
+        for tool in tools:
+            logger.info(f"  - {tool.card.name}")
         logger.info("=" * 72)
         logger.info(f"Session: {session_id}")
         logger.info("Continuous mode: enter a task and press Enter.")

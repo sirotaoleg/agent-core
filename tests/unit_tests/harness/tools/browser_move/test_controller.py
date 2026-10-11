@@ -128,7 +128,11 @@ def test_browser_task_calls_bound_runner() -> None:
 
 
 def test_describe_actions_includes_registered_specs() -> None:
+    async def drag(session_id: str = "", request_id: str = "", **kwargs: Any) -> dict[str, Any]:
+        return {"ok": True}
+
     controller.register_example_actions()
+    controller.register_action("browser_drag_and_drop", drag)
     details = controller.describe_actions()
     assert "browser_drag_and_drop" in details
     spec = details["browser_drag_and_drop"]
@@ -136,47 +140,6 @@ def test_describe_actions_includes_registered_specs() -> None:
     assert spec["summary"]
     assert isinstance(spec.get("params"), dict)
     assert spec["params"]
-
-    assert "browser_batch_interact" in details
-    batch_spec = details["browser_batch_interact"]
-    assert "multi-field forms" in batch_spec.get("when_to_use", "")
-    assert "single uncertain click" in batch_spec.get("when_to_use", "")
-    assert "steps" in batch_spec.get("params", {})
-
-
-def test_browser_get_element_coordinates_parses_fenced_json_output() -> None:
-    async def fake_runner(
-        *,
-        task: str,
-        session_id: str | None = None,
-        request_id: str | None = None,
-        timeout_s: int | None = None,
-    ) -> dict[str, Any]:
-        del task, session_id, request_id, timeout_s
-        return {
-            "ok": True,
-            "final": (
-                "```json\n{\"ok\": true, \"source\": {\"x\": 12, \"y\": 34},"
-                " \"target\": null, \"error\": null}\n```"
-            ),
-        }
-
-    controller.register_example_actions()
-    controller.bind_runtime_runner(fake_runner)
-
-    result = _run(
-        controller.run_action(
-            "browser_get_element_coordinates",
-            session_id="s-json",
-            request_id="r-json",
-            element_source="Example",
-        )
-    )
-
-    assert result["ok"] is True
-    assert result["source"] == {"x": 12, "y": 34}
-    assert result["target"] is None
-    assert result["error"] is None
 
 
 def test_action_controller_instance_isolation() -> None:

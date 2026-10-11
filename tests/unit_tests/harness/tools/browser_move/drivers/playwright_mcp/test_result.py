@@ -78,6 +78,8 @@ SECOND_AND_BLANK = BrowserContext(
 # case -> (before, ok, context_changed)
 DECODED = {
     "snapshot_form_page": (FORM, True, False),
+    "snapshot_depth_1": (FORM, True, False),
+    "snapshot_target": (FORM, True, False),
     "snapshot_with_boxes": (FORM, True, False),
     "snapshot_after_fill_form": (FORM, True, False),
     "snapshot_two_tabs": (POPUP_AND_SECOND, True, False),

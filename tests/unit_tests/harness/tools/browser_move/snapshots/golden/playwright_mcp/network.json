@@ -618,39 +618,6 @@
           }
         },
         {
-          "description": "Returns full details (headers and body) of a single network request, or a single part if `part` is set. Use the number from browser_network_requests.",
-          "name": "mcp_playwright-official_browser_network_request",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "filename": {
-                "description": "Filename to save the result to. If not provided, output is returned as text.",
-                "type": "string"
-              },
-              "index": {
-                "description": "1-based index of the request, as printed by browser_network_requests.",
-                "maximum": 9007199254740991,
-                "minimum": 1,
-                "type": "integer"
-              },
-              "part": {
-                "description": "Return only this part of the request. Omit to return full details.",
-                "enum": [
-                  "request-headers",
-                  "request-body",
-                  "response-headers",
-                  "response-body"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "index"
-            ],
-            "type": "object"
-          }
-        },
-        {
           "description": "Returns a numbered list of network requests since loading the page. Use browser_network_request with the number to get full details.",
           "name": "mcp_playwright-official_browser_network_requests",
           "parameters": {
@@ -677,27 +644,6 @@
           }
         },
         {
-          "description": "Sets the browser network state to online or offline. When offline, all network requests will fail.",
-          "name": "mcp_playwright-official_browser_network_state_set",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "state": {
-                "description": "Set to \"offline\" to simulate offline mode, \"online\" to restore network connectivity",
-                "enum": [
-                  "online",
-                  "offline"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "state"
-            ],
-            "type": "object"
-          }
-        },
-        {
           "description": "Press a key on the keyboard",
           "name": "mcp_playwright-official_browser_press_key",
           "parameters": {
@@ -711,55 +657,6 @@
             "required": [
               "key"
             ],
-            "type": "object"
-          }
-        },
-        {
-          "description": "Set up a route to mock network requests matching a URL pattern",
-          "name": "mcp_playwright-official_browser_route",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "body": {
-                "description": "Response body (text or JSON string)",
-                "type": "string"
-              },
-              "contentType": {
-                "description": "Content-Type header (e.g., \"application/json\", \"text/html\")",
-                "type": "string"
-              },
-              "headers": {
-                "description": "Headers to add in \"Name: Value\" format",
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "pattern": {
-                "description": "URL pattern to match (e.g., \"**/api/users\", \"**/*.{png,jpg}\")",
-                "type": "string"
-              },
-              "removeHeaders": {
-                "description": "Comma-separated list of header names to remove from request",
-                "type": "string"
-              },
-              "status": {
-                "description": "HTTP status code to return (default: 200)",
-                "type": "number"
-              }
-            },
-            "required": [
-              "pattern"
-            ],
-            "type": "object"
-          }
-        },
-        {
-          "description": "List all active network routes",
-          "name": "mcp_playwright-official_browser_route_list",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {},
             "type": "object"
           }
         },
@@ -880,20 +777,6 @@
               "target",
               "text"
             ],
-            "type": "object"
-          }
-        },
-        {
-          "description": "Remove network routes matching a pattern (or all routes if no pattern specified)",
-          "name": "mcp_playwright-official_browser_unroute",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "pattern": {
-                "description": "URL pattern to unroute (omit to remove all routes)",
-                "type": "string"
-              }
-            },
             "type": "object"
           }
         }

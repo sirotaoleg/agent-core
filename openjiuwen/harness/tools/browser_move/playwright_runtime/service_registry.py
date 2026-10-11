@@ -7,7 +7,7 @@ from __future__ import annotations
 import threading
 import weakref
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -26,14 +26,6 @@ class BrowserServiceIdentity:
 
 
 @dataclass(frozen=True)
-class BrowserServiceRelease:
-    """Ownership changes produced when one task-scoped service releases."""
-
-    close_mcp_binding: bool
-    next_heartbeat_owner: Optional[Any]
-
-
-@dataclass(frozen=True)
 class BrowserServiceResetSnapshot:
     """Resources that must be stopped for an explicit identity reset."""
 
@@ -45,7 +37,6 @@ class BrowserServiceResetSnapshot:
 class _BrowserServiceEntry:
     services: weakref.WeakSet[Any] = field(default_factory=weakref.WeakSet)
     binding_services: weakref.WeakSet[Any] = field(default_factory=weakref.WeakSet)
-    heartbeat_owner: Optional[weakref.ReferenceType[Any]] = None
     managed_drivers: list[Any] = field(default_factory=list)
 
 
@@ -53,8 +44,8 @@ class BrowserServiceRegistry:
     """Coordinate process resources without sharing task/model state.
 
     BrowserService objects remain task-scoped. Registry entries only coordinate
-    the MCP binding, managed Chrome process handles, and heartbeat ownership for
-    services that address the same browser identity.
+    the task bindings and the managed Chrome process handles of the services
+    that address the same browser identity.
     """
 
     def __init__(self) -> None:
@@ -66,56 +57,30 @@ class BrowserServiceRegistry:
             entry = self._entries.setdefault(identity, _BrowserServiceEntry())
             entry.services.add(service)
 
-    def activate_binding(self, identity: BrowserServiceIdentity, service: Any) -> bool:
-        """Mark an MCP binding active and return whether service owns heartbeat."""
+    def activate_binding(self, identity: BrowserServiceIdentity, service: Any) -> None:
+        """Mark the service's task binding active."""
         with self._lock:
             entry = self._entries.setdefault(identity, _BrowserServiceEntry())
             entry.services.add(service)
             entry.binding_services.add(service)
-            owner = self._live_owner(entry)
-            if owner is None:
-                entry.heartbeat_owner = weakref.ref(service)
-                owner = service
-            return owner is service
 
     def release(
         self,
         identity: BrowserServiceIdentity,
         service: Any,
-    ) -> BrowserServiceRelease:
-        """Release a task binding and transfer heartbeat ownership if needed."""
+    ) -> None:
+        """Release a task binding."""
         with self._lock:
             entry = self._entries.get(identity)
             if entry is None:
-                return BrowserServiceRelease(
-                    close_mcp_binding=False,
-                    next_heartbeat_owner=None,
-                )
-
-            was_binding_service = service in entry.binding_services
-            was_owner = self._live_owner(entry) is service
+                return
             entry.binding_services.discard(service)
             entry.services.discard(service)
-
-            next_owner = None
-            if was_owner:
-                next_owner = next(iter(entry.binding_services), None)
-                entry.heartbeat_owner = (
-                    weakref.ref(next_owner) if next_owner is not None else None
-                )
-
-            close_binding = was_binding_service and not entry.binding_services
-            if not entry.services:
-                # Chrome intentionally outlives the last task binding. Retain
-                # only its process handle so an explicit identity-scoped
-                # configuration restart can stop it after task collection.
-                if not entry.managed_drivers:
-                    self._entries.pop(identity, None)
-
-            return BrowserServiceRelease(
-                close_mcp_binding=close_binding,
-                next_heartbeat_owner=next_owner,
-            )
+            # Chrome intentionally outlives the last task binding. Retain
+            # only its process handle so an explicit identity-scoped
+            # configuration restart can stop it after task collection.
+            if not entry.services and not entry.managed_drivers:
+                self._entries.pop(identity, None)
 
     def register_managed_driver(
         self,
@@ -174,7 +139,6 @@ class BrowserServiceRegistry:
                     drivers.append(driver)
 
             entry.binding_services.clear()
-            entry.heartbeat_owner = None
             entry.managed_drivers.clear()
             if not entry.services:
                 self._entries.pop(identity, None)
@@ -183,15 +147,6 @@ class BrowserServiceRegistry:
                 services=services,
                 managed_drivers=tuple(drivers),
             )
-
-    def is_heartbeat_owner(
-        self,
-        identity: BrowserServiceIdentity,
-        service: Any,
-    ) -> bool:
-        with self._lock:
-            entry = self._entries.get(identity)
-            return entry is not None and self._live_owner(entry) is service
 
     def discard_idle(self, identity: BrowserServiceIdentity) -> None:
         """Discard registry metadata after an explicit full shutdown."""
@@ -236,15 +191,6 @@ class BrowserServiceRegistry:
         with self._lock:
             self._entries.clear()
 
-    @staticmethod
-    def _live_owner(entry: _BrowserServiceEntry) -> Optional[Any]:
-        owner = entry.heartbeat_owner() if entry.heartbeat_owner is not None else None
-        if owner is None or owner not in entry.binding_services:
-            entry.heartbeat_owner = None
-            return None
-        return owner
-
-
 BROWSER_SERVICE_REGISTRY = BrowserServiceRegistry()
 
 
@@ -252,6 +198,5 @@ __all__ = [
     "BROWSER_SERVICE_REGISTRY",
     "BrowserServiceIdentity",
     "BrowserServiceRegistry",
-    "BrowserServiceRelease",
     "BrowserServiceResetSnapshot",
 ]

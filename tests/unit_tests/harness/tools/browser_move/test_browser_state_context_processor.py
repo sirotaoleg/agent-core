@@ -30,9 +30,16 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_working_co
 from openjiuwen.harness.tools.browser_move.playwright_runtime.probes import (
     build_browser_state_metadata_js,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import (
-    BrowserAgentRuntime,
+from openjiuwen.harness.tools.browser_move.contract import ActionResult, DriverError
+from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
+    element,
+    make_runtime,
+    mcp_fake_driver,
+    observation,
+    result,
 )
+
+_METADATA = {"page_position": {"scroll_y": 200, "pixels_below": 800}, "semantic_state": {}}
 
 
 def _state(url: str) -> dict:
@@ -149,8 +156,8 @@ def test_completed_parallel_calls_form_one_refresh_action_group() -> None:
                 ToolCall(id="probe", type="function", name="browser_probe_cards", arguments="{}"),
             ],
         ),
-        ToolMessage(tool_call_id="probe", content="{}"),
-        ToolMessage(tool_call_id="mutate", content="{}"),
+        ToolMessage(tool_call_id="probe", content="{}", metadata={"effect": "read"}),
+        ToolMessage(tool_call_id="mutate", content="{}", metadata={"effect": "navigate"}),
     ]
 
     group_id, refresh_ids = BrowserStateContextProcessor._completed_refresh_action_group(messages)
@@ -198,8 +205,8 @@ async def test_parallel_read_probes_merge_once_without_full_browser_capture() ->
                     ),
                 ],
             ),
-            ToolMessage(tool_call_id="controls", content="{}"),
-            ToolMessage(tool_call_id="cards", content="{}"),
+            ToolMessage(tool_call_id="controls", content="{}", metadata={"effect": "read"}),
+            ToolMessage(tool_call_id="cards", content="{}", metadata={"effect": "read"}),
         ]
     )
 
@@ -235,7 +242,7 @@ async def test_denied_browser_action_reuses_cached_state_without_observation() -
             ToolMessage(
                 tool_call_id="denied",
                 content='{"ok":false,"executed":false,"state_changed":false,"denied":true}',
-                metadata={"executed": False, "state_changed": False, "denied": True},
+                metadata={"effect": "script", "executed": False, "state_changed": False, "denied": True},
             ),
         ]
     )
@@ -274,7 +281,7 @@ async def test_failed_mutation_without_state_change_reuses_cached_state() -> Non
             ToolMessage(
                 tool_call_id="failed",
                 content='{"ok":false,"executed":true,"state_changed":false}',
-                metadata={"success": False, "executed": True, "state_changed": False},
+                metadata={"effect": "act", "success": False, "executed": True, "state_changed": False},
             ),
         ]
     )
@@ -316,7 +323,7 @@ async def test_ambiguous_timeout_refreshes_state_once_for_reconciliation() -> No
             ToolMessage(
                 tool_call_id="timeout",
                 content='{"ok":false,"executed":true,"state_changed":true,"timed_out":true}',
-                metadata={"success": False, "executed": True, "state_changed": True},
+                metadata={"effect": "act", "success": False, "executed": True, "state_changed": True},
             ),
         ]
     )
@@ -332,8 +339,7 @@ async def _add_completed_browser_action(
     context,
     *,
     call_id: str,
-    tool_name: str = "browser_evaluate",
-    arguments: str = '{"function": "() => window.scrollTo(0, document.body.scrollHeight)"}',
+    effect: str = "script",
 ) -> None:
     await context.add_messages(
         [
@@ -343,12 +349,12 @@ async def _add_completed_browser_action(
                     ToolCall(
                         id=call_id,
                         type="function",
-                        name=tool_name,
-                        arguments=arguments,
+                        name="browser_evaluate",
+                        arguments='{"function": "() => window.scrollTo(0, document.body.scrollHeight)"}',
                     )
                 ],
             ),
-            ToolMessage(content="completed", tool_call_id=call_id),
+            ToolMessage(content="completed", tool_call_id=call_id, metadata={"effect": effect}),
         ]
     )
 
@@ -385,61 +391,10 @@ async def test_processor_reuses_cached_browser_state_without_navigation() -> Non
     provider.capture_browser_state.assert_awaited_with()
 
 
-@pytest.mark.parametrize(
-    "tool_name",
-    [
-        "browser_batch_interact",
-        "browser_click",
-        "browser_close",
-        "browser_custom_action",
-        "browser_drag",
-        "browser_drop",
-        "browser_evaluate",
-        "browser_file_upload",
-        "browser_fill_form",
-        "browser_handle_dialog",
-        "browser_hover",
-        "browser_navigate",
-        "browser_navigate_back",
-        "browser_press_key",
-        "browser_run_code",
-        "browser_run_code_unsafe",
-        "browser_select_option",
-        "browser_tabs",
-        "browser_type",
-        "browser_wait_for",
-        "browser_mouse_click_xy",
-        "browser_mouse_down",
-        "browser_mouse_drag_xy",
-        "browser_mouse_move_xy",
-        "browser_mouse_up",
-        "browser_mouse_wheel",
-        "browser_annotate",
-        "browser_hide_highlight",
-        "browser_highlight",
-        "browser_resize",
-        "browser_resume",
-        "browser_video_hide_actions",
-        "browser_video_show_actions",
-        "browser_network_state_set",
-        "browser_route",
-        "browser_unroute",
-        "browser_cookie_clear",
-        "browser_cookie_delete",
-        "browser_cookie_set",
-        "browser_localstorage_clear",
-        "browser_localstorage_delete",
-        "browser_localstorage_set",
-        "browser_sessionstorage_clear",
-        "browser_sessionstorage_delete",
-        "browser_sessionstorage_set",
-        "browser_set_storage_state",
-        "mcp_playwright-official_browser_navigate",
-    ],
-)
+@pytest.mark.parametrize("effect", ["act", "navigate", "script"])
 @pytest.mark.asyncio
 async def test_context_engine_refreshes_state_after_completed_mutating_tool(
-    tool_name: str,
+    effect: str,
 ) -> None:
     provider = AsyncMock()
     provider.capture_browser_state.side_effect = [
@@ -469,7 +424,7 @@ async def test_context_engine_refreshes_state_after_completed_mutating_tool(
                 ToolCall(
                     id="mutating-call",
                     type="function",
-                    name=tool_name,
+                    name="browser_click",
                     arguments="{}",
                 )
             ],
@@ -478,7 +433,9 @@ async def test_context_engine_refreshes_state_after_completed_mutating_tool(
     pending_window = await context.get_context_window()
     assert provider.capture_browser_state.await_count == 1
 
-    await context.add_messages(ToolMessage(content="completed", tool_call_id="mutating-call"))
+    await context.add_messages(
+        ToolMessage(content="completed", tool_call_id="mutating-call", metadata={"effect": effect})
+    )
     refreshed_window = await context.get_context_window()
     reused_window = await context.get_context_window()
 
@@ -597,12 +554,7 @@ async def test_no_progress_count_increments_and_resets_after_changed_state() -> 
     first_unchanged_window = await context.get_context_window()
     await _add_completed_browser_action(context, call_id="unchanged-call-2")
     second_unchanged_window = await context.get_context_window()
-    await _add_completed_browser_action(
-        context,
-        call_id="changed-call",
-        tool_name="browser_click",
-        arguments='{"ref": "e7"}',
-    )
+    await _add_completed_browser_action(context, call_id="changed-call", effect="act")
     changed_window = await context.get_context_window()
 
     first_unchanged_state = _window_message(first_unchanged_window, "current_browser_state")
@@ -707,74 +659,57 @@ async def test_processor_load_state_resets_page_change_baseline() -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_combines_snapshot_with_page_metadata() -> None:
-    runtime = object.__new__(BrowserAgentRuntime)
-    runtime._page_generation = 0
-    runtime._reference_generations = {}
-    runtime._selector_primary_links = {}
-    runtime._last_observed_url = ""
-    runtime.ensure_runtime_ready = AsyncMock()
-    runtime._call_playwright_tool = AsyncMock(return_value='- link "Docs" [ref=e3]')
-    runtime._call_playwright_run_code_unsafe = AsyncMock(
-        return_value={
-            "ok": True,
-            "url": "https://example.test/docs",
-            "title": "Docs",
-            "tabs": [
-                {
-                    "index": 0,
-                    "current": True,
-                    "url": "https://example.test/docs",
-                    "title": "Docs",
-                }
-            ],
-            "page_position": {"scroll_y": 200, "pixels_below": 800},
-        }
+    driver = mcp_fake_driver(
+        observations=[observation([element("e3", "link", "Docs")], url="https://example.test/docs", title="Docs")],
+        results=[result(url="https://example.test/docs", title="Docs", value=_METADATA)],
     )
+    runtime = make_runtime(driver)
 
     state = await runtime.capture_browser_state()
 
-    runtime.ensure_runtime_ready.assert_awaited_once()
-    runtime._call_playwright_tool.assert_awaited_once_with("browser_snapshot", {})
-    run_code = runtime._call_playwright_run_code_unsafe.await_args.args[0]
-    assert "page.screenshot" not in run_code
+    assert driver.kinds() == ["observe", "execute"]
     assert state["ok"] is True
     assert state["url"] == "https://example.test/docs"
     assert state["dom"] == ""
+    assert state["page_position"] == {"scroll_y": 200, "pixels_below": 800}
+    assert state["tabs"][0]["url"] == "https://example.test/docs"
     assert state["page_state"]["interactives"][0]["text"] == "Docs"
     assert "screenshot" not in state
-    target = runtime._ensure_page_state().resolve_target(generation_id="g0", ref="e3")
+    target = runtime.page_state.resolve_target(generation_id="g0", ref="e3")
     assert target is not None
     assert target.locator == {"ref": "e3"}
 
 
 @pytest.mark.asyncio
-async def test_runtime_timeout_reconciliation_skips_full_snapshot() -> None:
-    runtime = object.__new__(BrowserAgentRuntime)
-    runtime._page_generation = 0
-    runtime._reference_generations = {}
-    runtime._selector_primary_links = {}
-    runtime._last_observed_url = "https://example.test/current"
-    runtime.ensure_runtime_ready = AsyncMock()
-    runtime._call_playwright_tool = AsyncMock()
-    runtime._call_playwright_run_code_unsafe = AsyncMock(
-        return_value={
-            "ok": True,
-            "url": "https://example.test/next",
-            "title": "Next",
-            "tabs": [],
-            "page_position": {},
-            "semantic_state": {
-                "form_values": [],
-                "selected_filters": [{"key": "sort", "value": "sales"}],
-                "result_count": 10,
-            },
-        }
+async def test_runtime_reuses_the_free_observation_of_the_last_command() -> None:
+    driver = mcp_fake_driver(
+        results=[
+            ActionResult(ok=True, observation=observation([element("e5")], url="https://example.test/next")),
+            result(url="https://example.test/next", value=_METADATA),
+        ]
     )
+    runtime = make_runtime(driver)
+    tool = next(t for t in runtime.agent_parts(image_support=False).tools if t.card.name.endswith("browser_click"))
+    await tool.invoke({"target": "e5"})
+
+    state = await runtime.capture_browser_state(action_group_id="click")
+
+    assert "observe" not in driver.kinds()
+    assert runtime.observations_reused == 1
+    assert state["ok"] is True
+    assert state["page_state"]["interactives"][0]["text"] == "Save"
+
+
+@pytest.mark.asyncio
+async def test_runtime_timeout_reconciliation_skips_full_snapshot() -> None:
+    semantic = {"form_values": [], "selected_filters": [{"key": "sort", "value": "sales"}], "result_count": 10}
+    measured = {"page_position": {}, "semantic_state": semantic}
+    driver = mcp_fake_driver(results=[result(url="https://example.test/next", title="Next", value=measured)])
+    runtime = make_runtime(driver)
 
     state = await runtime.capture_reconciliation_browser_state(action_group_id="timeout-group")
 
-    runtime._call_playwright_tool.assert_not_awaited()
-    runtime._call_playwright_run_code_unsafe.assert_awaited_once()
+    assert driver.kinds() == ["execute"]
     assert state["ok"] is True
     assert state["reconciliation_only"] is True
     assert state["url"] == "https://example.test/next"
@@ -783,36 +718,17 @@ async def test_runtime_timeout_reconciliation_skips_full_snapshot() -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_automatic_capture_replaces_refs_after_url_generation_sync() -> None:
-    runtime = object.__new__(BrowserAgentRuntime)
-    runtime._page_generation = 0
-    runtime._reference_generations = {}
-    runtime._selector_primary_links = {}
-    runtime._last_observed_url = ""
-    runtime.ensure_runtime_ready = AsyncMock()
-    runtime._call_playwright_tool = AsyncMock(
-        side_effect=[
-            '- button "First" [ref=e1]',
-            '- button "Second" [ref=e2]',
-        ]
+    driver = mcp_fake_driver(
+        observations=[
+            observation([element("e1", "button", "First")], url="https://example.test/first", title="First"),
+            observation([element("e2", "button", "Second")], url="https://example.test/second", title="Second"),
+        ],
+        results=[
+            result(url="https://example.test/first", value=_METADATA),
+            result(url="https://example.test/second", value=_METADATA),
+        ],
     )
-    runtime._call_playwright_run_code_unsafe = AsyncMock(
-        side_effect=[
-            {
-                "ok": True,
-                "url": "https://example.test/first",
-                "title": "First",
-                "tabs": [],
-                "page_position": {},
-            },
-            {
-                "ok": True,
-                "url": "https://example.test/second",
-                "title": "Second",
-                "tabs": [],
-                "page_position": {},
-            },
-        ]
-    )
+    runtime = make_runtime(driver)
 
     first_state = await runtime.capture_browser_state()
     second_state = await runtime.capture_browser_state()
@@ -822,29 +738,16 @@ async def test_runtime_automatic_capture_replaces_refs_after_url_generation_sync
     assert first_state["page_state"]["interactives"][0]["text"] == "First"
     assert second_state["page_state"]["interactives"][0]["text"] == "Second"
     assert runtime.generation_id == "g1"
-    assert runtime._ensure_page_state().resolve_target(generation_id="g1", ref="e2") is not None
+    assert runtime.page_state.resolve_target(generation_id="g1", ref="e2") is not None
     with pytest.raises(ValueError, match="Stale AX ref e1 belongs to g0"):
-        runtime._ensure_page_state().resolve_target(generation_id="g1", ref="e1")
+        runtime.page_state.resolve_target(generation_id="g1", ref="e1")
 
 
 @pytest.mark.asyncio
 async def test_runtime_does_not_reuse_dom_when_snapshot_capture_fails() -> None:
-    runtime = object.__new__(BrowserAgentRuntime)
-    runtime._page_generation = 0
-    runtime._reference_generations = {}
-    runtime._selector_primary_links = {}
-    runtime._last_observed_url = ""
-    runtime.ensure_runtime_ready = AsyncMock()
-    runtime._call_playwright_tool = AsyncMock(side_effect=RuntimeError("snapshot timeout"))
-    runtime._call_playwright_run_code_unsafe = AsyncMock(
-        return_value={
-            "ok": True,
-            "url": "https://fresh.example",
-            "title": "Fresh",
-            "tabs": [],
-            "page_position": {},
-        }
-    )
+    driver = mcp_fake_driver(results=[result(url="https://fresh.example", title="Fresh", value=_METADATA)])
+    driver.fail_next(DriverError("snapshot timeout", dispatched=True))
+    runtime = make_runtime(driver)
 
     state = await runtime.capture_browser_state()
 

@@ -550,15 +550,6 @@
           }
         },
         {
-          "description": "Get the final resolved config after merging CLI options, environment variables and config file.",
-          "name": "mcp_playwright-official_browser_get_config",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {},
-            "type": "object"
-          }
-        },
-        {
           "description": "Handle a dialog",
           "name": "mcp_playwright-official_browser_handle_dialog",
           "parameters": {

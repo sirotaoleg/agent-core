@@ -7,7 +7,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-
 CORE_BROWSER_CAPABILITY_NAME = "core"
 
 # Keep this list explicit. Prefix-based matching could accidentally expose a
@@ -268,6 +267,14 @@ def resolve_browser_capabilities(
     )
 
 
+def capabilities_of(
+    tool_names: Iterable[str], available_capabilities: Iterable[BrowserCapability] = DEFAULT_BROWSER_CAPABILITIES
+) -> tuple[str, ...]:
+    """The capabilities whose tools are all in ``tool_names`` (the inverse of ``resolve_browser_capabilities``)."""
+    allowed = set(tool_names)
+    return tuple(entry.name for entry in available_capabilities if set(entry.tool_names) <= allowed)
+
+
 __all__ = [
     "ADVANCED_CODE_BROWSER_TOOL_NAMES",
     "CONFIG_BROWSER_TOOL_NAMES",
@@ -285,5 +292,6 @@ __all__ = [
     "VISION_BROWSER_TOOL_NAMES",
     "BrowserCapability",
     "ResolvedBrowserCapabilities",
+    "capabilities_of",
     "resolve_browser_capabilities",
 ]

@@ -1671,6 +1671,120 @@ Six assertions on one scripted run (`look`, an off-board `poke`, `click`, a `pok
 5. `DriverAssembly.surface_settings` duplicates `surface.settings`; it stays while hand-built assemblies pass it
    positionally.
 
+## The switch, step 1: the main agent on the driver session
+
+The first of the three switch sessions (design sections 1(c), 1(d), 2, 6 and 7; decisions O5, P8, Q14 and S1 of
+wave 6; `switch-plan.md` S1), on the branch `p4-switch`. `create_browser_agent` keeps its signature; the agent it
+builds runs on a `DriverSession` through the composition root, the factory tools and the record rails, and the old
+MCP path of `runtime.py` is gone. The WebVoyager worker (`service.py`, `agents.py`) still runs the old path until S2.
+
+### Decisions
+
+1. **The facade keeps its signature and owns the session.** `BrowserAgentRuntime.ensure_runtime_ready` calls
+   `assemble_driver` with the given `CoreSettings` (else the process environment) and the instance, makes the
+   `DriverSession` and a `ToolContext`, and registers `CUSTOM_ACTIONS` on the controller. `mcp_cfg` stays a
+   constructor argument for the worker path; honouring it on the session is S2 (Q11). Two keyword-only arguments
+   were added, `workspace` and `language`, because the recall tool and the tool context need them.
+2. **Everything arrives at the first invoke.** The design put the extra tools at construction; `browser_find` takes
+   its description from the driver's native tools, which exist only after `start()`, so the factory build (command
+   tools, extra tools, rails) runs in `BrowserRuntimeRail.before_invoke` where the MCP tools were added before.
+   `create_deep_agent` gets no browser tools; a caller listing tools before the first invoke sees its own only.
+   The `core` golden is byte-identical, which is what the rule protects.
+3. **The parts' rails register dynamically**, through `agent.register_rail`, once per agent. The main agent thus
+   runs `ActionPolicy`, `CommandRepeatGuardRail` and `CommandInterceptedHintRail` as `build_agent_parts` returns
+   them; the design table named only `ActionPolicy` for the main agent, `build_agent_parts` (P4-T6) decided
+   otherwise, and one list serves both topologies.
+4. **`ToolKind`**: what the rail knows before a call. It decodes the command with the factory's builder (one more
+   decode next to `ActionPolicy`'s and the tool's; all pure) and carries the schema's field names; after the call the
+   record's action and effect replace it. The classifiers (phase, action class, intent, read-only recovery, replan
+   exemption, progress, bounds, page-state attachment) read the kind; the strategy signature keeps the tool name
+   as a label so direct and batch clicks still compare equal.
+5. **Capabilities from the allowlist.** The factory selects by capability entry; the facade derives the entries
+   whose tools are all in `allowed_tool_names`, the inverse of `resolve_browser_capabilities`, so the runner's
+   `allowed_tool_names=CORE_BROWSER_TOOL_NAMES` still means `core`.
+6. **Argument normalisation by dialect.** Only a tool whose schema addresses elements by `target` (the MCP dialect)
+   gets the ref aliases, `[ref=e12]`, `target_id` and `generation_id` rewrites; the browser dialect decodes
+   `target_id` itself and needs its `generation_id`. The card primary-link rewrite is gated on the decoded `Click`.
+7. **`field`, `fields` and `element` are dropped by schema.** All 69 server schemas of 0.0.78 forbid extra
+   properties, and the rail validates arguments against them; the keys are dropped only where the schema lacks them
+   (the evidence hints are read first). For `browser_drag` this also drops `element`, which the old path forwarded.
+8. **Observation reuse (Q14):** `capture_browser_state` takes `page_state.fresh_observation` and observes only
+   otherwise; the free observation of the last mutating command is what the next capture reads. `observations_reused`
+   counts them for P4-T9. The metadata script runs after the observation and outdates it for `browser_find`, which
+   is fine: the next capture follows the next mutation, whose own free observation is fresh again.
+9. **Capture errors.** A `DriverError` on the observation becomes `dom_error` (`page observation failed: …`); the
+   session's task failure after a second lost connection propagates instead of being folded into the state.
+10. **The core imports the browser helpers.** `runtime.py` imports `CUSTOM_ACTIONS`, `probe_for_policy`,
+    `activate_page` and `page_metadata` from `surfaces/browser/helpers`, as the switch plan says, against plan
+    invariant 2 (core never imports a concrete surface). Phase 9's done-criterion is where the invariant must hold
+    ("`runtime/` never imports `surfaces/` except through the registry"); the import-boundary allowlist carries the
+    one entry (count 4) with that reason. The alternative, a hooks slot on `SurfaceProfile`, is a contract change
+    for Aleh to decide.
+11. **URLs come from the record.** `_update_last_page`, `_evidence_variant_and_url` and the navigation completion
+    evidence read `url` from the record's surface context (`extract_result_url` is gone with the text parsing).
+12. **A partial batch with a successful mutating step still counts as a state change** in the rail (the batch
+    record says `ok=False`, so its metadata alone would not refresh the browser state).
+13. **The old goldens of the seven views with no-command tools are regenerated** (unsafe_dev, vision, devtools,
+    config, network, storage, testing): exactly the C7/C20/C25 removals; `core`, `runner`, `advanced_code`,
+    `extended_interaction` and `pdf` are byte-identical. The factory golden test compares byte for byte again and
+    keeps the removed names as the record of the decision.
+14. **Batch typing on a driver without key-by-key typing (S1):** `TypeText(slowly=True)` refused with
+    `Unsupported(dispatched=False)` is sent again as `TypeText(clear=False)`, in the single-step path and the loop
+    (where the field was emptied first). A refusal the driver dispatched is not retried.
+15. **`AgentParts.builders`** (appended, default empty) hands the factory's decoders to the runtime.
+
+### Rejected options
+
+- **Extra tools at construction with a lazily started session**: a `ToolContext` needs the started driver, and
+  `browser_find`'s native description is byte-identical only from the driver's tool list.
+- **Keeping the name-based classifiers with prefix stripping**: the point of the switch; the kind carries the
+  command type and the effect on both dialects.
+- **Normalising `target_id` for every tool**: breaks the browser dialect, whose decoders take `target_id` and need
+  `generation_id`.
+- **Dropping `element` everywhere**: `browser_click` declares it; the schema decides.
+- **A hooks slot on the profile for the policy and metadata helpers**: a contract change outside this session's
+  mandate; recorded as the open question.
+- **Replacing `inputs.tool_result` with a dict in `after_tool_call`** (the old normalisation): the record rails
+  after this one need the `ToolOutput` with its record.
+
+### Golden status
+
+| View | Result |
+|---|---|
+| `core`, `runner`, `advanced_code`, `extended_interaction`, `pdf` | byte for byte |
+| `unsafe_dev`, `vision`, `devtools`, `config`, `network`, `storage`, `testing` | regenerated: the 43 no-command tools of C7/C20/C25 removed, the prompt unchanged |
+| runner contract (`test_wv_runner_contract.py`) | green |
+| factory goldens | `core` 18/18, `runner` 14/14, every view byte for byte |
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q` on `p4-switch`: **2406 passed, 123 skipped,
+  2 xfailed** (architecture, old goldens, factory goldens and the runner contract included), before the batch
+  fallback; `surfaces/test_browser_batch.py` 56 after it.
+- The ten harness test files outside `browser_move` that build the browser agent: **234 passed**.
+- Live: `test_assembly_live.py` 4 and Playwright MCP conformance 51 (**55 passed**); browser-use conformance
+  **45 passed**; live helpers on both drivers after the batch change **8 passed**.
+- Deleted tests, each covered elsewhere or testing removed behaviour: the canonicalisation of tool names (gone);
+  the MCP text classifier, the RPC envelope and `extract_result_url` (records carry ok, error, value and surface);
+  the runtime's probe, batch, code-executor and MCP lookup cases (`surfaces/test_browser_helpers.py`,
+  `surfaces/test_browser_batch.py`); the single-step batch primitive through the client and rail; the controller's
+  LLM-fallback and script-builder cases (not ported, C28); the status-logging test that read the batch script.
+
+### Known leftovers
+
+1. S2: the worker still builds on `mcp_cfg` through the service (`ensure_started`, heartbeat, client patch);
+   `runtime_tools.py` helper classes call deleted runtime methods and serve only the worker's tool cards until the
+   worker gets the factory tools; `test_browser_runtime_tools.py` cases that invoke them through a mock runtime
+   still pass. `runtime_health` reports the service's flags, not `session.health()`.
+2. S3: the context processors and `status_logging.py` still key on tool names; the old rail classes and their
+   tests stay next to the record rails; the client patch is still called in the facade constructor (row 4 of the
+   P5-T1 inventory).
+3. A `browser_settings` given to the facade reaches the service only; the session's surface settings come from
+   the process environment through the surface registry.
+4. The core import of the browser helpers (decision 10) is allowlisted until Phase 9.
+5. `release_task_resources` keeps the session (and its browser) across tasks; the old path dropped the MCP
+   registration between tasks.
+
 ## Batch and custom actions over commands
 
 The last helpers task before the switch (design section 6 and Q7, Q8; phase-0 decisions C28, C29; wave-5 review R1,
@@ -1830,3 +1944,652 @@ paths; the fenced coordinate result, empty paths and the default file input are 
    runtime's target contract on the old path; nothing replaces it here.
 4. `type` and `autocomplete` steps need a driver that types key by key (not browser-use).
 5. `wait_for_url` and `wait_for_tab` observe at every poll (a full snapshot on Playwright MCP).
+
+## The switch, step 2: the worker and the runner facade on the driver session
+
+The second switch session (design section 7; decisions P1, R2, R3, R9, Q10, Q11, Q12, F7; the S1 review's T2, T3,
+T4; `switch-plan.md` S2), on `p4-switch`. The WebVoyager worker runs on the same `DriverSession` as the main
+agent, built from the factory; `BrowserService` holds that session and provisions nothing itself; the facade
+serves the runner on both drivers.
+
+### Decisions
+
+1. **One session, owned by the service.** `BrowserService` takes the facade's `BrowserPageState` and opens the
+   session in `ensure_runtime_ready` through `assemble_driver`; the facade asks the service for its session and
+   builds its tool context on it. The S1 interim state (a session on the facade and an MCP server registered by the
+   service, two servers during a runner task) is gone (T4).
+2. **Task release stops the stack and keeps the device (T2).** `DriverSession.stop()` / `start()`: the last task
+   binding stops the driver stack (the MCP server with its `--isolated` context, the browser-use sidecar); the next
+   task starts it again, re-provisioning first when the device died. `begin_task()` runs in
+   `acquire_task_binding`. The worker is built again after a release (its tools are bound to the session, which
+   stays).
+3. **The surface factory takes the instance and a settings override (R2, T3).** `factory(environ, instance=None,
+   settings=None)`; `assemble_driver(..., settings=)`; the composition root stops calling `with_instance`. A caller's
+   `browser_settings` reach the session, with the given `mcp_cfg` as `BrowserSettings.mcp_server` and the config's
+   `cwd` as `mcp_cwd`.
+4. **A given `mcp_cfg` is honoured (Q11) without changing the prefix (Q2).** The Playwright MCP factory keeps the
+   given command line (`params`, `client_type`) under its own server name and id and the device environment.
+5. **The instance's `driver` overrides `core.driver` (R3)** in `service.core`, which the facade uses to pick the
+   topology.
+6. **Worker tools and rails (R9, P1).** `build_agent_parts(..., worker=True)`: the `core` catalog tools, both probes,
+   the batch and find; `browser_recall_offload` is flagged `ToolFlags(worker=False)` and stays main-agent only, so the
+   runner's fixed removal list keeps the worker at the golden's 14 tools. Rails: `ActionPolicy`,
+   `CommandRepeatGuardRail`, `CommandInterceptedHintRail` (the parts' order), then `FinalAnswerRecoveryRail`; the
+   two strict xfails flipped. `build_browser_worker_agent` takes `tools` and no MCP config or allowlist.
+7. **The browser-use facade is the main agent (Q12).** `ensure_started()` on `direct` builds the agent through
+   `create_browser_agent(model, runtime=self, ...)` (new keyword: an existing facade to build on), the model from
+   the facade's settings with the core worker temperature and top-p; `run_browser_task` runs it once under the
+   guardrails' timeout and maps the answer (`ok`, `final`, `page` from the page state, `screenshot=None`, `error`,
+   `status` / `progress` from the rail's terminal payload). Option B (phase-0 T4-Q1) is `create_browser_agent` plus
+   `Runner.run_agent`, so the runner's browser-use path is that same agent, not a bare `build_agent` DeepAgent.
+8. **Heartbeat, health (Q10).** The heartbeat loop, `_check_connection`, the client-patch call and the MCP
+   registration are gone from the service; `runtime_health` reports `session.health()` and `started`; the MCP
+   server's `browser_runtime_health` reads it.
+9. **`shutdown()` closes the model clients (F7)** after the service: `OpenAIModelClient.aclose()`.
+10. **The service no longer provisions.** `_ensure_managed_driver_started`, the profile-store adoption, the
+    managed-driver bookkeeping and `_validate_mcp_command` are gone; the provisioner (through the root) provisions
+    and adopts the profile with the settings' name. The registry keeps coordinating per identity: the session's
+    provisioner is its managed driver, so `reset_managed_browser_runtime` still stops a preserved Chrome.
+11. `runtime_tools.py` keeps only the cancel, clear-cancel, custom-action, list-actions and health tools; the probe
+    and batch classes and `build_browser_runtime_tools` are gone (the factory's extra tools serve the worker).
+    `capabilities_of` moved next to the catalog.
+
+### Rejected options
+
+- **Direct = `build_agent` without `BrowserRuntimeRail`**: no `<browser_progress>` protocol, no page-state
+  context, and not the option-B agent the smoke compares with.
+- **Per-agent extra-tool selection by name in the service**: a browser word in core and a name list to maintain;
+  the tool declares it.
+- **Keeping the service's own provisioning next to the root's**: two provisioning paths for one device.
+- **Stopping the stack only when the registry's binding count drops** (the old MCP-binding rule): every service
+  now has its own stack.
+- **Closing the session between tasks**: the old path kept Chrome (T2).
+
+### Behaviour changes to know
+
+- An unkeyed service no longer adopts the store's globally selected live Chrome when its own profile name differs
+  (the Phase 3 H1 order); the provisioner reuses the profile with its own name only, and the legacy store path
+  (`~/.jiuwenclaw/browser-move/.browser/profiles.json`) is not read.
+- `runtime_health` has `detail` instead of `last_heartbeat_ok`.
+- The worker's helper cards come from the factory (`language="en"` as before); `browser_custom_action` and
+  `browser_list_custom_actions` are still registered as runtime tools only.
+
+### Golden status
+
+| View | Result |
+|---|---|
+| every MCP view, prompts included | byte for byte (`test_tool_prompt_snapshot.py`) |
+| runner contract (`test_wv_runner_contract.py`) | green: 17 tools before removal (14 core, probes, batch), 14 after, answer dict unchanged |
+| factory goldens | `core` 18/18, `runner` 14/14 |
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q` on `p4-switch`: **2359 passed, 123 skipped,
+  25 failed**; the 25 are the three old-rail test files S3 deletes (`test_browser_repeated_call_guard.py`,
+  `test_browser_intercepted_action_hint.py`, `test_browser_final_answer_recovery.py`), which build the worker with
+  the old signature and mock `ensure_runtime_ready` without a session. No xfail remains.
+- The ten harness test files outside `browser_move` that build the browser agent: **234 passed**.
+- Live: see the report (`.hq/reports/P4-T8-S2.md`).
+- Rewritten under their names: `test_service.py` (the session in place of the managed driver),
+  `test_browser_service_registry.py`, `test_browser_instance_isolation.py` (the instance through the surface
+  factory and the provisioner), `test_browser_worker_allowlist.py`, `test_browser_prompt_tool_surface.py` (the
+  worker from the service), the three records tests (`assemble_driver` patched instead of `ensure_runtime_ready`).
+- Deleted tests: the service's MCP command validation, registration, refresh and heartbeat cases (no MCP
+  registration, no heartbeat); its managed-driver and profile-adoption cases (the provisioner's, covered by
+  `test_provisioning.py` and the surface settings tests); the runtime-tool probe and batch cases and the two card
+  parity tests (the factory goldens pin the cards); `test_legacy_instance_still_adopts_selected_profile` (behaviour
+  dropped, above).
+
+### Known leftovers
+
+1. S3: the context processors and `status_logging.py` still key on tool names; the old rail classes and their
+   three test files remain (red on `p4-switch`); the client patch is still called in the facade constructor.
+2. `main.py` lists the worker's tools through `Runner.resource_mgr.get_mcp_tool_infos`, which now returns none.
+3. The registry's heartbeat-owner bookkeeping is unused (every service stops its own stack).
+4. `OpenAIModelClient.aclose()` on `shutdown()` closes every cached client in the process; a host that keeps model
+   clients alive across a facade shutdown rebuilds them on the next call.
+
+## The switch, step 3: processors, logging, dead code, renames
+
+The third switch session (design sections 1(e) and 8; decisions P1, P2, R4; the S2 review's U4, U5, U6;
+`switch-plan.md` S3), on `p4-switch`. Nothing in the agent keys on a tool name or parses result text any more; the
+old rails and the last client-patch consumers are gone; the browser-use golden is compared for real.
+
+### Decisions
+
+1. **The rail writes the effect onto the tool message.** `BrowserRuntimeRail.after_tool_call` adds `effect` (the
+   `Effect` value) to the metadata of the surface's budgeted tools (factory tools and non-exempt helpers); a tool
+   outside the surface, or an exempt one (`browser_recall_offload`), gets none. The 46-name refresh set and the
+   4-name observation set of `BrowserStateContextProcessor` become "effect other than `READ`" and "`READ`"; the
+   JSON content parsing of `success`/`ok`/`state_changed`/`denied` goes, metadata alone decides.
+2. **The working context trusts the metadata** for tool errors (`success is False` → the payload's `error` or the
+   text); the harness's own execution-error prefixes stay (they carry no metadata); the `ok`/`success`/`isError`
+   markers and the `success=false`/`error=` scan go.
+3. **The status log is keyed by command type.** `BrowserSubagentStatusLogger(command_of=)` gets the rail's decoder
+   for `tool_start` (`RunScript` → code redacted, `Navigate` → URL without query) and reads the command record for
+   `tool_end` (`kind="command"`, command, effect, ok, dispatched, error, text length, line count, script value
+   kind). `browser_batch_interact` keeps its step summaries by name: it is the surface's own extra tool, not a
+   driver name (design 1(c) row 24). The command summary carries no URL: that would put a browser word into core.
+4. **Old rails deleted, new rails take the old names (P1).** `RepeatedCallGuardRail` and `InterceptedActionHintRail`
+   on MCP text (call-log parsing, `### Events` masking, evaluate name checks) are gone; `CommandRepeatGuardRail` and
+   `CommandInterceptedHintRail` are renamed to those names, the guard no longer a subclass. The three old test
+   files are deleted; their records twins, which hold every old test name, take the old file names.
+5. **The retry sentence is the surface's (P2).** `profile.messages["retry"]` = "Then retry the action (take a fresh
+   browser_snapshot if the page changed)."; `InterceptedActionHintRail(retry)` and `explain_blocked_command(record,
+   retry)` take it; `build_agent_parts` passes the profile's. The fake surface says "Then poke again.".
+6. **`DriverAssembly.surface_settings` dropped (R4)**; the session re-provisions from `assembly.surface.settings`.
+7. **Client patch consumer 4 gone**: the facade constructor no longer calls `ensure_browser_runtime_client_patch`;
+   `test_heartbeat.py` (one test, the stdio client patch) is deleted. The patch itself (`browser_tools.py`) and the
+   module-level copies in `main.py` and the MCP server entry stay for Phase 7 (J1, J3).
+8. **Registry heartbeat ownership deleted (U6)**: `heartbeat_owner`, `is_heartbeat_owner`, `_live_owner` and
+   `BrowserServiceRelease` (`close_mcp_binding`, `next_heartbeat_owner`) are gone; `activate_binding` and `release`
+   return nothing. Every service stops its own stack on its last release, so nothing read them since S2.
+9. **`main.py` lists the factory tools (U5)**: `runtime.agent_parts(image_support=False).tools` after
+   `ensure_started()`, instead of `Runner.resource_mgr.get_mcp_tool_infos` (empty since S2); the `Runner` import
+   goes. The listing is informational and stays.
+10. **A given MCP config keeps the old env semantics (U4).** `create_playwright_mcp_driver` keeps the given env,
+    drops `PLAYWRIGHT_MCP_DEVICE`, sets the CDP endpoint and defaults `PLAYWRIGHT_MCP_BROWSER` to `chrome` only when
+    the device has an endpoint, as `_inject_cdp_endpoint` did; the surface-computed env no longer overrides a given
+    `PLAYWRIGHT_MCP_BROWSER`.
+11. **The browser-use golden is a real comparison.** The snapshot builder builds a view on browser-use
+    (`build_view(view, workdir, driver="browser_use")`, `BROWSER_DRIVER` set, the sidecar transport stubbed with a
+    blank page as the MCP transport is). `test_tool_prompt_snapshot.py` asserts, per capability view, the tools equal
+    the 857239db golden except the one catalog's differences (Q3: run control, screenshot, close, drag and drop
+    missing; the probes and the batch added; Q6: `browser_tabs` gains `new`) and the system prompt equals the
+    Playwright MCP golden's (Q4: one prompt). The browser-use `runner` golden has no agents (the old runner never ran
+    browser-use), so the runner view is not compared; the WebVoyager smoke on browser-use is P4-T9's.
+
+### Rejected options
+
+- **A processor rule on `state_changed` alone**: the rail sets it `True` for any unknown tool that ran (a file write
+  on the main agent would refresh the browser state); the `effect` key marks the surface's tools.
+- **Counting exempt tools (`browser_recall_offload`) as observations**: a recall-only turn would run the compact
+  capture and advance the semantic no-progress count; they were in neither name set before.
+- **Keying the status log by argument shape** (`code`/`url` keys): names the dialect instead of the command.
+- **Keeping `_normalise_call_key`'s evaluate handling** for no-record calls: a call that decoded to no command has
+  no script to mask; tool name and canonical arguments are enough.
+- **Fixing the heartbeat wording of the `browser_runtime_health` tool description**: model-facing text of a runtime
+  tool; left for a benchmark-phase prompt review.
+
+### Behaviour changes to know
+
+- The browser-state processor refreshes after the surface's non-`READ` tools only; `browser_custom_action`
+  (a runtime tool the factory does not know, so it carries no `effect`) no longer triggers a refresh, where the old
+  name set listed it. `GetConsole`/`GetNetwork` results (`READ` commands) now count as observations and run the
+  compact merge; the old observation set did not list them.
+- A helper's failed JSON payload is retained in the working context by its `error` field, as before, but only when
+  the rail marked the message `success=False`.
+- The status log's `tool_end` summary of a command tool changed shape: `kind="command"` with the record's fields
+  instead of `{"kind": "dict", "keys": ["command", "content"]}` (which S1 had left it at).
+
+### Golden status
+
+| Check | Result |
+|---|---|
+| every MCP view, prompts included (`test_tool_prompt_snapshot.py`) | byte for byte, no golden touched |
+| runner contract (`test_wv_runner_contract.py`) | green |
+| factory goldens (`test_tool_factory_golden.py`) | `core` 18/18, `runner` 14/14 |
+| browser-use views through the agent | tools = golden minus Q3 plus the helpers, tabs + `new` (Q6); prompt = MCP golden (Q4), all 11 capability views |
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q` on `p4-switch`: **2287 passed, 111 skipped**
+  (whole suite green; the three old-rail files gone, 22 browser-use golden tests added, the 12 browser-use
+  well-formedness tests no longer skipped). One timing test,
+  `surfaces/test_browser_batch.py::test_a_condition_waits_until_its_value_holds_still_for_the_stable_time`, failed
+  twice out of about ten runs ("no scripted answer left for `Wait`"; the stable-time loop polled once more on a slow
+  run); untouched by this step.
+- Architecture tests: the allowlists shrank for every removed entry (`intercepted_action.py`,
+  `repeated_call_guard.py`, `service_registry.py`, `status_logging.py` driver names; `browser_state_context_processor.py`
+  and `intercepted_action.py` MCP names; `runtime.py` lowered to its actual counts). No entry grew.
+- The ten harness test files outside `browser_move` that build the browser agent: **234 passed**.
+- Live: MCP conformance + live assembly + live helpers **63 passed**; browser-use conformance + live helpers + live
+  assembly **56 passed, 1 failed** (the MCP half of the assembly test counted two OneDrive updater processes that
+  started during its window as Chrome children; alone, both halves pass **4/4**).
+- Rewritten under their names: `test_browser_state_context_processor.py` (effects on the tool messages; the 46-name
+  case is the three mutating effects), `test_browser_subagent_status_logging.py` (commands and a record),
+  `test_browser_runtime_rail.py` (the `effect` key), `test_browser_result_contracts.py` (a decodable mock runtime),
+  `test_browser_service_registry.py`, `test_settings_passing.py` (`main.py` lists the facade's parts),
+  `test_browser_profile.py` untouched (the new message is additive). Added: a working-context error from metadata, a
+  command result summary, the args summary keyed by the decoded command, a given MCP env keeping its browser, the
+  browser-use view comparisons.
+- Deleted tests: the three MCP-text rail files (89 tests; every name lives on in the renamed twins);
+  `test_registry_assigns_one_heartbeat_owner_and_transfers_it`; `test_heartbeat.py`.
+
+### Known leftovers
+
+1. `BrowserRuntimeRail._emit_status` logs a status-logger failure with `exc_info=True`, which
+   `browser_agent_log_warning` does not accept; a logger exception would surface as a `TypeError` from the rail.
+   Pre-existing, found when a test's mock runtime could not decode a command; not changed here.
+2. `browser_runtime_health`'s card description still says "heartbeat status".
+3. `main.py` and `playwright_runtime_mcp_server.py` keep their module-level client-patch copies; `browser_tools.py`
+   keeps the patch and the public `register_browser_runtime_mcp_server` wrapper (Phase 7).
+4. The browser-use `runner` golden has no agents: no golden pins the runner's browser-use (Direct) view.
+
+## The switch, step 4: scoped snapshots
+
+The fourth switch session, on `p4-switch`: the model's `browser_snapshot` `depth` and `target` reach the server
+again, and a scoped snapshot is a partial observation of the page.
+
+### Background
+
+The MCP smoke after step 3 cost 60% more than its reference ($1.33 against $0.83 for the same three tasks). Every
+`browser_snapshot` call decoded to `Observe()` and the driver always sent `{"boxes": true}`, so `{"depth": 1}` on
+Allrecipes returned 56,933 characters where the old path returned 361. The model reads pages cheaply this way: in the
+559-task baseline, 215 tasks (38%) passed snapshot arguments (`depth` 208, `target` 25, `filename` 6, `boxes` 2).
+The Phase 0 decision to accept and ignore these arguments is reversed.
+
+### Decisions
+
+1. **`Observe` gains `depth: int | None = None` and `root: Ref | None = None`**; `scoped` is true when either is
+   set. A scoped observation is the subtree under `root`, at most `depth` levels deep: partial by contract.
+   `include_screenshot` and `full_page` stay as they were. The root is a ref like any other, so `page_state.check`
+   refuses a scoped observe on a stale ref before the driver sees it.
+2. **The MCP dialect decodes `depth` → `depth` and `target` → `root`**, the target with the same rule as every
+   other decoder (`ARIA_REF` → `DriverRef`, else `Locator(css)`), the depth rounded like every number. `boxes`,
+   `filename` and `element` stay accepted and ignored (baseline counts: `boxes` 2, `filename` 6; `element` is the
+   model's own label of the target).
+3. **The MCP driver sends a scoped snapshot exactly as the model asked, without `boxes`.** A full `observe()` keeps
+   `{"boxes": true}` for the bounds a `PointRef` needs. The recorded fixtures show `boxes` adds only the `[box=…]`
+   tokens (`snapshot_with_boxes` without them equals `snapshot_form_page` up to the frame counter), so the text
+   would be the same either way; the model's arguments verbatim need no stripping and the answer is the server's
+   byte for byte. Two fixtures were recorded with `@playwright/mcp@0.0.78` on the fixture page, `snapshot_depth_1`
+   (`{"depth": 1}`, 442 characters) and `snapshot_target` (`{"target": "e3"}`, the navigation, 362 characters); the
+   rendered golden of each equals its recorded `model_text`. A `PointRef` or a text `Locator` root is
+   `Unsupported(dispatched=False)` before the call; the subtree's elements have no bounds.
+4. **The page state treats a scoped observation as partial.** No generation check (a subtree against the last full
+   observation would trip the Jaccard rule on an unchanged page), and `last_observation`, `fresh_observation`,
+   `current_context`, `contexts` and the address are left alone; the refs it shows join the current generation and
+   the refs it does not show stay valid. This is the old split: a model's `browser_snapshot` went through
+   `register_ax_snapshot` (add), only the runtime's own capture through `replace_ax_snapshot`. So
+   `capture_browser_state` observes afresh after a scoped snapshot unless a full observation is still fresh.
+5. **browser-use refuses a scoped `Observe`** with `Unsupported(dispatched=False)` before anything is sent. The
+   browser dialect's `browser_snapshot` schema has no `depth` or `target`, so nothing on that driver builds one; the
+   refusal is for the contract.
+6. **Model-facing schemas do not change.** The MCP `browser_snapshot` card is the server's own (it always listed
+   `depth` and `target`); the browser dialect's has `include_screenshot` only. Every snapshot golden stays byte for
+   byte.
+
+### Rejected options
+
+- **`boxes: true` on scoped snapshots too**, for the subtree's bounds: the text would be identical after
+  `without_boxes`, but nothing reads the bounds of a partial observation (points come from the fresh full one), and
+  the model's arguments verbatim are the simplest proof that the model reads what it read before.
+- **A separate `ScopedObserve` command**: two READ commands for one server tool; the dialect, the factory and the
+  renderer would all branch on it. Two optional fields and a `scoped` property do the same.
+- **Recording a scoped observation as the page's observation**: the next full observation's element distance against
+  a subtree would start a generation on an unchanged page, and `browser_find` and the compact capture would search a
+  subtree.
+- **Updating the address and title from a scoped snapshot's header**: a later full observation would then miss a
+  navigation the model saw only through a scoped snapshot (the address backstop compares against the known one).
+- **A conformance case "scoped observe returns only the subtree"**: not added, see Known leftovers 1.
+
+### Golden status
+
+| Check | Result |
+|---|---|
+| every MCP view, prompts included (`test_tool_prompt_snapshot.py`) | byte for byte, no golden touched |
+| factory goldens (`test_tool_factory_golden.py`) `core` / `runner`, browser-use views | unchanged |
+| tool-result goldens (`test_tool_result_golden.py`) | `snapshot_depth_1.txt` and `snapshot_target.txt` added, each equal to the recorded model text; the other 36 unchanged |
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q`: **2307 passed, 111 skipped** (2287 before this
+  step). New: the contract's `scoped` property and `iter_refs` over the root; the dialect's `depth` / `target`
+  decoding and the non-numeric `depth` error; the driver's four scoped-observe cases (depth alone, a `DriverRef`
+  root, a css root with a depth, a `PointRef` root refused unsent); the page state's four rules (generation and last
+  observation kept, refs added and kept, an outdated observation not made fresh, a stale root refused);
+  browser-use's refusal; the facade's `capture_browser_state` reusing a full snapshot and observing afresh after a
+  scoped one; the two fixtures in the well-formedness, decoder and result-golden suites.
+- `fixtures/mcp/record_mcp_fixtures.py` records the two new cases right after `snapshot_form_page` (same page,
+  same refs); re-recording `snapshot_depth_1` twice gave identical files.
+- Live, `BROWSER_MOVE_LIVE_MCP=1`: MCP conformance + live assembly + live helpers **57 passed, 6 skipped** (the six
+  browser-use-gated cases of those files, no sidecar interpreter set in that run). Live, `BROWSER_USE_SIDECAR_PYTHON`
+  set: browser-use conformance **45 passed**.
+- A scripted run through the factory's `browser_snapshot` on the live MCP scene (managed Chrome, `@playwright/mcp@0.0.78`):
+  the full snapshot is 1,104 characters, `{"depth": 1}` 327 characters (the root's children, subtrees cut), and a
+  `browser_click` on the "Save order" ref taken from the earlier full snapshot still succeeds afterwards (title
+  `clicked`); the generation stays `g1` across the scoped snapshot and the click.
+
+### Known leftovers
+
+1. **No conformance case for scoped observations.** The suite decides what a driver handles from `info.actions`,
+   which `HandlerDriver` fills from the `@handles` marks of `execute` handlers; `Observe` runs through `observe()`
+   and is never listed there (the factory treats it as handled by every driver), and a `depth`-only scope carries no
+   ref kind for `ensure_supported` to check. Listing `Observe` in `info.actions` would also make the suite's
+   `_pairs` generate happy-path cases that `execute` an `Observe`. Saying "this driver scopes" needs a decision
+   (`Observe` in `info.actions` with the suite skipping its happy path, a new `DriverInfo` field, or something
+   else) before the case can expect `Unsupported` on browser-use and a subtree on Playwright MCP.
+2. `depth` is rounded like every numeric argument (`round(float(depth))`); the server's schema says `number`, so a
+   fractional depth from the model is rounded rather than refused.
+
+## The switch, step 5: the server judges the refs the model sends
+
+The fifth switch session, on `p4-switch`: on the Playwright MCP dialect a `target` the model sends carries no
+generation, so the page state never refuses it before the driver; the server's own "not found" is the stale answer.
+
+### Background
+
+The MCP smoke after step 4 passed 3/3 at $1.28 against the reference's $0.83. Allrecipes and Amazon came in under
+the reference; Google Flights cost $1.17 against $0.58. The dialect's `_target` stamped every aria ref and css
+selector the model sent with `generation_of(target)`, the generation the page state last saw it in, and `check`
+refused it with `Stale AX ref f1e149 belongs to g3; current generation is g4.` before the driver was called;
+`CommandTool` then rendered the error plus a fresh full observation (about 18,000 characters). On a single-page
+application the generation advances often (DOM churn, address changes), so refs the server would still resolve were
+refused: six distinct refs in the Google Flights run, none in the reference run. The old worker sent refs straight to
+`@playwright/mcp`, which resolves `aria-ref` and css against the live page and answers `Ref ... not found in the
+current page snapshot` only when the element is really gone (the driver decodes that to `StaleRef(dispatched=False)`,
+fixture `click_stale_ref`).
+
+### Decisions
+
+1. **Who owns staleness is a property of the dialect, written in the generation its decoder stamps.** The page
+   state owns it for the refs it hands out or the model dates itself: `resolve`d targets, points on a screenshot,
+   the browser dialect's `ref` / `selector` with the model's `generation_id`, browser-use index refs. The Playwright
+   MCP server owns it for the aria refs and css the model sends on its dialect. S_20 says this once under Refs; the
+   MCP dialect, which lives in the driver package, expresses it; no core code learns about MCP.
+2. **`_target` builds `DriverRef(target, "")` and `Locator(css=target, text=None, generation="")`.** `check`
+   already lets an empty generation pass (the rule a point used before the first screenshot), so the page state does
+   not change. `PointRef` keeps `screenshot_generation`, the browser dialect keeps the model's `generation_id`,
+   `resolve` keeps the target's generation. This reverses decision 1 of "Tool factory and Playwright MCP native
+   tools" (a `DriverRef` at the generation the page state last saw it in).
+3. **The server's refusal stays the driver-raised `StaleRef`.** `RetryOnStale` observes once and attaches the
+   fresh observation; `CommandTool` renders the error with it and records the observation, as before. The model
+   reads the same shape of answer as the pre-refusal gave, now only for an element that is really gone.
+4. **Nothing downstream needed the generation of an MCP ref.** `RetryOnStale` reads only `dispatched`; `resolve`
+   and the batch / find / custom helpers stamp `page_state.generation_id` themselves; the policy probe checks the
+   command against the surface context; `CommandRecord.generation` and `message_metadata` come from the result and
+   the page state, not from the refs. The factory's builder for a spec without a schema (`_generated_build`) still
+   stamps `generation_of`; no MCP tool goes through it, and it was left alone.
+5. **Two runtime-rail tests that asserted the pre-refusal on the MCP path were rewritten**, not deleted: after a
+   navigation the click on the old ref now reaches the driver and the server's `StaleRef` renders with its fresh
+   observation; after a URL change the click on the old ref reaches the driver and succeeds.
+
+### Rejected options
+
+- **Teaching `check` about the MCP dialect** (a flag on the page state or on `DriverInfo` that skips the check for
+  aria refs): the page state would learn a driver's name, and the generation on the ref would say something untrue.
+- **A forgiving page-state rule** (accept a ref one generation old): the server already does the only lookup that
+  matters, against the live page; a forgiving rule would still refuse refs that survived two generations and still
+  pass refs of elements that are gone.
+- **Keeping the pre-refusal and shrinking the observation it renders**: cheaper, but still a wrong answer for an
+  element that exists; the cost was the symptom.
+
+### Golden status
+
+| Check | Result |
+|---|---|
+| every MCP view, prompts included (`test_tool_prompt_snapshot.py`) | byte for byte, no golden touched |
+| factory goldens (`test_tool_factory_golden.py`) `core` / `runner`, browser-use views | unchanged |
+| tool-result goldens (`test_tool_result_golden.py`), `click_stale_ref` included | unchanged (the stale wording is the server's, the rendered error never carried a generation) |
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q`: **2309 passed, 112 skipped** (2307 before this step; one wall-clock batch test,
+  `wait_for_stable`, failed once while the live suite ran beside it and passed alone). New: the dialect's
+  target without a generation (an aria ref and a css selector, the resolver reporting an older one); the page state
+  passing an MCP click and hover after `reset()`; the factory's `browser_click` reaching the `FakeDriver` after the
+  generation moved (`Click(DriverRef("e1", ""))`, the record stamped `g1`) and the driver's `StaleRef` rendering with
+  the observation it carries; the two rewritten rail tests. The `PointRef` pre-refusal test is unchanged and green.
+- Live, `BROWSER_MOVE_LIVE_MCP=1`: MCP conformance + live assembly + live helpers **58 passed, 6 skipped** (57 before; the six browser-use-gated cases of those files). New live case
+  (`test_browser_helpers_live.py`): a full snapshot, `browser_click` on "Open popup" (a second tab, the generation
+  moves), `browser_tabs` `select 0` (moves again, nothing re-registered), then `browser_click` on the "Last button"
+  ref from the first snapshot: the page state reports the ref in an older generation than the current one (the
+  popup click's answer snapshot re-registered the first tab's refs once, the tab select did not), the click reaches the
+  server and the title becomes `last`.
+- Live, `BROWSER_USE_SIDECAR_PYTHON` set: browser-use conformance **45 passed**.
+
+### Known leftovers
+
+1. `_generated_build` (a spec without a schema) still stamps `generation_of`; no built driver serves an element ref
+   through it today.
+2. The live case proves the server resolves a ref the page state's generation moved past; it does not measure the
+   smoke. The next MCP smoke tells whether Google Flights returns to the reference cost.
+3. The import block of `test_browser_runtime_rail.py` was unsorted before this step (`ruff --select I`); it was left
+   as found.
+
+## The switch: verification baseline
+
+The verification session of the switch, on `p4-switch` after step 5: the small fixes the step reviews left to it, the
+Phase 4 done-when items with their evidence, and the numbers the merge is judged against.
+
+### Decisions
+
+1. **A status-logger failure stays inside the rail.** `BrowserRuntimeRail._emit_status` logged a status-logger
+   exception with `exc_info=True`, which `browser_agent_log_warning(message, *args)` does not take, so the except
+   branch itself raised `TypeError` out of the rail (step 3's leftover 1). The failure is now one warning line,
+   `[BROWSER_SUBAGENT_ERROR] method=<hook> error=<text>`, and the invoke goes on; the helper's signature is unchanged.
+2. **The runner's Direct agent writes to the process log.** The core logger sends every line of an invoke to
+   `openjiuwen.browser_agent` while `BrowserRuntimeRail` holds the browser log context, which `before_invoke` entered
+   for every invoke. So on the browser-use runner path the model client's `CompletionUsage(...)` lines and the
+   agent's `tokens={...}` line ended in `browser_agent.log`, while the worker, which has no such rail, writes them to
+   stdout, where the runner's `budget.py`, `analyze.py` and `run_one_task` read them. `BrowserAgentRuntime.dedicated_log`
+   (default `True`) is `False` for the agent the facade builds for itself in `_direct_agent`, and the rail enters the
+   context only when it is `True`. Nothing the model sees changes; `create_browser_agent`'s own agents are unchanged.
+3. **The repeat guard starts at the first model call too.** A `DeepAgent` fires `before_invoke` and `after_invoke`
+   on its outer callback context only; its inner `ReActAgent` runs the model and tool hooks on a context of its own,
+   with another `extra` dict. `RepeatedCallGuardRail` kept its per-invoke state in `ctx.extra` from `before_invoke`,
+   so on every deep agent (`build_agent`'s, and the main agent, which is the browser-use Direct path) the hooks found
+   no state and the guard counted nothing, while the worker, a `ReActAgent`, was guarded. The live module caught it:
+   five identical `browser_evaluate` calls through `build_agent` on Playwright MCP left the tools on the seventh
+   request. The state now also starts in the first `before_model_call` that finds none (the first model call precedes
+   every tool call, and the model-call context is the inner invoke's own), where the finish section is cleared as
+   `before_invoke` does. The worker path is unchanged.
+4. **The argument normalisation is gated on `target` fields alone.** `BrowserRuntimeRail.before_tool_call` applied the
+   Playwright MCP normalisation (the `ref` → `target` rename, the `target_id` resolution, `generation_id` dropped) to
+   every factory tool whose schema had any of `target`, `startTarget`, `endTarget`, `ref`, `startRef`, `endRef`. The
+   browser dialect declares `ref` as a field of its own, so on browser-use through the main agent every element
+   command the model sent as `{"ref": …, "generation_id": …}` became `{"target": …}` and the schema check denied it
+   (`generation_id` missing, `target` not permitted); nothing reached the driver. The observe-count run showed it:
+   seven model turns on browser-use, no `Click` or `TypeText` at the driver. The gate is now the three `target`
+   fields, as S_20 already said; the browser dialect's tools are left to their decoders. Unit tests had driven the rail
+   only with the MCP dialect.
+
+### Rejected options
+
+- **Leaving the context around the model call only** (off in `before_model_call`, on in `after_model_call`): the
+  context processors run after the before hooks and before the model call, so the browser capture and its raw audit
+  would run outside the context anyway, and the agent logs its `tokens={...}` line after the after hooks, inside it.
+- **A `Model` wrapper that drops the context inside `invoke`**: `create_browser_agent` copies the model into a plain
+  `Model` for the browser temperature, so the wrapper would not survive construction.
+- **`OPENJIUWEN_BROWSER_AGENT_LOG_MIRROR_COMMON` in the runner's launcher**: every browser line into the runner's
+  stdout, not only the model calls, and a change outside `browser_move`.
+
+### Behaviour changes to know
+
+- On the runner's Direct path no raw audit artifact (`OPENJIUWEN_BROWSER_AGENT_AUDIT_RAW`) is written: the audit needs
+  the browser log context. Tool-call lines still reach the browser log through the hook, as the worker's do.
+
+### Phase 4 done-when, with the evidence
+
+| Item | Evidence |
+|---|---|
+| the fake-surface end-to-end test passes | `architecture/fake_surface`: 6 passed; no edit in `runtime/`, `contract/` or `drivers/middleware.py` |
+| MCP tool and prompt snapshot = the Phase 1 golden | against `refactor/driver-architecture`: `core`, `runner`, `advanced_code`, `extended_interaction`, `pdf` byte-identical; `config`, `devtools`, `network`, `storage`, `testing`, `unsafe_dev`, `vision` differ by 822 removed lines, 0 added, no `system_prompt` hunk: the 43 approved no-command tools (C7/C20/C25). Runner contract and factory goldens green |
+| browser-use snapshot = the 857239db record, differences listed | the browser-use golden files are unchanged against the old branch; per view the agent's tools are the golden minus Q3 (run control, screenshot, close, drag and drop) plus the two probes and the batch, `browser_tabs` with `new` (Q6); the prompt is the MCP golden's (Q4) |
+| PR #7–#11 behaviours on `FakeDriver` and on both drivers | unit: `test_browser_repeated_call_guard.py`, `test_browser_intercepted_action_hint.py`, `test_browser_final_answer_recovery.py`, `test_browser_worker_allowlist.py`, `test_browser_prompt_tool_surface.py`, `test_browser_runtime_rail.py`; live: `test_agent_rails_live.py` on each driver (below) |
+| no MCP tool name and no MCP text parsing left in `runtime/` | no text parsing; the remaining name hits are listed under "Allowlists" with their reason and phase |
+| the smoke tasks pass on both drivers | the head's WebVoyager smokes, outside this session |
+
+### The live module (`test_agent_rails_live.py`)
+
+Gated as the other live suites (`BROWSER_MOVE_LIVE_MCP=1`, `BROWSER_USE_SIDECAR_PYTHON`), a headless Chrome from the
+conformance fixture attached with `BROWSER_PROVISIONING=remote`, the scene server, a `ScriptedModel(Model)` that
+issues one tool call per turn while tools are offered (names resolved by suffix, so the MCP prefix needs no case) and
+then answers. Per driver: `build_agent`'s agent navigates and runs `() => document.title` five times: tools on six
+requests, none on the seventh, the repeated-call note in the fifth evaluate's message; `build_agent`'s agent
+navigates, snapshots, runs `cover()` and clicks the "Covered button" by the ref the snapshot listed (`target` on the
+MCP dialect, `ref` + `generation_id` on the browser dialect): `### Error\nClick not delivered: <ref> is covered by …`
+ending in the profile's retry sentence; `BrowserService` on the live driver builds the worker with the 14 core tools
+(the driver's prefix) and the two probes and the batch, and a prose final answer is recovered in one tool-free call
+(`recovered_from=non_json_output`, `ok=True`).
+
+### Double observation (Q14), measured
+
+A scripted six-step run of the main agent (`create_browser_agent` on a `BrowserAgentRuntime`, `core` capability) on
+the live scene, each driver attached to its own headless Chrome; a counting wrapper under the middleware stack logged
+every driver `observe` and whether each `execute` result carried an observation. Steps: navigate, click "Save order",
+type "Ada" into "Full name", snapshot, click "Last button", snapshot; seven model turns.
+
+| Point | Playwright MCP | browser-use |
+|---|---|---|
+| before the first model call (initial capture) | 1 observe | 1 observe |
+| after `browser_navigate` | 0 (the result carried an observation, reused) | 1 (no observation in the result) |
+| after `browser_click` | 0 (carried, reused) | 1 |
+| after `browser_type` | 1 (`browser_type`'s result carries none) | 1 |
+| `browser_snapshot` (the model's own) | 1 | 1 |
+| after the second `browser_click` | 0 (carried, reused) | 1 |
+| second `browser_snapshot` | 1 | 1 |
+| **total driver observes** | **4** | **7** |
+| `observations_reused` | 3 | 0 |
+
+`capture_browser_state` never observed right after an action whose result carried an observation (Q14 holds); each
+capture also runs one `page_metadata` script. On Playwright MCP, `browser_navigate` and `browser_click` answers carry
+the page snapshot and `browser_type`'s does not (server behaviour, 0.0.78); on browser-use no action result carries an
+observation, so every mutating step is followed by one capture observe.
+
+### Allowlists: what stays in `runtime.py` and why
+
+Driver names 2 (was 3): `latest_browser_user_request` matches the `browser_use` regex twice (the import and the
+call); the docstring "the worker on Playwright MCP" was reworded. MCP tool names 9, none a text parser:
+
+| Hit | Why it stays | Goes in |
+|---|---|---|
+| `browser_take_screenshot` ×4 in `_BROWSER_IMAGE_CAPABILITY_GUIDANCE` (en, cn) | model-facing prompt section | Phase 9 (the browser rail and its prompt text move to `surfaces/browser/`) |
+| `browser_resume` ×2 | the run-context flag callers set to resume a task, not the MCP tool; renaming changes a public key | Phase 9 (rail move) |
+| `browser_click$` → `browser_navigate` in `_rewrite_primary_link_click` | the card primary-link rewrite finds the dialect's navigation tool by its model-facing name; a name-free lookup needs a command → tool map from the factory (a contract change) or the move of this browser-only rewrite | Phase 9 (rail move) |
+| `"source": "browser_evaluate"` in `_evaluate_field_provenance` | a provenance label the working context shows the model | Phase 9 |
+
+### Verification
+
+- `test_browser_runtime_facade.py`: the Direct runtime reports `dedicated_log=False` and its rail's `before_invoke`
+  leaves the browser log context unset; the default runtime enters it.
+- `test_browser_repeated_call_guard.py`: a run whose `before_invoke` fired on another context is guarded from its
+  first model call (tools withheld after the fifth identical call, a stale finish section cleared).
+- `test_browser_runtime_rail.py`: a browser-dialect `browser_click` with `ref` and `generation_id` passes
+  `before_tool_call` untouched (red on the old gate: the arguments came out as `{"target": …}`).
+- `test_browser_runtime_rail.py`: a status logger that raises is logged with the hook name and the error and the
+  rail returns.
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q`: **2314 passed, 118 skipped** (2310 / 112 at the
+  start of the session; the live module adds six gated cases).
+- The ten harness test files outside `browser_move` that build the browser agent: **234 passed**.
+- Architecture: the driver-name allowlist of `runtime.py` 3 → 2; no entry grew (the browser-word ratchet caught two
+  wordings of this session's own lines, both reworded before commit).
+- Live, `BROWSER_MOVE_LIVE_MCP=1` with the sidecar interpreter set: Playwright MCP conformance + live assembly + live
+  helpers + the new module **70 passed** (the seven browser-use-gated cases of the shared files included); with the
+  sidecar alone: browser-use conformance + live assembly + live helpers + the new module **54 passed, 10 skipped**
+  (the MCP-gated cases). Run at the commit before decision 4, which touched only the main agent's rail; that rail ran
+  live on both drivers afterwards in the observe-count run above. The new module alone: 3 and 3.
+- `wait_for_stable` batch test, 30 runs each: 1 failure in 30 before the fix, 0 in 30 after.
+- Goldens: no file moved.
+### Known leftovers
+
+1. The four `runtime.py` MCP-name hits above, Phase 9.
+2. On the runner's Direct path no raw audit artifact is written (decision 2).
+3. The main agent's `BrowserRuntimeRail` registers the parts' rails in `before_invoke`, so on the DeepAgent their own
+   `before_invoke` never fires for that invoke; the guard copes (decision 3), `ActionPolicy` and
+   `InterceptedActionHintRail` keep no per-invoke state.
+4. `ruff format` and `ruff check --select I` report pre-existing differences in `runtime.py` (quote style, blank
+   lines) and `test_browser_runtime_rail.py` (import order); left as found.
+
+## The switch: verification follow-up
+
+The head's browser-use smoke on the verification baseline (three tasks, Sonnet) lost one task to the runtime, not
+to the model: on Allrecipes--20 the driver's `start()` failed inside `BrowserRuntimeRail.before_invoke` (the sidecar's
+connect answered "No valid agent focus available - target may have detached and recovery failed"), core's callback
+framework logged the exception and went on, and the main agent ran with no browser tools: the model wrote
+`<invoke name="browser_navigate">` as text until `max_tokens` (65,536 completion tokens) and the task ended `partial`
+on `about:blank` after 304 s. The same smoke showed the runner's Direct agent built with the facade's default
+`language="cn"` (the runner passes none), so an English task got the Chinese prompt and working context, where the
+worker it replaces builds in English.
+
+### Decisions
+
+1. **A session that cannot start fails the invoke.** The callback framework swallows every callback exception
+   except `AbortError`, and re-raises an `AbortError`'s `cause` to the caller. `BrowserRuntimeRail.before_invoke`
+   now wraps `ensure_runtime_ready()`: any failure there becomes `AbortError(str(error), cause=error)`, so the
+   invoke fails before a tool is added or a model call is made, and the caller sees the driver error itself; the
+   runner's Direct answer maps it to `ok=False` with the error text (`_run_direct` already caught exceptions). The
+   rail is the only place a callback starts the session: the worker path (`BrowserService.ensure_started`) and the
+   facade's other entry points (`capture_browser_state`, the custom actions, the policy hooks) run outside
+   callbacks and already propagate.
+2. **A detached target at connect is a lost connection, and a session start restarts once.** The browser-use
+   driver maps "No valid agent focus available" / "target may have detached" to `ConnectionLost(dispatched=True)`,
+   as it maps "CDP not connected" and "Reconnection wait timed out", so a mid-task loss restarts the session once.
+   `DriverSession.start()` gives a `ConnectionLost` from the stack's start the same single restart: `_start()`
+   (liveness, re-provision and rebuild when dead, start) is the plain start; `_restart(error)` stops the stack,
+   calls `_start()`, wraps any failure in the `driver_lost` task failure with that failure as cause, and resets the
+   page state; `_recover` and `start()` both call it. `_restart` no longer re-enters `start()`, so a mid-task loss
+   still gets exactly one restart. The loss counter is left to `begin_task()`, which runs right after `start()`.
+3. **The Direct agent speaks the worker's language.** `WORKER_LANGUAGE = "en"` in `service.py` is the one place the
+   worker's language is written; `BrowserService.ensure_started` (the parts and the runtime tools) and
+   `BrowserAgentRuntime._direct_agent` read it. The facade's own `language` (default `cn`) still reaches its tool
+   context and the parts it builds, and `create_browser_agent`'s default stays `cn` (public API).
+
+### Rejected options
+
+- **Catching the start failure in `ensure_runtime_ready` and reporting it in the answer**: the invoke would still
+  run without tools; the abort is the framework's own channel for "do not continue".
+- **Re-entering `start()` from `_restart`**: a mid-task loss would restart twice (once in `_recover`, once more
+  inside the restarted `start()`).
+- **Retrying the first open (`assemble_driver`, before a `DriverSession` exists)**: not in the task; the Allrecipes
+  failure was that first open, so it now fails the invoke explicitly and gets no restart (leftover 1).
+- **Passing `language="en"` from the runner**: outside `browser_move`, and every other direct constructor of the
+  facade (`main.py`, the MCP server) would have the same gap.
+- **Changing the facade's default language to `en`**: the Direct agent must match the worker whatever the facade is
+  given; the default is the facade's, not the worker's.
+
+### Behaviour changes to know
+
+- A driver that cannot start fails the task at once with the driver's error (the runner sees `ok=False`,
+  `error="connect: …"`) instead of a model loop without tools up to the task timeout.
+- On browser-use the detached-target error at connect or mid-task now restarts the session once, like a dead CDP.
+- The runner's Direct agent reads the English prompt and working context.
+
+### Verification
+
+- `test_driver_session.py`: a start that loses the connection restarts once (`stop, start, stop, start`, page
+  state generation bumped, no provisioning on a live device); a second loss fails with `driver_lost` and the
+  `ConnectionLost` as cause.
+- `test_browser_use_driver.py`: the detached-target message maps to `ConnectionLost(dispatched=True)` at connect
+  (the sidecar closed) and mid-task.
+- `test_browser_runtime_rail.py`: a session that cannot start raises `AbortError` with the error as cause and its
+  text as reason; no tool added, no rail registered.
+- `test_browser_runtime_facade.py`: on browser-use, the real Direct agent (the image probe off) on a session that
+  cannot start answers `ok=False` with the connect error and the model client is never called; a facade built
+  without a language builds its Direct agent with `language="en"`, the English working-context processor and the
+  English system prompt.
+- All seven new tests were red on the previous commit and are green now.
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q`: **2321 passed, 118 skipped** (2314 / 118 before).
+- Goldens: `git diff` against the baseline commit is empty for `snapshots/golden/`.
+- Live, sidecar set (browser-use conformance + live assembly + live helpers + `test_agent_rails_live.py`):
+  **54 passed, 10 skipped** (the MCP-gated cases). Live, `BROWSER_MOVE_LIVE_MCP=1` with the sidecar set: MCP
+  conformance + the same three files **70 passed** (the seven browser-use-gated cases of the shared files included).
+
+### The scripted run that ends `blocked` on browser-use
+
+The six scripted steps (navigate, click "Save order", type "Ada", snapshot, click "Last button", snapshot) make the
+same semantic progress on both drivers. The tracker's state is url, form values, selected filters, result count and
+field coverage (the title is not part of it), so the navigation and the typing count as progress and the two clicks
+and the two snapshots as no progress; the capture before the final model call is the third consecutive no-progress
+observation and sets the tracker's `replan_required` (`three_consecutive_no_progress_states`, revision 7) on both
+drivers, measured with the rail's hooks wrapped. On Playwright MCP the flag is cleared at once: the sync into the task
+state counts the last recorded action as recovered when it added evidence, and the second `browser_snapshot` is a new
+page observation there because the MCP snapshot text carries the page title (`Page Title: form:3:false`, then `Page
+Title: last`: two observations, two hashes). On browser-use the two snapshots are one and the same observation (one
+hash): the sidecar's DOM text has no title, and the scene's last button changes nothing but the title, so no evidence
+is added, nothing recovers, the task state stays `replan_required`, and the final-answer validation adds
+`semantic_replan_required` as a runtime blocker: `blocked`, `terminal_reason=runtime_blocked`,
+`recommended_recovery=replan_from_current_page`. No contract rule breaks: the semantic state ignores the title by
+design and the evidence signature is the driver's observation text; the difference is the two drivers' renderings of a
+page whose only visible change is its title. No fix.
+
+### Known leftovers
+
+1. The first open of a session (`assemble_driver` → `stack.start()`, before a `DriverSession` exists) gets no
+   restart: a `ConnectionLost` there fails the invoke at once. The Allrecipes--20 failure was that case.
+2. On the Direct path the facade's own `language` (the runner's `cn`) still reaches the `ToolContext` and the parts
+   built for the main agent (`browser_recall_offload` takes it); the tools' schemas and the profile text are
+   language-free.
+3. Leftovers of the previous section stand (the `runtime.py` MCP-name hits, no raw audit on the Direct path, the
+   rails registered in `before_invoke`, the import order of `test_browser_runtime_rail.py`).

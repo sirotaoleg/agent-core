@@ -9,13 +9,31 @@ import json
 import pytest
 
 from tests.unit_tests.harness.tools.browser_move.snapshots import builder
+from tests.unit_tests.harness.tools.browser_move.snapshots.test_tool_factory_golden import (
+    BATCH,
+    BROWSER_USE_DROPPED,
+    BROWSER_USE_OUTSIDE_CORE,
+    PROBES,
+    SCREENSHOT,
+)
 
 VIEWS = builder.list_views()
+CAPABILITY_VIEWS = [view for view in VIEWS if view != builder.RUNNER_VIEW]
 
 
 @pytest.fixture(scope="module")
 def built_views(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
     return builder.build_all(tmp_path_factory.mktemp("browser-snapshot"))
+
+
+@pytest.fixture(scope="module")
+def built_browser_use_views(tmp_path_factory: pytest.TempPathFactory) -> dict[str, dict]:
+    root = tmp_path_factory.mktemp("browser-use-snapshot")
+    return {view: builder.build_view(view, root / view, driver=builder.BROWSER_USE)[0] for view in CAPABILITY_VIEWS}
+
+
+def _golden_agent(directory, view: str) -> dict:
+    return json.loads((directory / f"{view}.json").read_text(encoding="utf-8"))["agents"][0]
 
 
 def _mismatch_message(view: str, expected: str, actual: str) -> str:
@@ -76,5 +94,31 @@ def test_browser_use_golden_is_well_formed(view: str) -> None:
         assert names == sorted(names)
         for tool in agent["tools"]:
             assert set(tool) == {"name", "description", "parameters"}
-    # SKIPPED rather than XFAIL, so a malformed golden file still fails loudly.
-    pytest.skip("the agent does not build browser-use views on the driver contract yet")
+
+
+@pytest.mark.parametrize("view", CAPABILITY_VIEWS)
+def test_browser_use_tools_equal_the_golden_but_the_one_catalog_differences(
+    view: str, built_browser_use_views: dict[str, dict]
+) -> None:
+    golden = {tool["name"]: tool for tool in _golden_agent(builder.BROWSER_USE_GOLDEN_DIR, view)["tools"]}
+    built = {tool["name"]: tool for tool in built_browser_use_views[view]["agents"][0]["tools"]}
+
+    expected_missing = BROWSER_USE_DROPPED | {SCREENSHOT}
+    if view != "extended_interaction":
+        expected_missing |= BROWSER_USE_OUTSIDE_CORE
+    assert set(golden) - set(built) == expected_missing & set(golden)
+    assert set(built) - set(golden) == PROBES | {BATCH}
+    golden["browser_tabs"]["parameters"]["properties"]["action"]["enum"].append("new")
+    for name, tool in built.items():
+        if name in PROBES or name == BATCH:
+            continue
+        assert tool == golden[name], name
+
+
+@pytest.mark.parametrize("view", CAPABILITY_VIEWS)
+def test_browser_use_prompt_equals_the_playwright_mcp_prompt(
+    view: str, built_browser_use_views: dict[str, dict]
+) -> None:
+    built = built_browser_use_views[view]["agents"][0]
+    assert built["role"] == "main"
+    assert built["system_prompt"] == _golden_agent(builder.GOLDEN_DIR, view)["system_prompt"]

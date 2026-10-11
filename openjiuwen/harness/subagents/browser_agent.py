@@ -27,7 +27,6 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_state_cont
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_working_context_processor import (
     BrowserWorkingContextProcessorConfig,
 )
-from openjiuwen.harness.tools.browser_move.offload_recall import BrowserOffloadRecallTool
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging import configure_browser_agent_logging
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserInstanceConfig,
@@ -44,9 +43,6 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabiliti
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import (
     BrowserAgentRuntime,
     BrowserRuntimeRail,
-)
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime_tools import (
-    build_browser_runtime_tools,
 )
 
 try:
@@ -300,13 +296,15 @@ def create_browser_agent(
     browser_key: Optional[str] = None,
     browser_instance: Optional[BrowserInstanceConfig | Dict[str, Any]] = None,
     browser_capabilities: Optional[List[str]] = None,
+    runtime: Optional[BrowserAgentRuntime] = None,
     **config_kwargs: Any,
 ) -> DeepAgent:
     """Create the browser subagent with task-scoped capability context.
 
     ``browser_capabilities`` is resolved against the trusted capability
     catalog here. Core is always applied, including when the caller omits the
-    optional capability list.
+    optional capability list. ``runtime`` is an existing facade to build on
+    (the WebVoyager runner's); by default the agent gets its own.
     """
     if browser_capabilities is not None and (
         not isinstance(browser_capabilities, list)
@@ -328,11 +326,9 @@ def create_browser_agent(
     )
 
     resolved_language = resolve_language(language)
-    instance = _coerce_browser_instance(browser_instance, browser_key)
     # A decision policy in the model slot is used as is: no temperature copy, no LLM-only context rails.
     policy_model = model if isinstance(model, DecisionPolicyModel) else None
     browser_model = model if policy_model is not None else _browser_model_with_temperature(model, temperature)
-    resolved_settings = _resolve_runtime_settings(browser_model, settings, instance)
     configure_browser_agent_logging(CoreSettings.from_process_env())
 
     final_card = card or AgentCard(
@@ -348,20 +344,25 @@ def create_browser_agent(
         DEFAULT_BROWSER_AGENT_SYSTEM_PROMPT["cn"],
     )
 
-    runtime_kwargs: Dict[str, Any] = {
-        "provider": resolved_settings.provider,
-        "api_key": resolved_settings.api_key,
-        "api_base": resolved_settings.api_base,
-        "model_name": resolved_settings.model_name,
-        "mcp_cfg": resolved_settings.mcp_cfg,
-        "guardrails": resolved_settings.guardrails,
-        "instance": resolved_settings.instance,
-        "allowed_tool_names": resolved_capabilities.allowed_tool_names,
-    }
-    browser_backend = BrowserAgentRuntime(**runtime_kwargs)
+    # The browser tools arrive at the first invoke, once the driver has started (BrowserRuntimeRail.before_invoke).
+    browser_backend = runtime
+    if browser_backend is None:
+        instance = _coerce_browser_instance(browser_instance, browser_key)
+        resolved_settings = _resolve_runtime_settings(browser_model, settings, instance)
+        browser_backend = BrowserAgentRuntime(
+            provider=resolved_settings.provider,
+            api_key=resolved_settings.api_key,
+            api_base=resolved_settings.api_base,
+            model_name=resolved_settings.model_name,
+            mcp_cfg=resolved_settings.mcp_cfg,
+            guardrails=resolved_settings.guardrails,
+            instance=resolved_settings.instance,
+            allowed_tool_names=resolved_capabilities.allowed_tool_names,
+            workspace=workspace,
+            language=resolved_language,
+        )
     if policy_model is not None:
         policy_model.bind_runtime(browser_backend)
-    injected_tools = build_browser_runtime_tools(browser_backend, language=resolved_language)
     working_context_config = BrowserWorkingContextProcessorConfig(
         language=resolved_language,
         runtime_projection_only=True,
@@ -369,7 +370,6 @@ def create_browser_agent(
     injected_rails: List[AgentRail] = [
         BrowserRuntimeRail(browser_backend),
     ]
-    injected_tools.append(BrowserOffloadRecallTool(workspace, language=resolved_language))
 
     browser_state_processor = (
         "BrowserStateContextProcessor",
@@ -420,7 +420,7 @@ def create_browser_agent(
             )
         )
 
-    final_tools = list(tools or []) + injected_tools
+    final_tools = list(tools or [])
     final_mcps = list(mcps or [])
     final_rails = list(rails or []) + injected_rails
 

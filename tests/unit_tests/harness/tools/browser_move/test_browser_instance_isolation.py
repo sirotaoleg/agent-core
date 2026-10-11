@@ -4,8 +4,9 @@
 """Tests for per-agent browser isolation (different browsers for different agents).
 
 Covers the BrowserInstanceConfig identity key flowing through BrowserService
-(profile / driver / port / user-data-dir) and the teams manifest element that
-carries that identity across the spawn-wire boundary as serializable kwargs.
+(identity) and the browser surface factory (profile / provisioning / port /
+user-data-dir), and the teams manifest element that carries that identity
+across the spawn-wire boundary as serializable kwargs.
 
 These tests never launch Chrome: they exercise only config resolution and
 profile assembly, with the free-port allocator mocked for determinism.
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -23,24 +25,38 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserRunGuardrails,
     build_playwright_mcp_config,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.profiles import BrowserProfile
+from openjiuwen.harness.tools.browser_move.playwright_runtime.profiles import BrowserProfile, BrowserProfileStore
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
-from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import _build_profile
+from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import (
+    ManagedBrowserProvisioner,
+    _build_profile,
+)
+from openjiuwen.harness.tools.browser_move.surfaces import SURFACES
 
 _ALLOCATE_FREE_PORT = "openjiuwen.harness.tools.browser_move.provisioning.managed_browser._allocate_free_port"
 
 
-def _seed_live_profile(svc: BrowserService, *, port: int = 63668) -> None:
-    """Persist a managed profile for ``svc`` and mark it the global selected one."""
-    svc._profile_store.upsert_profile(
+def _store() -> BrowserProfileStore:
+    return BrowserProfileStore(Path(os.environ["BROWSER_PROFILE_STORE_PATH"]))
+
+
+def _seed_live_profile(store: BrowserProfileStore, name: str, *, port: int = 63668) -> None:
+    """Persist a managed profile and mark it the global selected one."""
+    store.upsert_profile(
         BrowserProfile(
-            name=svc._profile_name,
+            name=name,
             driver_type="managed",
             cdp_url=f"http://127.0.0.1:{port}",
+            user_data_dir=str(Path.cwd()),
             debug_port=port,
         ),
         select=True,
     )
+
+
+def _profile(instance: BrowserInstanceConfig | None) -> BrowserProfile:
+    """The managed profile the provisioner builds from the surface settings with ``instance`` applied."""
+    return _build_profile(SURFACES.create("browser", os.environ, instance).settings)
 
 
 def _make_service(instance: BrowserInstanceConfig | None) -> BrowserService:
@@ -73,8 +89,8 @@ def test_distinct_keys_get_distinct_profiles_and_ports() -> None:
         assert b._profile_name == "B"
         assert a._driver_mode == "managed"
 
-        pa = _build_profile(a._provisioning_settings())
-        pb = _build_profile(b._provisioning_settings())
+        pa = _profile(BrowserInstanceConfig(key="A", driver_mode="managed"))
+        pb = _profile(BrowserInstanceConfig(key="B", driver_mode="managed"))
 
     assert pa.debug_port == 40001
     assert pb.debug_port == 40002
@@ -87,8 +103,7 @@ def test_explicit_port_is_honored_without_allocation() -> None:
         _isolated_env(),
         patch(_ALLOCATE_FREE_PORT, side_effect=AssertionError("must not allocate")),
     ):
-        svc = _make_service(BrowserInstanceConfig(key="pinned", driver_mode="managed", managed_port=9501))
-        profile = _build_profile(svc._provisioning_settings())
+        profile = _profile(BrowserInstanceConfig(key="pinned", driver_mode="managed", managed_port=9501))
 
     assert profile.debug_port == 9501
 
@@ -113,7 +128,7 @@ def test_legacy_no_instance_preserves_env_defaults() -> None:
     with _isolated_env():
         svc = _make_service(None)
         assert svc._profile_name == "jiuwenclaw"
-        profile = _build_profile(svc._provisioning_settings())
+        profile = _profile(None)
 
     assert profile.debug_port == 9333
 
@@ -128,8 +143,7 @@ def test_keyed_auto_allocation_ignores_global_env_port() -> None:
         ),
         patch(_ALLOCATE_FREE_PORT, return_value=45000),
     ):
-        svc = _make_service(BrowserInstanceConfig(key="keyed", driver_mode="managed"))
-        profile = _build_profile(svc._provisioning_settings())
+        profile = _profile(BrowserInstanceConfig(key="keyed", driver_mode="managed"))
 
     assert profile.debug_port == 45000
 
@@ -137,11 +151,10 @@ def test_keyed_auto_allocation_ignores_global_env_port() -> None:
 def test_allocated_port_persists_for_reuse() -> None:
     """The managed profile (with its port) is persisted so a restart reattaches."""
     with _isolated_env(), patch(_ALLOCATE_FREE_PORT, return_value=46000):
-        svc = _make_service(BrowserInstanceConfig(key="persist", driver_mode="managed"))
-        profile = _build_profile(svc._provisioning_settings())
-        svc._profile_store.upsert_profile(profile, select=True)
+        profile = _profile(BrowserInstanceConfig(key="persist", driver_mode="managed"))
+        _store().upsert_profile(profile, select=True)
 
-        reloaded = svc._profile_store.get_profile("persist")
+        reloaded = _store().get_profile("persist")
 
     assert reloaded is not None
     assert reloaded.debug_port == 46000
@@ -154,6 +167,14 @@ def test_allocated_port_persists_for_reuse() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _provisioned(instance: BrowserInstanceConfig) -> BrowserProfile:
+    """Provision through the managed provisioner over the store, with Chrome's start stubbed."""
+    provisioner = ManagedBrowserProvisioner(profile_store=_store())
+    with patch.object(ManagedBrowserProvisioner, "start", return_value="http://127.0.0.1:1"):
+        provisioner.provision(SURFACES.create("browser", os.environ, instance).settings)
+    return provisioner.profile
+
+
 def test_keyed_instance_does_not_adopt_another_keys_selected_profile() -> None:
     """Regression: keyed instances must not attach to another key's live Chrome.
 
@@ -161,41 +182,22 @@ def test_keyed_instance_does_not_adopt_another_keys_selected_profile() -> None:
     selected_profile in the shared store; ``sgd-jpy`` must still get its own
     browser instead of reusing usd-sgd's live CDP endpoint.
     """
-    with _isolated_env():
-        first = _make_service(BrowserInstanceConfig(key="usd-sgd", driver_mode="managed"))
-        _seed_live_profile(first, port=63668)
+    with _isolated_env(), patch(_ALLOCATE_FREE_PORT, return_value=40020):
+        _seed_live_profile(_store(), "usd-sgd", port=63668)
 
-        second = _make_service(BrowserInstanceConfig(key="sgd-jpy", driver_mode="managed"))
-        with patch.object(BrowserService, "_is_cdp_endpoint_ready", return_value=True):
-            resolved = second._resolve_existing_cdp_profile()
+        profile = _provisioned(BrowserInstanceConfig(key="sgd-jpy", driver_mode="managed"))
 
-    assert resolved is None
+    assert (profile.name, profile.debug_port) == ("sgd-jpy", 40020)
 
 
 def test_keyed_instance_reuses_its_own_live_profile() -> None:
     """Same key == intentional sharing: reuse its own profile when CDP is live."""
-    with _isolated_env():
-        svc = _make_service(BrowserInstanceConfig(key="usd-sgd", driver_mode="managed"))
-        _seed_live_profile(svc, port=63668)
-        with patch.object(BrowserService, "_is_cdp_endpoint_ready", return_value=True):
-            resolved = svc._resolve_existing_cdp_profile()
+    with _isolated_env(), patch(_ALLOCATE_FREE_PORT, side_effect=AssertionError("must not allocate")):
+        _seed_live_profile(_store(), "usd-sgd", port=63668)
 
-    assert resolved is not None
-    assert resolved.name == "usd-sgd"
+        profile = _provisioned(BrowserInstanceConfig(key="usd-sgd", driver_mode="managed"))
 
-
-def test_legacy_instance_still_adopts_selected_profile() -> None:
-    """Unkeyed/legacy preserves the historical single-browser reuse behavior."""
-    with _isolated_env():
-        seed = _make_service(BrowserInstanceConfig(key="usd-sgd", driver_mode="managed"))
-        _seed_live_profile(seed, port=63668)
-
-        legacy = _make_service(None)
-        with patch.object(BrowserService, "_is_cdp_endpoint_ready", return_value=True):
-            resolved = legacy._resolve_existing_cdp_profile()
-
-    assert resolved is not None
-    assert resolved.name == "usd-sgd"
+    assert (profile.name, profile.debug_port) == ("usd-sgd", 63668)
 
 
 # ---------------------------------------------------------------------------

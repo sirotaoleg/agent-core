@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import json
 import os
 import sys
@@ -462,6 +463,55 @@ def test_observe_while_a_dialog_is_open_reads_the_tab_list_and_takes_no_screensh
     assert observation.surface.dialog == "confirm: Delete order?"
 
 
+def test_a_depth_limited_observe_sends_the_depth_alone_and_reads_the_servers_text(tmp_path: Path) -> None:
+    raw = _raw("snapshot_depth_1")
+
+    observation, calls = _run(tmp_path, {"browser_snapshot": raw}, lambda driver: driver.observe(Observe(depth=1)))
+
+    assert calls == [("browser_snapshot", {"depth": 1})]
+    assert observation.native_text == result_text(raw)
+    refs = [element.ref.ref for element in observation.elements]
+    assert refs == ["e1", "e2", "e3", "e7", "e13", "e14", "e15", "e16", "e17", "e18"]
+    assert all(element.bounds is None for element in observation.elements)
+    assert observation.context == _tab(0, "Fixture form page")
+
+
+def test_an_observe_rooted_at_a_ref_sends_the_target_and_reads_only_the_subtree(tmp_path: Path) -> None:
+    raw = _raw("snapshot_target")
+
+    observation, calls = _run(
+        tmp_path, {"browser_snapshot": raw}, lambda driver: driver.observe(Observe(root=DriverRef("e3", "g3")))
+    )
+
+    assert calls == [("browser_snapshot", {"target": "e3"})]
+    assert observation.native_text == result_text(raw)
+    assert [element.ref.ref for element in observation.elements] == ["e3", "e4", "e5", "e6"]
+
+
+def test_an_observe_rooted_at_a_css_locator_with_a_depth_sends_both(tmp_path: Path) -> None:
+    raw = _raw("snapshot_target")
+
+    _observation, calls = _run(
+        tmp_path, {"browser_snapshot": raw}, lambda driver: driver.observe(Observe(depth=2, root=CSS))
+    )
+
+    assert calls == [("browser_snapshot", {"depth": 2, "target": "#save"})]
+
+
+def test_an_observe_rooted_at_a_point_is_unsupported_before_any_call(tmp_path: Path) -> None:
+    async def body(driver: PlaywrightMcpDriver) -> DriverError:
+        try:
+            await driver.observe(Observe(root=POINT))
+        except DriverError as exc:
+            return exc
+        raise AssertionError("observe accepted a PointRef root")
+
+    error, calls = _run(tmp_path, {}, body)
+
+    assert isinstance(error, Unsupported) and error.dispatched is False
+    assert calls == []
+
+
 # --- handlers ---------------------------------------------------------------------------------------------------------
 
 SENT = [
@@ -831,6 +881,58 @@ def test_factory_points_the_server_at_the_device_endpoint(environ, provisioning:
     assert server.params["env"]["PLAYWRIGHT_MCP_CDP_ENDPOINT"] == device.endpoint
     assert server.params["env"]["PLAYWRIGHT_MCP_BROWSER"] == "chrome"
     assert "--extension" not in server.params["args"]
+
+
+def test_factory_keeps_a_given_server_command_line_under_its_own_name_and_endpoint(environ) -> None:
+    values, device = DEVICES["managed"]
+    environ(values)
+    given = McpServerConfig(
+        server_id="runner-id",
+        server_name="playwright-official-agent-a",
+        server_path="stdio://playwright",
+        client_type="stdio",
+        params={"command": "node", "args": ["mcp.js", "--isolated"], "cwd": "C:/runs", "env": {"X": "1"}},
+    )
+    settings = dataclasses.replace(BrowserSettings.from_env(os.environ), mcp_server=given)
+
+    driver = create_playwright_mcp_driver(device, settings)
+
+    server = driver.config.server
+    assert (server.server_id, server.server_name) == ("playwright_official_stdio", "playwright-official")
+    assert driver.info.tool_name_prefix == "mcp_playwright-official_"
+    assert (server.params["command"], server.params["args"], server.params["cwd"]) == (
+        "node",
+        ["mcp.js", "--isolated"],
+        "C:/runs",
+    )
+    assert server.params["env"]["X"] == "1"
+    assert server.params["env"]["PLAYWRIGHT_MCP_CDP_ENDPOINT"] == device.endpoint
+    assert server.params["env"]["PLAYWRIGHT_MCP_BROWSER"] == "chrome"
+    assert driver.config.output_dir == Path("C:/runs")
+
+
+def test_a_given_server_env_keeps_its_browser_and_loses_its_device(environ) -> None:
+    values, device = DEVICES["managed"]
+    environ(values)
+    given = McpServerConfig(
+        server_id="runner-id",
+        server_name="playwright-official-agent-a",
+        server_path="stdio://playwright",
+        client_type="stdio",
+        params={
+            "command": "node",
+            "args": [],
+            "cwd": "C:/runs",
+            "env": {"PLAYWRIGHT_MCP_BROWSER": "msedge", "PLAYWRIGHT_MCP_DEVICE": "iPhone 15"},
+        },
+    )
+    settings = dataclasses.replace(BrowserSettings.from_env(os.environ), mcp_server=given)
+
+    env = create_playwright_mcp_driver(device, settings).config.server.params["env"]
+
+    assert env["PLAYWRIGHT_MCP_BROWSER"] == "msedge"
+    assert "PLAYWRIGHT_MCP_DEVICE" not in env
+    assert env["PLAYWRIGHT_MCP_CDP_ENDPOINT"] == device.endpoint
 
 
 def test_factory_builds_the_extension_command_line(environ) -> None:

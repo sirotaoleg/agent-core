@@ -141,6 +141,20 @@ def _aim(ref: DriverRef | Locator, what: str) -> dict[str, Any]:
     return {"element": f"{what} {target}", "target": target}
 
 
+def _snapshot_args(command: Observe) -> dict[str, Any]:
+    # Boxes give elements their bounds; a scoped snapshot goes as the model asked, so its text stays the server's.
+    if not command.scoped:
+        return {"boxes": True}
+    args: dict[str, Any] = {}
+    if command.depth is not None:
+        args["depth"] = command.depth
+    if isinstance(command.root, PointRef):
+        raise Unsupported("browser_snapshot scopes to an element ref or a css target, not a point", dispatched=False)
+    if command.root is not None:
+        args["target"] = _target(command.root)
+    return args
+
+
 def _point(ref: PointRef) -> dict[str, int]:
     # Screenshots are taken at CSS scale, so a screenshot pixel is a viewport pixel (Screenshot.scale is 1).
     return {"x": ref.x, "y": ref.y}
@@ -246,8 +260,7 @@ class PlaywrightMcpDriver(HandlerDriver):
         return Health(ok=False, detail="the server does not answer")
 
     async def observe(self, command: Observe) -> Observation:
-        # Boxes give elements their bounds; the text keeps the form the model reads today.
-        raw = await self._call("browser_snapshot", {"boxes": True})
+        raw = await self._call("browser_snapshot", _snapshot_args(command))
         decoded = await self._decode("browser_snapshot", raw)
         if not decoded.ok:
             return await self._observe_modal_state(raw)
@@ -483,8 +496,25 @@ class PlaywrightMcpDriver(HandlerDriver):
 
 
 def create_playwright_mcp_driver(device: ProvisionedDevice, surface_settings: Any) -> PlaywrightMcpDriver:
-    """Driver factory (registry signature): the server attaches to ``device.endpoint`` over CDP on ``start()``."""
+    """Driver factory (registry signature): the server attaches to ``device.endpoint`` over CDP on ``start()``.
+
+    A server config in ``surface_settings.mcp_server`` keeps its command line and environment; the factory's name
+    and id win, so the tool prefix never changes with the caller, and the device endpoint replaces the config's.
+    """
     server = playwright_mcp_config(surface_settings, BrowserInstanceConfig(cdp_url=device.endpoint))
+    given = getattr(surface_settings, "mcp_server", None)
+    if given is not None:
+        # A device emulation cannot drive a CDP-attached browser; CDP mode is Chromium-only.
+        env = {key: value for key, value in (given.params.get("env") or {}).items() if key != "PLAYWRIGHT_MCP_DEVICE"}
+        if device.endpoint:
+            env = {"PLAYWRIGHT_MCP_BROWSER": "chrome", **env, "PLAYWRIGHT_MCP_CDP_ENDPOINT": device.endpoint}
+        server = McpServerConfig(
+            server_id=server.server_id,
+            server_name=server.server_name,
+            server_path=given.server_path,
+            client_type=given.client_type,
+            params={**given.params, "env": env},
+        )
     return PlaywrightMcpDriver(PlaywrightMcpConfig(server))
 
 

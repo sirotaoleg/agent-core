@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -14,22 +13,7 @@ import pytest
 from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import (
     BrowserPageState,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import (
-    BrowserAgentRuntime,
-)
-
-
-def _run(coro):
-    return asyncio.run(coro)
-
-
-def _make_bare_runtime() -> BrowserAgentRuntime:
-    runtime = BrowserAgentRuntime.__new__(BrowserAgentRuntime)
-    runtime._page_generation = 0
-    runtime._reference_generations = {}
-    runtime._selector_primary_links = {}
-    runtime._last_observed_url = ""
-    return runtime
+from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import make_runtime, run as _run
 
 
 def _interactive(selector: str, text: str) -> dict:
@@ -297,88 +281,6 @@ def test_stale_ax_target_and_ambiguous_probe_target_cannot_refresh() -> None:
         state.refresh_target_id(stale_probe_target)
 
 
-def test_runtime_refreshes_stale_batch_target_id_without_accepting_stale_ref() -> None:
-    runtime = _make_bare_runtime()
-    old = _interactive("#sort-price", "Price")
-    old.update({"kind": "sort_tab", "region": "main"})
-    runtime._ensure_page_state().register_interactives({"elements": [old]})
-
-    runtime._ensure_page_state().advance(url="https://example.test/results?sort=price")
-    current = _interactive("#sort-price", "Price")
-    current.update({"kind": "sort_tab", "region": "main"})
-    runtime._ensure_page_state().register_interactives({"elements": [current]})
-
-    refreshed, recovered_from = _run(
-        runtime._refresh_stale_batch_targets(
-            [{"op": "click", "target_id": old["target_id"]}],
-            generation_id="g0",
-        )
-    )
-    assert refreshed[0]["target_id"] == current["target_id"]
-    assert recovered_from == "g0"
-
-    with pytest.raises(ValueError, match="AX refs cannot be refreshed"):
-        _run(
-            runtime._refresh_stale_batch_targets(
-                [{"op": "click", "ref": "e1"}],
-                generation_id="g0",
-            )
-        )
-
-
-def test_stale_generation_condition_waits_refresh_without_reusing_action_selector() -> None:
-    runtime = _make_bare_runtime()
-    runtime._ensure_page_state().advance(url="https://example.test/results")
-
-    refreshed, recovered_from = _run(
-        runtime._refresh_stale_batch_targets(
-            [
-                {"op": "wait_for_url", "url_contains": "/results"},
-                {"op": "wait_for_selector", "selector": ".result-card"},
-            ],
-            generation_id="g0",
-        )
-    )
-    assert len(refreshed) == 2
-    assert recovered_from == "g0"
-
-    with pytest.raises(ValueError, match="Model-authored selectors cannot refresh"):
-        _run(
-            runtime._refresh_stale_batch_targets(
-                [{"op": "extract_text", "selector": ".result-card", "field": "title"}],
-                generation_id="g0",
-            )
-        )
-
-
-def test_runtime_rebinds_stale_probe_target_when_dom_identity_is_still_unique() -> None:
-    runtime = _make_bare_runtime()
-    old = _interactive("#sort-price", "Price")
-    runtime._ensure_page_state().register_interactives({"elements": [old]})
-    runtime._ensure_page_state().advance(url="https://example.test/results")
-    runtime.ensure_runtime_ready = AsyncMock()
-    runtime._call_playwright_run_code_unsafe = AsyncMock(
-        return_value=('{"ok":true,"match_count":1,"visible":true,"enabled":true,"actionable":true}')
-    )
-
-    refreshed, recovered_from = _run(
-        runtime._refresh_stale_batch_targets(
-            [{"op": "click", "target_id": old["target_id"]}],
-            generation_id="g0",
-        )
-    )
-
-    refreshed_id = refreshed[0]["target_id"]
-    assert recovered_from == "g0"
-    assert refreshed_id != old["target_id"]
-    rebound = runtime._ensure_page_state().resolve_target(
-        generation_id="g1",
-        target_id=refreshed_id,
-    )
-    assert rebound is not None
-    assert rebound.selector == "#sort-price"
-
-
 def test_compact_page_state_never_exposes_probe_local_id_or_ax_ref() -> None:
     state = BrowserPageState(page_id="page-compact")
     payload = {"elements": [_interactive("#query", "Search")]}
@@ -391,29 +293,6 @@ def test_compact_page_state_never_exposes_probe_local_id_or_ax_ref() -> None:
     assert "local-probe-id" not in serialized
     assert "f1e2" not in serialized
     assert "target_id" in serialized
-
-
-def test_failed_stale_target_refresh_returns_current_generation_and_candidates() -> None:
-    runtime = _make_bare_runtime()
-    old = _interactive("#sort-price", "Price")
-    runtime._ensure_page_state().register_interactives({"elements": [old]})
-    runtime._ensure_page_state().advance(url="https://example.test/results")
-    runtime.ensure_runtime_ready = AsyncMock()
-    runtime._call_playwright_run_code_unsafe = AsyncMock(
-        return_value=('{"ok":true,"match_count":2,"visible":true,"enabled":true,"actionable":true}')
-    )
-
-    result = _run(
-        runtime.batch_interact(
-            steps=[{"op": "click", "target_id": old["target_id"]}],
-            generation_id="g0",
-        )
-    )
-
-    assert result["ok"] is False
-    assert result["current_generation"] == "g1"
-    assert result["generation_id"] == "g1"
-    assert result["candidate_fresh_targets"] == []
 
 
 def test_replacing_ax_snapshot_preserves_present_refs_and_removes_missing_refs() -> None:
@@ -444,216 +323,11 @@ def test_replacing_ax_snapshot_preserves_present_refs_and_removes_missing_refs()
         state.resolve_target(generation_id="g0", ref="e2")
 
 
-def test_runtime_resolves_probe_target_without_model_generated_css() -> None:
-    runtime = _make_bare_runtime()
-    payload = {
-        "elements": [
-            _interactive("#from", "From"),
-            _interactive("[role=option]:nth-of-type(2)", "Shanghai (SHA)"),
-        ]
-    }
-    runtime._ensure_page_state().register_interactives(payload)
-
-    resolved = _run(
-        runtime._resolve_batch_steps(
-            [
-                {
-                    "op": "autocomplete",
-                    "target_id": payload["elements"][0]["target_id"],
-                    "value": "Shanghai",
-                    "option_target_id": payload["elements"][1]["target_id"],
-                },
-                {"op": "press", "key": "Enter"},
-            ],
-            generation_id="g0",
-        )
-    )
-
-    assert resolved[0]["selector"] == "#from"
-    assert resolved[0]["option_selector"] == "[role=option]:nth-of-type(2)"
-    assert "target_id" not in resolved[0]
-    assert "option_target_id" not in resolved[0]
-
-
-def test_runtime_rejects_guessed_action_selector_before_executor() -> None:
-    runtime = _make_bare_runtime()
-
-    with pytest.raises(ValueError, match="Unregistered action selector"):
-        _run(
-            runtime._resolve_batch_steps(
-                [
-                    {"op": "click", "selector": "ul:nth-of-type(1) > li:nth-of-type(2)"},
-                    {"op": "press", "key": "Enter"},
-                ],
-                generation_id="g0",
-            )
-        )
-
-
-def test_runtime_rejects_invalid_batch_before_starting_browser() -> None:
-    runtime = _make_bare_runtime()
-    runtime.ensure_runtime_ready = AsyncMock()
-
-    result = _run(
-        runtime.batch_interact(
-            steps=[{"selector": "#missing-op"}],
-            generation_id="g0",
-        )
-    )
-
-    assert result["ok"] is False
-    assert result["status"] == "failed"
-    assert "unsupported" in result["error"]
-    runtime.ensure_runtime_ready.assert_not_awaited()
-
-
-def test_runtime_rewrites_single_target_click_to_official_primitive() -> None:
-    runtime = _make_bare_runtime()
-    runtime.ensure_runtime_ready = AsyncMock()
-    payload = {
-        "url": "https://example.test/search",
-        "title": "Search",
-        "elements": [_interactive("#search", "Search")],
-    }
-    runtime._ensure_page_state().register_interactives(payload)
-    click_tool = SimpleNamespace(
-        invoke=AsyncMock(
-            return_value=SimpleNamespace(
-                success=True,
-                error=None,
-                data={"page": {"url": payload["url"], "title": payload["title"]}},
-            )
-        )
-    )
-    runtime._get_playwright_mcp_tool = AsyncMock(return_value=click_tool)
-
-    result = _run(
-        runtime.batch_interact(
-            steps=[{"op": "click", "target_id": payload["elements"][0]["target_id"]}],
-            generation_id="g0",
-        )
-    )
-
-    assert result["ok"] is True
-    assert result["execution_mode"] == "primitive"
-    assert result["metrics"]["tool_name"] == "browser_click"
-    assert result["steps"] == [
-        {
-            "index": 0,
-            "op": "click",
-            "ok": True,
-            "status": "completed",
-            "elapsed_ms": result["steps"][0]["elapsed_ms"],
-        }
-    ]
-    assert "_runtime_page" not in result
-    runtime._get_playwright_mcp_tool.assert_awaited_once_with("browser_click")
-    assert click_tool.invoke.await_args.args[0]["target"] == "#search"
-
-
-def test_runtime_rewrites_single_card_click_to_direct_navigation() -> None:
-    runtime = _make_bare_runtime()
-    runtime.ensure_runtime_ready = AsyncMock()
-    payload = {
-        "cards": [
-            {
-                "title": "Result",
-                "primary_link": "https://example.test/result/1",
-                "selector_hint": ".card",
-                "selector_hint_validated": True,
-                "match_count": 1,
-                "visible": True,
-                "enabled": True,
-                "actionable": True,
-                "clickable": True,
-            }
-        ]
-    }
-    runtime._ensure_page_state().register_cards(payload)
-    navigate_tool = SimpleNamespace(invoke=AsyncMock(return_value=SimpleNamespace(success=True, error=None, data={})))
-    runtime._get_playwright_mcp_tool = AsyncMock(return_value=navigate_tool)
-
-    result = _run(
-        runtime.batch_interact(
-            steps=[{"op": "click", "target_id": payload["cards"][0]["target_id"]}],
-            generation_id="g0",
-        )
-    )
-
-    assert result["ok"] is True
-    assert result["metrics"]["tool_name"] == "browser_navigate"
-    assert result["generation_id"] == "g1"
-    assert result["page_state"]["url"] == "https://example.test/result/1"
-    navigate_tool.invoke.assert_awaited_once_with({"url": "https://example.test/result/1"})
-
-
-def test_single_step_uses_compact_rpc_fallback_when_primitive_is_unavailable() -> None:
-    runtime = _make_bare_runtime()
-    runtime._get_playwright_mcp_tool = AsyncMock(side_effect=RuntimeError("not registered"))
-
-    result = _run(runtime._run_single_batch_primitive({"op": "click", "selector": "#search"}))
-
-    assert result is None
-
-
-def test_runtime_materializes_native_ax_ref_inside_runtime() -> None:
-    runtime = _make_bare_runtime()
-    runtime._ensure_page_state().register_ax_snapshot('- tab "Sales" [ref=f1e174]')
-    evaluate_tool = SimpleNamespace(invoke=AsyncMock(return_value=SimpleNamespace(success=True, error=None)))
-    runtime._get_playwright_mcp_tool = AsyncMock(return_value=evaluate_tool)
-
-    resolved = _run(
-        runtime._resolve_batch_steps(
-            [
-                {"op": "click", "ref": "f1e174"},
-                {"op": "press", "key": "Enter"},
-            ],
-            generation_id="g0",
-        )
-    )
-
-    assert resolved[0]["selector"].startswith('[data-openjiuwen-target-id="t_g0_')
-    assert "ref" not in resolved[0]
-    runtime._get_playwright_mcp_tool.assert_awaited_once_with("browser_evaluate")
-    assert evaluate_tool.invoke.await_args.args[0]["target"] == "f1e174"
-
-
-def test_card_primary_link_target_requires_direct_navigation() -> None:
-    runtime = _make_bare_runtime()
-    payload = {
-        "cards": [
-            {
-                "title": "Result",
-                "primary_link": "https://example.test/result/1",
-                "selector_hint": ".card:nth-of-type(1)",
-                "selector_hint_validated": True,
-                "match_count": 1,
-                "visible": True,
-                "enabled": True,
-                "actionable": True,
-                "clickable": True,
-            }
-        ]
-    }
-    runtime._ensure_page_state().register_cards(payload)
-
-    with pytest.raises(ValueError, match="browser_navigate"):
-        _run(
-            runtime._resolve_batch_steps(
-                [
-                    {"op": "click", "target_id": payload["cards"][0]["target_id"]},
-                    {"op": "press", "key": "Enter"},
-                ],
-                generation_id="g0",
-            )
-        )
-
-
 def test_runtime_reset_invalidates_current_page_state() -> None:
-    runtime = _make_bare_runtime()
+    runtime = make_runtime()
     runtime._service = SimpleNamespace(reset=AsyncMock())
     payload = {"elements": [_interactive("#query", "Search")]}
-    runtime._ensure_page_state().register_interactives(payload)
+    runtime.page_state.register_interactives(payload)
     target_id = payload["elements"][0]["target_id"]
 
     _run(runtime.reset())
@@ -661,14 +335,14 @@ def test_runtime_reset_invalidates_current_page_state() -> None:
     runtime._service.reset.assert_awaited_once()
     assert runtime.generation_id == "g1"
     with pytest.raises(ValueError, match="Stale target_id"):
-        runtime._ensure_page_state().resolve_target(
+        runtime.page_state.resolve_target(
             generation_id="g1",
             target_id=target_id,
         )
 
 
 def test_runtime_reset_failure_still_invalidates_current_page_state() -> None:
-    runtime = _make_bare_runtime()
+    runtime = make_runtime()
     runtime._service = SimpleNamespace(reset=AsyncMock(side_effect=RuntimeError("reset failed")))
 
     with pytest.raises(RuntimeError, match="reset failed"):

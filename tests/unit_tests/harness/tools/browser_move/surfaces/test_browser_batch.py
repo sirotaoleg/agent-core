@@ -29,6 +29,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     RunScript,
     SwitchContext,
     TypeText,
+    Unsupported,
     Wait,
 )
 from openjiuwen.harness.tools.browser_move.contract.refs import REF_KINDS
@@ -36,7 +37,6 @@ from openjiuwen.harness.tools.browser_move.contract.testing.fake import DEFAULT_
 from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
 from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime_tools import BrowserBatchInteractTool
 from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import ToolContext, ToolFlags, command_record
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     FieldKind,
@@ -82,7 +82,7 @@ def _context(*answers: Any, observations: Iterable[Observation] = ()) -> ToolCon
     page_state = BrowserPageState()
     alive = SimpleNamespace(is_alive=lambda device: True)
     session = DriverSession(
-        DriverAssembly(stack=driver, device=None, provisioner=alive, surface_settings=None), page_state, MESSAGES
+        DriverAssembly(stack=driver, device=None, provisioner=alive), page_state, MESSAGES
     )
     return ToolContext(session, page_state, BrowserRenderer(), INFO, BrowserSettings(), False)
 
@@ -143,10 +143,6 @@ def _marked(action: Any) -> bool:
 
 
 # --- card, flags, step contract --------------------------------------------------------------------------------------
-
-
-def test_the_batch_card_equals_the_old_tool_card() -> None:
-    assert BatchTool(_context()).card.tool_info() == BrowserBatchInteractTool(None).card.tool_info()
 
 
 def test_the_batch_declares_that_it_acts() -> None:
@@ -436,6 +432,51 @@ def test_realistic_booking_steps_run_as_commands_one_after_another() -> None:
     assert payload["extracted"] == {"field_8": "John"}
 
 
+def test_a_type_step_types_the_value_at_once_on_a_driver_without_key_by_key_typing() -> None:
+    refused = Unsupported("BrowserUseDriver cannot type slowly", dispatched=False)
+    context = _context(refused, DONE)
+    [target_id] = _targets(context, "#save")
+
+    payload = _batch(context, [{"op": "type", "target_id": target_id, "value": "John"}]).data["content"]
+
+    assert payload["ok"] is True, payload
+    assert _commands(context) == [
+        TypeText(Locator("#save", None, "g0"), "John", slowly=True),
+        TypeText(Locator("#save", None, "g0"), "John", clear=False),
+    ]
+
+
+def test_a_type_step_in_a_loop_falls_back_after_clearing_the_field() -> None:
+    refused = Unsupported("BrowserUseDriver cannot type slowly", dispatched=False)
+    context = _context(_located(READY, READY), _located(), DONE, DONE, refused, DONE, _located(), DONE)
+    ids = _targets(context, "#first", "#second")
+
+    payload = _batch(
+        context,
+        [{"op": "type", "target_id": ids[0], "value": "John"}, {"op": "fill", "target_id": ids[1], "value": "Doe"}],
+    ).data["content"]
+
+    assert payload["ok"] is True, payload
+    typed = [command for command in _commands(context) if isinstance(command, TypeText)]
+    assert [(command.text, command.clear, command.slowly) for command in typed] == [
+        ("", True, False),
+        ("John", False, True),
+        ("John", False, False),
+        ("Doe", True, False),
+    ]
+
+
+def test_a_refusal_the_driver_dispatched_is_not_retried() -> None:
+    context = _context(Unsupported("typing broke half way", dispatched=True))
+    [target_id] = _targets(context, "#save")
+
+    payload = _batch(context, [{"op": "type", "target_id": target_id, "value": "John"}]).data["content"]
+
+    assert payload["ok"] is False
+    assert "typing broke half way" in payload["error"]
+    assert len(_commands(context)) == 1
+
+
 def test_batch_click_retries_only_transient_actionability_failures_within_same_timeout() -> None:
     intercepted = ActionIntercepted("<div class=overlay> intercepts pointer events", by="div.overlay")
     context = _context(
@@ -594,8 +635,8 @@ def test_batch_interact_returns_compact_condition_observations() -> None:
 
 
 def test_a_condition_waits_until_its_value_holds_still_for_the_stable_time() -> None:
-    answers = [_condition(True, "A"), _condition(True, "B"), _condition(True, "B"), _condition(True, "B")]
-    context = _context(*answers)
+    # The clock decides whether the loop polls three or four times, and the sleep step sends a Wait of its own.
+    context = _context(_condition(True, "A"), *[_condition(True, "B")] * 5)
 
     payload = _batch(
         context,

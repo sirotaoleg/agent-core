@@ -15,6 +15,7 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging im
     browser_agent_log_info,
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import CoreSettings
+from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import CommandRecord, command_record
 
 _STATUS_KEY = "_browser_subagent_status_logging"
 _TEXT_VALUE_KEYS = {
@@ -59,8 +60,13 @@ _BATCH_TARGET_KEYS = {
 }
 _TOOL_HISTORY_LIMIT = 20
 _URL_RE = re.compile(r"https?://[^\s)>'\"]+", re.IGNORECASE)
+_BATCH_TOOL = "browser_batch_interact"
+_SCRIPT_COMMAND = "RunScript"
+_NAVIGATE_COMMAND = "Navigate"
+_OBSERVE_COMMAND = "Observe"
 
 MetadataProvider = Callable[[], Mapping[str, Any]]
+CommandOf = Callable[[str, Any], str]
 
 
 def is_browser_subagent_status_log_enabled(settings: CoreSettings | None = None) -> bool:
@@ -119,10 +125,12 @@ def _sanitize_url(value: Any) -> str:
 
 
 def _extract_text_payload(value: Any) -> Any:
-    """Unwrap common ToolOutput/MCP text result shapes."""
+    """Unwrap common ToolOutput result shapes; a command tool's output yields its rendered content."""
     if hasattr(value, "success") and hasattr(value, "data"):
         data = getattr(value, "data", None)
         error = getattr(value, "error", None)
+        if isinstance(data, Mapping) and "command" in data:
+            return data.get("content")
         if data is not None:
             return data
         if error:
@@ -154,10 +162,12 @@ class BrowserSubagentStatusLogger:
         logger: Optional[logging.Logger] = None,
         metadata_provider: Optional[MetadataProvider] = None,
         marker: str = "[BROWSER_SUBAGENT]",
+        command_of: Optional[CommandOf] = None,
     ) -> None:
         self._logger = logger or logging.getLogger(__name__)
         self._metadata_provider = metadata_provider
         self._marker = marker
+        self._command_of = command_of
         self._runs: dict[str, dict[str, Any]] = {}
 
     def before_invoke(self, ctx: Any) -> None:
@@ -286,15 +296,16 @@ class BrowserSubagentStatusLogger:
         state.setdefault("tool_starts", {})[tool_key] = time.monotonic()
         state.setdefault("tool_counts", Counter())[tool_name] += 1
         tool_args = _mapping_get(inputs, "tool_args", None)
+        command = self._command_of(tool_name, tool_args) if self._command_of is not None else ""
 
         previous_batch = state.get("last_failed_batch")
-        if previous_batch and tool_name and tool_name != "browser_batch_interact":
+        if previous_batch and tool_name and tool_name != _BATCH_TOOL:
             state["fallback_count"] = int(state.get("fallback_count", 0)) + 1
             self._emit(
                 "fallback_detected",
                 ctx,
                 {
-                    "from_tool": "browser_batch_interact",
+                    "from_tool": _BATCH_TOOL,
                     "to_tool": _safe_str(tool_name, 180),
                     "previous_batch": previous_batch,
                 },
@@ -308,7 +319,8 @@ class BrowserSubagentStatusLogger:
                 "iteration": state.get("model_calls", 0),
                 "tool_index": state.get("tool_calls", 0),
                 "tool_name": _safe_str(tool_name, 180),
-                "args_summary": self.summarize_args(str(tool_name), tool_args),
+                "command": command,
+                "args_summary": self.summarize_args(str(tool_name), tool_args, command),
             },
         )
 
@@ -326,7 +338,7 @@ class BrowserSubagentStatusLogger:
         tool_result = _mapping_get(inputs, "tool_result", None)
         result_summary = self.summarize_result(str(tool_name), tool_result)
         self._record_tool_history(state, tool_name, elapsed_ms, result_summary)
-        if tool_name == "browser_batch_interact":
+        if tool_name == _BATCH_TOOL:
             self._accumulate_batch_result(state, result_summary)
         self._emit(
             "tool_end",
@@ -362,17 +374,17 @@ class BrowserSubagentStatusLogger:
             },
         )
 
-    def summarize_args(self, tool_name: str, tool_args: Any) -> dict[str, Any]:
+    def summarize_args(self, tool_name: str, tool_args: Any, command: str = "") -> dict[str, Any]:
+        """Shape the arguments by the command they decode to; the batch helper by its own name."""
         parsed = _parse_jsonish(tool_args)
         if isinstance(parsed, list):
             return {"kind": "list", "length": len(parsed)}
         if not isinstance(parsed, Mapping):
             return {"kind": type(parsed).__name__, "repr_length": len(str(parsed))}
 
-        lowered_name = (tool_name or "").lower()
-        if lowered_name == "browser_batch_interact":
+        if tool_name == _BATCH_TOOL:
             return self._summarize_batch_args(parsed)
-        if "run_code" in lowered_name or "evaluate" in lowered_name:
+        if command == _SCRIPT_COMMAND:
             code = parsed.get("code") or parsed.get("script") or parsed.get("expression") or parsed.get("function")
             return {
                 "kind": "code_execution",
@@ -380,7 +392,7 @@ class BrowserSubagentStatusLogger:
                 "code_length": len(str(code or "")),
                 "code_redacted": True,
             }
-        if "navigate" in lowered_name:
+        if command == _NAVIGATE_COMMAND:
             return {
                 "kind": "navigation",
                 "url": _sanitize_url(parsed.get("url") or parsed.get("href") or parsed.get("target")),
@@ -406,17 +418,20 @@ class BrowserSubagentStatusLogger:
         return summary
 
     def summarize_result(self, tool_name: str, tool_result: Any) -> dict[str, Any]:
+        """Shape the result by its command record; a helper's payload by its shape, the batch by its name."""
         payload = _extract_text_payload(tool_result)
         parsed = _parse_jsonish(payload)
         if isinstance(parsed, str):
             parsed_json = _parse_jsonish(parsed)
             if not isinstance(parsed_json, str):
                 parsed = parsed_json
-        lowered_name = (tool_name or "").lower()
         if isinstance(parsed, Mapping):
-            if lowered_name == "browser_batch_interact":
+            if tool_name == _BATCH_TOOL:
                 return self._summarize_batch_result(parsed)
-            return self._summarize_mapping_result(parsed, tool_name=lowered_name)
+            return self._summarize_mapping_result(parsed)
+        record = command_record(tool_result)
+        if record is not None:
+            return self._summarize_command_result(record, parsed)
         if isinstance(parsed, list):
             return {"kind": "list", "length": len(parsed)}
         text = "" if parsed is None else str(parsed)
@@ -430,7 +445,7 @@ class BrowserSubagentStatusLogger:
     def _summarize_batch_args(args: Mapping[str, Any]) -> dict[str, Any]:
         steps = args.get("steps")
         if not isinstance(steps, list):
-            return {"kind": "browser_batch_interact", "step_count": 0, "keys": sorted(str(key) for key in args.keys())}
+            return {"kind": _BATCH_TOOL, "step_count": 0, "keys": sorted(str(key) for key in args.keys())}
         op_counts = Counter(str(step.get("op") or "<missing>") for step in steps if isinstance(step, Mapping))
         step_summaries = []
         for idx, step in enumerate(steps[:10]):
@@ -447,7 +462,7 @@ class BrowserSubagentStatusLogger:
                 }
             )
         return {
-            "kind": "browser_batch_interact",
+            "kind": _BATCH_TOOL,
             "step_count": len(steps),
             "op_counts": dict(sorted(op_counts.items())),
             "steps_preview": step_summaries,
@@ -494,7 +509,28 @@ class BrowserSubagentStatusLogger:
         return summary
 
     @staticmethod
-    def _summarize_mapping_result(result: Mapping[str, Any], *, tool_name: str = "") -> dict[str, Any]:
+    def _summarize_command_result(record: CommandRecord, content: Any) -> dict[str, Any]:
+        command = record.command.__name__
+        summary: dict[str, Any] = {
+            "kind": "command",
+            "command": command,
+            "effect": record.effect.value,
+            "ok": record.ok,
+            "dispatched": record.dispatched,
+        }
+        if record.error:
+            summary["error"] = record.error
+        if isinstance(content, str):
+            summary["result_length"] = len(content)
+            if command == _OBSERVE_COMMAND:
+                summary["line_count"] = content.count("\n") + 1 if content else 0
+        if command == _SCRIPT_COMMAND and record.value is not None:
+            summary["result_kind"] = type(record.value).__name__
+            summary["result_length"] = len(str(record.value))
+        return summary
+
+    @staticmethod
+    def _summarize_mapping_result(result: Mapping[str, Any]) -> dict[str, Any]:
         keys = sorted(str(key) for key in result.keys())
         summary: dict[str, Any] = {"kind": "dict", "keys": keys}
         if "ok" in result:
@@ -515,21 +551,6 @@ class BrowserSubagentStatusLogger:
                 "url": _sanitize_url(page.get("url")),
                 "title": _safe_str(page.get("title"), 160),
             }
-        if "screenshot" in tool_name or "take_screenshot" in tool_name:
-            for key in ("path", "filename", "file", "name"):
-                if result.get(key):
-                    summary["file"] = _safe_str(result.get(key), 180)
-                    break
-        if "snapshot" in tool_name:
-            snapshot_text = result.get("snapshot") or result.get("text") or result.get("result")
-            if isinstance(snapshot_text, str):
-                summary["result_length"] = len(snapshot_text)
-                summary["line_count"] = snapshot_text.count("\n") + 1 if snapshot_text else 0
-        if "run_code" in tool_name or "evaluate" in tool_name:
-            payload = result.get("result") or result.get("data") or result.get("text")
-            if payload is not None:
-                summary["result_kind"] = type(payload).__name__
-                summary["result_length"] = len(str(payload))
         return summary
 
     @staticmethod

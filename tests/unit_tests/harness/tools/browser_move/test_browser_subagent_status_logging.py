@@ -11,6 +11,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from openjiuwen.core.foundation.tool.schema import ToolOutput
+from openjiuwen.harness.tools.browser_move.contract import ActionResult, ContextRef, Observation, Observe
+from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import CommandRecord
+from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
+
 _STATUS_LOGGING_PATH = (
     Path(__file__).resolve().parents[5]
     / "openjiuwen"
@@ -110,12 +115,14 @@ def test_status_logger_redacts_type_and_code_args() -> None:
     logger = BrowserSubagentStatusLogger()
 
     type_summary = logger.summarize_args(
-        "mcp_playwright-official_browser_type",
+        "browser_type",
         {"selector": "#email", "text": "alice@example.com"},
+        "TypeText",
     )
     code_summary = logger.summarize_args(
-        "mcp_playwright-official_browser_run_code_unsafe",
-        {"code": "console.log(document.body.innerText)"},
+        "browser_evaluate",
+        {"function": "console.log(document.body.innerText)"},
+        "RunScript",
     )
 
     assert type_summary["redacted_values"]["text"]["redacted"] is True
@@ -123,6 +130,58 @@ def test_status_logger_redacts_type_and_code_args() -> None:
     assert code_summary["code_redacted"] is True
     assert code_summary["code_length"] == len("console.log(document.body.innerText)")
     assert "document.body" not in str(code_summary)
+
+
+def test_status_logger_summarizes_a_command_result_by_its_record() -> None:
+    logger = BrowserSubagentStatusLogger()
+    observation = Observation(
+        context=ContextRef("0", "tab", "Home"),
+        elements=(),
+        native_text="",
+        surface=BrowserContext(url="https://example.test/results?q=secret", title="Results"),
+    )
+    result = ActionResult(ok=True, generation="g1", observation=observation, surface=observation.surface)
+    record = CommandRecord.of(Observe(), result, value=observation.elements)
+    output = ToolOutput(success=True, data={"content": "### Page\n- Page URL: x\n- a\n- b", "command": record})
+
+    summary = logger.summarize_result("browser_snapshot", output)
+
+    assert summary["kind"] == "command"
+    assert summary["command"] == "Observe"
+    assert summary["effect"] == "read"
+    assert summary["ok"] is True
+    assert summary["line_count"] == 4
+    assert "secret" not in str(summary)
+
+
+def test_status_logger_keys_the_args_summary_by_the_decoded_command(caplog: Any) -> None:
+    backing_logger = logging.getLogger("browser-status-command-test")
+    decoded: list[tuple[str, Any]] = []
+
+    def command_of(tool_name: str, tool_args: Any) -> str:
+        decoded.append((tool_name, tool_args))
+        return "Navigate"
+
+    status_logger = BrowserSubagentStatusLogger(logger=backing_logger, command_of=command_of)
+
+    class FakeCall:
+        id = "tool-call-nav"
+        name = "browser_navigate"
+
+    ctx = SimpleNamespace(
+        inputs=SimpleNamespace(tool_call=FakeCall(), tool_name="browser_navigate", tool_args={"url": "https://a.test/p?token=1"}),
+        extra={},
+        session=None,
+        agent=object(),
+    )
+
+    with caplog.at_level(logging.INFO, logger="browser-status-command-test"):
+        status_logger.before_tool_call(ctx)
+
+    assert decoded == [("browser_navigate", {"url": "https://a.test/p?token=1"})]
+    assert '"command": "Navigate"' in caplog.text
+    assert '"kind": "navigation"' in caplog.text
+    assert "token=1" not in caplog.text
 
 
 def test_status_logger_emits_backend_marker(caplog: Any) -> None:
@@ -285,23 +344,6 @@ def test_status_logger_partial_batch_result_flags() -> None:
     assert summary["all_steps_ok"] is False
     assert summary["had_step_errors"] is True
     assert summary["steps_failed"] == 1
-
-
-def test_batch_interact_select_option_accepts_values_alias() -> None:
-    action_path = (
-        Path(__file__).resolve().parents[5]
-        / "openjiuwen"
-        / "harness"
-        / "tools"
-        / "browser_move"
-        / "controllers"
-        / "action.py"
-    )
-    source = action_path.read_text(encoding="utf-8")
-
-    assert "step.values !== undefined" in source
-    assert "target.selectOption(values" in source
-    assert "requires value, values," in source
 
 
 def test_react_agent_redacts_browser_tool_arguments() -> None:
