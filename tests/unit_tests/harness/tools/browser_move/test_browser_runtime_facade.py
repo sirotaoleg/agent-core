@@ -15,12 +15,15 @@ from openjiuwen.core.foundation.llm.model_clients.openai_model_client import Ope
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext
 from openjiuwen.harness import deep_agent as deep_agent_module
+from openjiuwen.harness.rails.context_engineer import ContextProcessorRail
 from openjiuwen.harness.subagents import browser_agent as browser_agent_module
+from openjiuwen.harness.subagents.browser_agent import DEFAULT_BROWSER_AGENT_SYSTEM_PROMPT
 from openjiuwen.harness.tools.browser_move.contract import ConnectionLost
 from openjiuwen.harness.tools.browser_move.playwright_runtime import runtime as runtime_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime import service as service_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails, CoreSettings
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime, BrowserRuntimeRail
+from openjiuwen.harness.tools.browser_move.playwright_runtime.service import WORKER_LANGUAGE
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     DEVICE,
     MCP_PREFIX,
@@ -35,7 +38,7 @@ from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
 HELPERS = {"browser_probe_interactives", "browser_probe_cards", "browser_batch_interact"}
 
 
-def _runtime(core: CoreSettings | None = None) -> BrowserAgentRuntime:
+def _runtime(core: CoreSettings | None = None, language: str | None = "en") -> BrowserAgentRuntime:
     return BrowserAgentRuntime(
         provider="openai",
         api_key="test-key",
@@ -50,7 +53,7 @@ def _runtime(core: CoreSettings | None = None) -> BrowserAgentRuntime:
         ),
         guardrails=BrowserRunGuardrails(max_steps=7, max_failures=1, timeout_s=30, retry_once=False),
         core_settings=core,
-        language="en",
+        **({} if language is None else {"language": language}),
     )
 
 
@@ -184,6 +187,24 @@ def test_on_browser_use_the_facade_runs_the_main_agent_on_itself_and_maps_the_an
         "status": "completed",
         "progress": {"status": "completed", "completed_steps": ["read the heading"]},
     }
+
+
+def test_the_direct_agent_speaks_the_workers_language_when_the_facade_got_none() -> None:
+    runtime = _runtime(CoreSettings(driver="browser_use"), language=None)
+    built: list[dict[str, Any]] = []
+
+    def capture(**kwargs: Any) -> MagicMock:
+        built.append(kwargs)
+        return MagicMock()
+
+    with patch.object(browser_agent_module, "create_deep_agent", side_effect=capture):
+        run(runtime.ensure_started())
+
+    (agent,) = built
+    context_rail = next(rail for rail in agent["rails"] if isinstance(rail, ContextProcessorRail))
+    working_context = dict(context_rail._user_processors)["BrowserWorkingContextProcessor"]
+    assert (agent["language"], working_context.language) == (WORKER_LANGUAGE, "en")
+    assert agent["system_prompt"] == DEFAULT_BROWSER_AGENT_SYSTEM_PROMPT["en"]
 
 
 def test_the_direct_agent_runs_outside_the_browser_log_context_like_the_worker() -> None:
