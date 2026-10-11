@@ -17,6 +17,7 @@ from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     BATCH,
     MCP_PREFIX,
     PROBE,
+    UNKNOWN,
     command_kind,
     make_runtime,
     mcp_fake_driver,
@@ -116,7 +117,9 @@ def test_progress_alias_with_complete_typed_evidence_remains_completed():
     ctx = AgentCallbackContext(agent=MagicMock(), session=session, inputs=ToolCallInputs(
         tool_name="browser_progress", tool_args={"status": "completed"},
     ))
-    _run(BrowserRuntimeRail(MagicMock(spec=BrowserAgentRuntime)).before_tool_call(ctx))
+    runtime = MagicMock(spec=BrowserAgentRuntime)
+    runtime.tool_kind.return_value = UNKNOWN
+    _run(BrowserRuntimeRail(runtime).before_tool_call(ctx))
     result = ctx.consume_force_finish().result["authoritative_browser_result"]
     assert result["status"] == "completed"
     assert result["evidence"][0]["value"] == "Weather"

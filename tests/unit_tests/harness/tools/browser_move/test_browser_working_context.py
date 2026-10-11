@@ -441,6 +441,29 @@ def test_one_step_content_is_injected_exactly_once() -> None:
     assert raw_message.metadata[BROWSER_TOOL_MEMORY_METADATA_KEY]
 
 
+def test_tool_errors_are_retained_from_the_message_metadata() -> None:
+    config = BrowserWorkingContextProcessorConfig()
+    rail = BrowserWorkingContextRail(config)
+    session = _FakeSession()
+    context = _FakeContext(session)
+    tool_call = _tool_call("call-failed", "browser_probe_cards")
+    response = _response(_memory("Read the cards"), tool_calls=[tool_call])
+    model_ctx = _model_ctx(rail, session, context, response)
+    _run(rail.after_model_call(model_ctx))
+    context.messages.append(
+        ToolMessage(
+            content='{"ok": false, "error": "no cards on this page", "cards": []}',
+            tool_call_id="call-failed",
+            metadata={"success": False, "effect": "read"},
+        )
+    )
+
+    _run(rail.after_react_iteration(model_ctx))
+
+    state = BrowserWorkingContextStore(config).load(session)
+    assert state.recent_steps[0].tool_memories[0].error == "no cards on this page"
+
+
 def test_tool_errors_are_retained_without_explicit_tool_metadata() -> None:
     config = BrowserWorkingContextProcessorConfig()
     rail = BrowserWorkingContextRail(config)

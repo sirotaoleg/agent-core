@@ -2081,7 +2081,13 @@ def test_after_tool_call_records_browser_tool_progress() -> None:
     assert task_state["recent_actions"][0]["action_class"] == "navigation"
     assert task_state["last_page"] == {"url": "https://example.com", "title": "Example"}
     assert session.get_state("__browser_subagent_progress_state__")["recent_tool_steps"]
-    assert ctx.inputs.tool_msg.metadata == {"success": True, "executed": True, "state_changed": True, "denied": False}
+    assert ctx.inputs.tool_msg.metadata == {
+        "success": True,
+        "executed": True,
+        "state_changed": True,
+        "denied": False,
+        "effect": "navigate",
+    }
 
 
 def test_after_tool_call_does_not_advance_state_for_string_mcp_error() -> None:
@@ -2138,7 +2144,8 @@ def test_after_tool_call_copies_the_record_metadata_onto_the_tool_message() -> N
 
     _run(BrowserRuntimeRail(runtime).after_tool_call(ctx))
 
-    assert ctx.inputs.tool_msg.metadata == command_record(output).message_metadata | {"denied": False}
+    expected = command_record(output).message_metadata | {"denied": False, "effect": "read"}
+    assert ctx.inputs.tool_msg.metadata == expected
 
 
 def test_after_tool_call_treats_a_policy_denial_as_not_executed() -> None:

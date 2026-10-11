@@ -156,8 +156,8 @@ def test_completed_parallel_calls_form_one_refresh_action_group() -> None:
                 ToolCall(id="probe", type="function", name="browser_probe_cards", arguments="{}"),
             ],
         ),
-        ToolMessage(tool_call_id="probe", content="{}"),
-        ToolMessage(tool_call_id="mutate", content="{}"),
+        ToolMessage(tool_call_id="probe", content="{}", metadata={"effect": "read"}),
+        ToolMessage(tool_call_id="mutate", content="{}", metadata={"effect": "navigate"}),
     ]
 
     group_id, refresh_ids = BrowserStateContextProcessor._completed_refresh_action_group(messages)
@@ -205,8 +205,8 @@ async def test_parallel_read_probes_merge_once_without_full_browser_capture() ->
                     ),
                 ],
             ),
-            ToolMessage(tool_call_id="controls", content="{}"),
-            ToolMessage(tool_call_id="cards", content="{}"),
+            ToolMessage(tool_call_id="controls", content="{}", metadata={"effect": "read"}),
+            ToolMessage(tool_call_id="cards", content="{}", metadata={"effect": "read"}),
         ]
     )
 
@@ -242,7 +242,7 @@ async def test_denied_browser_action_reuses_cached_state_without_observation() -
             ToolMessage(
                 tool_call_id="denied",
                 content='{"ok":false,"executed":false,"state_changed":false,"denied":true}',
-                metadata={"executed": False, "state_changed": False, "denied": True},
+                metadata={"effect": "script", "executed": False, "state_changed": False, "denied": True},
             ),
         ]
     )
@@ -281,7 +281,7 @@ async def test_failed_mutation_without_state_change_reuses_cached_state() -> Non
             ToolMessage(
                 tool_call_id="failed",
                 content='{"ok":false,"executed":true,"state_changed":false}',
-                metadata={"success": False, "executed": True, "state_changed": False},
+                metadata={"effect": "act", "success": False, "executed": True, "state_changed": False},
             ),
         ]
     )
@@ -323,7 +323,7 @@ async def test_ambiguous_timeout_refreshes_state_once_for_reconciliation() -> No
             ToolMessage(
                 tool_call_id="timeout",
                 content='{"ok":false,"executed":true,"state_changed":true,"timed_out":true}',
-                metadata={"success": False, "executed": True, "state_changed": True},
+                metadata={"effect": "act", "success": False, "executed": True, "state_changed": True},
             ),
         ]
     )
@@ -339,8 +339,7 @@ async def _add_completed_browser_action(
     context,
     *,
     call_id: str,
-    tool_name: str = "browser_evaluate",
-    arguments: str = '{"function": "() => window.scrollTo(0, document.body.scrollHeight)"}',
+    effect: str = "script",
 ) -> None:
     await context.add_messages(
         [
@@ -350,12 +349,12 @@ async def _add_completed_browser_action(
                     ToolCall(
                         id=call_id,
                         type="function",
-                        name=tool_name,
-                        arguments=arguments,
+                        name="browser_evaluate",
+                        arguments='{"function": "() => window.scrollTo(0, document.body.scrollHeight)"}',
                     )
                 ],
             ),
-            ToolMessage(content="completed", tool_call_id=call_id),
+            ToolMessage(content="completed", tool_call_id=call_id, metadata={"effect": effect}),
         ]
     )
 
@@ -392,61 +391,10 @@ async def test_processor_reuses_cached_browser_state_without_navigation() -> Non
     provider.capture_browser_state.assert_awaited_with()
 
 
-@pytest.mark.parametrize(
-    "tool_name",
-    [
-        "browser_batch_interact",
-        "browser_click",
-        "browser_close",
-        "browser_custom_action",
-        "browser_drag",
-        "browser_drop",
-        "browser_evaluate",
-        "browser_file_upload",
-        "browser_fill_form",
-        "browser_handle_dialog",
-        "browser_hover",
-        "browser_navigate",
-        "browser_navigate_back",
-        "browser_press_key",
-        "browser_run_code",
-        "browser_run_code_unsafe",
-        "browser_select_option",
-        "browser_tabs",
-        "browser_type",
-        "browser_wait_for",
-        "browser_mouse_click_xy",
-        "browser_mouse_down",
-        "browser_mouse_drag_xy",
-        "browser_mouse_move_xy",
-        "browser_mouse_up",
-        "browser_mouse_wheel",
-        "browser_annotate",
-        "browser_hide_highlight",
-        "browser_highlight",
-        "browser_resize",
-        "browser_resume",
-        "browser_video_hide_actions",
-        "browser_video_show_actions",
-        "browser_network_state_set",
-        "browser_route",
-        "browser_unroute",
-        "browser_cookie_clear",
-        "browser_cookie_delete",
-        "browser_cookie_set",
-        "browser_localstorage_clear",
-        "browser_localstorage_delete",
-        "browser_localstorage_set",
-        "browser_sessionstorage_clear",
-        "browser_sessionstorage_delete",
-        "browser_sessionstorage_set",
-        "browser_set_storage_state",
-        "mcp_playwright-official_browser_navigate",
-    ],
-)
+@pytest.mark.parametrize("effect", ["act", "navigate", "script"])
 @pytest.mark.asyncio
 async def test_context_engine_refreshes_state_after_completed_mutating_tool(
-    tool_name: str,
+    effect: str,
 ) -> None:
     provider = AsyncMock()
     provider.capture_browser_state.side_effect = [
@@ -476,7 +424,7 @@ async def test_context_engine_refreshes_state_after_completed_mutating_tool(
                 ToolCall(
                     id="mutating-call",
                     type="function",
-                    name=tool_name,
+                    name="browser_click",
                     arguments="{}",
                 )
             ],
@@ -485,7 +433,9 @@ async def test_context_engine_refreshes_state_after_completed_mutating_tool(
     pending_window = await context.get_context_window()
     assert provider.capture_browser_state.await_count == 1
 
-    await context.add_messages(ToolMessage(content="completed", tool_call_id="mutating-call"))
+    await context.add_messages(
+        ToolMessage(content="completed", tool_call_id="mutating-call", metadata={"effect": effect})
+    )
     refreshed_window = await context.get_context_window()
     reused_window = await context.get_context_window()
 
@@ -604,12 +554,7 @@ async def test_no_progress_count_increments_and_resets_after_changed_state() -> 
     first_unchanged_window = await context.get_context_window()
     await _add_completed_browser_action(context, call_id="unchanged-call-2")
     second_unchanged_window = await context.get_context_window()
-    await _add_completed_browser_action(
-        context,
-        call_id="changed-call",
-        tool_name="browser_click",
-        arguments='{"ref": "e7"}',
-    )
+    await _add_completed_browser_action(context, call_id="changed-call", effect="act")
     changed_window = await context.get_context_window()
 
     first_unchanged_state = _window_message(first_unchanged_window, "current_browser_state")
