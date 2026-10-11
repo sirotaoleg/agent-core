@@ -367,9 +367,7 @@ def create_browser_agent(
         language=resolved_language,
         runtime_projection_only=True,
     )
-    injected_rails: List[AgentRail] = [
-        BrowserRuntimeRail(browser_backend),
-    ]
+    injected_rails: List[AgentRail] = [BrowserRuntimeRail(browser_backend), *browser_backend.core_rails()]
 
     browser_state_processor = (
         "BrowserStateContextProcessor",

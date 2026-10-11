@@ -27,6 +27,7 @@ from .config import (
     read_demo_inputs,
 )
 from .runtime import BrowserAgentRuntime
+from .topology import WORKER_LANGUAGE
 
 
 async def main() -> None:
@@ -53,7 +54,7 @@ async def main() -> None:
 
     try:
         await runtime.ensure_started()
-        tools = runtime.agent_parts(image_support=False).tools
+        tools = runtime.agent_parts(image_support=False, language=WORKER_LANGUAGE).tools
 
         logger.info("=" * 72)
         logger.info("Playwright Browser Runtime")

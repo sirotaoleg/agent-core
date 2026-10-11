@@ -94,8 +94,7 @@ _RUNTIME_HEALTH_PARAMS: Dict[str, Any] = {
 class BrowserCancelTool(Tool):
     """Cancel an in-progress browser task."""
 
-    def __init__(self, runtime: "BrowserAgentRuntime", language: str = "cn") -> None:
-        del language
+    def __init__(self, runtime: "BrowserAgentRuntime") -> None:
         super().__init__(
             ToolCard(
                 name="browser_cancel_run",
@@ -129,8 +128,7 @@ class BrowserCancelTool(Tool):
 class BrowserClearCancelTool(Tool):
     """Clear a cancellation flag for a browser task."""
 
-    def __init__(self, runtime: "BrowserAgentRuntime", language: str = "cn") -> None:
-        del language
+    def __init__(self, runtime: "BrowserAgentRuntime") -> None:
         super().__init__(
             ToolCard(
                 name="browser_clear_cancel",
@@ -164,8 +162,7 @@ class BrowserClearCancelTool(Tool):
 class BrowserCustomActionTool(Tool):
     """Run a registered custom browser action."""
 
-    def __init__(self, runtime: "BrowserAgentRuntime", language: str = "cn") -> None:
-        del language
+    def __init__(self, runtime: "BrowserAgentRuntime") -> None:
         super().__init__(
             ToolCard(
                 name="browser_custom_action",
@@ -205,8 +202,7 @@ class BrowserCustomActionTool(Tool):
 class BrowserListActionsTool(Tool):
     """List available custom browser actions."""
 
-    def __init__(self, runtime: "BrowserAgentRuntime", language: str = "cn") -> None:
-        del language
+    def __init__(self, runtime: "BrowserAgentRuntime") -> None:
         super().__init__(
             ToolCard(
                 name="browser_list_custom_actions",
@@ -233,8 +229,7 @@ class BrowserListActionsTool(Tool):
 class BrowserRuntimeHealthTool(Tool):
     """Return runtime readiness and heartbeat metadata."""
 
-    def __init__(self, runtime: "BrowserAgentRuntime", language: str = "cn") -> None:
-        del language
+    def __init__(self, runtime: "BrowserAgentRuntime") -> None:
         super().__init__(
             ToolCard(
                 name="browser_runtime_health",

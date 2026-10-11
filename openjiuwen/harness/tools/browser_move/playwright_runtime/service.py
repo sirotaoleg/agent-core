@@ -14,7 +14,7 @@ import shutil
 import uuid
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional
 
 from openjiuwen.core.common.logging import logger
 from openjiuwen.core.foundation.store.base_kv_store import BaseKVStore
@@ -24,7 +24,7 @@ from openjiuwen.core.runner import Runner
 from openjiuwen.core.single_agent.agents.react_agent import ReActAgent
 
 from ..utils.parsing import extract_json_object
-from .agents import build_worker, refresh_browser_worker_system_prompt, worker_driver_name
+from .agents import refresh_browser_worker_system_prompt, worker_driver_name
 from .assembly import open_session
 from .browser_capabilities import CORE_BROWSER_TOOL_NAMES, capabilities_of
 from .config import (
@@ -286,6 +286,10 @@ class BrowserService:
     def allowed_tool_names(self) -> Optional[tuple[str, ...]]:
         """Return the normalized task-scoped Playwright tool allowlist."""
         return self._allowed_tool_names
+
+    @property
+    def screenshot_subdir(self) -> str:
+        return self._screenshot_subdir
 
     @property
     def artifacts_subdir(self) -> str:
@@ -639,28 +643,9 @@ class BrowserService:
         self.started = True
         BROWSER_SERVICE_REGISTRY.activate_binding(self._lifecycle_identity, self)
 
-    async def ensure_started(self) -> None:
-        await self.ensure_runtime_ready()
-        if self._browser_agent is not None:
-            return
-        self._browser_agent = await build_worker(
-            self._session,
-            self._session.assembly.surface,
-            provider=self.provider,
-            api_key=self.api_key,
-            api_base=self.api_base,
-            model_name=self.model_name,
-            max_steps=self.guardrails.max_steps,
-            core=self.core,
-            capabilities=self._capabilities,
-            tool_result_observer=self._observe_worker_tool_result,
-            screenshot_subdir=self._screenshot_subdir,
-            artifacts_subdir=self._artifacts_subdir,
-        )
-
     async def _restart(self) -> None:
-        """Tear down and reinitialize the browser service (e.g. after stdio subprocess dies)."""
-        await self._restart_browser_runtime()
+        """Release the browser after a dead transport; the next task's worker call rebuilds on a fresh session."""
+        await self.reset()
 
     def _clear_task_scoped_state(self) -> None:
         """Drop observers and task/session state without touching the profile."""
@@ -757,10 +742,6 @@ class BrowserService:
             if await cls._reset_lifecycle_resources(identity):
                 reset_count += 1
         return reset_count
-
-    async def _restart_browser_runtime(self) -> None:
-        await self.reset()
-        await self.ensure_started()
 
     @staticmethod
     def _build_worker_conversation_id(session_id: str, request_id: str) -> str:
@@ -903,7 +884,7 @@ class BrowserService:
         if progress_state.status == "unknown":
             progress_state.status = "partial"
 
-    async def _observe_worker_tool_result(self, tool_name: str, tool_result: Any) -> None:
+    async def observe_worker_tool_result(self, tool_name: str, tool_result: Any) -> None:
         session_id = _ctx_observer_session_id.get().strip()
         if not session_id:
             return
@@ -1138,10 +1119,10 @@ class BrowserService:
             return
         self._progress_by_session.pop(sid, None)
 
-    async def _run_task_once(self, task: str, session_id: str, request_id: str) -> Dict[str, Any]:
-        if self._browser_agent is None:
-            raise RuntimeError("BrowserService is not started")
-
+    async def _run_task_once(
+        self, task: str, session_id: str, request_id: str, worker: Callable[[], Awaitable[ReActAgent]]
+    ) -> Dict[str, Any]:
+        agent = await worker()
         task_prompt = (
             f"Session id: {session_id}\n"
             f"Request id: {request_id}\n"
@@ -1150,9 +1131,9 @@ class BrowserService:
             f"Task:\n{task}\n\n"
             "Perform the task in the current logical browser session/tab for this session id."
         )
-        if isinstance(self._browser_agent, ReActAgent):
+        if isinstance(agent, ReActAgent):
             await refresh_browser_worker_system_prompt(
-                self._browser_agent,
+                agent,
                 screenshot_subdir=self._screenshot_subdir,
                 artifacts_subdir=self._artifacts_subdir,
                 driver_name=worker_driver_name(self._session.assembly.stack.info),
@@ -1162,7 +1143,7 @@ class BrowserService:
         token_request = _ctx_observer_request_id.set(request_id)
         try:
             result = await Runner.run_agent(
-                self._browser_agent,
+                agent,
                 {"query": task_prompt, "conversation_id": worker_conversation_id, "request_id": request_id},
             )
         finally:
@@ -1182,7 +1163,7 @@ class BrowserService:
         output_lower = output_str.lower()
         max_iterations_reached = MAX_ITERATION_MESSAGE.lower() in output_lower
         reason = recovery_reason(output_str, max_iterations_reached=max_iterations_reached)
-        recovery_text = await self._recover_final_answer(worker_conversation_id, request_id, reason)
+        recovery_text = await self._recover_final_answer(agent, worker_conversation_id, request_id, reason)
         recovered = extract_json_object(recovery_text)
         logger.info(
             "Browser worker final-answer recovery: reason=%s produced_json=%s output_chars=%d",
@@ -1232,12 +1213,14 @@ class BrowserService:
         )
         return parsed
 
-    async def _recover_final_answer(self, worker_conversation_id: str, request_id: str, reason: str) -> str:
+    async def _recover_final_answer(
+        self, agent: ReActAgent, worker_conversation_id: str, request_id: str, reason: str
+    ) -> str:
         """Ask the worker once, without tools and in the same conversation, for its final JSON."""
         try:
             with final_answer_recovery():
                 result = await Runner.run_agent(
-                    self._browser_agent,
+                    agent,
                     {
                         "query": recovery_message(reason),
                         "conversation_id": worker_conversation_id,
@@ -1250,8 +1233,10 @@ class BrowserService:
         output = result.get("output") if isinstance(result, dict) else result
         return str(output) if output is not None else ""
 
-    async def run_task_once(self, task: str, session_id: str, request_id: str) -> Dict[str, Any]:
-        return await self._run_task_once(task=task, session_id=session_id, request_id=request_id)
+    async def run_task_once(
+        self, task: str, session_id: str, request_id: str, *, worker: Callable[[], Awaitable[ReActAgent]]
+    ) -> Dict[str, Any]:
+        return await self._run_task_once(task=task, session_id=session_id, request_id=request_id, worker=worker)
 
     @staticmethod
     def _is_max_iteration_result(parsed: Dict[str, Any]) -> bool:
@@ -1356,8 +1341,10 @@ class BrowserService:
         session_id: Optional[str] = None,
         request_id: Optional[str] = None,
         timeout_s: Optional[int] = None,
+        *,
+        worker: Callable[[], Awaitable[ReActAgent]],
     ) -> Dict[str, Any]:
-        await self.ensure_started()
+        """Run ``task`` on the worker ``worker`` returns; after a restart the next call to it rebuilds the worker."""
         sid = self.session_new(session_id)
         rid = (request_id or "").strip() or uuid.uuid4().hex
         effective_timeout = int(timeout_s) if (timeout_s is not None and timeout_s > 0) else self.guardrails.timeout_s
@@ -1406,7 +1393,7 @@ class BrowserService:
                         break
                     try:
                         parsed = await asyncio.wait_for(
-                            self.run_task_once(task=next_task, session_id=sid, request_id=rid),
+                            self.run_task_once(task=next_task, session_id=sid, request_id=rid, worker=worker),
                             timeout=remaining_timeout,
                         )
                         attempt_idx += 1

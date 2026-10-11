@@ -13,10 +13,9 @@ import hashlib
 import json
 import re
 import time
-import uuid
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Mapping, Optional
 from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urlsplit
 from weakref import WeakSet
 
@@ -28,13 +27,14 @@ from openjiuwen.core.common.logging.browser_context import (
     set_browser_agent_log_context,
 )
 from openjiuwen.core.common.utils.schema_utils import SchemaUtils
-from openjiuwen.core.foundation.llm import Model, ModelClientConfig, ModelRequestConfig, ToolMessage
+from openjiuwen.core.foundation.llm import ToolMessage
 from openjiuwen.core.foundation.llm.model_clients.openai_model_client import OpenAIModelClient
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.runner import Runner
 from openjiuwen.core.runner.callback.errors import AbortError
 from openjiuwen.core.single_agent.prompts.builder import PromptSection
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext, AgentRail
+from openjiuwen.harness.prompts import resolve_language
 from openjiuwen.harness.rails._multimodal import (
     should_enable_read_image_multimodal,
 )
@@ -51,14 +51,13 @@ from ..contract import (
     PolicyDenied,
     RunScript,
     Scroll,
+    SurfaceBundle,
     SwitchContext,
 )
-from ..contract.registry import default_topology
 from ..controllers import ActionController, BaseController
 from ..surfaces.browser.helpers import CUSTOM_ACTIONS, activate_page, page_metadata, probe_for_policy
 from ..utils.parsing import extract_json_object
-from .agents import WORKER_LANGUAGE
-from .assembly import AgentParts, build_agent_parts, core_rails
+from .assembly import AgentParts, assemble_surface, build_agent_parts, core_rails
 from .browser_capabilities import CORE_BROWSER_TOOL_NAMES, capabilities_of
 from .browser_logging import (
     browser_agent_log_info,
@@ -76,6 +75,7 @@ from .config import (
     CoreSettings,
     SurfaceSettings,
     browser_surface_settings,
+    process_environ,
 )
 from .driver_session import DriverSession
 from .page_state import CARD_EVIDENCE_FIELDS, BrowserPageState, BrowserTarget
@@ -84,6 +84,7 @@ from .service import MAX_ITERATION_MESSAGE, BrowserService, BrowserTaskProgressS
 from .site_profiles import infer_profile_evidence_entity
 from .status_logging import BrowserSubagentStatusLogger, is_browser_subagent_status_log_enabled
 from .tool_factory import Builder, CommandRecord, ToolContext, ToolFlags, command_record
+from .topology import Topology, topology_for
 
 _BROWSER_PROGRESS_STATE_KEY = "__browser_subagent_progress_state__"
 _BROWSER_PROGRESS_TASK_KEY = "__browser_subagent_last_task__"
@@ -452,11 +453,12 @@ class BrowserAgentRuntime:
         self._browser_custom_action_tool = None
         self._browser_list_actions_tool = None
         self._controller: BaseController = ActionController()
-        self._agent: Any = None
+        self._topology: Topology | None = None
+        self._surface: SurfaceBundle | None = None
         self._dedicated_log = True
         self._session: DriverSession | None = None
         self._context: ToolContext | None = None
-        self._parts: dict[bool, AgentParts] = {}
+        self._parts: dict[tuple[bool, str], AgentParts] = {}
         self._builders: dict[str, Builder] = {}
         self._fields: dict[str, frozenset[str]] = {}
         self._flags: dict[str, ToolFlags] = {}
@@ -476,6 +478,35 @@ class BrowserAgentRuntime:
     def dedicated_log(self) -> bool:
         """Whether the agent's invokes write to the dedicated log file; the runner's own agent uses the process log."""
         return self._dedicated_log
+
+    @dedicated_log.setter
+    def dedicated_log(self, value: bool) -> None:
+        self._dedicated_log = value
+
+    @property
+    def workspace(self) -> Any:
+        return self._workspace
+
+    @property
+    def capabilities(self) -> tuple[str, ...]:
+        return self._capabilities
+
+    @property
+    def surface(self) -> SurfaceBundle:
+        """The surface bundle of the core settings; built once, before any driver, for the rails' profile constants."""
+        if self._surface is None:
+            self._surface = assemble_surface(
+                self._service.core, process_environ(), instance=self._instance, settings=self._browser_settings
+            )
+        return self._surface
+
+    @property
+    def builders(self) -> Mapping[str, Builder]:
+        """The decoders of every factory tool built so far; the policy rail reads it live."""
+        return self._builders
+
+    def core_rails(self) -> tuple[AgentRail, ...]:
+        return core_rails(self.surface.profile, self._builders, self._page_state)
 
     @property
     def controller(self) -> BaseController:
@@ -576,6 +607,17 @@ class BrowserAgentRuntime:
             helper=True,
         )
 
+    def register_runtime_tools(self) -> None:
+        """The two custom-action tools in ``Runner.resource_mgr``, once."""
+        if self._browser_custom_action_tool is not None:
+            return
+        from .runtime_tools import BrowserCustomActionTool, BrowserListActionsTool
+
+        self._browser_custom_action_tool = BrowserCustomActionTool(self)
+        self._browser_list_actions_tool = BrowserListActionsTool(self)
+        self._register_runtime_tool(self._browser_custom_action_tool, tool_name="browser_custom_action")
+        self._register_runtime_tool(self._browser_list_actions_tool, tool_name="browser_list_custom_actions")
+
     @staticmethod
     def _register_runtime_tool(tool_obj: Any, *, tool_name: str) -> None:
         add_result = Runner.resource_mgr.add_tool(tool_obj, tag="agent.playwright.runtime")
@@ -628,9 +670,9 @@ class BrowserAgentRuntime:
         for name, handler in CUSTOM_ACTIONS.items():
             self._controller.register_action(name, functools.partial(handler, self._context))
 
-    def agent_parts(self, *, image_support: bool) -> AgentParts:
-        """The factory tools and rails of the started session, built once per image-support value."""
-        parts = self._parts.get(image_support)
+    def agent_parts(self, *, image_support: bool, language: str) -> AgentParts:
+        """The factory tools of the started session in the receiving agent's language, once per key."""
+        parts = self._parts.get((image_support, language))
         if parts is None:
             session = self._session
             parts = build_agent_parts(
@@ -638,13 +680,11 @@ class BrowserAgentRuntime:
                 session.assembly.surface,
                 capabilities=self._capabilities,
                 image_support=image_support,
-                language=self._language,
+                language=language,
                 workspace=self._workspace,
             )
+            self._parts[(image_support, language)] = parts
             self._builders.update(parts.builders)
-            rails = core_rails(session.assembly.surface.profile, self._builders, self._page_state)
-            parts = dataclasses.replace(parts, rails=(*rails, *parts.rails))
-            self._parts[image_support] = parts
             for tool in parts.tools:
                 flags = getattr(tool, "flags", None)
                 if isinstance(flags, ToolFlags):
@@ -824,49 +864,10 @@ class BrowserAgentRuntime:
         self._service.acquire_task_binding()
 
     async def ensure_started(self) -> None:
-        """The runner's agent: the worker when the topology delegates, the main agent on this facade otherwise."""
-        core = self._service.core
-        if (core.topology or default_topology(core.driver)) == "direct":
-            if self._agent is None:
-                self._agent = self._direct_agent()
-            return
-        await self._service.ensure_started()
-        await self.ensure_runtime_ready()
-        if self._browser_custom_action_tool is not None:
-            return
-        from .runtime_tools import BrowserCustomActionTool, BrowserListActionsTool
-
-        self._browser_custom_action_tool = BrowserCustomActionTool(self, language=WORKER_LANGUAGE)
-        self._browser_list_actions_tool = BrowserListActionsTool(self, language=WORKER_LANGUAGE)
-        self._register_runtime_tool(self._browser_custom_action_tool, tool_name="browser_custom_action")
-        self._register_runtime_tool(self._browser_list_actions_tool, tool_name="browser_list_custom_actions")
-
-    def _direct_agent(self) -> Any:
-        from openjiuwen.harness.subagents.browser_agent import create_browser_agent
-
-        # The runner reads model usage from the process log, where the worker's model calls land.
-        self._dedicated_log = False
-        core = self._service.core
-        model = Model(
-            model_client_config=ModelClientConfig(
-                client_provider=self._service.provider,
-                api_key=self._service.api_key,
-                api_base=self._service.api_base,
-                verify_ssl=False,
-            ),
-            model_config=ModelRequestConfig(
-                model=self._service.model_name, temperature=core.worker_temperature, top_p=core.worker_top_p
-            ),
-        )
-        return create_browser_agent(
-            model,
-            language=WORKER_LANGUAGE,
-            temperature=core.worker_temperature,
-            max_iterations=self._service.guardrails.max_steps,
-            workspace=self._workspace,
-            browser_capabilities=list(self._capabilities),
-            runtime=self,
-        )
+        """The runner's agent, by the topology: the worker through the service, or the main agent on this facade."""
+        if self._topology is None:
+            self._topology = topology_for(self._service.core)
+        await self._topology.start(self)
 
     async def run_browser_task(
         self,
@@ -876,31 +877,9 @@ class BrowserAgentRuntime:
         timeout_s: Optional[int] = None,
     ) -> Dict[str, Any]:
         await self.ensure_started()
-        if self._agent is not None:
-            return await self._run_direct(task, session_id, request_id, timeout_s)
-        return await self._service.run_task(
-            task=task,
-            session_id=session_id,
-            request_id=request_id,
-            timeout_s=timeout_s,
-        )
+        return await self._topology.run(self, task, session_id, request_id, timeout_s)
 
-    async def _run_direct(
-        self, task: str, session_id: Optional[str], request_id: Optional[str], timeout_s: Optional[int]
-    ) -> Dict[str, Any]:
-        sid = self._service.session_new(session_id)
-        rid = (request_id or "").strip() or uuid.uuid4().hex
-        timeout = int(timeout_s) if timeout_s else self._service.guardrails.timeout_s
-        inputs = {"query": task, "conversation_id": f"{sid}:direct:{rid}:{uuid.uuid4().hex}", "request_id": rid}
-        try:
-            result = await asyncio.wait_for(Runner.run_agent(self._agent, inputs), timeout=float(timeout))
-        except TimeoutError:
-            return self._direct_answer(sid, rid, error=f"task_timeout: exceeded {timeout}s")
-        except Exception as exc:  # noqa: BLE001 - the runner reads the error from the answer
-            return self._direct_answer(sid, rid, error=str(exc) or repr(exc))
-        return self._direct_answer(sid, rid, result=result if isinstance(result, dict) else {"output": result})
-
-    def _direct_answer(
+    def main_agent_answer(
         self, session_id: str, request_id: str, *, result: Optional[Dict[str, Any]] = None, error: Optional[str] = None
     ) -> Dict[str, Any]:
         """The runner's answer dict from a main-agent run: the page from the page state, status when reported."""
@@ -980,7 +959,9 @@ class BrowserAgentRuntime:
         finally:
             _ACTIVE_BROWSER_RUNTIMES.discard(self)
             self._drop_session()
-            self._agent = None
+            if self._topology is not None:
+                self._topology.drop()
+                self._topology = None
             # The next asyncio.run loop must not find clients bound to this one (the runner runs one loop per task).
             await OpenAIModelClient.aclose()
 
@@ -1088,7 +1069,6 @@ class BrowserRuntimeRail(AgentRail):
     def __init__(self, runtime: BrowserAgentRuntime) -> None:
         super().__init__()
         self._runtime = runtime
-        self._railed: WeakSet[Any] = WeakSet()
         self._status_logger = (
             BrowserSubagentStatusLogger(command_of=self._command_of)
             if is_browser_subagent_status_log_enabled(runtime.core_settings)
@@ -1678,14 +1658,11 @@ class BrowserRuntimeRail(AgentRail):
         ability_manager = getattr(agent, "ability_manager", None)
         if ability_manager is None:
             return
-        parts = self._runtime.agent_parts(image_support=self._image_input_supported(agent))
+        parts = self._runtime.agent_parts(
+            image_support=self._image_input_supported(agent), language=resolve_language(agent.deep_config.language)
+        )
         for tool in parts.tools:
             ability_manager.add_ability(tool.card, tool)
-        if agent in self._railed:
-            return
-        for rail in parts.rails:
-            await agent.register_rail(rail)
-        self._railed.add(agent)
 
     @staticmethod
     def _tool_action_group(ctx: AgentCallbackContext) -> Dict[str, Any]:
