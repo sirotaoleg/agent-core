@@ -631,25 +631,6 @@
           }
         },
         {
-          "description": "Press mouse down",
-          "name": "mcp_playwright-official_browser_mouse_down",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "button": {
-                "description": "Button to press, defaults to left",
-                "enum": [
-                  "left",
-                  "right",
-                  "middle"
-                ],
-                "type": "string"
-              }
-            },
-            "type": "object"
-          }
-        },
-        {
           "description": "Drag left mouse button to a given position",
           "name": "mcp_playwright-official_browser_mouse_drag_xy",
           "parameters": {
@@ -700,25 +681,6 @@
               "x",
               "y"
             ],
-            "type": "object"
-          }
-        },
-        {
-          "description": "Press mouse up",
-          "name": "mcp_playwright-official_browser_mouse_up",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "button": {
-                "description": "Button to press, defaults to left",
-                "enum": [
-                  "left",
-                  "right",
-                  "middle"
-                ],
-                "type": "string"
-              }
-            },
             "type": "object"
           }
         },

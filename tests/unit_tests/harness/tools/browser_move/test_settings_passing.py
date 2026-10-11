@@ -31,7 +31,11 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     runtime_server_child_env,
     runtime_server_environ,
 )
+from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
+from openjiuwen.harness.tools.browser_move.playwright_runtime import runtime as runtime_module
+from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
 from openjiuwen.harness.tools.browser_move.playwright_runtime.status_logging import (
     is_browser_subagent_status_log_enabled,
 )
@@ -192,9 +196,17 @@ class TestEntryPoints:
         )
         controller = MagicMock()
         runtime._controller = controller
-        with patch.object(runtime.service, "ensure_runtime_ready", AsyncMock()):
+        bundle = create_browser_surface({})
+        device = ProvisionedDevice(kind="chrome", endpoint="", extras={})
+        assembly = DriverAssembly(FakeDriver(), device, None, bundle.settings, surface=bundle)
+        with patch.object(runtime_module, "assemble_driver", AsyncMock(return_value=assembly)):
             asyncio.run(runtime.ensure_runtime_ready())
         controller.register_builtin_actions.assert_called_once_with(upload_root=Path.cwd())
+        assert sorted(name for name, _ in (c.args for c in controller.register_action.call_args_list)) == [
+            "browser_drag_and_drop",
+            "browser_get_element_coordinates",
+            "browser_set_input_files",
+        ]
 
 
 class TestValuesFromSettings:

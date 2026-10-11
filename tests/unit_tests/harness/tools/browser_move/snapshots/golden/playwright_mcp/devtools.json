@@ -382,15 +382,6 @@
           }
         },
         {
-          "description": "Open the Playwright Dashboard in annotation mode for the current page and wait for the user to draw annotations. Returns the annotated screenshot, ARIA snapshot, and the list of annotations.",
-          "name": "mcp_playwright-official_browser_annotate",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {},
-            "type": "object"
-          }
-        },
-        {
           "description": "Perform click on a web page",
           "name": "mcp_playwright-official_browser_click",
           "parameters": {
@@ -612,49 +603,6 @@
           }
         },
         {
-          "description": "Remove a highlight overlay previously added for the element.",
-          "name": "mcp_playwright-official_browser_hide_highlight",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "element": {
-                "description": "Human-readable element description used when adding the highlight; must match the value passed to browser_highlight.",
-                "type": "string"
-              },
-              "target": {
-                "description": "Exact target element reference from the page snapshot, or a unique element selector",
-                "type": "string"
-              }
-            },
-            "type": "object"
-          }
-        },
-        {
-          "description": "Show a persistent highlight overlay around the element on the page.",
-          "name": "mcp_playwright-official_browser_highlight",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "element": {
-                "description": "Human-readable element description used to obtain permission to interact with the element",
-                "type": "string"
-              },
-              "style": {
-                "description": "Additional inline CSS applied to the highlight overlay, e.g. \"outline: 2px dashed red\".",
-                "type": "string"
-              },
-              "target": {
-                "description": "Exact target element reference from the page snapshot, or a unique element selector",
-                "type": "string"
-              }
-            },
-            "required": [
-              "target"
-            ],
-            "type": "object"
-          }
-        },
-        {
           "description": "Hover over element on page",
           "name": "mcp_playwright-official_browser_hover",
           "parameters": {
@@ -719,46 +667,6 @@
           }
         },
         {
-          "description": "Resize the browser window",
-          "name": "mcp_playwright-official_browser_resize",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "height": {
-                "description": "Height of the browser window",
-                "type": "number"
-              },
-              "width": {
-                "description": "Width of the browser window",
-                "type": "number"
-              }
-            },
-            "required": [
-              "width",
-              "height"
-            ],
-            "type": "object"
-          }
-        },
-        {
-          "description": "Resume script execution after it was paused. When called with step set to true, execution will pause again before the next action.",
-          "name": "mcp_playwright-official_browser_resume",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "location": {
-                "description": "Pause execution at a specific <file>:<line>, e.g. \"example.spec.ts:42\".",
-                "type": "string"
-              },
-              "step": {
-                "description": "When true, execution will pause again before the next action, allowing step-by-step debugging.",
-                "type": "boolean"
-              }
-            },
-            "type": "object"
-          }
-        },
-        {
           "description": "Select an option in a dropdown",
           "name": "mcp_playwright-official_browser_select_option",
           "parameters": {
@@ -810,66 +718,6 @@
                 "type": "string"
               }
             },
-            "type": "object"
-          }
-        },
-        {
-          "description": "Start trace recording",
-          "name": "mcp_playwright-official_browser_start_tracing",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {},
-            "type": "object"
-          }
-        },
-        {
-          "description": "Start video recording",
-          "name": "mcp_playwright-official_browser_start_video",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "filename": {
-                "description": "Filename to save the video.",
-                "type": "string"
-              },
-              "size": {
-                "additionalProperties": false,
-                "description": "Video size",
-                "properties": {
-                  "height": {
-                    "description": "Video height",
-                    "type": "number"
-                  },
-                  "width": {
-                    "description": "Video width",
-                    "type": "number"
-                  }
-                },
-                "required": [
-                  "width",
-                  "height"
-                ],
-                "type": "object"
-              }
-            },
-            "type": "object"
-          }
-        },
-        {
-          "description": "Stop trace recording",
-          "name": "mcp_playwright-official_browser_stop_tracing",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {},
-            "type": "object"
-          }
-        },
-        {
-          "description": "Stop video recording",
-          "name": "mcp_playwright-official_browser_stop_video",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {},
             "type": "object"
           }
         },
@@ -935,74 +783,6 @@
               "target",
               "text"
             ],
-            "type": "object"
-          }
-        },
-        {
-          "description": "Add a chapter marker to the video recording. Shows a full-screen chapter card with blurred backdrop.",
-          "name": "mcp_playwright-official_browser_video_chapter",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "description": {
-                "description": "Chapter description",
-                "type": "string"
-              },
-              "duration": {
-                "description": "Duration in milliseconds to show the chapter card",
-                "type": "number"
-              },
-              "title": {
-                "description": "Chapter title",
-                "type": "string"
-              }
-            },
-            "required": [
-              "title"
-            ],
-            "type": "object"
-          }
-        },
-        {
-          "description": "Stop annotating actions performed on the page.",
-          "name": "mcp_playwright-official_browser_video_hide_actions",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {},
-            "type": "object"
-          }
-        },
-        {
-          "description": "Annotate subsequent actions performed on the page with a callout that names the action and highlights the target element. Useful while video recording or screencasting.",
-          "name": "mcp_playwright-official_browser_video_show_actions",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "cursor": {
-                "description": "Cursor decoration for pointer actions. \"pointer\" (default) animates a mouse pointer from the previous action point to the next one; \"none\" disables the cursor decoration.",
-                "enum": [
-                  "none",
-                  "pointer"
-                ],
-                "type": "string"
-              },
-              "duration": {
-                "description": "How long each action annotation stays on screen, in milliseconds. Defaults to 500.",
-                "type": "number"
-              },
-              "position": {
-                "description": "Where to place the action title relative to the page. Defaults to top-right.",
-                "enum": [
-                  "top-left",
-                  "top",
-                  "top-right",
-                  "bottom-left",
-                  "bottom",
-                  "bottom-right"
-                ],
-                "type": "string"
-              }
-            },
             "type": "object"
           }
         }

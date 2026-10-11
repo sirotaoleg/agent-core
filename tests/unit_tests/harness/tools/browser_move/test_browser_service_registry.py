@@ -15,6 +15,8 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserInstanceConfig,
     BrowserRunGuardrails,
 )
+from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
+from openjiuwen.harness.tools.browser_move.playwright_runtime.semantic_state import SemanticStateTracker
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import (
     BrowserAgentRuntime,
@@ -121,8 +123,11 @@ async def test_release_last_task_binding_preserves_managed_chrome() -> None:
 async def test_explicit_reset_stops_browser_preserved_after_task_release() -> None:
     runtime = object.__new__(BrowserAgentRuntime)
     runtime._service = _make_service()
-    runtime._page_generation = 0
-    runtime._last_observed_url = "https://example.com"
+    runtime._page_state = BrowserPageState()
+    runtime._semantic_state_tracker = SemanticStateTracker()
+    runtime._session = None
+    runtime._context = None
+    runtime._parts = {}
     runtime._service.acquire_task_binding()
     runtime._service.started = True
     runtime._service._heartbeat_task = None

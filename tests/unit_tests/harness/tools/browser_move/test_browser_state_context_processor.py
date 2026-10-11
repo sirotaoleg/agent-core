@@ -30,9 +30,16 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_working_co
 from openjiuwen.harness.tools.browser_move.playwright_runtime.probes import (
     build_browser_state_metadata_js,
 )
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import (
-    BrowserAgentRuntime,
+from openjiuwen.harness.tools.browser_move.contract import ActionResult, DriverError
+from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
+    element,
+    make_runtime,
+    mcp_fake_driver,
+    observation,
+    result,
 )
+
+_METADATA = {"page_position": {"scroll_y": 200, "pixels_below": 800}, "semantic_state": {}}
 
 
 def _state(url: str) -> dict:
@@ -707,74 +714,57 @@ async def test_processor_load_state_resets_page_change_baseline() -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_combines_snapshot_with_page_metadata() -> None:
-    runtime = object.__new__(BrowserAgentRuntime)
-    runtime._page_generation = 0
-    runtime._reference_generations = {}
-    runtime._selector_primary_links = {}
-    runtime._last_observed_url = ""
-    runtime.ensure_runtime_ready = AsyncMock()
-    runtime._call_playwright_tool = AsyncMock(return_value='- link "Docs" [ref=e3]')
-    runtime._call_playwright_run_code_unsafe = AsyncMock(
-        return_value={
-            "ok": True,
-            "url": "https://example.test/docs",
-            "title": "Docs",
-            "tabs": [
-                {
-                    "index": 0,
-                    "current": True,
-                    "url": "https://example.test/docs",
-                    "title": "Docs",
-                }
-            ],
-            "page_position": {"scroll_y": 200, "pixels_below": 800},
-        }
+    driver = mcp_fake_driver(
+        observations=[observation([element("e3", "link", "Docs")], url="https://example.test/docs", title="Docs")],
+        results=[result(url="https://example.test/docs", title="Docs", value=_METADATA)],
     )
+    runtime = make_runtime(driver)
 
     state = await runtime.capture_browser_state()
 
-    runtime.ensure_runtime_ready.assert_awaited_once()
-    runtime._call_playwright_tool.assert_awaited_once_with("browser_snapshot", {})
-    run_code = runtime._call_playwright_run_code_unsafe.await_args.args[0]
-    assert "page.screenshot" not in run_code
+    assert driver.kinds() == ["observe", "execute"]
     assert state["ok"] is True
     assert state["url"] == "https://example.test/docs"
     assert state["dom"] == ""
+    assert state["page_position"] == {"scroll_y": 200, "pixels_below": 800}
+    assert state["tabs"][0]["url"] == "https://example.test/docs"
     assert state["page_state"]["interactives"][0]["text"] == "Docs"
     assert "screenshot" not in state
-    target = runtime._ensure_page_state().resolve_target(generation_id="g0", ref="e3")
+    target = runtime.page_state.resolve_target(generation_id="g0", ref="e3")
     assert target is not None
     assert target.locator == {"ref": "e3"}
 
 
 @pytest.mark.asyncio
-async def test_runtime_timeout_reconciliation_skips_full_snapshot() -> None:
-    runtime = object.__new__(BrowserAgentRuntime)
-    runtime._page_generation = 0
-    runtime._reference_generations = {}
-    runtime._selector_primary_links = {}
-    runtime._last_observed_url = "https://example.test/current"
-    runtime.ensure_runtime_ready = AsyncMock()
-    runtime._call_playwright_tool = AsyncMock()
-    runtime._call_playwright_run_code_unsafe = AsyncMock(
-        return_value={
-            "ok": True,
-            "url": "https://example.test/next",
-            "title": "Next",
-            "tabs": [],
-            "page_position": {},
-            "semantic_state": {
-                "form_values": [],
-                "selected_filters": [{"key": "sort", "value": "sales"}],
-                "result_count": 10,
-            },
-        }
+async def test_runtime_reuses_the_free_observation_of_the_last_command() -> None:
+    driver = mcp_fake_driver(
+        results=[
+            ActionResult(ok=True, observation=observation([element("e5")], url="https://example.test/next")),
+            result(url="https://example.test/next", value=_METADATA),
+        ]
     )
+    runtime = make_runtime(driver)
+    tool = next(t for t in runtime.agent_parts(image_support=False).tools if t.card.name.endswith("browser_click"))
+    await tool.invoke({"target": "e5"})
+
+    state = await runtime.capture_browser_state(action_group_id="click")
+
+    assert "observe" not in driver.kinds()
+    assert runtime.observations_reused == 1
+    assert state["ok"] is True
+    assert state["page_state"]["interactives"][0]["text"] == "Save"
+
+
+@pytest.mark.asyncio
+async def test_runtime_timeout_reconciliation_skips_full_snapshot() -> None:
+    semantic = {"form_values": [], "selected_filters": [{"key": "sort", "value": "sales"}], "result_count": 10}
+    measured = {"page_position": {}, "semantic_state": semantic}
+    driver = mcp_fake_driver(results=[result(url="https://example.test/next", title="Next", value=measured)])
+    runtime = make_runtime(driver)
 
     state = await runtime.capture_reconciliation_browser_state(action_group_id="timeout-group")
 
-    runtime._call_playwright_tool.assert_not_awaited()
-    runtime._call_playwright_run_code_unsafe.assert_awaited_once()
+    assert driver.kinds() == ["execute"]
     assert state["ok"] is True
     assert state["reconciliation_only"] is True
     assert state["url"] == "https://example.test/next"
@@ -783,36 +773,17 @@ async def test_runtime_timeout_reconciliation_skips_full_snapshot() -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_automatic_capture_replaces_refs_after_url_generation_sync() -> None:
-    runtime = object.__new__(BrowserAgentRuntime)
-    runtime._page_generation = 0
-    runtime._reference_generations = {}
-    runtime._selector_primary_links = {}
-    runtime._last_observed_url = ""
-    runtime.ensure_runtime_ready = AsyncMock()
-    runtime._call_playwright_tool = AsyncMock(
-        side_effect=[
-            '- button "First" [ref=e1]',
-            '- button "Second" [ref=e2]',
-        ]
+    driver = mcp_fake_driver(
+        observations=[
+            observation([element("e1", "button", "First")], url="https://example.test/first", title="First"),
+            observation([element("e2", "button", "Second")], url="https://example.test/second", title="Second"),
+        ],
+        results=[
+            result(url="https://example.test/first", value=_METADATA),
+            result(url="https://example.test/second", value=_METADATA),
+        ],
     )
-    runtime._call_playwright_run_code_unsafe = AsyncMock(
-        side_effect=[
-            {
-                "ok": True,
-                "url": "https://example.test/first",
-                "title": "First",
-                "tabs": [],
-                "page_position": {},
-            },
-            {
-                "ok": True,
-                "url": "https://example.test/second",
-                "title": "Second",
-                "tabs": [],
-                "page_position": {},
-            },
-        ]
-    )
+    runtime = make_runtime(driver)
 
     first_state = await runtime.capture_browser_state()
     second_state = await runtime.capture_browser_state()
@@ -822,29 +793,16 @@ async def test_runtime_automatic_capture_replaces_refs_after_url_generation_sync
     assert first_state["page_state"]["interactives"][0]["text"] == "First"
     assert second_state["page_state"]["interactives"][0]["text"] == "Second"
     assert runtime.generation_id == "g1"
-    assert runtime._ensure_page_state().resolve_target(generation_id="g1", ref="e2") is not None
+    assert runtime.page_state.resolve_target(generation_id="g1", ref="e2") is not None
     with pytest.raises(ValueError, match="Stale AX ref e1 belongs to g0"):
-        runtime._ensure_page_state().resolve_target(generation_id="g1", ref="e1")
+        runtime.page_state.resolve_target(generation_id="g1", ref="e1")
 
 
 @pytest.mark.asyncio
 async def test_runtime_does_not_reuse_dom_when_snapshot_capture_fails() -> None:
-    runtime = object.__new__(BrowserAgentRuntime)
-    runtime._page_generation = 0
-    runtime._reference_generations = {}
-    runtime._selector_primary_links = {}
-    runtime._last_observed_url = ""
-    runtime.ensure_runtime_ready = AsyncMock()
-    runtime._call_playwright_tool = AsyncMock(side_effect=RuntimeError("snapshot timeout"))
-    runtime._call_playwright_run_code_unsafe = AsyncMock(
-        return_value={
-            "ok": True,
-            "url": "https://fresh.example",
-            "title": "Fresh",
-            "tabs": [],
-            "page_position": {},
-        }
-    )
+    driver = mcp_fake_driver(results=[result(url="https://fresh.example", title="Fresh", value=_METADATA)])
+    driver.fail_next(DriverError("snapshot timeout", dispatched=True))
+    runtime = make_runtime(driver)
 
     state = await runtime.capture_browser_state()
 

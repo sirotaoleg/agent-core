@@ -5,15 +5,27 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
-from pathlib import Path
-from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from openjiuwen.core.foundation.tool import McpServerConfig
+from openjiuwen.harness.tools.browser_move.contract import (
+    ContextRef,
+    DriverError,
+    Observation,
+    RunScript,
+    SwitchContext,
+)
+from openjiuwen.harness.tools.browser_move.playwright_runtime import runtime as runtime_module
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
+from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
+    fake_assembly,
+    make_runtime,
+    mcp_fake_driver,
+    result,
+    run,
+)
 
 _SOURCE = "(params) => ({})"
 _PARAMS = {"max_items": 250, "stamp_attribute": "data-openjiuwen-policy"}
@@ -31,84 +43,80 @@ _ELEMENT = {
     "actionable": True,
     "clickable": True,
 }
+_TABS = (ContextRef("0", "tab", "Flights"), ContextRef("1", "tab", "Hotels"))
+_FLIGHTS = "https://flights.test/"
+_HOTELS = "https://hotels.test/"
 
 
-def _run(coro: Any) -> Any:
-    return asyncio.run(coro)
-
-
-def _make_runtime() -> BrowserAgentRuntime:
-    mcp_cfg = McpServerConfig(
-        server_id="test-policy-runtime",
-        server_name="test-policy-runtime",
-        server_path="stdio://playwright",
-        client_type="stdio",
-        params={"cwd": str(Path.cwd())},
-    )
-    runtime = BrowserAgentRuntime(
-        provider="openai",
-        api_key="test-key",
-        api_base="https://example.invalid/v1",
-        model_name="test-model",
-        mcp_cfg=mcp_cfg,
-        guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
-    )
-    runtime.ensure_runtime_ready = AsyncMock()  # type: ignore[method-assign]
-    return runtime
+def _scripts(driver) -> list[RunScript]:
+    return [call.payload for call in driver.calls if isinstance(call.payload, RunScript)]
 
 
 def test_probe_for_policy_registers_elements_as_targets_and_passes_params() -> None:
-    runtime = _make_runtime()
-    runtime._code_executor = AsyncMock(
-        return_value={"url": "https://flights.test/", "title": "Flights", "elements": [dict(_ELEMENT)]}
-    )
+    probe = {"url": _FLIGHTS, "title": "Flights", "elements": [dict(_ELEMENT)]}
+    driver = mcp_fake_driver(results=[result(value=probe)])
+    runtime = make_runtime(driver)
 
-    result = _run(runtime.probe_for_policy(_SOURCE, _PARAMS))
+    probed = run(runtime.probe_for_policy(_SOURCE, _PARAMS))
 
-    element = result["elements"][0]
+    element = probed["elements"][0]
     assert element["target_id"].startswith("t_g"), "probe elements must become PageState targets"
-    assert result["generation_id"] == runtime.generation_id
-    js_code = runtime._code_executor.await_args.args[0]
-    assert _SOURCE in js_code
-    assert json.dumps(_PARAMS, ensure_ascii=False) in js_code
+    assert probed["generation_id"] == runtime.generation_id
+    assert _scripts(driver) == [RunScript(code=_SOURCE, args=_PARAMS)]
     target = runtime.resolve_model_target_id(element["target_id"])
     assert target.locator.get("selector") == _ELEMENT["selector_hint"]
 
 
 def test_probe_for_policy_returns_a_failure_envelope_when_the_script_raises() -> None:
-    runtime = _make_runtime()
-    runtime._code_executor = AsyncMock(side_effect=RuntimeError("detached frame"))
+    driver = mcp_fake_driver()
+    driver.fail_next(DriverError("detached frame", dispatched=True))
 
-    result = _run(runtime.probe_for_policy(_SOURCE, _PARAMS))
+    probed = run(make_runtime(driver).probe_for_policy(_SOURCE, _PARAMS))
 
-    assert result["ok"] is False
-    assert "detached frame" in result["error"]
-    assert result["elements"] == []
+    assert probed["ok"] is False
+    assert "detached frame" in probed["error"]
+    assert probed["elements"] == []
 
 
-def test_probe_for_policy_reports_a_missing_code_executor() -> None:
-    runtime = _make_runtime()
-    runtime._code_executor = None
+def test_probe_for_policy_starts_the_driver_session_on_demand() -> None:
+    runtime = BrowserAgentRuntime(
+        provider="openai",
+        api_key="test-key",
+        api_base="https://example.invalid/v1",
+        model_name="test-model",
+        mcp_cfg=McpServerConfig(server_id="t", server_name="t", server_path="stdio://playwright", client_type="stdio"),
+        guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
+    )
+    driver = mcp_fake_driver(results=[result(value={"url": _FLIGHTS, "elements": []})] * 2)
+    assemble = AsyncMock(return_value=fake_assembly(driver))
 
-    result = _run(runtime.probe_for_policy(_SOURCE, _PARAMS))
+    with patch.object(runtime_module, "assemble_driver", assemble):
+        probed = run(runtime.probe_for_policy(_SOURCE, _PARAMS))
+        run(runtime.probe_for_policy(_SOURCE, _PARAMS))
 
-    assert result["ok"] is False
-    assert result["error"] == "browser_code_executor_not_ready"
-    assert result["elements"] == []
+    assert probed["ok"] is True
+    assemble.assert_awaited_once()
+    assert runtime.session is not None
+
+
+def _two_tabs(current: int) -> Observation:
+    surface = BrowserContext(
+        url=(_FLIGHTS, _HOTELS)[current], tabs=_TABS, tab_urls=(_FLIGHTS, _HOTELS), current_tab=current
+    )
+    return Observation(context=_TABS[current], native_text="", surface=surface)
 
 
 def test_activate_page_brings_the_page_at_url_to_the_front() -> None:
-    runtime = _make_runtime()
-    runtime._code_executor = AsyncMock(return_value={"ok": True, "url": "https://example.test/"})
+    driver = mcp_fake_driver(observations=[_two_tabs(0)], results=[result(url=_HOTELS, context_changed=True)])
 
-    assert _run(runtime.activate_page("https://example.test/")) is True
-    js_code = runtime._code_executor.await_args.args[0]
-    assert "bringToFront" in js_code
-    assert '"https://example.test/"' in js_code
+    assert run(make_runtime(driver).activate_page(_HOTELS)) is True
+
+    switched = [call.payload for call in driver.calls if isinstance(call.payload, SwitchContext)]
+    assert switched == [SwitchContext(_TABS[1])]
 
 
 def test_activate_page_returns_false_when_the_script_fails() -> None:
-    runtime = _make_runtime()
-    runtime._code_executor = AsyncMock(side_effect=RuntimeError("no page"))
+    driver = mcp_fake_driver()
+    driver.fail_next(DriverError("no page", dispatched=False))
 
-    assert _run(runtime.activate_page("https://example.test/")) is False
+    assert run(make_runtime(driver).activate_page(_HOTELS)) is False
