@@ -2815,3 +2815,160 @@ in, each agent kind keeps one builder that takes the neutral pieces.
    still name the driver; neither is model-facing on the worker. Phase 7.
 4. `_run_task_once` reads the driver's name for the prompt refresh from the service's session, so a worker injected
    without a session (tests) needs one opened first.
+
+## Phase 6: topology as a strategy, one construction path
+
+The third step of Phase 6 turns the facade's two branches into strategy objects, builds the main agent's core rails
+at its construction, and takes the worker's construction and the facade's worker-tool registration out of the
+service and the facade. Before it, `ensure_started` / `run_browser_task` branched on the topology name inside
+`runtime.py` (the Direct agent, its run and its answer mapping lived there), the core rails reached the main agent
+at its first invoke through `BrowserRuntimeRail` (so `RepeatedCallGuardRail` missed the first `before_invoke`), the
+facade's own `language` leaked into the parts of agents built in another language, and `service.run_task` rebuilt
+the worker itself through `ensure_started`.
+
+### Decisions
+
+1. **`topology.py` owns the two strategies; the facade delegates.** `Topology` is a protocol (`name`, `start`,
+   `run`, `drop`): `run` alone would not do, because the runner calls `ensure_started()` first, reads
+   `_service.browser_agent` between the two calls, and the runtime MCP server starts once and runs many tasks.
+   `Direct` owns the main agent (built in `start`, forgotten in `drop`) and its one-attempt run under
+   `asyncio.wait_for`; `DelegatedWorker` owns the worker's construction (`build_worker`), the runtime tools and the
+   hand-over to `service.run_task(worker=)`. `topology_for(core)` resolves `core.topology or
+   default_topology(core.driver)` and raises for a registered default no strategy implements; the facade keeps the
+   instance from `ensure_started` to `shutdown`. Neither strategy names a driver.
+2. **The main agent stays built by `create_browser_agent` (A1).** `Direct.start` calls it with `runtime=<the facade>`
+   and `WORKER_LANGUAGE`, as the facade did; `assembly.py` gets no browser agent body. The design's `build_main_agent`
+   was dropped by the review.
+3. **The core rails are queued at the main agent's construction.** `create_browser_agent` injects
+   `[BrowserRuntimeRail(runtime), *runtime.core_rails()]` (then the context-processor rail); `DeepAgent.invoke`
+   registers queued rails in `_ensure_initialized()` before `BEFORE_INVOKE`, so every core rail sees the first
+   invoke. What made this possible is the policy over the facade's live `builders` mapping (previous step): the
+   rails exist before the driver starts, over a mapping `agent_parts` fills later. `BrowserRuntimeRail._add_agent_parts`
+   adds tools only; its `_railed` set is gone. The guard keeps its first-model-call fallback, which still serves a
+   guard registered after an invoke began.
+4. **One language per agent.** `agent_parts(*, image_support, language)` is keyed by both; the rail asks for the
+   parts in the receiving agent's language (`resolve_language(agent.deep_config.language)`), `build_worker` in
+   `WORKER_LANGUAGE`. The facade's constructor `language` (default `cn`, public) serves only its own tool context.
+   The five runtime tools lose their dead `language` parameter.
+5. **The worker loop stays in `service.py`; it reads the worker through a callable.** `run_task(..., *, worker)`
+   and `run_task_once(..., *, worker)` await `worker()` per attempt, the recovery call reuses that agent;
+   `_restart` is `reset()` alone, so the next `worker()` (= `DelegatedWorker.start` + the slot) rebuilds on a fresh
+   session. `ensure_started` and `_restart_browser_runtime` are gone from the service; the `browser_agent` slot
+   stays for the runner (D7). The ≈900-line loop moves in Phase 9 by `git mv`.
+6. **The facade's new members are the pieces the strategies need, nothing else.** `surface` (lazy, through
+   `assemble_surface`, so a facade built with no core settings still reads the environment at first use, not at
+   construction), `builders` (the live mapping), `core_rails()`, `register_runtime_tools()` (the old tail of
+   `ensure_started`, idempotent), `main_agent_answer(...)`, a `dedicated_log` setter, `workspace` and
+   `capabilities`. The constructor and the runner's members are unchanged.
+7. **The answer mapping stays on the facade.** `topology.py` is a core module under the browser-word ratchet
+   (`test_browser_words.py`: a new core file may carry none, and allowlists never grow); the runner's answer dict
+   is `page` / `url` / `title` by contract. So `Direct.run` calls `runtime.main_agent_answer(...)`, the old
+   `_direct_answer` made public; the keys are the facade's run contract and `page` comes from the facade's page
+   state, so it is the right owner anyway.
+8. **`WORKER_LANGUAGE` is written in `agents.py` and re-exported by `topology.py`.** `topology.py` imports
+   `build_worker` from `agents.py`, so `agents.py` cannot import the constant from it; the design's "moved to
+   `topology.py`" is met by the re-export (`from .topology import WORKER_LANGUAGE` works, `main.py` uses it).
+9. **Two new goldens pin the other topology.** `golden/playwright_mcp/runner_direct.json` (the main agent through
+   the runner mirror with `BROWSER_TOPOLOGY=direct`: role `main`, the 14 prefixed core tools plus the helpers the
+   runner cannot remove, the main-agent prompt) and `golden/browser_use/runner_worker.json` (the worker on
+   browser-use with `BROWSER_TOPOLOGY=delegated_worker`: role `worker`, the 14 unprefixed core tools after the
+   runner's removal, the prompt saying "browser-use tools"). `builder.RUNNER_VIEWS` maps each runner view to its
+   topology and role; `list_views(driver)` adds the other-topology view of each driver; `regenerate.py` writes
+   both. The twelve recorded browser-use goldens are never rewritten (they carry `source_commit`), and the tests
+   that compare recorded goldens to today's specs skip a golden without it.
+
+### Rejected options
+
+- **`drop` left out of the protocol (dropping the topology object instead).** The facade could forget the object;
+  the explicit `drop` keeps the Direct agent's lifetime readable next to `start`, and the task names it.
+- **`DelegatedWorker.run` passing a restart callable into `run_task`.** Two hooks where one suffices: the worker
+  callable both returns the current worker and rebuilds it after a reset.
+- **A worker-factory stored on the service.** The service would still "build" through it; the design rejected it.
+- **The answer mapping in `topology.py`.** Decision 7.
+- **A `drop` on `DelegatedWorker` that clears the service's slot.** The service already clears it in
+  `_clear_task_scoped_state` on release, reset and shutdown; a second owner of the slot is a second path.
+- **A module-scoped Direct run in `test_wv_runner_contract.py`.** The test's own instrumentation reads
+  `worker.ability_manager` unguarded, so a Direct run needs an edit to `_run_one_task`, which must stay untouched
+  (it mirrors the runner). The `runner_direct` golden is built by the builder's own mirror of `run_one_task`
+  (same constructor, guarded removal, call), so the Direct path through the runner is pinned there instead.
+
+### Behaviour changes to know
+
+- `service.run_task`, `run_task_once` require `worker=`; `service.ensure_started` and the facade's
+  `_direct_agent` / `_run_direct` / `_direct_answer` are gone; `_direct_answer` is `main_agent_answer`.
+- `agent_parts` requires `language=`; the runtime tools take no `language`; `BrowserRuntimeRail` registers no rail.
+- A `create_browser_agent` agent has `ActionPolicy`, `RepeatedCallGuardRail` and `InterceptedActionHintRail` in its
+  rails before the first invoke; the policy's mapping is the facade's live `builders`.
+- After `shutdown()` the next `ensure_started()` picks the topology again (an env change between tasks of one
+  process is not read: `service.core` is cached).
+- `WORKER_LANGUAGE` is importable from `playwright_runtime.topology` and `playwright_runtime.agents`.
+
+### The other topology (D8): what differs
+
+| | Playwright MCP + `Direct` (through the runner) | browser-use + `DelegatedWorker` (through the runner) |
+|---|---|---|
+| Agent | the main agent (`create_browser_agent`), as the MCP capability goldens are built | the worker, as on MCP |
+| Tool names | `mcp_playwright-official_browser_*` plus the helpers `browser_probe_interactives`, `browser_probe_cards`, `browser_batch_interact`, `browser_find`, `browser_recall_offload`; the runner removes nothing (no worker slot), so the agent keeps them | unprefixed `browser_*`; the three worker helpers are removed by the runner; `browser_custom_action` / `browser_list_custom_actions` raise in `remove_ability` and are swallowed, as on MCP |
+| Prompt | the main-agent prompt (`DEFAULT_BROWSER_AGENT_SYSTEM_PROMPT["en"]`) plus the rail's sections; no JSON contract, no `FinalAnswerRecoveryRail`; the rail's terminal synthesis | the worker prompt saying "browser-use tools" / "a browser-use action"; the tool names it cites are the worker's actual, unprefixed names |
+| Answer | `main_agent_answer`: `page` from `page_state.surface_context`, `screenshot=None`, `status` / `progress` from the rail's result; no `attempt`, `failure_summary`, `progress_state`; one attempt under one `asyncio.wait_for` | `service.run_task`'s dict, identical keys to MCP; `page` from the worker's JSON (browser-use observation text has no title, so `title` may be empty) |
+| Image support | from the model probe, so `browser_take_screenshot` may be offered where the worker never gets it | `False`, as on MCP |
+| Logging | `dedicated_log=False`, usage lines in the process log | as on MCP |
+| Progress | the rail's `<browser_progress>` protocol | the worker's JSON progress fields |
+| Loop heuristics | none (one attempt) | the transport markers are Playwright wording; browser-use's "CDP not connected" / "No valid agent focus" are handled by `DriverSession` as `ConnectionLost` before the loop sees them |
+| Cosmetic | — | the worker card `id="agent.playwright.browser_worker"`, not model-facing |
+
+### Golden status
+
+- `golden/playwright_mcp/`: the 12 existing files byte for byte (regenerated and compared: "unchanged" for all
+  twelve; the seven stored with CRLF in the working tree were restored to their bytes); `runner_direct.json` new.
+- `golden/browser_use/`: the 12 recorded files untouched; `runner_worker.json` new (no `source_commit`: built by
+  today's code).
+- `git diff d062c3173 --stat -- snapshots/golden/` shows only the two new files.
+
+### Verification
+
+- `test_topology.py` (new): `topology_for` for both drivers with the field unset and set both ways, the instance's
+  driver override, a registered default no strategy implements; `Direct`: `start` once through
+  `create_browser_agent` with `WORKER_LANGUAGE`, `dedicated_log=False`, the service's model settings, `run` maps the
+  answer, the agent gets the core rails at construction over the facade's live mapping (and a policy built before
+  the session enforces the tools built after it), the log context, a session that cannot start fails before any
+  model call (two `assemble_driver` awaits: the first-open retry), failed and timed-out runs, `shutdown` drops the
+  agent; `DelegatedWorker`: `start` opens the session, builds the worker once with the service's model identity,
+  `max_steps`, `core`, the observer and the driver name, registers the two runtime tools, rebuilds after a task
+  release, `run` hands the task to `service.run_task` with a worker callable that rebuilds after `reset()`, a
+  browser-use-shaped fake yields a worker whose prompt says "browser-use tools" with unprefixed tools, `shutdown`
+  leaves no worker. The facade's pick tests of the previous step and the five Direct tests moved here.
+- `test_browser_runtime_facade.py`: `surface` built once before any driver, `core_rails()` over the live mapping and
+  the profile, `agent_parts` keyed by image support and language with no rails, `register_runtime_tools()` once.
+- `test_browser_runtime_rail.py`: no `register_rail` from the rail; the parts in the agent's language; a start
+  failure adds no tool.
+- `test_service.py`: the `run_task(worker=)` tests (the callable awaited per attempt, `_restart` is `reset()`
+  alone, no `ensure_started`); the worker-build tests moved to `test_topology.py`.
+- `test_create_browser_agent.py`: the runtime's core rails are in the agent's rails at construction, after the
+  browser rail.
+- `test_wv_runner_contract.py`: green with no edit (DelegatedWorker is the MCP default).
+- `test_tool_prompt_snapshot.py`: `runner_direct` built and compared with the other MCP views; the browser-use
+  `runner_worker` built and compared; `test_golden_files_cover_exactly_the_views` checks both directories; the
+  well-formedness test runs over the 12 recorded browser-use goldens.
+- Ten harness files outside `browser_move` that build the browser agent (`test_deep_agent.py`,
+  `test_deep_agent_terminal_stream.py`, `subagent_runtime/test_control.py`, `subagent_runtime/test_session_manager.py`,
+  `task_loop/test_session_spawn_executor.py`, `test_subagent_rail.py`, `tools/subagent/test_subagent_tools.py`,
+  `tools/test_sessions_tools.py`, `tools/test_task_tool.py`, `tools/test_task_tool_kv_cache_affinity.py`,
+  `tools/test_tool_render_for_llm.py`): **248 passed**.
+- Architecture: green without an allowlist change; `topology.py` carries no browser word and no driver name;
+  `runtime.py` / `service.py` counts did not grow.
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q`: **2365 passed, 118 skipped** (2349 / 118 after
+  the previous step).
+- `ruff check` clean on every touched file (pre-existing import-order and `E402` hits in `browser_agent.py` and
+  `main.py` left as they are).
+- Live suites: run once at the end of the phase's last step, recorded in "Phase 6: verification baseline".
+
+### Known leftovers
+
+1. The worker loop (`run_task`, `_run_task_once`, `_recover_final_answer`, the progress state, the heuristics) stays
+   in `service.py` until Phase 9 (`git mv` to `runtime/worker.py`).
+2. The worker card description ("using Playwright MCP tools") and the `browser_custom_action` tool description
+   still name the driver; neither is model-facing on the worker. Phase 7.
+3. `runtime.py` keeps `main_agent_answer` because of the browser-word ratchet (decision 7); Phase 9 decides where
+   the runner's answer contract lives when the loop moves.
+4. The transport markers of the worker loop are Playwright wording (D8 table); Phase 7.
