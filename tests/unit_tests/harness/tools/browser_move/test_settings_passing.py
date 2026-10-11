@@ -143,11 +143,11 @@ class TestEntryPoints:
         runtime = MagicMock()
         runtime.ensure_started = AsyncMock()
         runtime.shutdown = AsyncMock()
+        runtime.agent_parts.return_value.tools = ()
         runtime_cls = MagicMock(return_value=runtime)
         with (
             patch.object(main_module, "load_repo_dotenv"),
             patch.object(main_module, "BrowserAgentRuntime", runtime_cls),
-            patch.object(main_module.Runner.resource_mgr, "get_mcp_tool_infos", AsyncMock(return_value=[])),
         ):
             asyncio.run(main_module.main())
 

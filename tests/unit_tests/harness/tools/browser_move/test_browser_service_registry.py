@@ -28,7 +28,6 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import (
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service import BrowserService
 from openjiuwen.harness.tools.browser_move.playwright_runtime.service_registry import (
     BROWSER_SERVICE_REGISTRY,
-    BrowserServiceRegistry,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import DEVICE, mcp_fake_driver
@@ -87,28 +86,6 @@ def _clear_process_registry():
     yield
     BROWSER_SERVICE_REGISTRY.clear()
     _ACTIVE_BROWSER_RUNTIMES.clear()
-
-
-def test_registry_assigns_one_heartbeat_owner_and_transfers_it() -> None:
-    registry = BrowserServiceRegistry()
-    identity = ("browser", "profile", "headed")
-    first = MagicMock()
-    second = MagicMock()
-
-    registry.acquire(identity, first)
-    registry.acquire(identity, second)
-    assert registry.activate_binding(identity, first) is True
-    assert registry.activate_binding(identity, second) is False
-    assert registry.is_heartbeat_owner(identity, first) is True
-
-    first_release = registry.release(identity, first)
-    assert first_release.close_mcp_binding is False
-    assert first_release.next_heartbeat_owner is second
-    assert registry.is_heartbeat_owner(identity, second) is True
-
-    second_release = registry.release(identity, second)
-    assert second_release.close_mcp_binding is True
-    assert second_release.next_heartbeat_owner is None
 
 
 @pytest.mark.asyncio

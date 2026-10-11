@@ -105,7 +105,6 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
     "playwright_runtime/runtime.py": 3,
     "playwright_runtime/runtime_tools.py": 1,
     "playwright_runtime/service.py": 14,
-    "playwright_runtime/service_registry.py": 2,
     "utils/__init__.py": 4,
     "utils/env.py": 3,
     "utils/parsing.py": 1,
