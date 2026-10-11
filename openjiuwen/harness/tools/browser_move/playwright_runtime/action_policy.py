@@ -25,13 +25,16 @@ Builder = Callable[[Mapping[str, Any], RefResolver], Action]
 
 
 class ActionPolicy(BaseSecurityRail):
-    """Denies a tool call whose arguments do not decode, or that a matching ``PolicyRule`` rejects."""
+    """Denies a tool call whose arguments do not decode, or that a matching ``PolicyRule`` rejects.
+
+    ``builders`` is read per call, so decoders added to the mapping after construction are enforced too.
+    """
 
     supported_events = {AgentCallbackEvent.BEFORE_TOOL_CALL}
 
     def __init__(self, builders: Mapping[str, Builder], rules: Iterable[PolicyRule], page_state: BrowserPageState):
-        super().__init__(tool_names=builders)
-        self._builders = dict(builders)
+        super().__init__()
+        self._builders = builders
         self._rules = tuple(rules)
         self._page_state = page_state
 

@@ -235,6 +235,7 @@ class BrowserUseDriver(HandlerDriver):
             surfaces=frozenset({"browser"}),
             versions=MappingProxyType(dict(self._versions)),
             observes=frozenset({"elements", "screenshot", "native_text", "surface"}),
+            display_name="browser-use",
         )
 
     async def start(self, config: BrowserUseConfig | None = None) -> None:

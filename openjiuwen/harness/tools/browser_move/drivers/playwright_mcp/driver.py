@@ -212,6 +212,7 @@ class PlaywrightMcpDriver(HandlerDriver):
             tool_hints=MappingProxyType(dict(self._tool_hints)),
             native_tools=MappingProxyType(dict(self._native_tools)),
             tool_name_prefix=mcp_model_tool_prefix(self._config.server.server_name) if self._config is not None else "",
+            display_name="Playwright MCP",
         )
 
     async def start(self, config: PlaywrightMcpConfig | None = None) -> None:

@@ -24,8 +24,8 @@ from openjiuwen.core.runner import Runner
 from openjiuwen.core.single_agent.agents.react_agent import ReActAgent
 
 from ..utils.parsing import extract_json_object
-from .agents import build_browser_worker_agent, refresh_browser_worker_system_prompt
-from .assembly import assemble_driver, build_agent_parts
+from .agents import build_worker, refresh_browser_worker_system_prompt, worker_driver_name
+from .assembly import open_session
 from .browser_capabilities import CORE_BROWSER_TOOL_NAMES, capabilities_of
 from .config import (
     BrowserInstanceConfig,
@@ -37,7 +37,6 @@ from .config import (
 )
 from .driver_session import DriverSession
 from .final_answer_recovery import (
-    FinalAnswerRecoveryRail,
     final_answer_recovery,
     recovery_message,
     recovery_reason,
@@ -46,7 +45,6 @@ from .page_state import BrowserPageState
 from .service_registry import BROWSER_SERVICE_REGISTRY, BrowserServiceIdentity
 
 MAX_ITERATION_MESSAGE = "Max iterations reached without completion"
-WORKER_LANGUAGE = "en"
 _ctx_observer_session_id: contextvars.ContextVar[str] = contextvars.ContextVar(
     "playwright_runtime_observer_session_id",
     default="",
@@ -618,9 +616,11 @@ class BrowserService:
 
     async def _open_session(self) -> DriverSession:
         settings = replace(self._settings, mcp_server=self.mcp_cfg, mcp_cwd=self._mcp_cwd)
-        assembly = await assemble_driver(self.core, process_environ(), instance=self._instance, settings=settings)
-        BROWSER_SERVICE_REGISTRY.register_managed_driver(self._lifecycle_identity, self, assembly.provisioner)
-        return DriverSession(assembly, self._page_state, assembly.surface.profile.messages)
+        session = await open_session(
+            self.core, process_environ(), page_state=self._page_state, instance=self._instance, settings=settings
+        )
+        BROWSER_SERVICE_REGISTRY.register_managed_driver(self._lifecycle_identity, self, session.assembly.provisioner)
+        return session
 
     async def ensure_runtime_ready(self) -> None:
         """Open the driver session once; after a task release, start its stack again on the kept device."""
@@ -643,29 +643,20 @@ class BrowserService:
         await self.ensure_runtime_ready()
         if self._browser_agent is not None:
             return
-
-        parts = build_agent_parts(
+        self._browser_agent = await build_worker(
             self._session,
             self._session.assembly.surface,
-            capabilities=self._capabilities,
-            image_support=False,
-            language=WORKER_LANGUAGE,
-            worker=True,
-        )
-        self._browser_agent = build_browser_worker_agent(
             provider=self.provider,
             api_key=self.api_key,
             api_base=self.api_base,
             model_name=self.model_name,
             max_steps=self.guardrails.max_steps,
-            tools=parts.tools,
+            core=self.core,
+            capabilities=self._capabilities,
+            tool_result_observer=self._observe_worker_tool_result,
             screenshot_subdir=self._screenshot_subdir,
             artifacts_subdir=self._artifacts_subdir,
-            tool_result_observer=self._observe_worker_tool_result,
-            settings=self.core,
         )
-        for rail in (*parts.rails, FinalAnswerRecoveryRail()):
-            await self._browser_agent.register_rail(rail)
 
     async def _restart(self) -> None:
         """Tear down and reinitialize the browser service (e.g. after stdio subprocess dies)."""
@@ -1164,6 +1155,7 @@ class BrowserService:
                 self._browser_agent,
                 screenshot_subdir=self._screenshot_subdir,
                 artifacts_subdir=self._artifacts_subdir,
+                driver_name=worker_driver_name(self._session.assembly.stack.info),
             )
         worker_conversation_id = self._build_worker_conversation_id(session_id, request_id)
         token_session = _ctx_observer_session_id.set(session_id)

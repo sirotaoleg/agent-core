@@ -57,7 +57,8 @@ from ..contract.registry import default_topology
 from ..controllers import ActionController, BaseController
 from ..surfaces.browser.helpers import CUSTOM_ACTIONS, activate_page, page_metadata, probe_for_policy
 from ..utils.parsing import extract_json_object
-from .assembly import AgentParts, build_agent_parts
+from .agents import WORKER_LANGUAGE
+from .assembly import AgentParts, build_agent_parts, core_rails
 from .browser_capabilities import CORE_BROWSER_TOOL_NAMES, capabilities_of
 from .browser_logging import (
     browser_agent_log_info,
@@ -79,7 +80,7 @@ from .config import (
 from .driver_session import DriverSession
 from .page_state import CARD_EVIDENCE_FIELDS, BrowserPageState, BrowserTarget
 from .semantic_state import SemanticStateTracker, price_interval_signature
-from .service import MAX_ITERATION_MESSAGE, WORKER_LANGUAGE, BrowserService, BrowserTaskProgressState
+from .service import MAX_ITERATION_MESSAGE, BrowserService, BrowserTaskProgressState
 from .site_profiles import infer_profile_evidence_entity
 from .status_logging import BrowserSubagentStatusLogger, is_browser_subagent_status_log_enabled
 from .tool_factory import Builder, CommandRecord, ToolContext, ToolFlags, command_record
@@ -640,8 +641,10 @@ class BrowserAgentRuntime:
                 language=self._language,
                 workspace=self._workspace,
             )
-            self._parts[image_support] = parts
             self._builders.update(parts.builders)
+            rails = core_rails(session.assembly.surface.profile, self._builders, self._page_state)
+            parts = dataclasses.replace(parts, rails=(*rails, *parts.rails))
+            self._parts[image_support] = parts
             for tool in parts.tools:
                 flags = getattr(tool, "flags", None)
                 if isinstance(flags, ToolFlags):

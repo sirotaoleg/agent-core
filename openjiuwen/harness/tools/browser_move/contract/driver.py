@@ -39,6 +39,7 @@ class DriverInfo:
     """``actions`` maps each handled command type to the element ref kinds it accepts (empty: no refs).
 
     ``native_tools`` is keyed by the tool spec name; the model sees ``tool_name_prefix`` + name.
+    ``display_name`` is how a prompt names the driver to the model (empty: ``name``).
     """
 
     name: str
@@ -49,6 +50,7 @@ class DriverInfo:
     tool_hints: Mapping[type[Action], str] = field(default_factory=dict, hash=False)
     native_tools: Mapping[str, NativeTool] = field(default_factory=dict, hash=False)
     tool_name_prefix: str = ""
+    display_name: str = ""
 
 
 class Driver(ABC):

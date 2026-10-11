@@ -19,9 +19,14 @@ from openjiuwen.core.foundation.tool import Tool
 from openjiuwen.core.single_agent.agents.react_agent import ReActAgent, ReActAgentConfig
 from openjiuwen.core.single_agent.schema.agent_card import AgentCard
 
+from ..contract import DriverInfo, SurfaceBundle
+from .assembly import build_agent_parts, core_rails
 from .browser_logging import configure_browser_agent_logging
 from .config import CoreSettings
+from .driver_session import DriverSession
+from .final_answer_recovery import FinalAnswerRecoveryRail
 
+WORKER_LANGUAGE = "en"
 ToolResultObserver = Callable[[str, Any], Awaitable[None]]
 
 
@@ -122,6 +127,7 @@ def build_browser_worker_system_prompt(
     artifacts_subdir: str = "artifacts",
     *,
     tool_names: Optional[Iterable[str]] = None,
+    driver_name: str,
 ) -> str:
     """Render the worker system prompt; helper guidance only for helpers in ``tool_names`` (``None``: all)."""
     available = set(_BROWSER_WORKER_HELPER_TOOL_NAMES if tool_names is None else tool_names)
@@ -228,13 +234,13 @@ def build_browser_worker_system_prompt(
     )
     return (
         "You are a browser worker agent.\n"
-        "Execute browser tasks step-by-step with Playwright MCP tools and approved runtime helper tools only.\n"
+        f"Execute browser tasks step-by-step with {driver_name} tools and approved runtime helper tools only.\n"
         "Before interacting, ensure page or selector readiness.\n"
         "Keep actions targeted and avoid unnecessary page snapshots.\n"
         f"{helper_guidance}"
         "Keep using browser_fill_form for ordinary visible text fields when that official tool is enough. "
         "Use browser_snapshot only when the compact probes are insufficient, when accessibility structure is needed, "
-        "or when you need exact element references required by a Playwright MCP action. "
+        f"or when you need exact element references required by a {driver_name} action. "
         "Use browser_evaluate for small exact computations. Use a browser_run_code tool only when it is present "
         "in the current tool list and compact probes, evaluate, snapshot, and deterministic actions are "
         "insufficient. Never use run-code to dump the entire document body.\n"
@@ -342,6 +348,10 @@ def _normalize_output_subdir(subdir: str, default: str) -> str:
     return (subdir or default).strip().replace("\\", "/").strip("/") or default
 
 
+def worker_driver_name(info: DriverInfo) -> str:
+    return info.display_name or info.name
+
+
 # pylint: disable=too-many-arguments
 def build_browser_worker_agent(
     provider: str,
@@ -355,6 +365,7 @@ def build_browser_worker_agent(
     artifacts_subdir: str = "artifacts",
     tool_result_observer: ToolResultObserver | None = None,
     settings: CoreSettings | None = None,
+    driver_name: str,
 ) -> ReActAgent:
     """The worker ReActAgent with ``tools`` as its abilities (the factory's command tools and helpers)."""
     screenshot_subdir = _normalize_output_subdir(screenshot_subdir, "screenshots")
@@ -378,7 +389,9 @@ def build_browser_worker_agent(
             [
                 {
                     "role": "system",
-                    "content": build_browser_worker_system_prompt(screenshot_subdir, artifacts_subdir),
+                    "content": build_browser_worker_system_prompt(
+                        screenshot_subdir, artifacts_subdir, driver_name=driver_name
+                    ),
                 }
             ]
         )
@@ -397,11 +410,50 @@ def build_browser_worker_agent(
     return agent
 
 
+async def build_worker(
+    session: DriverSession,
+    bundle: SurfaceBundle,
+    *,
+    provider: str,
+    api_key: str,
+    api_base: str,
+    model_name: str,
+    max_steps: int,
+    core: CoreSettings,
+    capabilities: Iterable[str],
+    tool_result_observer: ToolResultObserver,
+    screenshot_subdir: str,
+    artifacts_subdir: str,
+) -> ReActAgent:
+    """The worker over a started session: the factory's worker tools, the core rails, the final-answer recovery."""
+    parts = build_agent_parts(
+        session, bundle, capabilities=capabilities, image_support=False, language=WORKER_LANGUAGE, worker=True
+    )
+    worker = build_browser_worker_agent(
+        provider=provider,
+        api_key=api_key,
+        api_base=api_base,
+        model_name=model_name,
+        max_steps=max_steps,
+        tools=parts.tools,
+        screenshot_subdir=screenshot_subdir,
+        artifacts_subdir=artifacts_subdir,
+        tool_result_observer=tool_result_observer,
+        settings=core,
+        driver_name=worker_driver_name(session.assembly.stack.info),
+    )
+    rails = core_rails(bundle.profile, parts.builders, session.page_state)
+    for rail in (*rails, *parts.rails, FinalAnswerRecoveryRail()):
+        await worker.register_rail(rail)
+    return worker
+
+
 async def refresh_browser_worker_system_prompt(
     agent: ReActAgent,
     *,
     screenshot_subdir: str = "screenshots",
     artifacts_subdir: str = "artifacts",
+    driver_name: str,
 ) -> None:
     """Re-render the worker system prompt for the tools its next invoke sends to the model."""
     tool_names = tuple(tool.name for tool in await agent.ability_manager.list_tool_info())
@@ -413,5 +465,6 @@ async def refresh_browser_worker_system_prompt(
         _normalize_output_subdir(screenshot_subdir, "screenshots"),
         _normalize_output_subdir(artifacts_subdir, "artifacts"),
         tool_names=tool_names,
+        driver_name=driver_name,
     )
     agent.config.configure_prompt_template([{"role": "system", "content": prompt}])

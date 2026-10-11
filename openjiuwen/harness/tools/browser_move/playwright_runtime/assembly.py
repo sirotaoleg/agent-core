@@ -17,7 +17,7 @@ from openjiuwen.core.single_agent.rail.base import AgentRail
 from openjiuwen.harness.deep_agent import DeepAgent
 from openjiuwen.harness.factory import create_deep_agent
 
-from ..contract import Driver, Registry, SurfaceBundle
+from ..contract import ConnectionLost, Driver, Registry, SurfaceBundle, SurfaceProfile
 from ..drivers import DRIVERS
 from ..drivers.middleware import RetryOnStale, Timeouts, Tracing
 from ..provisioning import PROVISIONERS, ProvisionedDevice, Provisioner
@@ -81,6 +81,19 @@ def _stack_builder(core: CoreSettings, surface: SurfaceBundle, drivers: Registry
     return build
 
 
+def assemble_surface(
+    core: CoreSettings,
+    environ: Mapping[str, str],
+    *,
+    instance: Any = None,
+    settings: Any = None,
+    registries: Registries | None = None,
+) -> SurfaceBundle:
+    """The surface by name from ``core``; ``instance`` is its per-agent identity, ``settings`` replaces ``environ``."""
+    registries = registries or Registries(DRIVERS, SURFACES, PROVISIONERS)
+    return registries.surfaces.create(core.surface, environ, instance, settings)
+
+
 async def assemble_driver(
     core: CoreSettings,
     environ: Mapping[str, str],
@@ -95,7 +108,7 @@ async def assemble_driver(
     parsing ``environ``), so both reach provisioning, the driver factory and the tool context.
     """
     registries = registries or Registries(DRIVERS, SURFACES, PROVISIONERS)
-    surface = registries.surfaces.create(core.surface, environ, instance, settings)
+    surface = assemble_surface(core, environ, instance=instance, settings=settings, registries=registries)
     provisioner = registries.provisioners.create(surface.settings.provisioning)
     build_stack = _stack_builder(core, surface, registries.drivers)
     device = await asyncio.to_thread(provisioner.provision, surface.settings)
@@ -113,6 +126,34 @@ async def assemble_driver(
     return assembly
 
 
+async def open_session(
+    core: CoreSettings,
+    environ: Mapping[str, str],
+    *,
+    page_state: BrowserPageState,
+    instance: Any = None,
+    settings: Any = None,
+    registries: Registries | None = None,
+) -> DriverSession:
+    """A session over a started stack; a first start that loses its connection is provisioned once more."""
+    try:
+        assembly = await assemble_driver(core, environ, instance=instance, registries=registries, settings=settings)
+    except ConnectionLost:
+        assembly = await assemble_driver(core, environ, instance=instance, registries=registries, settings=settings)
+    return DriverSession(assembly, page_state, assembly.surface.profile.messages)
+
+
+def core_rails(
+    profile: SurfaceProfile, builders: Mapping[str, Builder], page_state: BrowserPageState
+) -> tuple[AgentRail, ...]:
+    """The policy, the repeated-call guard and the intercepted-action hint, over the live ``builders`` mapping."""
+    return (
+        ActionPolicy(builders, profile.policy_rules, page_state),
+        RepeatedCallGuardRail(),
+        InterceptedActionHintRail(profile.messages["retry"]),
+    )
+
+
 def build_agent_parts(
     session: DriverSession,
     bundle: SurfaceBundle,
@@ -123,7 +164,7 @@ def build_agent_parts(
     workspace: Any = None,
     worker: bool = False,
 ) -> AgentParts:
-    """Tools and prompt sections from the profile and the driver; the core rails, then the profile's rails."""
+    """Tools and prompt sections from the profile and the driver, and the profile's rails."""
     profile = bundle.profile
     info = session.assembly.stack.info
     tools = ToolFactory(profile, info).build(
@@ -138,12 +179,7 @@ def build_agent_parts(
     context = ToolContext(
         session, session.page_state, profile.renderer, info, profile.settings, image_support, workspace, language
     )
-    rails = (
-        ActionPolicy(tools.builders, profile.policy_rules, session.page_state),
-        RepeatedCallGuardRail(),
-        InterceptedActionHintRail(profile.messages["retry"]),
-        *(factory(context) for factory in profile.rails),
-    )
+    rails = tuple(factory(context) for factory in profile.rails)
     return AgentParts(tools.tools, tools.prompt_sections, rails, tools.builders)
 
 
@@ -177,7 +213,7 @@ async def build_agent(
             model,
             system_prompt="\n\n".join(text for text in (system_prompt, *parts.prompt_sections) if text),
             tools=list(parts.tools),
-            rails=list(parts.rails),
+            rails=[*core_rails(assembly.surface.profile, parts.builders, session.page_state), *parts.rails],
             workspace=workspace,
             language=language,
             **agent_options,
@@ -188,4 +224,14 @@ async def build_agent(
     return agent, session
 
 
-__all__ = ["AgentParts", "DriverAssembly", "Registries", "assemble_driver", "build_agent", "build_agent_parts"]
+__all__ = [
+    "AgentParts",
+    "DriverAssembly",
+    "Registries",
+    "assemble_driver",
+    "assemble_surface",
+    "build_agent",
+    "build_agent_parts",
+    "core_rails",
+    "open_session",
+]
