@@ -2491,3 +2491,105 @@ call); the docstring "the worker on Playwright MCP" was reworded. MCP tool names
    `InterceptedActionHintRail` keep no per-invoke state.
 4. `ruff format` and `ruff check --select I` report pre-existing differences in `runtime.py` (quote style, blank
    lines) and `test_browser_runtime_rail.py` (import order); left as found.
+
+## The switch: verification follow-up
+
+The head's browser-use smoke on the verification baseline (three tasks, Sonnet) lost one task to the runtime, not
+to the model: on Allrecipes--20 the driver's `start()` failed inside `BrowserRuntimeRail.before_invoke` (the sidecar's
+connect answered "No valid agent focus available - target may have detached and recovery failed"), core's callback
+framework logged the exception and went on, and the main agent ran with no browser tools: the model wrote
+`<invoke name="browser_navigate">` as text until `max_tokens` (65,536 completion tokens) and the task ended `partial`
+on `about:blank` after 304 s. The same smoke showed the runner's Direct agent built with the facade's default
+`language="cn"` (the runner passes none), so an English task got the Chinese prompt and working context, where the
+worker it replaces builds in English.
+
+### Decisions
+
+1. **A session that cannot start fails the invoke.** The callback framework swallows every callback exception
+   except `AbortError`, and re-raises an `AbortError`'s `cause` to the caller. `BrowserRuntimeRail.before_invoke`
+   now wraps `ensure_runtime_ready()`: any failure there becomes `AbortError(str(error), cause=error)`, so the
+   invoke fails before a tool is added or a model call is made, and the caller sees the driver error itself; the
+   runner's Direct answer maps it to `ok=False` with the error text (`_run_direct` already caught exceptions). The
+   rail is the only place a callback starts the session: the worker path (`BrowserService.ensure_started`) and the
+   facade's other entry points (`capture_browser_state`, the custom actions, the policy hooks) run outside
+   callbacks and already propagate.
+2. **A detached target at connect is a lost connection, and a session start restarts once.** The browser-use
+   driver maps "No valid agent focus available" / "target may have detached" to `ConnectionLost(dispatched=True)`,
+   as it maps "CDP not connected" and "Reconnection wait timed out", so a mid-task loss restarts the session once.
+   `DriverSession.start()` gives a `ConnectionLost` from the stack's start the same single restart: `_start()`
+   (liveness, re-provision and rebuild when dead, start) is the plain start; `_restart(error)` stops the stack,
+   calls `_start()`, wraps any failure in the `driver_lost` task failure with that failure as cause, and resets the
+   page state; `_recover` and `start()` both call it. `_restart` no longer re-enters `start()`, so a mid-task loss
+   still gets exactly one restart. The loss counter is left to `begin_task()`, which runs right after `start()`.
+3. **The Direct agent speaks the worker's language.** `WORKER_LANGUAGE = "en"` in `service.py` is the one place the
+   worker's language is written; `BrowserService.ensure_started` (the parts and the runtime tools) and
+   `BrowserAgentRuntime._direct_agent` read it. The facade's own `language` (default `cn`) still reaches its tool
+   context and the parts it builds, and `create_browser_agent`'s default stays `cn` (public API).
+
+### Rejected options
+
+- **Catching the start failure in `ensure_runtime_ready` and reporting it in the answer**: the invoke would still
+  run without tools; the abort is the framework's own channel for "do not continue".
+- **Re-entering `start()` from `_restart`**: a mid-task loss would restart twice (once in `_recover`, once more
+  inside the restarted `start()`).
+- **Retrying the first open (`assemble_driver`, before a `DriverSession` exists)**: not in the task; the Allrecipes
+  failure was that first open, so it now fails the invoke explicitly and gets no restart (leftover 1).
+- **Passing `language="en"` from the runner**: outside `browser_move`, and every other direct constructor of the
+  facade (`main.py`, the MCP server) would have the same gap.
+- **Changing the facade's default language to `en`**: the Direct agent must match the worker whatever the facade is
+  given; the default is the facade's, not the worker's.
+
+### Behaviour changes to know
+
+- A driver that cannot start fails the task at once with the driver's error (the runner sees `ok=False`,
+  `error="connect: …"`) instead of a model loop without tools up to the task timeout.
+- On browser-use the detached-target error at connect or mid-task now restarts the session once, like a dead CDP.
+- The runner's Direct agent reads the English prompt and working context.
+
+### Verification
+
+- `test_driver_session.py`: a start that loses the connection restarts once (`stop, start, stop, start`, page
+  state generation bumped, no provisioning on a live device); a second loss fails with `driver_lost` and the
+  `ConnectionLost` as cause.
+- `test_browser_use_driver.py`: the detached-target message maps to `ConnectionLost(dispatched=True)` at connect
+  (the sidecar closed) and mid-task.
+- `test_browser_runtime_rail.py`: a session that cannot start raises `AbortError` with the error as cause and its
+  text as reason; no tool added, no rail registered.
+- `test_browser_runtime_facade.py`: on browser-use, the real Direct agent (the image probe off) on a session that
+  cannot start answers `ok=False` with the connect error and the model client is never called; a facade built
+  without a language builds its Direct agent with `language="en"`, the English working-context processor and the
+  English system prompt.
+- All seven new tests were red on the previous commit and are green now.
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q`: **2321 passed, 118 skipped** (2314 / 118 before).
+- Goldens: `git diff` against the baseline commit is empty for `snapshots/golden/`.
+- Live, sidecar set (browser-use conformance + live assembly + live helpers + `test_agent_rails_live.py`):
+  **54 passed, 10 skipped** (the MCP-gated cases). Live, `BROWSER_MOVE_LIVE_MCP=1` with the sidecar set: MCP
+  conformance + the same three files **70 passed** (the seven browser-use-gated cases of the shared files included).
+
+### The scripted run that ends `blocked` on browser-use
+
+The six scripted steps (navigate, click "Save order", type "Ada", snapshot, click "Last button", snapshot) make the
+same semantic progress on both drivers. The tracker's state is url, form values, selected filters, result count and
+field coverage (the title is not part of it), so the navigation and the typing count as progress and the two clicks
+and the two snapshots as no progress; the capture before the final model call is the third consecutive no-progress
+observation and sets the tracker's `replan_required` (`three_consecutive_no_progress_states`, revision 7) on both
+drivers, measured with the rail's hooks wrapped. On Playwright MCP the flag is cleared at once: the sync into the task
+state counts the last recorded action as recovered when it added evidence, and the second `browser_snapshot` is a new
+page observation there because the MCP snapshot text carries the page title (`Page Title: form:3:false`, then `Page
+Title: last`: two observations, two hashes). On browser-use the two snapshots are one and the same observation (one
+hash): the sidecar's DOM text has no title, and the scene's last button changes nothing but the title, so no evidence
+is added, nothing recovers, the task state stays `replan_required`, and the final-answer validation adds
+`semantic_replan_required` as a runtime blocker: `blocked`, `terminal_reason=runtime_blocked`,
+`recommended_recovery=replan_from_current_page`. No contract rule breaks: the semantic state ignores the title by
+design and the evidence signature is the driver's observation text; the difference is the two drivers' renderings of a
+page whose only visible change is its title. No fix.
+
+### Known leftovers
+
+1. The first open of a session (`assemble_driver` → `stack.start()`, before a `DriverSession` exists) gets no
+   restart: a `ConnectionLost` there fails the invoke at once. The Allrecipes--20 failure was that case.
+2. On the Direct path the facade's own `language` (the runner's `cn`) still reaches the `ToolContext` and the parts
+   built for the main agent (`browser_recall_offload` takes it); the tools' schemas and the profile text are
+   language-free.
+3. Leftovers of the previous section stand (the `runtime.py` MCP-name hits, no raw audit on the Direct path, the
+   rails registered in `before_invoke`, the import order of `test_browser_runtime_rail.py`).

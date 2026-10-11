@@ -551,9 +551,10 @@ The service holds the `DriverSession` the worker runs on and provisions nothing 
   managed driver; `DriverSession(assembly, page_state, profile.messages)`. With a session whose stack was stopped by
   a task release, `session.start()`. Then `begin_task()`. `started` is "the stack runs".
 - `ensure_started()`: `ensure_runtime_ready()`, then the worker once: `build_agent_parts(session, surface,
-  capabilities=<from the allowlist>, image_support=False, language="en", worker=True)` and
+  capabilities=<from the allowlist>, image_support=False, language=WORKER_LANGUAGE, worker=True)` and
   `build_browser_worker_agent(..., tools=parts.tools, settings=service.core)`; the parts' rails and
-  `FinalAnswerRecoveryRail` through `register_rail`, in that order.
+  `FinalAnswerRecoveryRail` through `register_rail`, in that order. `WORKER_LANGUAGE` (`"en"`) is the worker's
+  language, the one place it is written; the facade's Direct agent reads it too (below).
 - `acquire_task_binding()` counts a task and calls `session.begin_task()`; `release_task_binding()` on the last
   binding stops the stack (`session.stop()`, the device and its Chrome stay), forgets the worker and the task
   state. `reset()` closes the session (stop, release) and stops the identity's registered provisioners;
@@ -856,7 +857,7 @@ hold `driver_restarted` and `driver_lost` (read at construction). `page_state` i
 | second `ConnectionLost` in the same task | task failure, no restart |
 | `begin_task()` | resets the loss counter |
 | `stop()` | `stack.stop()`; the device stays (between tasks) |
-| `start()` | after `stop()`: `provisioner.is_alive(device)` → alive: `stack.start()`; dead: release, provision again, `rebuild`, start the new stack (the restart above without the stop) |
+| `start()` | after `stop()`: `provisioner.is_alive(device)` → alive: `stack.start()`; dead: release, provision again, `rebuild`, start the new stack (the restart above without the stop). A `ConnectionLost` from that start gets the same single restart (stop, liveness, re-provision and rebuild when dead, start) and `page_state.reset()`; a second failure is the task failure above (`driver_lost`, the second error as cause). The loss counter is not touched |
 | `health()` | `stack.health()` |
 | `close()` | `assembly.close()` with the current (possibly rebuilt) stack and device |
 
@@ -1042,7 +1043,7 @@ lifetime, hands it to its `BrowserService`, and from `ensure_runtime_ready()` on
   by `service.core.topology`: on Playwright MCP (`delegated_worker`) `service.ensure_started()` builds the worker
   and `run_browser_task` is `service.run_task` (JSON contract, retries, recovery unchanged); on browser-use
   (`direct`) `ensure_started()` builds the main agent on this facade through `create_browser_agent(model,
-  runtime=self, language=, temperature=core.worker_temperature, max_iterations=guardrails.max_steps,
+  runtime=self, language=WORKER_LANGUAGE, temperature=core.worker_temperature, max_iterations=guardrails.max_steps,
   browser_capabilities=<from the allowlist>)` with a `Model` from the facade's provider, key, base and model name
   (`temperature` / `top_p` from the core settings' worker values), and `run_browser_task` runs it once through
   `Runner.run_agent` under the guardrails' timeout and maps the result: `ok` (no error, `result_type` not
@@ -1051,7 +1052,10 @@ lifetime, hands it to its `BrowserService`, and from `ensure_runtime_ready()` on
   session opens at the main agent's first invoke, as for `create_browser_agent`. That agent runs outside the
   browser-agent log context (`dedicated_log` is `False` on the facade that built it): its lines, the model client's
   usage lines included, go to the process log as the worker's do. Agents from `create_browser_agent` keep the
-  dedicated log (`dedicated_log` is `True`).
+  dedicated log (`dedicated_log` is `True`). The Direct agent replaces the worker in its topology, so it is built in
+  the worker's language (`WORKER_LANGUAGE`, English), whatever `language` the facade was given; the facade's own
+  `language` (default `cn`) still reaches its tool context and the parts it builds, and `create_browser_agent`'s
+  default stays `cn`.
 - `runtime_health()`: `session.health()` when the stack runs, else `ok=False, detail="not started"`, with
   `started` and the model settings.
 - `shutdown()`: `service.shutdown()`, the facade's session view dropped, then `OpenAIModelClient.aclose()` so the
@@ -1091,6 +1095,10 @@ a call and `CommandRecord`s after it, never tool text.
 
 - `before_invoke`: the browser log context for the invoke when `runtime.dedicated_log` is true (reset in
   `after_invoke`), `ensure_runtime_ready()`, then `agent_parts(image_support=<the agent's read-image support>)`:
+  a session that cannot start (or restart) there raises core's `AbortError` with the start error as `cause`, so
+  the invoke fails and the caller sees that error (the callback framework re-raises the cause; the runner's Direct
+  answer is `ok=False` with its text); no tool is added and no model call is made. Any other callback failure the
+  framework logs and swallows, and the invoke would go on with no tools:
   every tool through `ability_manager.add_ability(card, tool)` on every invoke (a re-add refreshes the instance),
   and the parts' rails (`ActionPolicy`, `RepeatedCallGuardRail`, `InterceptedActionHintRail`, the profile's)
   through `agent.register_rail` once per agent.
@@ -1218,8 +1226,10 @@ native_text, surface}`, `versions` from the sidecar's `connect` reply.
   `Unsupported`). Each action marks where its input starts; a stale or missing node after that point reaches the
   driver as a plain `DriverError(dispatched=True)`. A browser that went away reaches the sidecar as browser-use's
   own error once its reconnect gives up ("Reconnection failed - CDP still not connected", "Reconnection wait timed
-  out", "browser not connected"); an unclassified error whose message says `not connected` or `Reconnection wait
-  timed out` becomes `ConnectionLost(dispatched=True)`, so the driver session restarts. Other codes it cannot
+  out", "browser not connected"), and a target that detached under it fails the connect with "No valid agent
+  focus available - target may have detached"; an unclassified error whose message says `not connected`,
+  `Reconnection wait timed out`, `No valid agent focus available` or `target may have detached` becomes
+  `ConnectionLost(dispatched=True)`, so the driver session restarts (at `start()` too). Other codes it cannot
   classify become `DriverError(dispatched=True)` and are logged raw.
 - Cancellation. One request is in flight at a time; after 30 s without a reply the transport sends the sidecar a
   `cancel` for it and raises `ActionTimeout`. When the caller cancels the request instead (`Timeouts`), the
