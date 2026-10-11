@@ -485,13 +485,18 @@ class PlaywrightMcpDriver(HandlerDriver):
 def create_playwright_mcp_driver(device: ProvisionedDevice, surface_settings: Any) -> PlaywrightMcpDriver:
     """Driver factory (registry signature): the server attaches to ``device.endpoint`` over CDP on ``start()``.
 
-    A server config in ``surface_settings.mcp_server`` keeps its command line; the factory's name, id and the
-    device environment win, so the tool prefix never changes with the caller.
+    A server config in ``surface_settings.mcp_server`` keeps its command line and environment; the factory's name
+    and id win, so the tool prefix never changes with the caller, and the device endpoint replaces the config's.
     """
     server = playwright_mcp_config(surface_settings, BrowserInstanceConfig(cdp_url=device.endpoint))
     given = getattr(surface_settings, "mcp_server", None)
     if given is not None:
-        env = {**(given.params.get("env") or {}), **(server.params.get("env") or {})}
+        env = dict(given.params.get("env") or {})
+        # A device emulation cannot drive a CDP-attached browser; CDP mode is Chromium-only.
+        env.pop("PLAYWRIGHT_MCP_DEVICE", None)
+        if device.endpoint:
+            env["PLAYWRIGHT_MCP_CDP_ENDPOINT"] = device.endpoint
+            env.setdefault("PLAYWRIGHT_MCP_BROWSER", "chrome")
         server = McpServerConfig(
             server_id=server.server_id,
             server_name=server.server_name,
