@@ -2375,6 +2375,15 @@ Phase 4 done-when items with their evidence, and the numbers the merge is judged
    request. The state now also starts in the first `before_model_call` that finds none (the first model call precedes
    every tool call, and the model-call context is the inner invoke's own), where the finish section is cleared as
    `before_invoke` does. The worker path is unchanged.
+4. **The argument normalisation is gated on `target` fields alone.** `BrowserRuntimeRail.before_tool_call` applied the
+   Playwright MCP normalisation (the `ref` → `target` rename, the `target_id` resolution, `generation_id` dropped) to
+   every factory tool whose schema had any of `target`, `startTarget`, `endTarget`, `ref`, `startRef`, `endRef`. The
+   browser dialect declares `ref` as a field of its own, so on browser-use through the main agent every element
+   command the model sent as `{"ref": …, "generation_id": …}` became `{"target": …}` and the schema check denied it
+   (`generation_id` missing, `target` not permitted); nothing reached the driver. The observe-count run showed it:
+   seven model turns on browser-use, no `Click` or `TypeText` at the driver. The gate is now the three `target`
+   fields, as S_20 already said; the browser dialect's tools are left to their decoders. Unit tests had driven the rail
+   only with the MCP dialect.
 
 ### Rejected options
 
@@ -2397,6 +2406,8 @@ Phase 4 done-when items with their evidence, and the numbers the merge is judged
   leaves the browser log context unset; the default runtime enters it.
 - `test_browser_repeated_call_guard.py`: a run whose `before_invoke` fired on another context is guarded from its
   first model call (tools withheld after the fifth identical call, a stale finish section cleared).
+- `test_browser_runtime_rail.py`: a browser-dialect `browser_click` with `ref` and `generation_id` passes
+  `before_tool_call` untouched (red on the old gate: the arguments came out as `{"target": …}`).
 
 - `test_browser_runtime_rail.py`: a status logger that raises is logged with the hook name and the error and the
   rail returns.
