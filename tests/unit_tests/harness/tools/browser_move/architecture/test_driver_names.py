@@ -10,7 +10,7 @@ from collections import Counter
 
 from . import _scan
 
-DRIVER_NAME_RE = re.compile(r"playwright_mcp|browser_use|browser-use|\bmcp\b", re.IGNORECASE)
+DRIVER_NAME_RE = re.compile(r"playwright_mcp|browser_use(?![a-z])|browser-use|\bmcp\b", re.IGNORECASE)
 
 # The 70 tools of @playwright/mcp@0.0.78: the 69 catalog names plus browser_wait_for.
 MCP_TOOL_NAMES = frozenset(
@@ -93,22 +93,24 @@ MCP_TOOL_NAME_RE = re.compile(
 
 # file relative to the package -> number of driver-name matches.
 KNOWN_DRIVER_NAMES: dict[str, int] = {
-    # legacy code, removed with the old paths
+    # the worker card and the custom-action card still name a driver
     "playwright_runtime/agents.py": 1,
-    "playwright_runtime/browser_capabilities.py": 2,
-    "playwright_runtime/browser_tools.py": 3,
-    "playwright_runtime/browser_working_context.py": 2,
-    "playwright_runtime/browser_working_context_rail.py": 2,
-    "playwright_runtime/runtime.py": 2,
     "playwright_runtime/runtime_tools.py": 1,
+    # the capability catalog; moves to surfaces/browser/ in Phase 9
+    "playwright_runtime/browser_capabilities.py": 2,
+    # the runtime server's own transport: the config facade's name and the server's "/mcp" path
+    "playwright_runtime/browser_tools.py": 3,
+    # the CDP endpoint of the given server config, part of the lifecycle identity
     "playwright_runtime/service.py": 1,
     # model-facing card text, kept byte-identical to the golden tool list
     "surfaces/browser/helpers/batch_steps.py": 1,
 }
 
 # file relative to the package -> number of MCP tool-name matches.
+# Model-facing bytes pinned by the goldens (the worker prompt, the capability catalog, the main agent's
+# screenshot guidance, primary-link rewrite and evaluate provenance) and the browser_resume run-context key;
+# they move to surfaces/browser/ with the prompt text in Phase 9.
 KNOWN_MCP_TOOL_NAMES: dict[str, int] = {
-    # legacy code, removed with the old paths
     "playwright_runtime/agents.py": 11,
     "playwright_runtime/browser_capabilities.py": 69,
     "playwright_runtime/runtime.py": 9,
