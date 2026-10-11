@@ -237,3 +237,38 @@ def test_close_stops_the_new_stack_and_releases_the_new_device() -> None:
     ((_, rebuilt),) = rebuilds.drivers
     assert provisioner.log[-1] == ("release", SECOND)
     assert rebuilt.kinds() == ["start", "stop"]
+
+
+def test_stop_keeps_the_device_and_start_restarts_the_same_stack_on_a_live_device() -> None:
+    driver = FakeDriver()
+    session, provisioner, _ = _session(driver)
+
+    asyncio.run(session.stop())
+    asyncio.run(session.start())
+
+    assert driver.kinds() == ["stop", "start"]
+    assert provisioner.log == []
+    assert session.assembly.device == FIRST
+
+
+def test_start_after_stop_provisions_again_when_the_device_died() -> None:
+    driver = FakeDriver()
+    rebuilds = Rebuilds()
+    session, provisioner, _ = _session(driver, alive=False, rebuild=rebuilds)
+
+    asyncio.run(session.stop())
+    asyncio.run(session.start())
+
+    ((device, rebuilt),) = rebuilds.drivers
+    assert (device, session.assembly.device) == (SECOND, SECOND)
+    assert provisioner.log == [("release", FIRST), ("provision", FakeSettings())]
+    assert (driver.kinds(), rebuilt.kinds()) == (["stop"], ["start"])
+
+
+def test_health_asks_the_stack() -> None:
+    driver = FakeDriver()
+    session, _, _ = _session(driver)
+
+    assert asyncio.run(session.health()).ok is False
+    asyncio.run(session.start())
+    assert asyncio.run(session.health()).ok is True
