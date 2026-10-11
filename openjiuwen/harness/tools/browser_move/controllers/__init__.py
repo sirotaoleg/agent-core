@@ -20,7 +20,6 @@ from .action import (
     register_builtin_actions,
     register_example_actions,
     run_action,
-    validate_batch_steps,
 )
 from .base import BaseController
 
@@ -41,7 +40,6 @@ __all__ = [
     "list_actions",
     "describe_actions",
     "run_action",
-    "validate_batch_steps",
 ]
 
 sys.modules.setdefault("controllers", sys.modules[__name__])
