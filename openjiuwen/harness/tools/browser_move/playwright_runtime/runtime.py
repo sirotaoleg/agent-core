@@ -1099,12 +1099,8 @@ class BrowserRuntimeRail(AgentRail):
             return
         try:
             method(ctx)
-        except Exception:
-            browser_agent_log_warning(
-                "[BROWSER_SUBAGENT_ERROR] method=%s",
-                method_name,
-                exc_info=True,
-            )
+        except Exception as exc:
+            browser_agent_log_warning("[BROWSER_SUBAGENT_ERROR] method=%s error=%s", method_name, exc)
 
     async def before_invoke(self, ctx: AgentCallbackContext) -> None:
         if isinstance(getattr(ctx, "extra", None), dict):
