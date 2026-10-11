@@ -162,7 +162,7 @@ Every constructor accepts an explicit `dispatched=` to override the default.
   `observe(Observe) -> Observation`, `execute(action) -> ActionResult`. The type of `config` belongs to the driver;
   its factory builds it.
 - `DriverInfo(name, surfaces: frozenset[str], versions, actions, observes, tool_hints, native_tools,
-  tool_name_prefix)`. `actions` maps each handled command type to the element ref kinds it accepts (empty for
+  tool_name_prefix, display_name)`. `actions` maps each handled command type to the element ref kinds it accepts (empty for
   commands without refs). `surfaces` lists the surfaces the driver serves; the composition root refuses a driver
   that does not list the selected one. `observes` names the `Observation` fields the driver fills. `tool_hints` are
   optional per-command descriptions. `native_tools` (default empty) maps a tool spec name to a
@@ -170,6 +170,9 @@ Every constructor accepts an explicit `dispatched=` to override the default.
   `build(args, resolver) -> Action` decoding its arguments; `build` is `None` for a driver tool no command backs,
   which the tool factory never emits itself (a surface extra tool may take its description and schema). The model
   sees `tool_name_prefix` (default `""`) + the spec name. The Playwright MCP driver fills them after `start()`.
+  `display_name` (default `""`) is how a prompt names the driver to the model (`"Playwright MCP"`,
+  `"browser-use"`); a reader falls back to `name` when it is empty. It is the only driver-specific text a prompt in
+  the core carries, so the core names no driver itself.
 - `@handles(Command, refs={DriverRef, ...})` marks a method as the handler of a command; marks stack.
   `refs` accepts only element ref kinds.
 - `HandlerDriver(Driver)`: `execute` dispatches by `type(action)` to the marked method. `info` is
@@ -561,16 +564,16 @@ instance's `driver`, when set, in place of `core.driver`.
 
 The service holds the `DriverSession` the worker runs on and provisions nothing itself:
 
-- `ensure_runtime_ready()`: without a session, `assemble_driver(service.core, process_environ(), instance=,
-  settings=)` with the service settings carrying `mcp_server` (the given `mcp_cfg`) and `mcp_cwd` (the config's
-  `cwd`, else the settings'); the assembly's provisioner is registered with the process registry as the identity's
-  managed driver; `DriverSession(assembly, page_state, profile.messages)`. With a session whose stack was stopped by
-  a task release, `session.start()`. Then `begin_task()`. `started` is "the stack runs".
-- `ensure_started()`: `ensure_runtime_ready()`, then the worker once: `build_agent_parts(session, surface,
-  capabilities=<from the allowlist>, image_support=False, language=WORKER_LANGUAGE, worker=True)` and
-  `build_browser_worker_agent(..., tools=parts.tools, settings=service.core)`; the parts' rails and
-  `FinalAnswerRecoveryRail` through `register_rail`, in that order. `WORKER_LANGUAGE` (`"en"`) is the worker's
-  language, the one place it is written; the facade's Direct agent reads it too (below).
+- `ensure_runtime_ready()`: without a session, `open_session(service.core, process_environ(), page_state=,
+  instance=, settings=)` ("Composition root") with the service settings carrying `mcp_server` (the given `mcp_cfg`)
+  and `mcp_cwd` (the config's `cwd`, else the settings'); the session's provisioner is registered with the process
+  registry as the identity's managed driver (the lifecycle identity is a service concept, so the registration stays
+  here). With a session whose stack was stopped by a task release, `session.start()`. Then `begin_task()`.
+  `started` is "the stack runs".
+- `ensure_started()`: `ensure_runtime_ready()`, then the worker once through `agents.build_worker(session,
+  session.assembly.surface, provider=, api_key=, api_base=, model_name=, max_steps=guardrails.max_steps,
+  core=service.core, capabilities=<from the allowlist>, tool_result_observer=<the progress recorder>,
+  screenshot_subdir=, artifacts_subdir=)` ("Agent construction"). The service builds no agent itself.
 - `acquire_task_binding()` counts a task and calls `session.begin_task()`; `release_task_binding()` on the last
   binding stops the stack (`session.stop()`, the device and its Chrome stay), forgets the worker and the task
   state. `reset()` closes the session (stop, release) and stops the identity's registered provisioners;
@@ -586,13 +589,16 @@ store's selected profile and the legacy store path are not consulted any more.
 `assemble_driver(core: CoreSettings, environ, *, instance=None, registries=None, settings=None) -> DriverAssembly`
 builds the driver stack from names only and returns it started. `registries` is `Registries(drivers, surfaces,
 provisioners)`; `None` means the three default registries with the built-ins. The module imports no concrete
-driver, surface or provisioner, names none, and holds no state. `BrowserService.ensure_runtime_ready` calls it for
-the one session the main agent and the worker share.
+driver, surface or provisioner, names none, and holds no state. `open_session` (below) calls it for the one session
+the main agent and the worker share.
 
-1. `surface = registries.surfaces.create(core.surface, environ, instance, settings)`, a `SurfaceBundle`: the surface
-   factory parses `environ` unless `settings` is given, and applies `instance` (the surface's per-agent identity,
+1. `surface = assemble_surface(core, environ, instance=, settings=, registries=)`, which is
+   `registries.surfaces.create(core.surface, environ, instance, settings)`, a `SurfaceBundle`: the surface factory
+   parses `environ` unless `settings` is given, and applies `instance` (the surface's per-agent identity,
    `BrowserInstanceConfig` for the browser) to the settings, so provisioning, the driver factory and the tool
-   context all see it. The composition root never touches the settings.
+   context all see it. The composition root never touches the settings. `assemble_surface` is public so a caller
+   can hold the profile (its policy rules and messages) before any driver exists; a bundle built that way and the
+   session's bundle agree on `policy_rules` and `messages`, which are constants of the surface factory.
 2. (merged into step 1.)
 3. `provisioner = registries.provisioners.create(surface.settings.provisioning)`.
 4. `device = provisioner.provision(surface.settings)`, run in a worker thread.
@@ -611,7 +617,25 @@ another device (same driver factory, surface check and middleware), not started;
 whose `settings` are what `provision` was called with. `DriverSession` provisions again from `surface.settings` and
 builds the new stack with `rebuild`. Assemblies built by hand (tests) may leave `rebuild` and `surface` out.
 
+`open_session(core, environ, *, page_state, instance=None, settings=None, registries=None) -> DriverSession` is
+the one way a session is opened: `assemble_driver(...)`, then `DriverSession(assembly, page_state,
+assembly.surface.profile.messages)`. A `ConnectionLost` from that first `assemble_driver` (the stack's first
+`start()` lost its connection; the failed assembly has already stopped its stack and released its device) runs
+`assemble_driver` once more, a fresh provision; a second `ConnectionLost`, or any other error, propagates. Only the
+first open is retried here: once the session exists, a lost connection is the session's own restart ("Driver
+session").
+
 ### Agent construction
+
+Every agent gets its session, tools and rails from this module and is built by exactly one builder: the main agent
+by `create_browser_agent` (`openjiuwen/harness/subagents/browser_agent.py`), the worker by `build_worker`
+(`playwright_runtime/agents.py`). Nothing else creates an agent or opens a session.
+
+`core_rails(profile, builders, page_state) -> (ActionPolicy, RepeatedCallGuardRail, InterceptedActionHintRail)`:
+`ActionPolicy(builders, profile.policy_rules, page_state)`, `RepeatedCallGuardRail()`,
+`InterceptedActionHintRail(profile.messages["retry"])`, in that order. `builders` is kept as given, not copied
+("Policy rail"), so the rails can be built before the driver starts over a mapping that fills later; the inputs
+exist before the session: the profile's constants and the page state.
 
 `build_agent_parts(session, bundle, *, capabilities, image_support, language, workspace=None, worker=False) ->
 AgentParts` (`tools`, `prompt_sections`, `rails`, `builders`):
@@ -620,10 +644,10 @@ AgentParts` (`tools`, `prompt_sections`, `rails`, `builders`):
   image_support=, session=, page_state=session.page_state, workspace=, language=, worker=)`; with `worker=True`
   the extra tools flagged `worker=False` are left out.
 - `builders`: the factory's `AgentTools.builders`, for the runtime's `tool_kind`.
-- `rails`, in this order: `ActionPolicy(<the factory's builders>, profile.policy_rules, session.page_state)`,
-  `RepeatedCallGuardRail()`, `InterceptedActionHintRail(profile.messages["retry"])`, then `factory(context)` for
-  each `profile.rails` entry, `context` being the `ToolContext` of the same session, profile, driver info, image support, workspace and
-  language.
+- `rails`: the profile's only, `factory(context)` for each `profile.rails` entry, `context` being the
+  `ToolContext` of the same session, profile, driver info, image support, workspace and language. The core rails are
+  not part of the parts: the builder of the agent takes them from `core_rails` and registers them before the
+  profile's.
 
 `build_agent(core, environ, *, model, capabilities, image_support, language, system_prompt="", workspace=None,
 instance=None, registries=None, **agent_options) -> (DeepAgent, DriverSession)`:
@@ -632,11 +656,30 @@ instance=None, registries=None, **agent_options) -> (DeepAgent, DriverSession)`:
 2. `DriverSession(assembly, BrowserPageState(), profile.messages)`;
 3. `build_agent_parts(session, assembly.surface, ...)`;
 4. `create_deep_agent(model, system_prompt=<system_prompt and the prompt sections, blank-line separated>,
-   tools=, rails=, workspace=, language=, **agent_options)`.
+   tools=, rails=[*core_rails(profile, parts.builders, session.page_state), *parts.rails], workspace=, language=,
+   **agent_options)`.
 
 The driver is started before the agent exists (the Playwright MCP native tools exist only after `start()`). A
 failure in steps 2–4 closes the session (stop, release). The caller owns the session: `begin_task()` per task,
 `close()` when the agent is done. Neither function names a driver, a surface or a provisioner.
+
+`build_worker(session, bundle, *, provider, api_key, api_base, model_name, max_steps, core, capabilities,
+tool_result_observer, screenshot_subdir, artifacts_subdir) -> ReActAgent` (`playwright_runtime/agents.py`, async)
+is the worker's builder: `build_agent_parts(session, bundle, capabilities=, image_support=False,
+language=WORKER_LANGUAGE, worker=True)`; `build_browser_worker_agent(provider=, api_key=, api_base=, model_name=,
+max_steps=, tools=parts.tools, screenshot_subdir=, artifacts_subdir=, tool_result_observer=, settings=core,
+driver_name=<the driver's display name>)`; then `register_rail` for `core_rails(bundle.profile, parts.builders,
+session.page_state)`, the parts' rails and `FinalAnswerRecoveryRail()`, in that order. The model identity and
+`max_steps` are the service's own values, not `core`'s: `core` gives the worker temperature, top-p, tool timeout
+and logging. `WORKER_LANGUAGE` (`"en"`, `agents.py`) is the worker's language, the one place it is written.
+
+The worker prompt (`build_browser_worker_system_prompt(..., driver_name)`, re-rendered per task by
+`refresh_browser_worker_system_prompt(agent, ..., driver_name)`) names the driver in two sentences, "with
+`<driver_name>` tools and approved runtime helper tools only" and "required by a `<driver_name>` action", from
+`worker_driver_name(info)`: `DriverInfo.display_name`, else `name`. On Playwright MCP the prompt reads exactly as
+before (the `runner` golden); on browser-use it says "browser-use tools" / "a browser-use action". The prompt's
+tool names (`browser_snapshot`, `browser_fill_form`, `browser_evaluate`, `browser_tabs`) are the same on both
+drivers.
 
 ## Browser surface profile (`surfaces/browser/`)
 
@@ -864,7 +907,9 @@ one counter; the text-snapshot methods (`register_ax_snapshot`, `replace_ax_snap
 ### Driver session (`driver_session.py`, `DriverSession`)
 
 `DriverSession(assembly, page_state, messages)` forwards `execute` and `observe` to `assembly.stack`; `messages` must
-hold `driver_restarted` and `driver_lost` (read at construction). `page_state` is readable.
+hold `driver_restarted` and `driver_lost` (read at construction). `page_state` is readable. Sessions are opened by
+`assembly.open_session`, which retries the first open once on `ConnectionLost` ("Composition root"); the table
+below is what the session does with a connection lost after that.
 
 | Event | Behaviour |
 |---|---|
@@ -884,9 +929,12 @@ connects over CDP lazily).
 ### Policy rail (`action_policy.py`, `ActionPolicy`)
 
 `ActionPolicy(builders, rules, page_state)` is a `BaseSecurityRail` on `BEFORE_TOOL_CALL`. `builders` maps a
-model-facing tool name to the pure argument decoder of its spec (`ToolSpec.build` / `NativeTool.build`). For a tool
-in `builders` it parses the arguments (a JSON string or a mapping), decodes the command with the page state as
-`RefResolver` and calls `rule.check(action, page_state.surface_context)` for each rule whose `command_type` matches.
+model-facing tool name to the pure argument decoder of its spec (`ToolSpec.build` / `NativeTool.build`); the rail
+keeps the mapping it is given and reads it per call, so a decoder added after construction (the Playwright MCP
+native tools exist only after `start()`) is enforced from then on. `BaseSecurityRail.tool_names` is not passed:
+it only feeds `get_tools()`, never a check. For a tool in `builders` it parses the arguments (a JSON string or a
+mapping), decodes the command with the page state as `RefResolver` and calls `rule.check(action,
+page_state.surface_context)` for each rule whose `command_type` matches.
 A reason, or a `ValueError` from parsing or decoding, denies the call:
 
 - `extra["_skip_tool_calls"][tool_call_id] = True` (per call; the ability manager returns the prepared result
@@ -1070,7 +1118,7 @@ lifetime, hands it to its `BrowserService`, and from `ensure_runtime_ready()` on
   browser-agent log context (`dedicated_log` is `False` on the facade that built it): its lines, the model client's
   usage lines included, go to the process log as the worker's do. Agents from `create_browser_agent` keep the
   dedicated log (`dedicated_log` is `True`). The Direct agent replaces the worker in its topology, so it is built in
-  the worker's language (`WORKER_LANGUAGE`, English), whatever `language` the facade was given; the facade's own
+  the worker's language (`WORKER_LANGUAGE`, English, from `agents.py`), whatever `language` the facade was given; the facade's own
   `language` (default `cn`) still reaches its tool context and the parts it builds, and `create_browser_agent`'s
   default stays `cn`.
 - `runtime_health()`: `session.health()` when the stack runs, else `ok=False, detail="not started"`, with
@@ -1177,8 +1225,8 @@ no elements, no screenshot) instead of raising. Outside a dialog `dialog` is `No
 
 `BrowserUseDriver(HandlerDriver)` runs commands through the browser-use sidecar: a separate Python process
 (`sidecar/`, its own venv; the agent-core process never imports `browser_use`) reached over NDJSON on stdio
-(`transport.py`). `info`: `name="browser_use"`, `surfaces={"browser"}`, `observes={elements, screenshot,
-native_text, surface}`, `versions` from the sidecar's `connect` reply.
+(`transport.py`). `info`: `name="browser_use"`, `display_name="browser-use"`, `surfaces={"browser"}`,
+`observes={elements, screenshot, native_text, surface}`, `versions` from the sidecar's `connect` reply.
 
 - Factory: `create_browser_use_driver(device, surface_settings)` builds `BrowserUseConfig(cdp_url=device.endpoint,
   sidecar_python=..., upload_root=...)`, the last two from the `BrowserSettings` (`None` settings: neither);
@@ -1336,7 +1384,7 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   description and schema). Before
   `start()` `native_tools` is empty. `tool_name_prefix` is `mcp_model_tool_prefix(server_name)`
   (`mcp_playwright-official_`), the prefix the ability manager gives MCP tools; an instance key never changes it.
-  `health()` pings the session.
+  `display_name` is `"Playwright MCP"`. `health()` pings the session.
 - `observe()` calls `browser_snapshot` with `boxes: true` (and `browser_take_screenshot` when asked), so every
   element has `bounds` and a `PointRef` can be built from an observation. `native_text` is the full text of that
   result (header, open tabs, YAML) without the boxes (`without_boxes`): what the model reads today. Tabs come from

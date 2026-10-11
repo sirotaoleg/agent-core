@@ -2686,3 +2686,132 @@ objects that run each topology, and the facade rewire onto them, are the next st
    the `Topology` strategies with that step.
 3. `create_browser_agent` (the harness main agent, which always calls the tools itself) is outside
    `BROWSER_TOPOLOGY`'s scope; the variable governs the runner's facade only.
+
+## Phase 6: assembly pieces, the first-open retry and the worker's one builder
+
+The second step of Phase 6 gives the composition root the surface-neutral pieces every agent is built from, and
+moves the worker's construction out of the service. Before it, `BrowserService` opened the session with
+`assemble_driver` and built the worker in `ensure_started`; `build_agent_parts` created the three core rails over a
+copy of the factory's builders, so on Playwright MCP (whose native tools exist only after `start()`) rails could
+only be built after the driver started, which is why the main agent registered them at its first invoke
+(`RepeatedCallGuardRail` grew a fallback for the invoke it missed). The worker prompt named "Playwright MCP" in two
+sentences on both drivers. The design review (A1) kept `assembly.py` surface-neutral: no browser agent body goes
+in, each agent kind keeps one builder that takes the neutral pieces.
+
+### Decisions
+
+1. **`assembly.py` gets the neutral pieces only.** `assemble_surface` (step 1 of `assemble_driver`, public so a
+   caller can hold the profile before a driver exists), `open_session` (the one way a session is opened),
+   `core_rails` (the policy, the guard, the hint over a live mapping), and `build_agent_parts` returning the
+   profile's rails only. The module still names no driver, surface or provisioner and carries no browser word.
+2. **One retry of the first open.** `open_session` calls `assemble_driver` again once when the first call raises
+   `ConnectionLost`. The failed assembly has already stopped its stack and released its device, so the retry is a
+   fresh provision, the equivalent of `DriverSession._start` on a dead device; a second `ConnectionLost` or any
+   other error propagates. This is the T9b question 1 answer (the first-open failure of "The switch: verification
+   follow-up", leftover 1). The session's own restart stays as it was for a connection lost later.
+3. **The policy rail reads a live mapping.** `ActionPolicy` keeps the `builders` mapping it is given instead of
+   `dict(builders)`, and no longer passes it as `BaseSecurityRail.tool_names`, which only feeds `get_tools()` and
+   `add_tools` and is never consulted at check time. A decoder added after construction is enforced from the next
+   call. This is what lets the next step build the rails at the agent's construction over the facade's mapping.
+4. **The core rails come from `core_rails`, not from the parts.** `build_agent_parts` returns `profile.rails` only;
+   `build_agent` composes `core_rails(profile, parts.builders, page_state)` before them; `build_worker` registers
+   them, then the parts' rails, then `FinalAnswerRecoveryRail`, the order the service used. Until the facade
+   switches to construction-time rails (next step), `BrowserAgentRuntime.agent_parts` composes the core rails into
+   the parts it returns, over its live `_builders` mapping, so `BrowserRuntimeRail` registers the same rails at the
+   first invoke as before. That bridge is three lines and goes with the next step.
+5. **The worker's builder is `agents.build_worker`.** `build_worker(session, bundle, *, provider, api_key,
+   api_base, model_name, max_steps, core, capabilities, tool_result_observer, screenshot_subdir, artifacts_subdir)`
+   is the body of the old `BrowserService.ensure_started`: the parts (`worker=True`, `image_support=False`,
+   `WORKER_LANGUAGE`), `build_browser_worker_agent`, the rails. It sits next to `build_browser_worker_agent` because
+   it is browser-worker code (A1), and `WORKER_LANGUAGE` moves there with it (the service no longer needs it; the
+   facade imports it from `agents.py`). `BrowserService.ensure_started` calls it; `_open_session` calls
+   `open_session` and keeps the registry registration (the lifecycle identity is a service concept).
+6. **The model identity is a parameter, not `core`.** The design signature took only `core`, but the service's
+   `provider`, `api_key`, `api_base`, `model_name` and `guardrails` are its own constructor values, not
+   `service.core`'s (`create_browser_agent` resolves them from the browser subagent's model settings, and
+   `test_service.py` pins `max_steps` from the service's guardrails, not the core's). Taking them from `core` would
+   have changed which model the worker calls wherever the two differ. So `build_worker` takes them explicitly;
+   `core` supplies the worker temperature, top-p, tool timeout and logging as before.
+7. **The driver names itself to the model: `DriverInfo.display_name`.** `"Playwright MCP"` from
+   `PlaywrightMcpDriver.describe`, `"browser-use"` from `BrowserUseDriver.describe`; a string, so `contract/` stays
+   stdlib-only. `build_browser_worker_system_prompt`, `build_browser_worker_agent` and
+   `refresh_browser_worker_system_prompt` take a required `driver_name`, rendered in the two sentences that named
+   the driver; `worker_driver_name(info)` falls back to `info.name` for a driver that leaves the field empty (the
+   fakes). The template keeps the article ("a `{driver_name}` action"), which is right for both names. The MCP
+   `runner` golden is byte for byte what it was.
+
+### Rejected options
+
+- **A driver-keyed table of prompt sentences in the surface profile.** The profile is built before any driver
+  exists and takes no driver input; a `{"playwright_mcp": ..., "browser_use": ...}` table in `surfaces/browser/` is
+  a driver name in the surface scope that Phase 7 would have to empty again.
+- **A default for `driver_name`.** A default of `"Playwright MCP"` would keep the old text on browser-use silently
+  for any caller that forgot the argument; every caller now says which driver it renders for.
+- **`build_worker` reading the service.** `build_worker(service)` would reach into the service's private
+  progress recorder and subdirectories, and the worker builder would import the service type. Explicit arguments
+  keep `agents.py` independent of `service.py` (which imports it).
+- **`build_worker(..., core=)` as the model's source.** Decision 6.
+- **Retrying inside `DriverSession`.** The session exists only once an assembly started; the first open has no
+  session to restart, and a retry in `assemble_driver` would also retry the surface-neutral e2e builder and the
+  live conformance opens that assert a single failure.
+- **Keeping `tool_names=builders` on the policy.** `get_tools()` would then show the construction-time names, a
+  stale view once decoders arrive later; nothing reads it.
+
+### Behaviour changes to know
+
+- A first `start()` that loses its connection (Playwright MCP could not connect, browser-use's sidecar lost CDP)
+  provisions and starts once more before the task fails; the first attempt's device is released in between. Tests
+  that count `assemble_driver` calls on a failing first open now see two.
+- The worker prompt on browser-use reads "browser-use tools" and "a browser-use action"; on Playwright MCP it is
+  unchanged.
+- `build_browser_worker_system_prompt`, `build_browser_worker_agent` and `refresh_browser_worker_system_prompt`
+  require `driver_name`; `build_agent_parts(...).rails` holds the profile's rails only; `ActionPolicy.get_tools()`
+  is empty.
+- `WORKER_LANGUAGE` is imported from `playwright_runtime.agents`, no longer from `service`.
+- `BrowserService` imports neither `assemble_driver` nor `build_browser_worker_agent`: tests that stub either
+  patch `playwright_runtime.assembly.assemble_driver` or `playwright_runtime.agents.build_browser_worker_agent`.
+
+### Verification
+
+- `test_assembly.py`: `assemble_surface` applies the instance to the given settings and is what `assemble_driver`
+  starts from; `open_session` retries once (two provisions, the first device released, the session over the second
+  stack with the given page state), propagates a second `ConnectionLost` with both devices released, does not retry
+  another `DriverError`, and reads the profile's messages.
+- `test_build_agent.py`: the parts hold the profile rails only; `core_rails` order and inputs (the mapping object
+  itself, the rules, the page state, the retry message); `build_agent` hands the three core rails before the
+  profile rail to `create_deep_agent`.
+- `test_action_policy.py`: a decoder added to an initially empty mapping after construction is enforced.
+- `test_build_worker.py` (new): the worker's tools (the prefixed core tools, the two probes, the batch, no recall);
+  the model identity, `max_steps`, `core`, the observer, the subdirectories and the driver name handed to
+  `build_browser_worker_agent`; the rail order with `FinalAnswerRecoveryRail` last and the policy over the
+  session's page state; the rendered prompt names the display name ("browser-use tools", "a browser-use action")
+  and the model takes the core's temperature and top-p; the parts are built with `worker=True` in
+  `WORKER_LANGUAGE`.
+- Driver tests: `PlaywrightMcpDriver().info.display_name == "Playwright MCP"`, `BrowserUseDriver().info.display_name
+  == "browser-use"`.
+- `test_service.py` worker tests unchanged in substance (patch targets moved to `assembly` / `agents`);
+  `test_browser_runtime_facade.py`: a session that cannot start on browser-use now awaits `assemble_driver` twice.
+  `test_browser_final_answer_recovery.py` opens a session before injecting its worker (the prompt refresh reads the
+  driver's name from the session).
+- Architecture: `KNOWN_DRIVER_NAMES` ratcheted `playwright_runtime/agents.py` 4 → 1 (the worker card's
+  description, not model-facing, stays for Phase 7) and `playwright_runtime/service.py` 14 → 1;
+  `KNOWN_BROWSER_WORDS` `playwright_runtime/service.py` 92 → 82. `assembly.py` stays off both allowlists.
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q`: **2349 passed, 118 skipped** (2337 / 118
+  before; 12 new tests).
+- Goldens: `snapshots/golden/` unchanged (no file in `git status`); the MCP `runner` prompt renders byte for byte
+  through `display_name`.
+- `ruff check` clean on every touched file.
+- Live suites: run once at the end of the phase's third step (the session plan), recorded in "Phase 6:
+  verification baseline".
+
+### Known leftovers
+
+1. `BrowserAgentRuntime.agent_parts` composes the core rails into its parts (decision 4) until the next step
+   builds them at the main agent's construction.
+2. `WORKER_LANGUAGE` lives in `agents.py` next to the builder that needs it; the design placed it in `topology.py`,
+   which would import `agents.py` (for `build_worker`) and so cannot be imported by it. The next step decides
+   whether `topology.py` re-exports it.
+3. The worker card's description ("using Playwright MCP tools") and the `browser_custom_action` tool description
+   still name the driver; neither is model-facing on the worker. Phase 7.
+4. `_run_task_once` reads the driver's name for the prompt refresh from the service's session, so a worker injected
+   without a session (tests) needs one opened first.
