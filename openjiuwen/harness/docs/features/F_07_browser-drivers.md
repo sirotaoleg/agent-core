@@ -2972,3 +2972,76 @@ the worker itself through `ensure_started`.
 3. `runtime.py` keeps `main_agent_answer` because of the browser-word ratchet (decision 7); Phase 9 decides where
    the runner's answer contract lives when the loop moves.
 4. The transport markers of the worker loop are Playwright wording (D8 table); Phase 7.
+
+## Phase 6: verification baseline
+
+The phase's last step: the live proof that each driver finishes one task through the facade in both topologies, the
+live suites run once over the whole phase, and the numbers the phase is judged against. The WebVoyager smokes (one
+task per driver in each topology, with a real model) are the head's, outside this session.
+
+### The live module (`test_topology_live.py`)
+
+Gated as the other live suites (`BROWSER_MOVE_LIVE_MCP=1` for Playwright MCP, `BROWSER_USE_SIDECAR_PYTHON` for
+browser-use), the conformance fixture's headless Chrome attached with `BROWSER_PROVISIONING=remote`, the scene
+server, and the `ScriptedModel` of `test_agent_rails_live.py`: one `browser_navigate` to the scene, then the answer.
+Per driver, through `BrowserAgentRuntime(core_settings=<from the environment, topology=...>)`:
+
+- `delegated_worker`: `ensure_started()` puts the worker in `service.browser_agent`; the scripted model is set on it
+  and the five runner helpers removed as `run_one_task` does; `run_browser_task` returns the runner's shape
+  (`ok`, `final`, `error`, `screenshot`, `page`, `session_id`, `request_id`) with `ok=True` and the scripted
+  `final`; the first request's tools are exactly the prefixed (MCP) or plain (browser-use) core tools; the
+  navigate's tool message is not an error.
+- `direct`: `ensure_started()` builds the main agent and leaves the worker slot empty; the answer is `ok=True`
+  with the scripted text in `final` and the scene's origin in `page.url` (from the page state, on both drivers);
+  the first request's tools hold the core tools and the four main-agent helpers.
+
+Two things the module had to learn:
+
+1. **The main agent's model is a copy.** `create_browser_agent` copies the given model into a plain `Model` for the
+   browser temperature, so a `Model` subclass with a scripted `invoke` does not survive construction (the worker,
+   a `ReActAgent`, takes `set_llm`). The script lives in a `BaseModelClient` installed through
+   `create_model_client`, the snapshot builder's pattern, defined once per module (a second class with the same
+   `__client_name__` only warns, but the first live run showed the registry warning while hunting the next item).
+2. **The processor registry is snapshotted per test.** `tests/conftest.py` and `tests/unit_tests/harness/conftest.py`
+   copy `ContextEngine._PROCESSOR_MAP` when a test starts and restore it when it ends. `Direct.start` imports
+   `browser_agent` lazily, which registers `BrowserStateContextProcessor` and `BrowserWorkingContextProcessor` at
+   import: in the first live run that happened inside the first Direct test, so its teardown dropped both and the
+   second Direct agent failed with "cannot find processor type 'BrowserStateContextProcessor'". The module imports
+   `browser_agent` at collection time. Any test that builds two main agents in one process after a lazy first
+   import has the same exposure; `main.py` and the runner import eagerly and are not affected.
+
+### Phase 6 done-when, with the evidence
+
+| Item | Evidence |
+|---|---|
+| `BROWSER_TOPOLOGY` with a per-driver default | step 1 of the phase ("Phase 6: topology setting"); `test_core_settings.py`, `contract/test_registry.py` |
+| one construction path: `service.py` and `runtime.py` build no agent | `assembly.py` opens every session (`open_session`) and gives every agent its tools and rails; `create_browser_agent` and `build_worker` are the two builders; `test_topology.py`, `test_build_worker.py`, `test_create_browser_agent.py` |
+| the core rails at the main agent's construction | `create_browser_agent` queues `runtime.core_rails()`; `test_create_browser_agent.py`, `test_topology.py` ("gets the core rails at construction"), `test_browser_runtime_rail.py` (no `register_rail`) |
+| the MCP `runner` golden byte for byte; every existing golden unchanged | `regenerate.py`: "unchanged" for the twelve MCP views; `git diff d062c3173 --stat -- snapshots/golden/` shows only `playwright_mcp/runner_direct.json` and `browser_use/runner_worker.json` |
+| each driver completes one task in the other topology | `test_topology_live.py`: 4 passed (MCP in `direct`, browser-use in `delegated_worker`, and each in its default) |
+| both live sets green | below |
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q`: **2365 passed, 122 skipped** (the four new live
+  cases skip without the gates; 2321 / 118 at `d062c3173`).
+- Live, both gates set, one run over `drivers/playwright_mcp/test_conformance_playwright_mcp_live.py`,
+  `drivers/test_conformance_browser_use_live.py`, `surfaces/test_browser_helpers_live.py`, `test_assembly_live.py`,
+  `test_agent_rails_live.py`, `test_topology_live.py`: **116 passed, 3 failed in 361.77s** (6:01), the three being
+  the new module's cases before the two fixes above (a `status` key the worker answer does not carry, and item 2);
+  then `test_topology_live.py` alone, both gates set: **4 passed in 17.42s**. The 115 cases of the existing suites
+  passed in the one run.
+- Ten harness files outside `browser_move`: 248 passed (previous step).
+- `ruff check` clean on the new module.
+
+### Known leftovers
+
+1. The head's four WebVoyager smokes (each driver in each topology, a real model, cost recorded) are the phase's
+   behavioural baseline; this session ran none.
+2. The per-test processor-registry snapshot in the conftests drops processors registered by a lazy import during
+   a test (item 2 above). Worth a note in the conftest or an eager import where the browser agent is built lazily
+   (`Direct.start`); left as is.
+3. `test_wv_runner_contract.py` pins the MCP default only; the Direct path through the runner is pinned by the
+   `runner_direct` golden and the live module, not by the contract test's mirror (previous section).
+4. The `runner_worker` golden carries no `source_commit`; `surfaces/test_browser_tools.py` compares recorded goldens
+   only. When the browser-use goldens are re-recorded (Phase 7), the two conventions can merge.
