@@ -64,11 +64,21 @@ class Registry(Generic[T]):
 DRIVERS: Registry[Driver] = Registry("driver")
 SURFACES: Registry[SurfaceBundle] = Registry("surface")
 PROVISIONERS: Registry[Any] = Registry("provisioner")
+DRIVER_TOPOLOGIES: dict[str, str] = {}
 
 
-def register_driver(name: str, factory: Callable[..., Driver] | str) -> None:
+def register_driver(name: str, factory: Callable[..., Driver] | str, *, default_topology: str = "direct") -> None:
     """``factory(device, surface_settings) -> Driver``; the driver builds its own config."""
     DRIVERS.register(name, factory)
+    DRIVER_TOPOLOGIES[name] = default_topology
+
+
+def default_topology(name: str) -> str:
+    try:
+        return DRIVER_TOPOLOGIES[name]
+    except KeyError:
+        known = ", ".join(DRIVER_TOPOLOGIES) or "none"
+        raise KeyError(f"unknown driver {name!r}; registered: {known}") from None
 
 
 def register_surface(name: str, profile_factory: Callable[..., SurfaceBundle] | str) -> None:

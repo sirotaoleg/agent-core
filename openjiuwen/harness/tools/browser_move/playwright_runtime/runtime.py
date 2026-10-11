@@ -53,6 +53,7 @@ from ..contract import (
     Scroll,
     SwitchContext,
 )
+from ..contract.registry import default_topology
 from ..controllers import ActionController, BaseController
 from ..surfaces.browser.helpers import CUSTOM_ACTIONS, activate_page, page_metadata, probe_for_policy
 from ..utils.parsing import extract_json_object
@@ -821,7 +822,8 @@ class BrowserAgentRuntime:
 
     async def ensure_started(self) -> None:
         """The runner's agent: the worker when the topology delegates, the main agent on this facade otherwise."""
-        if self._service.core.topology == "direct":
+        core = self._service.core
+        if (core.topology or default_topology(core.driver)) == "direct":
             if self._agent is None:
                 self._agent = self._direct_agent()
             return

@@ -108,6 +108,7 @@ class RuntimeSettings:
 
 
 DRIVERS = ("playwright_mcp", "browser_use")
+TOPOLOGIES = ("direct", "delegated_worker")
 DEFAULT_TOOL_TIMEOUT_S = 240.0
 DEFAULT_WORKER_TEMPERATURE = 0.2
 DEFAULT_WORKER_TOP_P = 0.1
@@ -176,6 +177,13 @@ def _driver(environ: Mapping[str, str]) -> str:
         return DRIVERS[0]
     if value not in DRIVERS:
         raise ValueError(f"BROWSER_DRIVER must be one of: {', '.join(DRIVERS)} (got {value!r})")
+    return value
+
+
+def _topology(environ: Mapping[str, str]) -> str:
+    value = (environ.get("BROWSER_TOPOLOGY") or "").strip().lower()
+    if value and value not in TOPOLOGIES:
+        raise ValueError(f"BROWSER_TOPOLOGY must be one of: {', '.join(TOPOLOGIES)} (got {value!r})")
     return value
 
 
@@ -336,6 +344,7 @@ class CoreSettings:
 
     driver: str = DRIVERS[0]
     surface: str = "browser"
+    topology: str = ""
     provider: str = "openai"
     api_key: str = ""
     api_base: str = _PROVIDER_ENDPOINTS["openai"][2]
@@ -351,16 +360,13 @@ class CoreSettings:
     status_log: bool = True
     runtime_server: RuntimeServerSettings = field(default_factory=RuntimeServerSettings)
 
-    @property
-    def topology(self) -> str:
-        return "delegated_worker" if self.driver == "playwright_mcp" else "direct"
-
     @classmethod
     def from_env(cls, environ: Mapping[str, str]) -> CoreSettings:
         provider = _provider(environ)
         key_names, base_names, default_base = _PROVIDER_ENDPOINTS.get(provider, _PROVIDER_ENDPOINTS["openai"])
         return cls(
             driver=_driver(environ),
+            topology=_topology(environ),
             provider=provider,
             api_key=first_value(environ, "API_KEY", "MODEL_API_KEY", *key_names),
             api_base=first_value(environ, "API_BASE", "MODEL_API_BASE", *base_names) or default_base,

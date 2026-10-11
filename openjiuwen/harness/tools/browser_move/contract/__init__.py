@@ -35,10 +35,12 @@ from .errors import (
 from .observation import Element, Observation, Screenshot, SurfaceContext, Viewport
 from .refs import REF_KINDS, ContextRef, DriverRef, IndexRef, Locator, PointRef, Ref, RefResolver
 from .registry import (
+    DRIVER_TOPOLOGIES,
     DRIVERS,
     PROVISIONERS,
     SURFACES,
     Registry,
+    default_topology,
     register_driver,
     register_provisioner,
     register_surface,
@@ -58,6 +60,7 @@ from .surface import (
 
 __all__ = [
     "DRIVERS",
+    "DRIVER_TOPOLOGIES",
     "PROVISIONERS",
     "REF_KINDS",
     "SURFACES",
@@ -113,6 +116,7 @@ __all__ = [
     "Unsupported",
     "Viewport",
     "Wait",
+    "default_topology",
     "ensure_supported",
     "handles",
     "iter_refs",
