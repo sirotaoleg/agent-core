@@ -29,7 +29,7 @@ from .driver_session import DriverSession
 from .intercepted_action import CommandInterceptedHintRail
 from .page_state import BrowserPageState
 from .repeated_call_guard import CommandRepeatGuardRail
-from .tool_factory import ToolContext, ToolFactory
+from .tool_factory import Builder, ToolContext, ToolFactory
 
 
 @dataclass(frozen=True)
@@ -65,6 +65,7 @@ class AgentParts:
     tools: tuple[Tool, ...]
     prompt_sections: tuple[str, ...]
     rails: tuple[AgentRail, ...]
+    builders: Mapping[str, Builder] = field(default_factory=dict)
 
 
 def _log_trace(record: dict[str, Any]) -> None:
@@ -148,7 +149,7 @@ def build_agent_parts(
         CommandInterceptedHintRail(),
         *(factory(context) for factory in profile.rails),
     )
-    return AgentParts(tools.tools, tools.prompt_sections, rails)
+    return AgentParts(tools.tools, tools.prompt_sections, rails, tools.builders)
 
 
 async def build_agent(

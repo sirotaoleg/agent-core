@@ -27,7 +27,6 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_state_cont
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_working_context_processor import (
     BrowserWorkingContextProcessorConfig,
 )
-from openjiuwen.harness.tools.browser_move.offload_recall import BrowserOffloadRecallTool
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_logging import configure_browser_agent_logging
 from openjiuwen.harness.tools.browser_move.playwright_runtime.config import (
     BrowserInstanceConfig,
@@ -44,9 +43,6 @@ from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabiliti
 from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import (
     BrowserAgentRuntime,
     BrowserRuntimeRail,
-)
-from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime_tools import (
-    build_browser_runtime_tools,
 )
 
 try:
@@ -357,11 +353,13 @@ def create_browser_agent(
         "guardrails": resolved_settings.guardrails,
         "instance": resolved_settings.instance,
         "allowed_tool_names": resolved_capabilities.allowed_tool_names,
+        "workspace": workspace,
+        "language": resolved_language,
     }
+    # The browser tools arrive at the first invoke, once the driver has started (BrowserRuntimeRail.before_invoke).
     browser_backend = BrowserAgentRuntime(**runtime_kwargs)
     if policy_model is not None:
         policy_model.bind_runtime(browser_backend)
-    injected_tools = build_browser_runtime_tools(browser_backend, language=resolved_language)
     working_context_config = BrowserWorkingContextProcessorConfig(
         language=resolved_language,
         runtime_projection_only=True,
@@ -369,7 +367,6 @@ def create_browser_agent(
     injected_rails: List[AgentRail] = [
         BrowserRuntimeRail(browser_backend),
     ]
-    injected_tools.append(BrowserOffloadRecallTool(workspace, language=resolved_language))
 
     browser_state_processor = (
         "BrowserStateContextProcessor",
@@ -420,7 +417,7 @@ def create_browser_agent(
             )
         )
 
-    final_tools = list(tools or []) + injected_tools
+    final_tools = list(tools or [])
     final_mcps = list(mcps or [])
     final_rails = list(rails or []) + injected_rails
 
