@@ -13,6 +13,7 @@ import hashlib
 import json
 import re
 import time
+import uuid
 from collections import deque
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Optional
@@ -27,7 +28,8 @@ from openjiuwen.core.common.logging.browser_context import (
     set_browser_agent_log_context,
 )
 from openjiuwen.core.common.utils.schema_utils import SchemaUtils
-from openjiuwen.core.foundation.llm import ToolMessage
+from openjiuwen.core.foundation.llm import Model, ModelClientConfig, ModelRequestConfig, ToolMessage
+from openjiuwen.core.foundation.llm.model_clients.openai_model_client import OpenAIModelClient
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.runner import Runner
 from openjiuwen.core.single_agent.prompts.builder import PromptSection
@@ -42,6 +44,7 @@ from ..contract import (
     Drag,
     DriverError,
     Effect,
+    Health,
     Hover,
     Observe,
     PolicyDenied,
@@ -52,7 +55,7 @@ from ..contract import (
 from ..controllers import ActionController, BaseController
 from ..surfaces.browser.helpers import CUSTOM_ACTIONS, activate_page, page_metadata, probe_for_policy
 from ..utils.parsing import extract_json_object
-from .assembly import AgentParts, assemble_driver, build_agent_parts
+from .assembly import AgentParts, build_agent_parts
 from .browser_capabilities import CORE_BROWSER_TOOL_NAMES, capabilities_of
 from .browser_logging import (
     browser_agent_log_info,
@@ -71,7 +74,6 @@ from .config import (
     CoreSettings,
     SurfaceSettings,
     browser_surface_settings,
-    process_environ,
 )
 from .driver_session import DriverSession
 from .page_state import CARD_EVIDENCE_FIELDS, BrowserPageState, BrowserTarget
@@ -430,6 +432,7 @@ class BrowserAgentRuntime:
             CORE_BROWSER_TOOL_NAMES if allowed_tool_names is None else tuple(dict.fromkeys(allowed_tool_names))
         )
         self._capabilities = capabilities_of(resolved_allowed_tool_names)
+        self._page_state = BrowserPageState()
         self._service = BrowserService(
             provider=provider,
             api_key=api_key,
@@ -441,14 +444,12 @@ class BrowserAgentRuntime:
             allowed_tool_names=resolved_allowed_tool_names,
             browser_settings=self._browser_settings,
             core_settings=core_settings,
+            page_state=self._page_state,
         )
         self._browser_custom_action_tool = None
         self._browser_list_actions_tool = None
         self._controller: BaseController = ActionController()
-        self._browser_probe_interactives_tool = None
-        self._browser_probe_cards_tool = None
-        self._browser_batch_interact_tool = None
-        self._page_state = BrowserPageState()
+        self._agent: Any = None
         self._session: DriverSession | None = None
         self._context: ToolContext | None = None
         self._parts: dict[bool, AgentParts] = {}
@@ -595,20 +596,19 @@ class BrowserAgentRuntime:
         }
 
     async def ensure_runtime_ready(self) -> None:
-        """Start the driver session once; the custom actions run on it from then on."""
+        """Make sure the service's driver session runs; the custom actions run on it from then on."""
         _ACTIVE_BROWSER_RUNTIMES.add(self)
-        if self._session is not None:
+        await self._service.ensure_runtime_ready()
+        session = self._service.session
+        if session is self._session:
             return
-        core = self._core_settings or CoreSettings.from_process_env()
-        assembly = await assemble_driver(core, process_environ(), instance=self._instance)
-        profile = assembly.surface.profile
-        session = DriverSession(assembly, self._page_state, profile.messages)
-        session.begin_task()
+        self._drop_session()
+        profile = session.assembly.surface.profile
         self._context = ToolContext(
             session,
             self._page_state,
             profile.renderer,
-            assembly.stack.info,
+            session.assembly.stack.info,
             profile.settings,
             False,
             self._workspace,
@@ -643,12 +643,10 @@ class BrowserAgentRuntime:
                     self._fields[tool.card.name] = frozenset(properties)
         return parts
 
-    async def _close_session(self) -> None:
-        session, self._session = self._session, None
+    def _drop_session(self) -> None:
+        self._session = None
         self._context = None
         self._parts = {}
-        if session is not None:
-            await session.close()
 
     async def capture_browser_state(self, *, action_group_id: str = "") -> Dict[str, Any]:
         """The observation the next model call reads: the last one while it is current, else a fresh one."""
@@ -813,56 +811,48 @@ class BrowserAgentRuntime:
         """Acquire one task reference before invoking a reusable subagent."""
         _ACTIVE_BROWSER_RUNTIMES.add(self)
         self._service.acquire_task_binding()
-        if self._session is not None:
-            self._session.begin_task()
 
     async def ensure_started(self) -> None:
-        await self._service.ensure_runtime_ready()
+        """The runner's agent: the worker on Playwright MCP, the main agent on this facade otherwise."""
+        if self._service.core.topology == "direct":
+            if self._agent is None:
+                self._agent = self._direct_agent()
+            return
         await self._service.ensure_started()
+        await self.ensure_runtime_ready()
         if self._browser_custom_action_tool is not None:
             return
-        from .runtime_tools import (
-            BrowserBatchInteractTool,
-            BrowserCustomActionTool,
-            BrowserListActionsTool,
-            BrowserProbeCardsTool,
-            BrowserProbeInteractivesTool,
-        )
+        from .runtime_tools import BrowserCustomActionTool, BrowserListActionsTool
 
-        self._browser_probe_interactives_tool = BrowserProbeInteractivesTool(self, language="en")
-        self._browser_probe_cards_tool = BrowserProbeCardsTool(self, language="en")
-        self._browser_batch_interact_tool = BrowserBatchInteractTool(self, language="en")
         self._browser_custom_action_tool = BrowserCustomActionTool(self, language="en")
         self._browser_list_actions_tool = BrowserListActionsTool(self, language="en")
-        self._register_runtime_tool(
-            self._browser_probe_interactives_tool,
-            tool_name="browser_probe_interactives",
-        )
-        self._register_runtime_tool(
-            self._browser_probe_cards_tool,
-            tool_name="browser_probe_cards",
-        )
-        self._register_runtime_tool(
-            self._browser_batch_interact_tool,
-            tool_name="browser_batch_interact",
-        )
-        self._register_runtime_tool(
-            self._browser_custom_action_tool,
-            tool_name="browser_custom_action",
-        )
-        self._register_runtime_tool(
-            self._browser_list_actions_tool,
-            tool_name="browser_list_custom_actions",
-        )
+        self._register_runtime_tool(self._browser_custom_action_tool, tool_name="browser_custom_action")
+        self._register_runtime_tool(self._browser_list_actions_tool, tool_name="browser_list_custom_actions")
 
-        # Legacy browser_run_task compatibility: let the worker agent call
-        # deterministic controller helpers without introducing another planner.
-        if self._service.browser_agent is not None:
-            # Add compact standalone helpers first so the browser worker sees the
-            # same first-class affordances as the probe tools before MCP primitives.
-            self._service.browser_agent.ability_manager.add(self._browser_probe_interactives_tool.card)
-            self._service.browser_agent.ability_manager.add(self._browser_probe_cards_tool.card)
-            self._service.browser_agent.ability_manager.add(self._browser_batch_interact_tool.card)
+    def _direct_agent(self) -> Any:
+        from openjiuwen.harness.subagents.browser_agent import create_browser_agent
+
+        core = self._service.core
+        model = Model(
+            model_client_config=ModelClientConfig(
+                client_provider=self._service.provider,
+                api_key=self._service.api_key,
+                api_base=self._service.api_base,
+                verify_ssl=False,
+            ),
+            model_config=ModelRequestConfig(
+                model=self._service.model_name, temperature=core.worker_temperature, top_p=core.worker_top_p
+            ),
+        )
+        return create_browser_agent(
+            model,
+            language=self._language,
+            temperature=core.worker_temperature,
+            max_iterations=self._service.guardrails.max_steps,
+            workspace=self._workspace,
+            browser_capabilities=list(self._capabilities),
+            runtime=self,
+        )
 
     async def run_browser_task(
         self,
@@ -872,12 +862,54 @@ class BrowserAgentRuntime:
         timeout_s: Optional[int] = None,
     ) -> Dict[str, Any]:
         await self.ensure_started()
+        if self._agent is not None:
+            return await self._run_direct(task, session_id, request_id, timeout_s)
         return await self._service.run_task(
             task=task,
             session_id=session_id,
             request_id=request_id,
             timeout_s=timeout_s,
         )
+
+    async def _run_direct(
+        self, task: str, session_id: Optional[str], request_id: Optional[str], timeout_s: Optional[int]
+    ) -> Dict[str, Any]:
+        sid = self._service.session_new(session_id)
+        rid = (request_id or "").strip() or uuid.uuid4().hex
+        timeout = int(timeout_s) if timeout_s else self._service.guardrails.timeout_s
+        inputs = {"query": task, "conversation_id": f"{sid}:direct:{rid}:{uuid.uuid4().hex}", "request_id": rid}
+        try:
+            result = await asyncio.wait_for(Runner.run_agent(self._agent, inputs), timeout=float(timeout))
+        except TimeoutError:
+            return self._direct_answer(sid, rid, error=f"task_timeout: exceeded {timeout}s")
+        except Exception as exc:  # noqa: BLE001 - the runner reads the error from the answer
+            return self._direct_answer(sid, rid, error=str(exc) or repr(exc))
+        return self._direct_answer(sid, rid, result=result if isinstance(result, dict) else {"output": result})
+
+    def _direct_answer(
+        self, session_id: str, request_id: str, *, result: Optional[Dict[str, Any]] = None, error: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """The runner's answer dict from a main-agent run: the page from the page state, status when reported."""
+        result = result or {}
+        surface = self._page_state.surface_context
+        payload = result.get("authoritative_browser_result")
+        progress = result.get("progress_state")
+        error = error if error is not None else result.get("error")
+        answer: Dict[str, Any] = {
+            "ok": not error and result.get("result_type") != "error",
+            "session_id": session_id,
+            "request_id": request_id,
+            "final": str(result.get("output") or ""),
+            "page": {"url": surface.url if surface else "", "title": surface.title if surface else ""},
+            "screenshot": None,
+            "error": error or None,
+        }
+        status = (payload or {}).get("status") or (progress or {}).get("status")
+        if status:
+            answer["status"] = status
+        if progress:
+            answer["progress"] = progress
+        return answer
 
     async def run_custom_action(
         self,
@@ -914,10 +946,15 @@ class BrowserAgentRuntime:
         }
 
     async def runtime_health(self) -> Dict[str, Any]:
+        session = self._service.session
+        if session is not None and self._service.started:
+            health = await session.health()
+        else:
+            health = Health(ok=False, detail="not started")
         return {
-            "ok": bool(self._service.connection_healthy),
+            "ok": health.ok,
             "started": bool(self._service.started),
-            "last_heartbeat_ok": self._service.last_heartbeat_ok,
+            "detail": health.detail,
             "provider": self._service.provider,
             "api_base": self._service.api_base,
             "model_name": self._service.model_name,
@@ -928,7 +965,10 @@ class BrowserAgentRuntime:
             await self._service.shutdown()
         finally:
             _ACTIVE_BROWSER_RUNTIMES.discard(self)
-            await self._close_session()
+            self._drop_session()
+            self._agent = None
+            # The next asyncio.run loop must not find clients bound to this one (the runner runs one loop per task).
+            await OpenAIModelClient.aclose()
 
     async def release_task_resources(self) -> None:
         """Release task bindings while preserving Chrome and its profile."""
@@ -942,7 +982,7 @@ class BrowserAgentRuntime:
         try:
             await self._service.reset()
         finally:
-            await self._close_session()
+            self._drop_session()
             self._page_state.reset()
             self._semantic_state_tracker.reset()
 
