@@ -25,7 +25,7 @@ _ctx_parent_request_id: contextvars.ContextVar[str] = contextvars.ContextVar(
 _CUSTOM_ACTION_DESC = (
     "Run a registered custom browser action by name. "
     "Use for deterministic helpers such as drag-and-drop or coordinate resolution "
-    "alongside the direct Playwright MCP browser tools. "
+    "alongside the direct browser tools. "
     "Call browser_list_custom_actions first to discover available actions and parameters. "
     "Aliases source/target and source_x/source_y/target_x/target_y are accepted."
 )

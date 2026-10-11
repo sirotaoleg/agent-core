@@ -93,9 +93,6 @@ MCP_TOOL_NAME_RE = re.compile(
 
 # file relative to the package -> number of driver-name matches.
 KNOWN_DRIVER_NAMES: dict[str, int] = {
-    # the worker card and the custom-action card still name a driver
-    "playwright_runtime/agents.py": 1,
-    "playwright_runtime/runtime_tools.py": 1,
     # the capability catalog; moves to surfaces/browser/ in Phase 9
     "playwright_runtime/browser_capabilities.py": 2,
     # the runtime server's own transport: the config facade's name and the server's "/mcp" path
