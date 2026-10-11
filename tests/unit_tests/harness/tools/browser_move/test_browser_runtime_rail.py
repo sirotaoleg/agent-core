@@ -24,6 +24,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     DriverRef,
     Observe,
     RunScript,
+    StaleRef,
 )
 from openjiuwen.harness.tools.browser_move.playwright_runtime.action_policy import ActionPolicy
 from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
@@ -361,12 +362,9 @@ def test_before_tool_call_rejects_batch_screenshot_without_image_support() -> No
     assert ctx.extra["_skip_tool_calls"]
 
 
-def test_navigation_invalidates_snapshot_refs_from_older_generation() -> None:
+def test_a_ref_from_before_a_navigation_reaches_the_driver_and_the_server_refuses_it() -> None:
     driver = mcp_fake_driver(
-        observations=[
-            observation([element("f1e2", "textbox", "Search")]),
-            observation([element("e3", "link", "First result")], url="https://example.com/results"),
-        ],
+        observations=[observation([element("f1e2", "textbox", "Search")])],
         results=[result(url="https://example.com/results", context_changed=True)],
     )
     runtime = make_runtime(driver)
@@ -377,19 +375,20 @@ def test_navigation_invalidates_snapshot_refs_from_older_generation() -> None:
     assert _invoke(runtime, NAVIGATE, {"url": "https://example.com/results"}).success is True
 
     assert runtime.generation_id == "g1"
+    fresh = observation([element("e3", "link", "First result")], url="https://example.com/results")
+    driver.fail_next(StaleRef("Ref f1e2 not found in the current page snapshot.", observation=fresh))
     stale = _invoke(runtime, CLICK, {"target": "f1e2"})
     assert stale.success is False
-    assert "Stale AX ref f1e2 belongs to g0" in stale.error
-    assert driver.kinds() == ["observe", "execute", "observe"]
+    assert "Ref f1e2 not found in the current page snapshot." in stale.error
+    assert "[ref=e3]" in stale.error
+    assert driver.kinds() == ["observe", "execute", "execute"]
+    assert driver.calls[-1].payload == Click(DriverRef("f1e2", ""))
 
 
-def test_click_result_url_change_invalidates_snapshot_refs() -> None:
+def test_a_ref_from_before_a_url_change_reaches_the_driver_again() -> None:
     driver = mcp_fake_driver(
-        observations=[
-            observation([element("e7", "link", "Result")], url="https://example.com/"),
-            observation([element("e9", "heading", "Result 7")], url="https://example.com/result/7"),
-        ],
-        results=[result(url="https://example.com/result/7")],
+        observations=[observation([element("e7", "link", "Result")], url="https://example.com/")],
+        results=[result(url="https://example.com/result/7"), result(url="https://example.com/result/7")],
     )
     runtime = make_runtime(driver)
 
@@ -397,10 +396,9 @@ def test_click_result_url_change_invalidates_snapshot_refs() -> None:
     assert _invoke(runtime, CLICK, {"target": "e7"}).success is True
 
     assert runtime.generation_id == "g1"
-    stale = _invoke(runtime, CLICK, {"target": "e7"})
-    assert stale.success is False
-    assert "Stale AX ref e7 belongs to g0" in stale.error
-    assert "[ref=e9]" in stale.error
+    assert _invoke(runtime, CLICK, {"target": "e7"}).success is True
+    assert driver.kinds() == ["observe", "execute", "execute"]
+    assert runtime.generation_id == "g1"
 
 
 def test_after_snapshot_attaches_compact_page_state_to_tool_message() -> None:

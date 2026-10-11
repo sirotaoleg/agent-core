@@ -85,18 +85,20 @@ def test_every_tool_spec_the_server_offers_has_a_decoder_and_nothing_else_does()
 @pytest.mark.parametrize(
     ("target", "ref"),
     [
-        ("e12", DriverRef("e12", "g3")),
-        ("f1e3", DriverRef("f1e3", "g3")),
-        ("#save", Locator("#save", None, "g3")),
-        ("e12 > span", Locator("e12 > span", None, "g3")),
+        ("e12", DriverRef("e12", "")),
+        ("f1e3", DriverRef("f1e3", "")),
+        ("#save", Locator("#save", None, "")),
+        ("e12 > span", Locator("e12 > span", None, "")),
     ],
 )
 def test_target_is_a_driver_ref_for_an_aria_ref_and_a_css_locator_otherwise(target: str, ref: Ref) -> None:
     assert _decode("browser_hover", {"target": target}) == Hover(ref)
 
 
-def test_a_driver_ref_carries_the_generation_it_was_last_seen_in() -> None:
-    assert _decode("browser_hover", {"target": "e1"}, _Resolver(generation="g1")) == Hover(DriverRef("e1", "g1"))
+def test_a_target_carries_no_generation_even_when_the_resolver_saw_it_in_an_older_one() -> None:
+    older = _Resolver(generation="g1")
+    assert _decode("browser_hover", {"target": "e1"}, older) == Hover(DriverRef("e1", ""))
+    assert _decode("browser_hover", {"target": "#save"}, older) == Hover(Locator("#save", None, ""))
 
 
 def test_double_click_is_a_click_counted_twice() -> None:
@@ -105,7 +107,7 @@ def test_double_click_is_a_click_counted_twice() -> None:
 
 
 def test_typing_slowly_keeps_the_content() -> None:
-    assert _decode("browser_type", {"target": "e1", "text": "a"}) == TypeText(DriverRef("e1", "g3"), "a")
+    assert _decode("browser_type", {"target": "e1", "text": "a"}) == TypeText(DriverRef("e1", ""), "a")
     slow = _decode("browser_type", {"target": "e1", "text": "a", "slowly": True})
     assert (slow.slowly, slow.clear) == (True, False)
 
@@ -113,7 +115,7 @@ def test_typing_slowly_keeps_the_content() -> None:
 @pytest.mark.parametrize(
     ("tool", "arguments", "action"),
     [
-        ("browser_click", {"target": "e1", "element": "Save button"}, Click(DriverRef("e1", "g3"))),
+        ("browser_click", {"target": "e1", "element": "Save button"}, Click(DriverRef("e1", ""))),
         ("browser_snapshot", {"boxes": True, "filename": "a.md"}, Observe()),
         (
             "browser_take_screenshot",
@@ -133,9 +135,9 @@ def test_cosmetic_and_dropped_arguments_do_not_change_the_command(tool: str, arg
 def test_snapshot_depth_and_target_scope_the_observation() -> None:
     assert _decode("browser_snapshot", {}) == Observe()
     assert _decode("browser_snapshot", {"depth": 1}) == Observe(depth=1)
-    assert _decode("browser_snapshot", {"target": "e3"}) == Observe(root=DriverRef("e3", "g3"))
+    assert _decode("browser_snapshot", {"target": "e3"}) == Observe(root=DriverRef("e3", ""))
     assert _decode("browser_snapshot", {"target": "nav", "depth": 2.0}) == Observe(
-        depth=2, root=Locator("nav", None, "g3")
+        depth=2, root=Locator("nav", None, "")
     )
     with pytest.raises(ValueError, match="'depth' must be a number"):
         _decode("browser_snapshot", {"depth": "shallow"})
@@ -160,9 +162,9 @@ def test_wheel_scrolls_the_whole_view() -> None:
 
 def test_fill_form_and_drop_take_the_server_shapes() -> None:
     form = _decode("browser_fill_form", {"fields": [{"target": "#a", "name": "A", "type": "radio", "value": "true"}]})
-    assert form == FillForm((FormField(Locator("#a", None, "g3"), FieldKind.RADIO, "true"),))
+    assert form == FillForm((FormField(Locator("#a", None, ""), FieldKind.RADIO, "true"),))
     drop = _decode("browser_drop", {"target": "e1", "data": {"text/plain": "x", "text/uri-list": "https://a.test"}})
-    assert drop == Drop(DriverRef("e1", "g3"), data=(("text/plain", "x"), ("text/uri-list", "https://a.test")))
+    assert drop == Drop(DriverRef("e1", ""), data=(("text/plain", "x"), ("text/uri-list", "https://a.test")))
 
 
 def test_file_upload_answers_the_open_chooser() -> None:

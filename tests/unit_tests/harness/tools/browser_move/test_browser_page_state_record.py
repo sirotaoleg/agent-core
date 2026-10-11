@@ -14,6 +14,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     ContextRef,
     DriverRef,
     Element,
+    Hover,
     Locator,
     Observation,
     Observe,
@@ -24,6 +25,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     StaleRef,
     SwitchContext,
 )
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import DECODERS
 from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     FieldKind,
@@ -279,6 +281,18 @@ def test_page_state_serves_tool_decoders_as_their_ref_resolver() -> None:
     assert build_click({"target": "e1"}, state) == Click(DriverRef("e1", "g0"))
     assert build_select({"index": 1}, state) == SwitchContext(TAB_1)
     assert state.current_context == TAB_0
+
+
+def test_a_target_the_model_sends_on_the_mcp_dialect_passes_the_check_after_the_generation_moved() -> None:
+    state = _state("e1")
+    state.reset()
+
+    click = DECODERS["browser_click"]({"target": "e1"}, state)
+    hover = DECODERS["browser_hover"]({"target": "#buy"}, state)
+
+    assert (click, hover) == (Click(DriverRef("e1", "")), Hover(Locator("#buy", None, "")))
+    state.check(click)
+    state.check(hover)
 
 
 def test_reset_starts_a_new_generation_and_forgets_contexts() -> None:

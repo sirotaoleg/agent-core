@@ -12,15 +12,17 @@ from typing import Any
 
 import pytest
 
-from openjiuwen.harness.tools.browser_move.contract import CloseContext, Driver, Observe, RunScript
+from openjiuwen.core.foundation.tool import ToolCard
+from openjiuwen.harness.tools.browser_move.contract import CloseContext, Driver, Observation, Observe, RunScript
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import create_browser_use_driver
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.driver import create_playwright_mcp_driver
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.result import result_text
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.snapshot import split_sections
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import DECODERS
 from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.playwright_runtime.driver_session import DriverSession
 from openjiuwen.harness.tools.browser_move.playwright_runtime.page_state import BrowserPageState
-from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import ToolContext
+from openjiuwen.harness.tools.browser_move.playwright_runtime.tool_factory import CommandTool, ToolContext
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate, OpenContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
@@ -117,6 +119,37 @@ def _assert_uploaded_then_dragged(outcome: tuple[Any, ...]) -> None:
     assert dragged_title == "dragged"
 
 
+def _mcp_tool(context: ToolContext, name: str) -> CommandTool:
+    card = ToolCard(id=name, name=name, description=name, input_params={"type": "object"})
+    return CommandTool(card, DECODERS[name], context, renders_observation=False, image_source="browser")
+
+
+def _ref_of(observation: Observation, name: str) -> str:
+    return next(element.ref.ref for element in observation.elements if element.name == name)
+
+
+async def _click_an_old_ref_after_a_popup_moved_the_generation(context: ToolContext) -> dict[str, Any]:
+    page_state = context.page_state
+    click, tabs = _mcp_tool(context, "browser_click"), _mcp_tool(context, "browser_tabs")
+    first = await context.observe(Observe())
+    last, popup = _ref_of(first, "Last button"), _ref_of(first, "Open popup")
+    opened = await click.invoke({"target": popup})
+    fronted = await tabs.invoke({"action": "select", "index": 0})
+    seen_in, current = page_state.generation_of(last), page_state.generation_id
+    clicked = await click.invoke({"target": last})
+    title = (await context.execute(RunScript(code="() => document.title"))).value
+    listed = (await context.observe(Observe())).surface
+    await context.execute(CloseContext(listed.tabs[1]))
+    return {
+        "opened": opened.success,
+        "fronted": fronted.success,
+        "generations": (first.generation, seen_in, current),
+        "clicked": clicked.success,
+        "error": clicked.error,
+        "title": title,
+    }
+
+
 @pytest.fixture
 def note(tmp_path: Path) -> Path:
     path = tmp_path / "note.txt"
@@ -190,6 +223,22 @@ class TestHelpersOnPlaywrightMcp:
     ) -> None:
         driver = create_playwright_mcp_driver(chrome_device, mcp_settings)
         _assert_uploaded_then_dragged(_on_page(driver, scene_url, _upload_then_drag(note)))
+
+    def test_the_server_resolves_a_ref_from_an_older_generation_the_page_state_no_longer_tracks(
+        self,
+        chrome_device: ProvisionedDevice,  # noqa: F811
+        mcp_settings: BrowserSettings,  # noqa: F811
+        scene_url: str,
+    ) -> None:
+        driver = create_playwright_mcp_driver(chrome_device, mcp_settings)
+
+        outcome = _on_page(driver, scene_url, _click_an_old_ref_after_a_popup_moved_the_generation)
+
+        assert (outcome["opened"], outcome["fronted"]) == (True, True)
+        first, seen_in, current = outcome["generations"]
+        assert int(first[1:]) <= int(seen_in[1:]) < int(current[1:]), outcome["generations"]
+        assert outcome["clicked"], outcome["error"]
+        assert outcome["title"] == "last"
 
 
 @pytest.mark.live

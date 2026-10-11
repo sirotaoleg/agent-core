@@ -47,6 +47,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.contract.testing.fake import DEFAULT_ACTIONS
 from openjiuwen.harness.tools.browser_move.drivers.middleware import MASK, Tracing
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import DECODERS
 from openjiuwen.harness.tools.browser_move.playwright_runtime import tool_factory
 from openjiuwen.harness.tools.browser_move.playwright_runtime.action_policy import ActionPolicy
 from openjiuwen.harness.tools.browser_move.playwright_runtime.assembly import DriverAssembly
@@ -408,6 +409,46 @@ async def test_a_point_on_a_screenshot_of_an_older_generation_never_reaches_the_
 
     assert driver.kinds() == ["observe", "observe"]
     assert output.error.startswith("### Error\nStale PointRef belongs to g0; current generation is g1.")
+
+
+MCP_CLICK = _profile(
+    tool_specs=(ToolSpec("browser_click", (Click,), schema={"type": "object"}, build=DECODERS["browser_click"]),),
+    capability_tools={"core": ("browser_click",)},
+    capability_catalog={"core": frozenset({(Click, DriverRef)})},
+)
+
+
+@pytest.mark.asyncio
+async def test_a_ref_the_model_sends_on_the_mcp_dialect_reaches_the_driver_after_the_generation_moved() -> None:
+    driver = FakeDriver(results=[ActionResult(ok=True, detail="clicked")])
+    built, page_state = _build(driver, profile=MCP_CLICK)
+    page_state.record(Observe(), _observation())
+    page_state.reset()
+
+    output = await _tool(built, "browser_click").invoke({"target": "e1"})
+
+    assert driver.kinds() == ["execute"]
+    assert driver.calls[0].payload == Click(DriverRef("e1", ""))
+    assert (output.success, output.data["content"]) == (True, "clicked")
+    assert (page_state.generation_of("e1"), output.data["command"].generation) == ("g0", "g1")
+
+
+@pytest.mark.asyncio
+async def test_a_ref_the_mcp_server_no_longer_finds_answers_with_the_fresh_observation_the_error_carries() -> None:
+    fresh = _observation('- button "Saved" [ref=e2]')
+    driver = FakeDriver()
+    driver.fail_next(StaleRef("Ref e1 not found in the current page snapshot.", observation=fresh))
+    built, page_state = _build(driver, profile=MCP_CLICK)
+    page_state.record(Observe(), _observation())
+    page_state.reset()
+
+    output = await _tool(built, "browser_click").invoke({"target": "e1"})
+
+    assert driver.kinds() == ["execute"]
+    assert output.error == '### Error\nRef e1 not found in the current page snapshot.\n\n- button "Saved" [ref=e2]'
+    record = output.data["command"]
+    assert (record.error, record.dispatched) == ("StaleRef", False)
+    assert page_state.last_observation.native_text == fresh.native_text
 
 
 @pytest.mark.asyncio
