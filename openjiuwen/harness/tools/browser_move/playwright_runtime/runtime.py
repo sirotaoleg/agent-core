@@ -1076,13 +1076,18 @@ class BrowserRuntimeRail(AgentRail):
         self._runtime = runtime
         self._railed: WeakSet[Any] = WeakSet()
         self._status_logger = (
-            BrowserSubagentStatusLogger() if is_browser_subagent_status_log_enabled(runtime.core_settings) else None
+            BrowserSubagentStatusLogger(command_of=self._command_of)
+            if is_browser_subagent_status_log_enabled(runtime.core_settings)
+            else None
         )
         browser_agent_log_info(
             "[BROWSER_SUBAGENT_BOOT] enabled=%s logger=%s",
             self._status_logger is not None,
             type(self._status_logger).__name__ if self._status_logger is not None else None,
         )
+
+    def _command_of(self, tool_name: str, tool_args: Any) -> str:
+        return self._command_name(self._runtime.tool_kind(tool_name, tool_args))
 
     def _emit_status(self, method_name: str, ctx: AgentCallbackContext) -> None:
         if self._status_logger is None:
@@ -1768,6 +1773,7 @@ class BrowserRuntimeRail(AgentRail):
             executed=executed,
             state_changed=state_changed,
             denied=False,
+            effect=kind.effect.value if kind.known and not kind.exempt_from_budget else None,
         )
         if success or state_changed:
             self._attach_page_state(inputs, kind, result)
@@ -2010,6 +2016,7 @@ class BrowserRuntimeRail(AgentRail):
         executed: bool,
         state_changed: bool,
         denied: bool,
+        effect: str | None = None,
     ) -> None:
         tool_msg = getattr(inputs, "tool_msg", None)
         if tool_msg is None:
@@ -2023,6 +2030,8 @@ class BrowserRuntimeRail(AgentRail):
                 "denied": denied,
             }
         )
+        if effect is not None:
+            metadata["effect"] = effect
         tool_msg.metadata = metadata
 
     @staticmethod

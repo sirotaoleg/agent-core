@@ -18,6 +18,7 @@ from openjiuwen.harness.prompts.prompt_attachment_manager import (
     PROMPT_ATTACHMENT_PRESERVE_TAIL_METADATA_KEY,
 )
 
+from ..contract import Effect
 from .browser_logging import browser_agent_log_warning
 from .browser_working_context import BrowserWorkingContextStore
 
@@ -30,68 +31,6 @@ _PAGE_CHANGE_INITIAL = "initial"
 _PAGE_CHANGE_CHANGED = "changed"
 _PAGE_CHANGE_UNCHANGED = "unchanged"
 _PAGE_CHANGE_UNKNOWN = "unknown"
-_BROWSER_STATE_REFRESH_TOOL_NAMES = frozenset(
-    {
-        # Runtime interaction helpers.
-        "browser_batch_interact",
-        "browser_click",
-        "browser_close",
-        "browser_custom_action",
-        "browser_drag",
-        "browser_drop",
-        "browser_evaluate",
-        "browser_file_upload",
-        "browser_fill_form",
-        "browser_handle_dialog",
-        "browser_hover",
-        "browser_navigate",
-        "browser_navigate_back",
-        "browser_press_key",
-        "browser_run_code",
-        "browser_run_code_unsafe",
-        "browser_select_option",
-        "browser_tabs",
-        "browser_type",
-        "browser_wait_for",
-        # Coordinate-based interactions can click, drag, hover, or scroll.
-        "browser_mouse_click_xy",
-        "browser_mouse_down",
-        "browser_mouse_drag_xy",
-        "browser_mouse_move_xy",
-        "browser_mouse_up",
-        "browser_mouse_wheel",
-        # Devtools actions that can alter rendering or resume page activity.
-        "browser_annotate",
-        "browser_hide_highlight",
-        "browser_highlight",
-        "browser_resize",
-        "browser_resume",
-        "browser_video_hide_actions",
-        "browser_video_show_actions",
-        # Network and storage mutations can affect the current application.
-        "browser_network_state_set",
-        "browser_route",
-        "browser_unroute",
-        "browser_cookie_clear",
-        "browser_cookie_delete",
-        "browser_cookie_set",
-        "browser_localstorage_clear",
-        "browser_localstorage_delete",
-        "browser_localstorage_set",
-        "browser_sessionstorage_clear",
-        "browser_sessionstorage_delete",
-        "browser_sessionstorage_set",
-        "browser_set_storage_state",
-    }
-)
-_BROWSER_STATE_OBSERVATION_TOOL_NAMES = frozenset(
-    {
-        "browser_find",
-        "browser_probe_cards",
-        "browser_probe_interactives",
-        "browser_snapshot",
-    }
-)
 
 
 class BrowserStateContextProcessorConfig(BaseModel):
@@ -193,16 +132,8 @@ class BrowserStateContextProcessor(ContextProcessor):
         action_group_id, refresh_ids, observation_only = cls._completed_state_action_group(messages)
         if observation_only:
             return "", set()
-        mutation_ids: set[str] = set()
-        for message in messages:
-            if not isinstance(message, AssistantMessage):
-                continue
-            for tool_call in message.tool_calls or []:
-                call_id = str(tool_call.id or "")
-                if not call_id or call_id not in refresh_ids:
-                    continue
-                if cls._is_refresh_tool_name(tool_call.name):
-                    mutation_ids.add(call_id)
+        _, tool_messages, _ = cls._completed_tool_message_index(messages)
+        mutation_ids = {call_id for call_id in refresh_ids if cls._effect(tool_messages.get(call_id)) != Effect.READ}
         return action_group_id, mutation_ids
 
     @classmethod
@@ -270,10 +201,14 @@ class BrowserStateContextProcessor(ContextProcessor):
             if not call_id or call_id not in executed_call_ids:
                 continue
             tool_message = tool_messages.get(call_id)
-            if cls._is_refresh_tool_name(tool_call.name) and cls._tool_message_changed_state(tool_message):
+            effect = cls._effect(tool_message)
+            if effect is None:
+                continue
+            if effect == Effect.READ:
+                if cls._tool_message_succeeded(tool_message):
+                    observation_ids.add(call_id)
+            elif cls._tool_message_changed_state(tool_message):
                 mutation_ids.add(call_id)
-            if cls._is_observation_tool_name(tool_call.name) and cls._tool_message_succeeded(tool_message):
-                observation_ids.add(call_id)
         return call_ids, mutation_ids, observation_ids
 
     @classmethod
@@ -295,75 +230,27 @@ class BrowserStateContextProcessor(ContextProcessor):
         return completed_call_ids, tool_messages, executed_call_ids
 
     @staticmethod
-    def _tool_message_was_executed(message: ToolMessage) -> bool:
-        metadata = message.metadata if isinstance(message.metadata, dict) else {}
-        if metadata.get("denied") is True or metadata.get("executed") is False:
-            return False
-        content = message.content
-        if isinstance(content, str):
-            try:
-                payload = json.loads(content)
-            except (TypeError, ValueError):
-                payload = None
-            if isinstance(payload, dict) and (payload.get("denied") is True or payload.get("executed") is False):
-                return False
-        return True
-
-    @staticmethod
-    def _tool_message_changed_state(message: ToolMessage | None) -> bool:
-        if message is None:
-            return False
-        metadata = message.metadata if isinstance(message.metadata, dict) else {}
-        if metadata.get("state_changed") is False:
-            return False
-        content = message.content
-        if isinstance(content, str):
-            try:
-                payload = json.loads(content)
-            except (TypeError, ValueError):
-                payload = None
-            if isinstance(payload, dict) and payload.get("state_changed") is False:
-                return False
-        return True
-
-    @staticmethod
-    def _tool_message_succeeded(message: ToolMessage | None) -> bool:
-        if message is None:
-            return False
-        metadata = message.metadata if isinstance(message.metadata, dict) else {}
-        if metadata.get("success") is False:
-            return False
-        content = message.content
-        if isinstance(content, str):
-            try:
-                payload = json.loads(content)
-            except (TypeError, ValueError):
-                payload = None
-            if isinstance(payload, dict) and (
-                payload.get("ok") is False or payload.get("success") is False
-            ):
-                return False
-        return True
+    def _metadata(message: ToolMessage | None) -> dict[str, Any]:
+        metadata = message.metadata if message is not None else None
+        return metadata if isinstance(metadata, dict) else {}
 
     @classmethod
-    def _completed_refresh_tool_call_ids(cls, messages: list[BaseMessage]) -> set[str]:
-        """Compatibility projection for callers that only need completed IDs."""
-        _, refresh_tool_call_ids = cls._completed_refresh_action_group(messages)
-        return refresh_tool_call_ids
+    def _effect(cls, message: ToolMessage | None) -> str | None:
+        effect = cls._metadata(message).get("effect")
+        return effect if isinstance(effect, str) else None
 
-    @staticmethod
-    def _is_refresh_tool_name(tool_name: str) -> bool:
-        return any(
-            tool_name == expected or tool_name.endswith(f".{expected}") or tool_name.endswith(f"_{expected}")
-            for expected in _BROWSER_STATE_REFRESH_TOOL_NAMES
-        )
+    @classmethod
+    def _tool_message_was_executed(cls, message: ToolMessage) -> bool:
+        metadata = cls._metadata(message)
+        return metadata.get("denied") is not True and metadata.get("executed") is not False
 
-    @staticmethod
-    def _is_observation_tool_name(tool_name: str) -> bool:
-        return any(
-            tool_name == expected or tool_name.endswith(f".{expected}") or tool_name.endswith(f"_{expected}")
-            for expected in _BROWSER_STATE_OBSERVATION_TOOL_NAMES
-        )
+    @classmethod
+    def _tool_message_changed_state(cls, message: ToolMessage | None) -> bool:
+        return message is not None and cls._metadata(message).get("state_changed") is not False
+
+    @classmethod
+    def _tool_message_succeeded(cls, message: ToolMessage | None) -> bool:
+        return message is not None and cls._metadata(message).get("success") is not False
 
     async def _capture_state(self, *, action_group_id: str) -> Dict[str, Any]:
         try:

@@ -394,7 +394,7 @@ class BrowserWorkingContextStore:
         memory.tool_call_id = str(tool_call_id or "")
 
         if not memory.error:
-            inferred_error = self._infer_tool_error(message.content)
+            inferred_error = self._infer_tool_error(message)
             if inferred_error:
                 memory.error = inferred_error
         if memory.has_prompt_content() and not isinstance(payload, dict):
@@ -1207,31 +1207,20 @@ class BrowserWorkingContextStore:
         if len(state.recent_steps) > self.config.max_recent_steps:
             state.recent_steps = state.recent_steps[-self.config.max_recent_steps:]
 
-    def _infer_tool_error(self, content: Any) -> Optional[str]:
-        text = self.message_content_to_text(content)
+    def _infer_tool_error(self, message: ToolMessage) -> Optional[str]:
+        text = self.message_content_to_text(message.content)
         if not text:
             return None
-        lowered = text.lower().strip()
-        if lowered.startswith(_ERROR_PREFIXES):
+        if text.lower().strip().startswith(_ERROR_PREFIXES):
             return _bounded_text(text, self.config.max_item_chars)
-
+        if message.metadata.get("success") is not False:
+            return None
         try:
             parsed = json.loads(text)
         except (TypeError, ValueError):
             parsed = None
-        if isinstance(parsed, dict):
-            error = parsed.get("error")
-            failure_markers = (
-                parsed.get("success") is False,
-                parsed.get("ok") is False,
-                parsed.get("isError") is True,
-            )
-            if error and any(failure_markers):
-                return _bounded_text(error, self.config.max_item_chars)
-
-        if "success=false" in lowered and "error=" in lowered:
-            return _bounded_text(text, self.config.max_item_chars)
-        return None
+        error = parsed.get("error") if isinstance(parsed, dict) else None
+        return _bounded_text(error or text, self.config.max_item_chars)
 
     @staticmethod
     def message_content_to_text(content: Any) -> str:
