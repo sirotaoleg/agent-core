@@ -2366,6 +2366,15 @@ Phase 4 done-when items with their evidence, and the numbers the merge is judged
    stdout, where the runner's `budget.py`, `analyze.py` and `run_one_task` read them. `BrowserAgentRuntime.dedicated_log`
    (default `True`) is `False` for the agent the facade builds for itself in `_direct_agent`, and the rail enters the
    context only when it is `True`. Nothing the model sees changes; `create_browser_agent`'s own agents are unchanged.
+3. **The repeat guard starts at the first model call too.** A `DeepAgent` fires `before_invoke` and `after_invoke`
+   on its outer callback context only; its inner `ReActAgent` runs the model and tool hooks on a context of its own,
+   with another `extra` dict. `RepeatedCallGuardRail` kept its per-invoke state in `ctx.extra` from `before_invoke`,
+   so on every deep agent (`build_agent`'s, and the main agent, which is the browser-use Direct path) the hooks found
+   no state and the guard counted nothing, while the worker, a `ReActAgent`, was guarded. The live module caught it:
+   five identical `browser_evaluate` calls through `build_agent` on Playwright MCP left the tools on the seventh
+   request. The state now also starts in the first `before_model_call` that finds none (the first model call precedes
+   every tool call, and the model-call context is the inner invoke's own), where the finish section is cleared as
+   `before_invoke` does. The worker path is unchanged.
 
 ### Rejected options
 
@@ -2386,6 +2395,8 @@ Phase 4 done-when items with their evidence, and the numbers the merge is judged
 
 - `test_browser_runtime_facade.py`: the Direct runtime reports `dedicated_log=False` and its rail's `before_invoke`
   leaves the browser log context unset; the default runtime enters it.
+- `test_browser_repeated_call_guard.py`: a run whose `before_invoke` fired on another context is guarded from its
+  first model call (tools withheld after the fifth identical call, a stale finish section cleared).
 
 - `test_browser_runtime_rail.py`: a status logger that raises is logged with the hook name and the error and the
   rail returns.

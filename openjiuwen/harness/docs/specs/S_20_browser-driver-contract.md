@@ -993,8 +993,9 @@ model call: each rewrites the tool message in `after_tool_call`, or empties the 
 
 ### `RepeatedCallGuardRail` (`repeated_call_guard.py`)
 
-State reset per invoke (`before_invoke`), the streak counted in `after_tool_call`, the finish section and the
-withholding in `before_model_call`.
+State reset per invoke (`before_invoke`, and the first `before_model_call` that finds none: a deep agent fires
+`before_invoke` on its outer callback context, and its inner agent's model and tool hooks share another `extra`),
+the streak counted in `after_tool_call`, the finish section and the withholding in `before_model_call`.
 
 - **Identity.** Two calls are identical when their commands and their results are: `record.action` (masked) and
   `(ok, error, value, surface)`. A `RunScript` compares its code without whitespace and with digits replaced by
