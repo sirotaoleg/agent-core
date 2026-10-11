@@ -11,7 +11,7 @@ from typing import Any
 
 # SRC_ROOT is the browser_move/ directory that contains controllers/, utils/, etc.
 # Adding it to sys.path makes bare module imports (e.g. `from controllers.base import ...`)
-# work both when running standalone (MCP server) and when loaded as part of the
+# work both when running standalone (the server entry point) and when loaded as part of the
 # openjiuwen package.
 _HERE = Path(__file__).resolve().parent
 SRC_ROOT = _HERE.parent

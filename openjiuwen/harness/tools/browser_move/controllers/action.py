@@ -1,7 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 """Runtime-native custom action controller for Playwright runtime.
-It exposes a lightweight action registry consumed by the MCP wrapper.
+It exposes a lightweight action registry consumed by the server entry point.
 """
 
 from __future__ import annotations

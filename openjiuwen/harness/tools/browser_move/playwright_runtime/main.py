@@ -53,8 +53,8 @@ async def main() -> None:
         logger.info("=" * 72)
         logger.info(f"Model provider: {settings.provider}")
         logger.info(f"Model: {settings.model_name}")
-        logger.info(f"MCP command: {settings.mcp_cfg.params.get('command')}")
-        logger.info(f"MCP args: {settings.mcp_cfg.params.get('args')}")
+        logger.info(f"Server command: {settings.mcp_cfg.params.get('command')}")
+        logger.info(f"Server args: {settings.mcp_cfg.params.get('args')}")
         logger.info(f"Browser tools: {len(tools)}")
         for tool in tools:
             logger.info(f"  - {tool.card.name}")

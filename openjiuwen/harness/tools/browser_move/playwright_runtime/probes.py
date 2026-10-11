@@ -251,7 +251,7 @@ def build_interactive_probe_js(
     site_profiles: Optional[List[Dict[str, Any]]] = None,
     generation_id: str = "g0",
 ) -> str:
-    """Build browser_run_code JavaScript for compact interactive-element probing."""
+    """Build the JavaScript for compact interactive-element probing."""
 
     params: Dict[str, Any] = {
         "max_items": _clamp_int(max_items, default=50, minimum=1, maximum=100),
@@ -878,7 +878,7 @@ def build_card_probe_js(
     selector_cache_records: Optional[List[Dict[str, Any]]] = None,
     generation_id: str = "g0",
 ) -> str:
-    """Build browser_run_code_unsafe JavaScript for compact repeated-card probing."""
+    """Build the JavaScript for compact repeated-card probing."""
 
     params: Dict[str, Any] = {
         "max_cards": _clamp_int(max_cards, default=20, minimum=1, maximum=50),

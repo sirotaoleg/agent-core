@@ -1,6 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Browser MCP integration helpers for playwright_runtime."""
+"""The client-side config of browser_move served through its own server entry point."""
 
 from __future__ import annotations
 
@@ -73,7 +73,7 @@ def build_browser_runtime_mcp_config(
     *,
     environ: Mapping[str, str] | None = None,
 ) -> McpServerConfig | None:
-    """Build browser runtime MCP config for OpenJiuWen agent registration."""
+    """The server config an OpenJiuWen agent registers to reach the runtime server."""
     environ = process_environ() if environ is None else environ
     settings = settings or RuntimeServerSettings.from_env(environ)
     if not settings.enabled:
@@ -93,7 +93,7 @@ def build_browser_runtime_mcp_config(
 
     server_script = _server_script()
     if not server_script.exists():
-        raise FileNotFoundError(f"playwright runtime MCP server not found: {server_script}")
+        raise FileNotFoundError(f"playwright runtime server entry point not found: {server_script}")
 
     args = (
         _parse_args(settings.args)

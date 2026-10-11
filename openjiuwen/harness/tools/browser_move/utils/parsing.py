@@ -33,7 +33,7 @@ def sanitize_json_schema(schema: Any) -> Any:
 
     cleaned = {k: v for k, v in schema.items() if k not in _UNSUPPORTED_SCHEMA_KEYS}
 
-    # Normalize null type to "object" — MCP servers sometimes emit {"type": null}
+    # Normalize null type to "object": some tool servers emit {"type": null}
     # for tools with no parameters, but OpenAI-compatible APIs require type to be a string.
     if cleaned.get("type") is None and "type" in cleaned:
         cleaned["type"] = "object"

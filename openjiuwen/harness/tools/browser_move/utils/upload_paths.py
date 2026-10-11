@@ -1,6 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Normalize local file paths for browser_file_upload (runtime + driver)."""
+"""Normalize local file paths for file uploads (runtime + driver)."""
 
 from __future__ import annotations
 

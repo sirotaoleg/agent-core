@@ -94,18 +94,14 @@ MCP_TOOL_NAME_RE = re.compile(
 # file relative to the package -> number of driver-name matches.
 KNOWN_DRIVER_NAMES: dict[str, int] = {
     # legacy code, removed with the old paths
-    "controllers/action.py": 3,
-    "playwright_runtime/__init__.py": 1,
     "playwright_runtime/agents.py": 1,
     "playwright_runtime/browser_capabilities.py": 2,
-    "playwright_runtime/browser_tools.py": 6,
+    "playwright_runtime/browser_tools.py": 3,
     "playwright_runtime/browser_working_context.py": 2,
     "playwright_runtime/browser_working_context_rail.py": 2,
-    "playwright_runtime/main.py": 2,
     "playwright_runtime/runtime.py": 2,
     "playwright_runtime/runtime_tools.py": 1,
     "playwright_runtime/service.py": 1,
-    "utils/parsing.py": 1,
     # model-facing card text, kept byte-identical to the golden tool list
     "surfaces/browser/helpers/batch_steps.py": 1,
 }
@@ -115,9 +111,7 @@ KNOWN_MCP_TOOL_NAMES: dict[str, int] = {
     # legacy code, removed with the old paths
     "playwright_runtime/agents.py": 11,
     "playwright_runtime/browser_capabilities.py": 69,
-    "playwright_runtime/probes.py": 2,
     "playwright_runtime/runtime.py": 9,
-    "utils/upload_paths.py": 1,
 }
 
 
