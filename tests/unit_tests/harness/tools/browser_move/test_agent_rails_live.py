@@ -26,7 +26,7 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
 from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.runtime.rails.final_answer_recovery import (
     NON_JSON_OUTPUT,
-    RECOVERY_MESSAGE,
+    RESTATE_MESSAGE,
 )
 from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import CORE_BROWSER_TOOL_NAMES
@@ -216,8 +216,8 @@ class _OnEachDriver:
 
         assert {name.removeprefix(prefix) for name in names} == set(CORE_BROWSER_TOOL_NAMES) | HELPERS
         assert (result["ok"], result["recovered_from"]) == (True, NON_JSON_OUTPUT), result
-        assert [bool(request.get("tools")) for request in model.requests] == [True, True, False]
-        assert RECOVERY_MESSAGE in str(model.requests[2]["messages"][-1].content)
+        assert [bool(request.get("tools")) for request in model.requests] == [True, True, True]
+        assert RESTATE_MESSAGE in str(model.requests[2]["messages"][-1].content)
 
 
 @pytest.mark.live

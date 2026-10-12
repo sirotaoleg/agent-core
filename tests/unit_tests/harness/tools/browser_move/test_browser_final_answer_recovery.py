@@ -22,6 +22,7 @@ from openjiuwen.harness.tools.browser_move.runtime.agents import build_browser_w
 from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
 from openjiuwen.harness.tools.browser_move.runtime.rails.final_answer_recovery import (
     RECOVERY_MESSAGE,
+    RESTATE_MESSAGE,
     STEP_LIMIT_SENTENCE,
     FinalAnswerRecoveryRail,
 )
@@ -64,6 +65,14 @@ def _request_id(request: dict[str, Any]) -> str:
         if match:
             return match.group(1)
     return ""
+
+
+def _is_recovery(request: dict[str, Any]) -> bool:
+    return "Tools are disabled now" in str(request["messages"][-1].content)
+
+
+def _tool_names(request: dict[str, Any]) -> list[str]:
+    return [tool.name for tool in request["tools"]]
 
 
 class _SnapshotDriver(FakeDriver):
@@ -164,8 +173,7 @@ class TestRecovery:
         assert result == {**ANSWER, "recovered_from": "empty_output"}
         assert len(llm.requests) == 3
         recovery = llm.requests[-1]
-        assert not recovery["tools"], "the recovery request must not offer tools"
-        assert llm.requests[0]["tools"], "the normal run offers tools"
+        assert _tool_names(recovery) == _tool_names(llm.requests[0]), "the recovery request keeps the tool list"
         last = recovery["messages"][-1]
         assert (last.role, last.content) == ("user", RECOVERY_MESSAGE)
         assert any(getattr(message, "tool_calls", None) for message in recovery["messages"])
@@ -180,11 +188,13 @@ class TestRecovery:
 
         assert result == {**ANSWER, "recovered_from": "non_json_output"}
         assert len(llm.requests) == 2
-        assert not llm.requests[-1]["tools"]
+        assert _tool_names(llm.requests[-1]) == _tool_names(llm.requests[0]) == ["browser_snapshot"]
+        last = llm.requests[-1]["messages"][-1]
+        assert (last.role, last.content) == ("user", RESTATE_MESSAGE)
 
     def test_step_limit_is_recovered_despite_max_steps(self) -> None:
         async def respond(index: int, request: dict[str, Any]) -> AssistantMessage:
-            if not request["tools"]:
+            if _is_recovery(request):
                 return _answer(json.dumps({**ANSWER, "ok": False, "status": "partial"}))
             return _snapshot_call(index)
 
@@ -240,7 +250,7 @@ class TestRecoveryFails:
 
     def test_step_limit_keeps_the_max_iterations_error(self) -> None:
         async def respond(index: int, request: dict[str, Any]) -> AssistantMessage:
-            return _snapshot_call(index) if request["tools"] else _answer(PROSE)
+            return _answer(PROSE) if _is_recovery(request) else _snapshot_call(index)
 
         service, llm, _ = _service(respond, max_steps=2)
 
@@ -287,19 +297,20 @@ def test_valid_json_needs_no_recovery() -> None:
 
     assert result == ANSWER
     assert len(llm.requests) == 2
-    assert all(request["tools"] for request in llm.requests)
+    assert not any(_is_recovery(request) for request in llm.requests)
 
 
 class TestIsolation:
-    def test_next_run_has_tools_again(self) -> None:
+    def test_the_next_run_executes_its_tool_calls_again(self) -> None:
         replies = [_answer(PROSE), _answer(json.dumps(ANSWER)), _snapshot_call(3), _answer(json.dumps(ANSWER))]
-        service, llm, _ = _service(_replies(*replies))
+        service, llm, driver = _service(_replies(*replies))
 
         _run(service, request_id="r-1")
         result = _run(service, rail=False, request_id="r-2")
 
         assert result == ANSWER
-        assert [bool(request["tools"]) for request in llm.requests] == [True, False, True, True]
+        assert [_is_recovery(request) for request in llm.requests] == [False, True, False, False]
+        assert driver.kinds() == ["observe"]
 
     def test_concurrent_runs_do_not_share_the_recovery_flag(self) -> None:
         events: dict[str, asyncio.Event] = {}
@@ -307,7 +318,7 @@ class TestIsolation:
         async def respond(index: int, request: dict[str, Any]) -> AssistantMessage:
             del index
             if _request_id(request) == "run-a":
-                if request["tools"]:
+                if not _is_recovery(request):
                     return _answer(PROSE)
                 # Run A's recovery call: let run B make a model call while A's flag is set.
                 events["a_recovering"].set()
@@ -333,17 +344,18 @@ class TestIsolation:
                 service.run_task_once(task="Task B", session_id="s-records-b", request_id="run-b", worker=worker),
             )
 
-        service, llm, _ = _service(respond, driver=_SnapshotDriver(before_tool_result))
+        service, llm, driver = _service(respond, driver=_SnapshotDriver(before_tool_result))
 
         result_a, result_b = asyncio.run(scenario())
 
         assert result_a == {**ANSWER, "recovered_from": "non_json_output"}
         assert result_b == ANSWER
         by_run = {
-            run: [bool(request["tools"]) for request in llm.requests if _request_id(request) == run]
+            run: [_is_recovery(request) for request in llm.requests if _request_id(request) == run]
             for run in ("run-a", "run-b")
         }
-        assert by_run == {"run-a": [True, False], "run-b": [True, True]}
+        assert by_run == {"run-a": [False, True], "run-b": [False, False]}
+        assert driver.kinds() == ["observe"], "run B's tool call runs while run A recovers"
 
 
 @pytest.mark.parametrize("other_rails", [0, 2])
@@ -364,7 +376,7 @@ def test_service_registers_the_recovery_rail(other_rails: int) -> None:
 class TestRecoveryCallFails:
     def test_model_error_during_recovery_keeps_todays_result(self) -> None:
         async def respond(index: int, request: dict[str, Any]) -> AssistantMessage:
-            if request["tools"]:
+            if not _is_recovery(request):
                 return _answer(PROSE)
             raise RuntimeError("model endpoint unavailable")
 
@@ -380,5 +392,5 @@ class TestRecoveryCallFails:
             "error": "Browser worker did not return valid JSON output",
             "status": "failed",
         }
-        assert [bool(request["tools"]) for request in llm.requests] == [True, False], "one recovery call, no retry"
+        assert [_is_recovery(request) for request in llm.requests] == [False, True], "one recovery call, no retry"
         assert driver.kinds() == []
