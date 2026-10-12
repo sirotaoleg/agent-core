@@ -4159,6 +4159,41 @@ Known leftovers:
    whether the runner's usage parser counts it is not checked.
 2. A model whose probe is inconclusive at the first build is probed again at the next build, never mid-task.
 
+### Image input: reruns
+
+The reruns with the image input fix found two problems.
+
+1. **No usage in the task logs.** The WebVoyager runner calls `ensure_started()` (the topology's `start`) before it
+   redirects stdout into the task's `agent_log.txt`. With the probe awaited in `start`, the first model call of the
+   process happened there and bound the model logger to the real stdout. In `refactor-mcp\results\20261012-2048_adhoc_…`
+   and `refactor-bu\results\20261012-2105_adhoc_…` every task log has 0 `CompletionUsage` lines (they went to
+   `shardN\stdout.log`), so cost and usage parsing and the budget guard saw $0.
+2. **Worker images rejected.** With image support, the MCP worker's `browser_take_screenshot` result made the next
+   model call fail with provider 400s ("Invalid base64 image_url", "You uploaded an unsupported image") in 9 of 51
+   tasks.
+
+Decisions:
+1. **No model call in `start`.** `Direct.run` awaits the probe before `Runner.run_agent`. The agent built in `start`
+   needs no verdict, because the rail reads the probe cache per model call.
+2. **The delegated worker has no image input again and does not probe.** `build_worker` keeps `image_support`
+   (default `False`) for the day the payload is fixed.
+
+Rejected options:
+- Fixing the MCP screenshot payload in the same change: it needs its own investigation (leftover 1).
+
+Verification: 2 new cases fail before the fix (no probe in `Direct.start`, and the probe before the agent in `run`;
+the worker probes nothing and has no image support). The live topology and agent-rails tests still expected the full
+core names from agents without image input (missed when the screenshot moved into core, because that change had no
+live run) and now leave the screenshot out. Full unit suite: 2493 passed, 122 skipped. The golden diff against
+`12c332832` is empty. Live sets: 119 passed.
+
+Known leftovers:
+1. **The MCP screenshot payload.** Find out what the driver puts in `Screenshot.png` and in the rendered image block
+   for the screenshot result of `@playwright/mcp@0.0.78`, and why providers reject it ("Invalid base64 image_url",
+   "You uploaded an unsupported image", 9 of 51 tasks). Until then the worker gets no image input.
+2. The deep agent schedules its own background probe when `create_browser_agent` builds it in `start`. If that probe
+   has not finished when `Direct.run` awaits the probe, the probe request is sent twice.
+
 ### Task rules in the prompt (both topologies)
 
 Eleven failures came from the model's choices, not from the harness: a date without a year read as this year

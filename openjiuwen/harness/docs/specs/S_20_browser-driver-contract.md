@@ -730,7 +730,7 @@ failure in steps 2–4 closes the session (stop, release). The caller owns the s
 
 `build_worker(session, bundle, *, provider, api_key, api_base, model_name, max_steps, core, capabilities,
 tool_result_observer, screenshot_subdir, artifacts_subdir, image_support=False) -> ReActAgent` (`runtime/agents.py`,
-async) is the worker's builder, called by `DelegatedWorker.start` with the probe verdict ("Topology"):
+async) is the worker's builder, called by `DelegatedWorker.start` with the default `False` ("Topology"):
 `build_agent_parts(session, bundle, capabilities=, image_support=, language=WORKER_LANGUAGE, worker=True)`, so
 image support decides both the screenshot-only tools (left out without it) and the image blocks in the tool results;
 the worker prompt names `browser_take_screenshot` only as "when it is present"; `build_browser_worker_agent(provider=, api_key=, api_base=, model_name=,
@@ -1300,10 +1300,12 @@ facade (`main_agent_answer`).
   `create_browser_agent(model, language=WORKER_LANGUAGE, temperature=core.worker_temperature,
   max_iterations=guardrails.max_steps, workspace=runtime.workspace, browser_capabilities=runtime.capabilities,
   runtime=runtime)` with a `Model` from the service's provider, key, base and model name (`temperature` / `top_p`
-  from the core settings' worker values), after setting `runtime.dedicated_log = False` and awaiting
-  `probe_image_support(model)`; the agent reads the verdict from the probe cache ("`BrowserRuntimeRail`"). No session is opened:
+  from the core settings' worker values), after setting `runtime.dedicated_log = False`; `start` makes no model
+  call ("Invariant (image probe)"). No session is opened:
   it opens at the agent's first invoke (`BrowserRuntimeRail.before_invoke`), as for any `create_browser_agent`
-  agent. `run`: `service.session_new(session_id)`, a request id, `Runner.run_agent(agent, {"query": task,
+  agent. `run`: `service.session_new(session_id)`, a request id, `await probe_image_support(<the same Model>)`
+  (the agent reads the verdict from the probe cache per model call, "`BrowserRuntimeRail`"), then
+  `Runner.run_agent(agent, {"query": task,
   "conversation_id": "<sid>.direct.<rid>.<uuid>", "request_id": rid})` under `asyncio.wait_for(timeout_s or the
   guardrails' timeout)`; the result, a timeout (`task_timeout: exceeded <n>s`) or an exception becomes the answer
   through `runtime.main_agent_answer`. One attempt per task: the worker loop's retries are worker guardrails.
@@ -1311,20 +1313,22 @@ facade (`main_agent_answer`).
   directory, so its separators are path-legal on every OS (`:` is not on Windows).
 - `DelegatedWorker` (`name="delegated_worker"`, the Playwright MCP default): `start` is
   `runtime.ensure_runtime_ready()` (the session opens here), then, when `service.browser_agent` is `None`,
-  `probe_image_support(<the same Model as Direct's>)` and `service.browser_agent = await build_worker(session,
-  session.assembly.surface, provider=, api_key=, api_base=, model_name=, max_steps=guardrails.max_steps,
-  core=service.core, capabilities=runtime.capabilities, image_support=<verdict is True>,
-  tool_result_observer=service.observe_worker_tool_result, screenshot_subdir=, artifacts_subdir=)`, then
+  `service.browser_agent = await build_worker(session, session.assembly.surface, provider=, api_key=, api_base=,
+  model_name=, max_steps=guardrails.max_steps, core=service.core, capabilities=runtime.capabilities,
+  tool_result_observer=service.observe_worker_tool_result, screenshot_subdir=, artifacts_subdir=)` with no image
+  support and no probe (the images it would send are rejected by the providers, F_07), then
   `runtime.register_runtime_tools()`. `run` is `service.run_task(task=, session_id=, request_id=, timeout_s=,
   worker=)` with `worker` an async callable that runs `start(runtime)` and returns `service.browser_agent`: after
   a `reset()` the slot is empty and the next attempt rebuilds the worker on a fresh session. `drop` does nothing:
   the worker lives in the service's slot, which the service clears on reset and shutdown.
 
-Invariant (image probe): both strategies await `probe_image_support` for the model they build before they build the
-agent. A background probe (`schedule_image_support_probe`) dies with its event loop, and the runner runs one
-`asyncio.run` per task, so the first task of every process would otherwise never see a verdict. A conclusive verdict
-is cached per `(api_base, model_name)` for the process, so later tasks pay nothing; an inconclusive probe (`None`:
-timeout, call failure, empty answer) is not cached, counts as no image support, and is tried again at the next build.
+Invariant (image probe): `start` makes no model call on either strategy. The runner calls `ensure_started()` before it
+redirects stdout into the task log, and the first model call binds the model logger to the stdout of that moment, so a
+call in `start` sends every usage line of the task to the process stdout. `Direct.run` awaits `probe_image_support`
+before the agent runs: a background probe (`schedule_image_support_probe`) dies with its event loop, and the runner
+runs one `asyncio.run` per task. A conclusive verdict is cached per `(api_base, model_name)` for the process, so later
+tasks pay nothing; an inconclusive probe (`None`: timeout, call failure, empty answer) is not cached, counts as no
+image support, and is tried again at the next run.
 
 The runner reads `runtime._service.browser_agent` between `ensure_started()` and `run_browser_task` to remove the
 helpers; on `Direct` the slot is `None` and its guard skips the removal, so the main agent keeps the helpers it is
