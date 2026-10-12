@@ -8,6 +8,7 @@ import dataclasses
 import os
 import warnings
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -23,6 +24,7 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
     resolve_playwright_mcp_cwd,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
+from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
 
 
 def test_browser_instance_config_keeps_its_positional_fields_and_adds_provisioning_and_driver() -> None:
@@ -134,11 +136,12 @@ def test_resolve_playwright_mcp_cwd_comes_from_the_browser_settings(tmp_path: Pa
 def test_the_facades_take_the_browser_settings_from_the_surface_registry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    seen: list[dict[str, str]] = []
+    seen: list[tuple[dict[str, str], Any]] = []
+    profile = create_browser_surface({}).profile
 
-    def browser_surface(environ):
-        seen.append(dict(environ))
-        return SurfaceBundle(settings=BrowserSettings(mcp_cwd=tmp_path))
+    def browser_surface(environ, instance=None, settings=None):
+        seen.append((dict(environ), settings))
+        return SurfaceBundle(settings=settings or BrowserSettings(mcp_cwd=tmp_path), profile=profile)
 
     surfaces: Registry[SurfaceBundle] = Registry("surface")
     surfaces.register("browser", browser_surface)
@@ -149,4 +152,6 @@ def test_the_facades_take_the_browser_settings_from_the_surface_registry(
         assert build_playwright_mcp_config().params["cwd"] == str(tmp_path)
         assert build_runtime_settings(core_settings=CoreSettings()).mcp_cfg.params["cwd"] == str(tmp_path)
 
-    assert seen == [{"PLAYWRIGHT_MCP_COMMAND": "from-env"}] * 3
+    assert [environ for environ, settings in seen if settings is None] == [{"PLAYWRIGHT_MCP_COMMAND": "from-env"}] * 3
+    # the server config reads the catalog through the registry with the settings it was given
+    assert [settings.mcp_cwd for _environ, settings in seen if settings is not None] == [tmp_path] * 2
