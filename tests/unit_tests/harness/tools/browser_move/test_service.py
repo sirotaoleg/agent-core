@@ -510,7 +510,7 @@ def test_run_task_once_uses_fresh_worker_conversation_ids() -> None:
             )
         }
 
-    with patch("openjiuwen.harness.tools.browser_move.runtime.service.Runner.run_agent", fake_run_agent):
+    with patch("openjiuwen.harness.tools.browser_move.runtime.worker.Runner.run_agent", fake_run_agent):
         first = _run(
             service.run_task_once(task="Open page", session_id="session-1", request_id="req-1", worker=_worker)
         )
@@ -589,7 +589,7 @@ def test_run_task_awaits_the_worker_per_attempt_and_restarts_through_reset_alone
     )
     with (
         patch.object(service, "reset", AsyncMock()) as reset,
-        patch("openjiuwen.harness.tools.browser_move.runtime.service.Runner.run_agent", run_agent),
+        patch("openjiuwen.harness.tools.browser_move.runtime.worker.Runner.run_agent", run_agent),
     ):
         result = _run(service.run_task(worker=worker, task="Open page", session_id="s", request_id="r"))
 

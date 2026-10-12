@@ -27,7 +27,8 @@ KNOWN_BROWSER_WORDS: dict[str, int] = {
     "runtime/rails/repeated_call_guard.py": 8,
     "runtime/session.py": 39,
     "runtime/runtime_tools.py": 5,
-    "runtime/service.py": 82,
+    "runtime/service.py": 10,
+    "runtime/worker.py": 72,
     "runtime/service_registry.py": 4,
 }
 

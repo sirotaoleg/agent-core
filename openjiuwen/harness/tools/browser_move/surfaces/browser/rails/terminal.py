@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 
 from openjiuwen.core.single_agent.prompts.builder import PromptSection
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext
-from openjiuwen.harness.tools.browser_move.runtime.service import MAX_ITERATION_MESSAGE, BrowserTaskProgressState
+from openjiuwen.harness.tools.browser_move.runtime.worker import MAX_ITERATION_MESSAGE, BrowserTaskProgressState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.keys import (
     _BROWSER_PHASE_STATE_KEY,
     _BROWSER_TASK_DEADLINE_KEY,

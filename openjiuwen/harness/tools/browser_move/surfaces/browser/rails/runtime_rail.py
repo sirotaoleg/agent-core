@@ -31,9 +31,9 @@ from openjiuwen.harness.tools.browser_move.runtime.browser_logging import (
     browser_agent_log_info,
     browser_agent_log_warning,
 )
-from openjiuwen.harness.tools.browser_move.runtime.service import BrowserTaskProgressState
 from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime, ToolKind, _tool_args
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandRecord, command_record
+from openjiuwen.harness.tools.browser_move.runtime.worker import BrowserTaskProgressState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.probes.results import _ProbeResultsMixin
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.keys import (
     _BROWSER_FIELD_ALIASES,
