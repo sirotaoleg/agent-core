@@ -65,7 +65,7 @@ class BrowserInstanceConfig:
     browser_binary: str = ""  # optional Chrome path override
     launch_args: str = ""  # Playwright MCP launch args in the PLAYWRIGHT_MCP_ARGS format; "" -> env/default
     provisioning: str = ""  # "", "managed", "remote", "extension"; "" -> env/default
-    driver: str = ""  # "", "playwright_mcp", "browser_use"; "" -> env/default
+    driver: str = ""  # a registered driver name; "" -> env/default
 
     def __post_init__(self) -> None:
         if self.provisioning and self.driver_mode and self.provisioning != self.driver_mode:
@@ -93,7 +93,7 @@ class RuntimeSettings:
     instance: Optional[BrowserInstanceConfig] = None
 
 
-DRIVERS = ("playwright_mcp", "browser_use")
+DEFAULT_DRIVER = "playwright_mcp"
 TOPOLOGIES = ("direct", "delegated_worker")
 DEFAULT_TOOL_TIMEOUT_S = 240.0
 DEFAULT_WORKER_TEMPERATURE = 0.2
@@ -159,11 +159,8 @@ def _float(environ: Mapping[str, str], keys: tuple[str, ...], *, default: float,
 
 def _driver(environ: Mapping[str, str]) -> str:
     value = (environ.get("BROWSER_DRIVER") or "").strip().lower()
-    if not value or value in _LEGACY_DRIVER_VALUES:
-        return DRIVERS[0]
-    if value not in DRIVERS:
-        raise ValueError(f"BROWSER_DRIVER must be one of: {', '.join(DRIVERS)} (got {value!r})")
-    return value
+    # Any name: the driver registry checks it when the driver is built, so a driver registered elsewhere is selectable.
+    return DEFAULT_DRIVER if not value or value in _LEGACY_DRIVER_VALUES else value
 
 
 def _topology(environ: Mapping[str, str]) -> str:
@@ -328,7 +325,7 @@ class RuntimeServerSettings:
 class CoreSettings:
     """Settings of the agent core: driver, surface, model, guardrails and logging; nothing surface-specific."""
 
-    driver: str = DRIVERS[0]
+    driver: str = DEFAULT_DRIVER
     surface: str = "browser"
     topology: str = ""
     provider: str = "openai"
