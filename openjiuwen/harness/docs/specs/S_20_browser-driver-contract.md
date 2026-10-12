@@ -842,7 +842,8 @@ text produces no block.
 
 `CAPABILITY_TOOLS` maps every entry of `DEFAULT_BROWSER_CAPABILITIES` (the catalog, in the same module;
 unchanged public API) to those of its tool names that a spec or the `browser_find` extra tool serves: `core` equals
-`CORE_BROWSER_TOOL_NAMES`; `vision` keeps the screenshot and the four `xy`/wheel tools; `extended_interaction` keeps
+`CORE_BROWSER_TOOL_NAMES`, which includes `browser_take_screenshot`; `vision` keeps the four `xy`/wheel tools;
+`extended_interaction` keeps
 `browser_close`, `browser_drag`, `browser_drop`; `pdf`, `devtools`, `network` keep one tool each; `advanced_code`,
 `unsafe_dev`, `config`, `storage`, `testing` are empty. `CAPABILITY_CATALOG` gives each entry the
 `(command, ref kind)` pairs of its specs: element tools take `DriverRef` and `Locator`, `browser_file_upload` and
@@ -850,6 +851,9 @@ unchanged public API) to those of its tool names that a spec or the `browser_fin
 is a tuple of the contract's `Capability` (`BrowserCapability` is that type under its old name); its
 `advanced_code`, `extended_interaction` and `unsafe_dev` entries are `policy_only`, and
 `POLICY_ONLY_BROWSER_CAPABILITY_NAMES` is derived from them. The profile's `capabilities` is this tuple.
+Invariants: no two entries share a tool name; `browser_take_screenshot` is in `core` and reaches an agent exactly
+when the agent has image support (the factory's screenshot rule, "Tool factory"), so the WebVoyager runner, which
+grants `CORE_BROWSER_TOOL_NAMES`, gets it with image input and not without.
 
 ### Helpers (`surfaces/browser/helpers/`)
 

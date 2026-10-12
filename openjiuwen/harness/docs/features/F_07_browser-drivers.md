@@ -4125,6 +4125,11 @@ Decisions:
    "when it is present", so it needs no change.
 4. **Unit tests stub the probe** in a package conftest. Otherwise the topologies would call the model endpoint in
    every test that starts a runtime, and the scripted models of the live tests would answer the probe.
+5. **`browser_take_screenshot` moves from `vision` to `core`** (head's decision after a stop). The runner grants
+   `CORE_BROWSER_TOOL_NAMES`, so with the tool only in `vision` the runner's agents never got it. The factory emits
+   it only with image support, so an agent without image input sees the tools it saw before. The public constant
+   `CORE_BROWSER_TOOL_NAMES` grew by one name (15) and `VISION_BROWSER_TOOL_NAMES` lost it, so no two capabilities
+   share a tool.
 
 Rejected options:
 - Passing `enable_read_image_multimodal=<verdict>` to `create_browser_agent`: a `False` would override a model's
@@ -4132,16 +4137,22 @@ Rejected options:
 - Walking from the inner agent to the outer one: the inner agent holds no reference to it.
 - Caching the verdict in the rail: the probe cache can change during the process; the rail reads it per call.
 
-Not done: `browser_take_screenshot` in the `core` capability. The tool is only in `vision`, and the runner grants the
-`CORE_BROWSER_TOOL_NAMES` allowlist, so the runner's agents still get no screenshot tool. Adding it to the core
-tuple leaves every golden byte for byte and the runner mirror unchanged, but moves two pinned assertions
-(`test_wv_runner_contract.py::test_core_browser_tool_names` and
-`test_browser_capabilities.py::test_core_only_selection_exposes_exactly_core_tools`). Stopped for the head's decision.
+Changed tests for decision 5:
+- The two pinned assertions: the runner contract's core tuple, and the core size (with the screenshot now asserted
+  in core). The runner mirror is unchanged.
+- Vision's tools and command pairs in the profile test.
+- Five tests that compare an agent built without image support against the core names now leave the screenshot
+  out.
+
+Rejected for decision 5: the screenshot in both `core` and `vision`. The resolver and the allowlist de-duplicate
+it, and three tests assume the entries share nothing.
 
 Verification: 6 new cases fail before the fix (the outer agent's verdict in the inner hooks, the awaited probe in
 `Direct`, three probe verdicts on `DelegatedWorker`, `build_worker` with image support). The False cases pass
 before and after. Full unit suite: 2495 passed, 122 skipped. The golden diff against the start of this fix is
 empty. Live sets (Playwright MCP and browser-use conformance, helpers, assembly, agent rails, topology): 119 passed.
+After decision 5: full unit suite 2495 passed, 122 skipped; golden diff still empty, the `vision` view included
+(built without image support, it never showed the screenshot). No live run for decision 5: no driver code changed.
 
 Known leftovers:
 1. The probe adds one model call per process before the first task. It is sent under `LlmObservationSuppression`;
