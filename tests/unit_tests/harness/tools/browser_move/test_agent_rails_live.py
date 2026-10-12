@@ -214,7 +214,8 @@ class _OnEachDriver:
 
         prefix, names, model, result = asyncio.run(scenario())
 
-        assert {name.removeprefix(prefix) for name in names} == set(CORE_BROWSER_TOOL_NAMES) | HELPERS
+        core = set(CORE_BROWSER_TOOL_NAMES) - {"browser_take_screenshot"}
+        assert {name.removeprefix(prefix) for name in names} == core | HELPERS
         assert (result["ok"], result["recovered_from"]) == (True, NON_JSON_OUTPUT), result
         assert [bool(request.get("tools")) for request in model.requests] == [True, True, True]
         assert RESTATE_MESSAGE in str(model.requests[2]["messages"][-1].content)

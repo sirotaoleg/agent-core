@@ -19,7 +19,6 @@ from openjiuwen.core.foundation.llm.model_clients.openai_model_client import Ope
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext
 from openjiuwen.harness import deep_agent as deep_agent_module
-from openjiuwen.harness import image_modality_probe
 from openjiuwen.harness.rails.context_engineer import ContextProcessorRail
 from openjiuwen.harness.subagents import browser_agent as browser_agent_module
 from openjiuwen.harness.subagents.browser_agent import DEFAULT_BROWSER_AGENT_SYSTEM_PROMPT
@@ -170,27 +169,29 @@ class TestDirect:
             "progress": {"status": "completed", "completed_steps": ["read the heading"]},
         }
 
-    def test_start_awaits_the_image_probe_so_the_agent_is_built_on_its_verdict(self) -> None:
+    def test_start_makes_no_model_call_and_run_awaits_the_probe_before_the_agent_runs(self) -> None:
         runtime = _runtime(BROWSER_USE)
-        seen: list[bool | None] = []
+        events: list[str] = []
 
-        def create(model: Any, **kwargs: Any) -> MagicMock:
-            seen.append(image_modality_probe.get_cached_image_support(model))
-            return MagicMock()
+        async def probe(model: Any) -> bool:
+            events.append(f"probe {model.model_client_config.api_base} {model.model_config.model_name}")
+            return True
+
+        async def run_agent(agent: Any, inputs: Any) -> dict[str, Any]:
+            events.append("agent")
+            return {"output": "done", "result_type": "answer"}
 
         with (
-            patch.object(topology_module, "probe_image_support", image_modality_probe.probe_image_support),
-            patch.object(image_modality_probe, "_run_probe", AsyncMock(return_value=True)) as probe,
-            patch.object(browser_agent_module, "create_browser_agent", side_effect=create),
+            patch.object(topology_module, "probe_image_support", side_effect=probe),
+            patch.object(browser_agent_module, "create_browser_agent", return_value=MagicMock()),
+            patch.object(runtime_module.Runner, "run_agent", side_effect=run_agent),
         ):
             run(runtime.ensure_started())
+            started = list(events)
+            run(runtime.run_browser_task(task="Report the heading", session_id="s", request_id="r"))
 
-        assert seen == [True]
-        model = probe.await_args.args[0]
-        assert (model.model_client_config.api_base, model.model_config.model_name) == (
-            "https://example.invalid/v1",
-            "test-model",
-        )
+        assert started == []
+        assert events == ["probe https://example.invalid/v1 test-model", "agent"]
 
     def test_the_agent_speaks_the_workers_language_and_gets_the_core_rails_at_construction(self) -> None:
         runtime = _runtime(BROWSER_USE, language=None)
@@ -352,12 +353,9 @@ class TestDelegatedWorker:
             "browser_list_custom_actions",
         ]
 
-    @pytest.mark.parametrize(("verdict", "image_support"), [(True, True), (False, False), (None, False)])
-    def test_the_worker_is_built_on_the_probe_verdict_for_its_model(
-        self, verdict: bool | None, image_support: bool
-    ) -> None:
+    def test_the_worker_is_built_without_image_support_and_probes_nothing(self) -> None:
         runtime = _runtime(MCP)
-        probe = AsyncMock(return_value=verdict)
+        probe = AsyncMock(return_value=True)
         with (
             _assembling(),
             _registering_runtime_tools(),
@@ -365,17 +363,11 @@ class TestDelegatedWorker:
             patch.object(agents_module, "build_agent_parts", wraps=agents_module.build_agent_parts) as parts,
         ):
             run(runtime.ensure_started())
-            run(runtime.ensure_started())
 
-        model = probe.await_args.args[0]
-        assert probe.await_count == 1
-        assert (model.model_client_config.api_base, model.model_config.model_name) == (
-            "https://example.invalid/v1",
-            "test-model",
-        )
-        assert parts.call_args.kwargs["image_support"] is image_support
+        probe.assert_not_awaited()
+        assert parts.call_args.kwargs["image_support"] is False
         names = {tool.name for tool in run(runtime.service.browser_agent.ability_manager.list_tool_info())}
-        assert (MCP_PREFIX + "browser_take_screenshot" in names) is image_support
+        assert MCP_PREFIX + "browser_take_screenshot" not in names
 
     def test_the_worker_is_built_again_after_a_task_release(self) -> None:
         runtime = _runtime(MCP)

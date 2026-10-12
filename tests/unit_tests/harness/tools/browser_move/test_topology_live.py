@@ -62,6 +62,8 @@ MAIN_AGENT_HELPERS = {
     "browser_recall_offload",
 }
 FINAL = "The scene is open."
+# The scripted model has no image input, so the factory leaves the screenshot out.
+CORE_WITHOUT_IMAGES = tuple(name for name in CORE_BROWSER_TOOL_NAMES if name != "browser_take_screenshot")
 WORKER_ANSWER = json.dumps(
     {
         "ok": True,
@@ -169,7 +171,7 @@ class _OnEachDriver:
         prefix, answer = asyncio.run(scenario())
 
         sent = {tool.name for tool in model.requests[0]["tools"]}
-        assert sent == {prefix + name for name in CORE_BROWSER_TOOL_NAMES}, sent
+        assert sent == {prefix + name for name in CORE_WITHOUT_IMAGES}, sent
         assert not _tool_messages(model.requests[1])[-1].startswith("### Error"), _tool_messages(model.requests[1])
         assert (answer["ok"], answer["final"], answer["error"], answer["screenshot"]) == (True, FINAL, None, None)
         assert {"ok", "final", "error", "screenshot", "page", "session_id", "request_id"} <= set(answer), answer
@@ -198,7 +200,7 @@ class _OnEachDriver:
         assert (answer["ok"], answer["error"], answer["screenshot"]) == (True, None, None), answer
         assert FINAL in answer["final"], answer
         sent = {tool.name for tool in model.requests[0]["tools"]}
-        assert {prefix + name for name in CORE_BROWSER_TOOL_NAMES} | MAIN_AGENT_HELPERS <= sent, sent
+        assert {prefix + name for name in CORE_WITHOUT_IMAGES} | MAIN_AGENT_HELPERS <= sent, sent
         assert not _tool_messages(model.requests[1])[-1].startswith("### Error"), _tool_messages(model.requests[1])
         assert {"ok", "final", "error", "screenshot", "page", "session_id", "request_id"} <= set(answer), answer
         assert scene_url.rsplit("/", 1)[0] in answer["page"]["url"], answer["page"]
