@@ -18,7 +18,7 @@ KNOWN_BROWSER_WORDS: dict[str, int] = {
     # browser code that moves to surfaces/browser/
     "runtime/controllers/action.py": 13,
     "runtime/controllers/base.py": 1,
-    "runtime/agents.py": 23,
+    "runtime/agents.py": 2,
     "runtime/browser_logging.py": 6,
     "runtime/config.py": 9,
     "runtime/main.py": 3,

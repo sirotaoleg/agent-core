@@ -14,7 +14,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from openjiuwen.core.foundation.llm import AssistantMessage
-from openjiuwen.harness.tools.browser_move.runtime.agents import build_browser_worker_system_prompt
 from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
 from openjiuwen.harness.tools.browser_move.runtime.runtime_tools import (
     BrowserCustomActionTool,
@@ -23,6 +22,7 @@ from openjiuwen.harness.tools.browser_move.runtime.runtime_tools import (
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
     CORE_BROWSER_TOOL_NAMES,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import build_browser_worker_system_prompt
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import MCP_PREFIX, make_runtime
 
 # The runtime tools a caller may still add to the worker by card.

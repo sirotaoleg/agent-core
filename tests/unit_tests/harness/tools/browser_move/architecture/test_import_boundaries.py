@@ -23,6 +23,8 @@ KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {
     ("runtime/session.py", "surfaces.browser.semantic.state"): 1,
     # the service's capability check
     ("runtime/service.py", "surfaces.browser.capabilities"): 2,
+    # the worker prompt; moved behind the profile once the surface carries it
+    ("runtime/agents.py", "surfaces.browser.tools"): 2,
 }
 
 # (file relative to openjiuwen/core, imported module) -> count.

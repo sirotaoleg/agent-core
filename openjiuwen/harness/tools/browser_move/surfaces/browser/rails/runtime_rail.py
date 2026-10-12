@@ -52,24 +52,16 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.status_logging impor
     BrowserSubagentStatusLogger,
     is_browser_subagent_status_log_enabled,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import (
+    _BROWSER_DATE_PICKER_GUIDANCE,
+    _BROWSER_DATE_PICKER_SECTION_NAME,
+    _BROWSER_IMAGE_CAPABILITY_GUIDANCE,
+    _BROWSER_IMAGE_CAPABILITY_SECTION_NAME,
+)
 from openjiuwen.harness.tools.browser_move.surfaces.browser.working_context.store import latest_browser_user_request
 
 _BROWSER_PROGRESS_STATE_KEY = "__browser_subagent_progress_state__"
 _BROWSER_PROGRESS_TASK_KEY = "__browser_subagent_last_task__"
-_BROWSER_IMAGE_CAPABILITY_SECTION_NAME = "browser_image_input_capability"
-_BROWSER_DATE_PICKER_SECTION_NAME = "browser_date_picker_guidance"
-_BROWSER_DATE_PICKER_GUIDANCE = {
-    "en": (
-        "For calendar/date-picker widgets, do not type the date into a text field. Click the "
-        "specific day cell instead (look for a data-iso=\"YYYY-MM-DD\" attribute or an aria-label "
-        "naming the full date), then confirm the selection before proceeding."
-    ),
-    "cn": (
-        "对于日历/日期选择器组件，不要向文本框输入日期，而应点击对应的日期单元格"
-        "（查找 data-iso=\"YYYY-MM-DD\" 属性或包含完整日期的 aria-label），"
-        "确认选中后再继续。"
-    ),
-}
 
 _BROWSER_LOG_CONTEXT_TOKEN_KEY = "__browser_agent_log_context_token__"
 _BROWSER_ACTION_GROUP_BY_CALL_KEY = "__browser_action_group_by_call__"
@@ -103,31 +95,6 @@ _BROWSER_REF_ALIAS_KEYS = {
 _BROWSER_TARGET_FIELDS = frozenset(_BROWSER_REF_ALIAS_KEYS.values())
 # Evidence hints and element descriptions the model may add; a tool whose schema lacks them must not see them.
 _BROWSER_RUNTIME_ARG_KEYS = frozenset({"field", "fields", "element"})
-_BROWSER_IMAGE_CAPABILITY_GUIDANCE = {
-    True: {
-        "en": (
-            "The current model can inspect image input. Use browser_take_screenshot only when "
-            "pixel-level visual evidence is required and DOM probes, accessibility snapshots, "
-            "or targeted evaluation cannot answer the task."
-        ),
-        "cn": (
-            "当前模型可以理解图片输入。仅当任务需要像素级视觉证据，且 DOM 探测、无障碍快照或"
-            "定向脚本无法解决时，才使用 browser_take_screenshot。"
-        ),
-    },
-    False: {
-        "en": (
-            "Image input is unavailable or unverified for this run. Do not request screenshots, "
-            "including browser_take_screenshot or browser_batch_interact with op=screenshot. "
-            "Use DOM probes, accessibility snapshots, and targeted evaluation instead."
-        ),
-        "cn": (
-            "本次运行的图片输入能力不可用或尚未确认。不要请求截图，包括 "
-            "browser_take_screenshot 或 browser_batch_interact 的 op=screenshot；"
-            "请改用 DOM 探测、无障碍快照和定向脚本。"
-        ),
-    },
-}
 
 
 class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _PhaseMixin, _EvidenceMixin, AgentRail):

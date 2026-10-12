@@ -104,11 +104,8 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
 }
 
 # file relative to the package -> number of MCP tool-name matches.
-# Model-facing bytes pinned by the goldens: the worker prompt, which moves to surfaces/browser/ with the
-# prompt text in Phase 9.
-KNOWN_MCP_TOOL_NAMES: dict[str, int] = {
-    "runtime/agents.py": 11,
-}
+# The model-facing tool names all live under surfaces/browser/ with the prompt text.
+KNOWN_MCP_TOOL_NAMES: dict[str, int] = {}
 
 
 def _in_driver_name_scope(relpath: str) -> bool:

@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Iterable, Optional
 
 from openjiuwen.harness.tools.browser_move.contract import (
     Action,
@@ -672,3 +672,202 @@ BROWSER_TOOL_SPECS: tuple[ToolSpec, ...] = (
     ToolSpec("browser_console_messages", (GetConsole,)),
     ToolSpec("browser_network_requests", (GetNetwork,)),
 )
+
+_BROWSER_IMAGE_CAPABILITY_SECTION_NAME = "browser_image_input_capability"
+_BROWSER_DATE_PICKER_SECTION_NAME = "browser_date_picker_guidance"
+_BROWSER_DATE_PICKER_GUIDANCE = {
+    "en": (
+        "For calendar/date-picker widgets, do not type the date into a text field. Click the "
+        "specific day cell instead (look for a data-iso=\"YYYY-MM-DD\" attribute or an aria-label "
+        "naming the full date), then confirm the selection before proceeding."
+    ),
+    "cn": (
+        "对于日历/日期选择器组件，不要向文本框输入日期，而应点击对应的日期单元格"
+        "（查找 data-iso=\"YYYY-MM-DD\" 属性或包含完整日期的 aria-label），"
+        "确认选中后再继续。"
+    ),
+}
+
+
+_BROWSER_IMAGE_CAPABILITY_GUIDANCE = {
+    True: {
+        "en": (
+            "The current model can inspect image input. Use browser_take_screenshot only when "
+            "pixel-level visual evidence is required and DOM probes, accessibility snapshots, "
+            "or targeted evaluation cannot answer the task."
+        ),
+        "cn": (
+            "当前模型可以理解图片输入。仅当任务需要像素级视觉证据，且 DOM 探测、无障碍快照或"
+            "定向脚本无法解决时，才使用 browser_take_screenshot。"
+        ),
+    },
+    False: {
+        "en": (
+            "Image input is unavailable or unverified for this run. Do not request screenshots, "
+            "including browser_take_screenshot or browser_batch_interact with op=screenshot. "
+            "Use DOM probes, accessibility snapshots, and targeted evaluation instead."
+        ),
+        "cn": (
+            "本次运行的图片输入能力不可用或尚未确认。不要请求截图，包括 "
+            "browser_take_screenshot 或 browser_batch_interact 的 op=screenshot；"
+            "请改用 DOM 探测、无障碍快照和定向脚本。"
+        ),
+    },
+}
+
+
+_BROWSER_WORKER_HELPER_TOOL_NAMES = (
+    "browser_probe_interactives",
+    "browser_probe_cards",
+    "browser_batch_interact",
+    "browser_custom_action",
+    "browser_list_custom_actions",
+)
+
+
+def build_browser_worker_system_prompt(
+    screenshot_subdir: str = "screenshots",
+    artifacts_subdir: str = "artifacts",
+    *,
+    tool_names: Optional[Iterable[str]] = None,
+    driver_name: str,
+) -> str:
+    """Render the worker system prompt; helper guidance only for helpers in ``tool_names`` (``None``: all)."""
+    available = set(_BROWSER_WORKER_HELPER_TOOL_NAMES if tool_names is None else tool_names)
+    interactives = "browser_probe_interactives" in available
+    cards = "browser_probe_cards" in available
+    probes = interactives or cards
+    batch = "browser_batch_interact" in available
+    batch_vs_custom_action = batch and interactives and cards and "browser_custom_action" in available
+    helper_guidance = "".join(
+        text
+        for enabled, text in (
+            (
+                probes,
+                "Before broad page snapshots, full-body scans, or generic DOM scraping, "
+                "choose the smallest compact probe that matches the task. ",
+            ),
+            (
+                interactives,
+                "Use browser_probe_interactives for buttons, links, inputs, forms, navigation controls, "
+                "login controls, pagination controls, menus, and other visible interactive elements. "
+                "When using browser_probe_interactives only for page-level controls, prefer max_items around 20-30 "
+                "unless the task explicitly requires a larger inventory. ",
+            ),
+            (
+                cards,
+                "On product pages, marketplace pages, search-result pages, catalog pages, article-list pages, "
+                "or any page with repeated visible cards/listings, call browser_probe_cards before broad extraction. "
+                "Use browser_probe_cards to identify compact repeated structures such as product cards, result cards, "
+                "book cards, article cards, listing rows, title/author/source/summary, "
+                "title/price/rating/review/availability fields, primary links, "
+                "visible controls, generation-scoped target IDs, and recurring structure signatures. ",
+            ),
+            (
+                cards and interactives,
+                "For product/listing/item-data tasks, prefer browser_probe_cards first; call "
+                "browser_probe_interactives "
+                "only if you also need page-level navigation, filters, forms, or controls outside the cards. ",
+            ),
+            (
+                cards,
+                "If browser_probe_cards returns the fields needed for the task, including article/result-row "
+                "title, link, author/source, or summary fields, use that compact result as the evidence "
+                "for extraction and final reporting instead of taking screenshots, snapshots, or running extra DOM "
+                "scans. "
+                "After a successful card probe, use browser_evaluate, or a browser_run_code tool only when it is "
+                "explicitly present, for a clearly missing required field or a specific target-based action; "
+                "do not repeat broad evaluation "
+                "just to re-read the same cards. ",
+            ),
+            (
+                probes,
+                "Treat page_id/generation_id/url/title/interactives/cards/"
+                "field_coverage/blockers as one PageState contract. ",
+            ),
+            (
+                probes and batch,
+                "Pass the current generation_id with a "
+                "probe target_id directly to browser_batch_interact; never translate it into guessed CSS. "
+                "Explicit selectors are reserved for validated read-only extraction and condition waits. ",
+            ),
+            (
+                cards,
+                "If a card has primary_link or href, navigate to it directly. ",
+            ),
+            (
+                batch_vs_custom_action,
+                "browser_batch_interact is a standalone runtime helper like browser_probe_interactives and "
+                "browser_probe_cards, not a browser_custom_action wrapper. Use it directly. ",
+            ),
+            (
+                batch,
+                "For multi-field forms with several known controls, search flows with autocomplete, "
+                "dropdown/date-picker "
+                "flows, filter panels, or any short sequence where two or more next click/type/wait/extract steps are "
+                "already known, call browser_batch_interact before falling back to repeated "
+                "browser_click/browser_type and separate wait turns. "
+                "Extract multiple fields from the same page in one batch with named extract_text/extract_value "
+                "steps, or use one card probe result that already contains every requested field. "
+                "Do not force browser_batch_interact for a single uncertain click, one simple text field, or a page "
+                "state "
+                "that still needs inspection. Prefer generation-scoped target_id in batch steps. "
+                "Use autocomplete steps for type-then-choose widgets, and condition-based "
+                "wait_for_selector/wait_for_text "
+                "steps instead of fixed sleeps. For dynamic pages use wait_for_url, "
+                "wait_for_first_card_title, wait_for_sort_state, wait_for_result_count, "
+                "wait_for_dom_text_change, wait_for_stable, or wait_for_tab with a short poll interval and total "
+                "timeout. "
+                "When an action opens a new tab, use click plus wait_for_tab in the same batch; wait_for_tab "
+                "activates the matched tab by default. Do not wait for a new URL on the old tab. ",
+            ),
+            (
+                True,
+                "Interpret 'fully loaded' or an 'appropriate pause' as condition stability, not a fixed sleep. ",
+            ),
+            (
+                batch,
+                "Do not split click+type+wait, click+wait+click, "
+                "date open+choose, or search submit+result wait into separate ReAct turns unless "
+                "browser_batch_interact "
+                "failed or the next target is genuinely unknown. ",
+            ),
+        )
+        if enabled
+    )
+    return (
+        "You are a browser worker agent.\n"
+        f"Execute browser tasks step-by-step with {driver_name} tools and approved runtime helper tools only.\n"
+        "Before interacting, ensure page or selector readiness.\n"
+        "Keep actions targeted and avoid unnecessary page snapshots.\n"
+        f"{helper_guidance}"
+        "Keep using browser_fill_form for ordinary visible text fields when that official tool is enough. "
+        "Use browser_snapshot only when the compact probes are insufficient, when accessibility structure is needed, "
+        f"or when you need exact element references required by a {driver_name} action. "
+        "Use browser_evaluate for small exact computations. Use a browser_run_code tool only when it is present "
+        "in the current tool list and compact probes, evaluate, snapshot, and deterministic actions are "
+        "insufficient. Never use run-code to dump the entire document body.\n"
+        "If actions repeatedly fail, stop and report the exact failing action.\n"
+        "If you use browser_tabs, action MUST be one of: list, new, close, select.\n"
+        "Use specialized operations only when their explicit primitive tool is present in the current tool list. "
+        "Do not launch nested browser tasks from the browser worker. If the available tools cannot complete an "
+        "operation, report the exact blocker instead of inventing a tool name.\n"
+        "IMPORTANT: Do NOT use browser_take_screenshot unless strictly necessary. "
+        f"If a screenshot is needed, always save it under '{screenshot_subdir}/'. "
+        "Use browser_take_screenshot when it is present; do not create screenshots through run-code.\n"
+        f"If you produce any output files (reports, notes, summaries, markdown, text files, etc.), "
+        f"write them to the '{artifacts_subdir}/' directory relative to the working directory. "
+        "Never write output files to the project root or any other location.\n"
+        "Final output MUST be a single JSON object with keys:\n"
+        "ok (boolean), final (string), page (object with url and title), "
+        "screenshot (string|null), error (string|null).\n"
+        "Also include status (completed|partial|blocked|failed) whenever possible. "
+        "If the task is not fully complete, include progress as an object with "
+        "completed_steps, remaining_steps, next_step, completion_evidence, and missing_requirements.\n"
+        "Set ok=true only when the exact user-visible goal is fully satisfied and you can cite concrete evidence "
+        "from the page, compact probe results, browser snapshots, screenshots, or generated artifacts. "
+        "If the task is incomplete or blocked, set ok=false and fill the progress fields so a continuation can "
+        "resume with minimal repetition.\n"
+        "Return JSON only, even on failures. "
+        "Do not output markdown, code fences, or plain text outside the JSON object."
+    )
