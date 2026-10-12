@@ -29,6 +29,7 @@ CORE_BROWSER_TOOL_NAMES: tuple[str, ...] = (
     "browser_select_option",
     "browser_snapshot",
     "browser_tabs",
+    "browser_take_screenshot",
     "browser_type",
 )
 
@@ -46,7 +47,6 @@ UNSAFE_DEV_BROWSER_TOOL_NAMES: tuple[str, ...] = ("browser_run_code_unsafe",)
 PDF_BROWSER_TOOL_NAMES: tuple[str, ...] = ("browser_pdf_save",)
 
 VISION_BROWSER_TOOL_NAMES: tuple[str, ...] = (
-    "browser_take_screenshot",
     "browser_mouse_click_xy",
     "browser_mouse_down",
     "browser_mouse_drag_xy",
