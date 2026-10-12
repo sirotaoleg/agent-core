@@ -4,7 +4,10 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import sys
+import warnings
 from types import SimpleNamespace
 
 import pytest
@@ -185,3 +188,14 @@ async def test_recalls_what_the_window_processor_offloaded_for_a_session_id_with
     assert offloaded.offload_type == "filesystem"
     assert result.success is True, result.error
     assert result.data["content"].endswith("UNIQUE TARGET")
+
+
+def test_the_old_import_path_is_the_moved_module_and_warns() -> None:
+    old = "openjiuwen.harness.tools.browser_move.offload_recall"
+    sys.modules.pop(old, None)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        module = importlib.import_module(old)
+    assert module is importlib.import_module("openjiuwen.harness.tools.browser_move.surfaces.browser.offload_recall")
+    assert module.BrowserOffloadRecallTool is BrowserOffloadRecallTool
+    assert any(w.category is DeprecationWarning and old in str(w.message) for w in caught)
