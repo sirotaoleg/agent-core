@@ -4468,3 +4468,49 @@ Verification: a toy extra tool requiring `RunScript` is left out for a driver wi
 the browser profile a driver without `RunScript` gets only find and recall, with it all five extra tools. The flag
 tests list each helper's requirements. Both built-in drivers handle every required command: goldens unchanged.
 Unit suite: 2508 passed, 122 skipped.
+
+### Optional surface hooks (M4)
+
+The facade and the worker build called six profile hooks and the worker prompt without checking them; a non-browser
+surface had to fake them to reach the production path. `SurfaceProfile.native_tools` had no reader, and the hooks
+were typed `Any` / `Callable[..., Any]`.
+
+Decisions:
+1. **Each hook is optional where it is called**, with the answer a caller can act on: no custom actions; metadata
+   `{}` without an error (the observation is still the state); a failure envelope from `probe_for_policy` in the
+   shape of its own failures, naming the surface; `False` from `activate_page`, its existing "could not" value.
+2. **A null semantic tracker in the core** (`_NoSemanticState` in `runtime/session.py`) instead of a check at each of
+   the seven places that use the tracker; it never reports observable progress, so loop and replan logic that reads
+   it stays inert.
+3. **A neutral worker prompt in the core** (`default_worker_prompt` in `runtime/agents.py`): the driver's display
+   name, the tool names when the loop re-renders it, the output folders, "answer with the result". It names no
+   surface, so the browser-word ratchet does not grow.
+4. **`Protocol` types in the contract** for the hooks and a `ContextFactory` for `extra_tools` and `rails`; the
+   context argument stays `Any`, because its type (`ToolContext`) lives in `runtime/` and the contract imports only
+   itself. `semantic_tracker` keeps `Callable[[], Any]`: typing the tracker would put its interface into the
+   contract (rejected in Phase 9 PR e).
+
+Rejected options:
+- A no-op implementation per hook in the contract: puts browser behaviour (metadata keys, tracker methods) into the
+  contract, as before.
+- Raising `Unsupported` from `probe_for_policy` / `activate_page`: their callers (the decision policy, the runtime
+  rail) handle the failure envelope and `False` today, not an exception.
+
+Verification: a browser profile with all six hooks `None` registers no custom actions, answers the probe and the
+activation without a driver call, and captures an observation with no observable progress; a worker built without
+`worker_prompt` gets the neutral prompt (no "browser" in it). All fail before the fix (`'NoneType' object is not
+callable`). Unit suite: 2512 passed, 122 skipped. Goldens unchanged.
+
+Known leftovers (step stopped here):
+1. **The fake surface does not run through the facade.** `BrowserAgentRuntime` and `BrowserService` read browser
+   settings no profile field covers: `BrowserService.__init__` resolves `mcp_cwd` (screenshot and artifact folders)
+   and the lifecycle identity from `profile_name`, `managed_args` and the provisioning; `_open_session` does
+   `replace(settings, mcp_server=self.mcp_cfg, mcp_cwd=...)`; the facade takes a required `mcp_cfg` and defaults
+   its settings to `browser_surface_settings()` whatever `core.surface` is. With the screen surface's settings the
+   service fails at construction (`'ScreenSettings' object has no attribute 'mcp_cwd'`). The task's rule (stop, do
+   not add browser fields to the contract) applies; open for Aleh.
+2. The Direct topology builds its agent with `create_browser_agent`, which imports `BrowserRuntimeRail`, the browser
+   capability catalog and the browser context processors by name; only the delegated worker takes its prompt and
+   tools from the profile. `main_agent_answer` reads `surface.url` / `surface.title` (P11-T3 territory).
+3. Custom actions are registered through the facade's controller, not the tool factory, so M5's `requires` does not
+   reach them.

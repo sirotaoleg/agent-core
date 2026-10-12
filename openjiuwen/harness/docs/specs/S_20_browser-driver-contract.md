@@ -278,16 +278,24 @@ Data types only; their use is specified with the composition root and the tool f
 - `SurfaceBundle(settings, profile=None)`: what a surface factory returns. A surface without a profile returns its
   settings only; the browser surface returns both.
 
-- `SurfaceProfile`: `name`, `commands`, `renderer: Renderer`, `tool_specs`, `native_tools`, `capability_catalog`
+- `SurfaceProfile`: `name`, `commands`, `renderer: Renderer`, `tool_specs`, `capability_catalog`
   (entry -> `(command, ref kind | None)` pairs; `None` is a call without an element ref), `capability_tools`
-  (the same entries -> the names of the tools they select), `extra_tools`, `rails`, `policy_rules`, `timeouts`
+  (the same entries -> the names of the tools they select), `extra_tools` and `rails` (each a `ContextFactory`:
+  called with the core's `ToolContext`, returns a tool or a rail), `policy_rules`, `timeouts`
   (per `Effect`), `messages`, `settings`, `scene`; and the fields the agent runtime facade and the delegated
   worker read: `capabilities` (the catalog, a tuple of `Capability` in order, its first entry the default one
   every agent gets), `custom_actions(controller, context)`, `page_metadata(context) -> (metadata, error)`,
   `policy_probe(context, source, params)`, `activate(context, address) -> bool`, `semantic_tracker()` (a
-  factory) and `worker_prompt(screenshot_subdir, artifacts_subdir, *, tool_names=None, driver_name)`. Each is
-  `None` (the catalog empty) unless the surface fills it; a surface driven through `build_agent` alone (the fake
-  screen surface) fills the catalog only, and the facade calls the hooks without checking them.
+  factory) and `worker_prompt(screenshot_subdir, artifacts_subdir, *, tool_names=None, driver_name)`, typed by the
+  `Protocol`s `CustomActions`, `Metadata`, `PolicyProbe`, `Activate` and `WorkerPrompt` in `surface.py`. Each is
+  `None` (the catalog empty) unless the surface fills it, and each is optional for the facade and the worker:
+  without `custom_actions` no custom action is registered; without `page_metadata` the captures use `{}` and no
+  error; without `policy_probe` the facade answers `{"ok": False, "error": "surface '<name>' has no policy probe",
+  "elements": [], "page_state": ...}`; without `activate` it answers `False`; without `semantic_tracker` it uses a
+  tracker that never observes progress (`{"progress": "unknown", "observable_progress": False}`, `latest` `{}`);
+  without `worker_prompt` the worker gets `runtime/agents.default_worker_prompt`, which names the driver and the
+  output folders and no surface. The unused `native_tools` field is gone (a driver's native tools are
+  `DriverInfo.native_tools`).
 - `Capability(name, description, tool_names, policy_only=False)`: one catalog entry; `policy_only` marks an
   entry a policy rule alone grants, which the driver has no feature to enable for.
 - `ToolSpec(name, commands, description, prompt_section, schema=None, build=None)`: one model-facing tool; it may
@@ -814,7 +822,7 @@ drivers.
 | `semantic_tracker` | `SemanticStateTracker` (`semantic/state.py`) |
 | `worker_prompt` | `tools.build_browser_worker_system_prompt` |
 | `policy_rules` | `policy.POLICY_RULES`: the clipboard rules (see "Policy rail") |
-| `rails`, `native_tools` | empty |
+| `rails` | empty |
 | `scene` | `None` (the conformance suite takes `browser_scene()` directly) |
 
 `BrowserContext` also carries `tab_urls` (parallel to `tabs`) and `current_tab` (index of the focused tab); both are
