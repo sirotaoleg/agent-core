@@ -4,22 +4,15 @@
 
 from __future__ import annotations
 
-import sys
 from importlib import import_module
 from pathlib import Path
 from typing import Any
 
 # SRC_ROOT is the browser_move/ directory.
-# Adding it to sys.path makes bare module imports (e.g. `from runtime.controllers.base import ...`)
-# work both when running standalone (the server entry point) and when loaded as part of the
-# openjiuwen package.
 _HERE = Path(__file__).resolve().parent
 SRC_ROOT = _HERE.parent
 # Walk up four levels (browser_move -> tools -> harness -> openjiuwen -> repo root)
 REPO_ROOT = SRC_ROOT.parent.parent.parent.parent
-if str(SRC_ROOT) not in sys.path:
-    sys.path.append(str(SRC_ROOT))
-sys.modules.setdefault("runtime", sys.modules[__name__])
 
 __all__ = [
     "REPO_ROOT",

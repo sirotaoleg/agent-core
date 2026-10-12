@@ -2,8 +2,6 @@
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 """Controller package exports."""
 
-import sys
-
 from .action import (
     ActionController,
     bind_code_executor,
@@ -41,5 +39,3 @@ __all__ = [
     "describe_actions",
     "run_action",
 ]
-
-sys.modules.setdefault("runtime.controllers", sys.modules[__name__])

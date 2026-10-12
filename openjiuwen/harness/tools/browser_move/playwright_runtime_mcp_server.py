@@ -4,29 +4,22 @@
 """MCP server wrapper for Playwright browser runtime.
 
 Usage (from repo root):
-  uv run python src/playwright_runtime_mcp_server.py
-  uv run python src/playwright_runtime_mcp_server.py --transport streamable-http --host 127.0.0.1 --port 8940
+  uv run python -m openjiuwen.harness.tools.browser_move.playwright_runtime_mcp_server
+  uv run python -m openjiuwen.harness.tools.browser_move.playwright_runtime_mcp_server --transport streamable-http \
+      --host 127.0.0.1 --port 8940
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-# Ensure repo and src packages are importable when running as a script.
-_HERE = Path(__file__).resolve().parent
-_SRC_ROOT = _HERE
-_REPO_ROOT = _SRC_ROOT.parent
-for _p in (str(_REPO_ROOT), str(_SRC_ROOT)):
-    if _p not in sys.path:
-        sys.path.append(_p)
-
 from fastmcp import Context, FastMCP
-from runtime.config import (
+
+from openjiuwen.harness.tools.browser_move.runtime.config import (
     MISSING_API_KEY_MESSAGE,
     CoreSettings,
     RuntimeServerSettings,
@@ -37,7 +30,7 @@ from runtime.config import (
     process_environ,
     runtime_server_environ,
 )
-from runtime.controllers.action import (
+from openjiuwen.harness.tools.browser_move.runtime.controllers.action import (
     bind_runtime,
     clear_runtime_runner,
     list_actions,
@@ -46,7 +39,7 @@ from runtime.controllers.action import (
 )
 
 if TYPE_CHECKING:
-    from runtime.runtime import BrowserAgentRuntime
+    from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime
 
 _runtime: Optional["BrowserAgentRuntime"] = None
 _runtime_lock = asyncio.Lock()
@@ -58,7 +51,7 @@ load_repo_dotenv()
 
 
 def _build_runtime() -> "BrowserAgentRuntime":
-    from runtime.runtime import BrowserAgentRuntime
+    from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime
 
     settings = build_runtime_settings(core_settings=_core_settings, browser_settings=_browser_settings)
     if not settings.api_key:
@@ -223,7 +216,7 @@ async def browser_clear_cancel(
         "Or use coord_source_x+coord_source_y+coord_target_x+coord_target_y. "
         "Aliases source/target and source_x/source_y/target_x/target_y are accepted. "
         "Use list_upload_files to discover files available at BROWSER_UPLOAD_ROOT before uploading. "
-        "Register your own via controllers.action.register_action."
+        "Register your own via runtime.controllers.action.register_action."
     ),
 )
 async def browser_custom_action(

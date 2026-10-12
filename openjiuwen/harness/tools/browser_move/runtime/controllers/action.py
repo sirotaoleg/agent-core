@@ -11,7 +11,6 @@ import contextlib
 import contextvars
 import copy
 import inspect
-import sys
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Protocol
 
@@ -599,5 +598,3 @@ __all__ = [
     "describe_actions",
     "run_action",
 ]
-
-sys.modules.setdefault("runtime.controllers.action", sys.modules[__name__])
