@@ -4098,6 +4098,56 @@ is on for that agent, and the catalog is shared by both drivers (a `core` entry 
 the browser-use agent runs with image input, and whether the tool is browser-use only (a per-dialect selection rule)
 or `core` for both.
 
+### Image input (both topologies)
+
+Run `20261012-1926_adhoc_sonnet-5.5_t1p1_12c332832` (browser-use, Direct): all 58 task logs carry the "Image input is
+unavailable or unverified" guidance although the image probe logged `supported=True` in the same processes. Three
+causes:
+1. The runtime rail resolved image support from `ctx.agent`. `before_invoke` fires on the `DeepAgent`, but the model
+   and tool hooks are bridged to the inner `ReActAgent` (`_BRIDGE_EVENTS`), which has no `deep_config`; the
+   resolver then finds no config and no model and answers False. The tools were built on the right answer, the
+   prompt section and the batch screenshot gate on the wrong one.
+2. The probe ran in the background (`schedule_image_support_probe`). The runner runs one `asyncio.run` per task,
+   so the first task of every shard ended before the verdict landed.
+3. The delegated worker was built with `image_support=False`, whatever the model.
+
+Decisions:
+1. **The rail resolves against the agent `before_invoke` saw.** There is one rail instance per agent
+   (`create_browser_agent` builds it), so the agent is remembered there and the three readers agree. The resolution
+   order stays `_multimodal.py`'s: explicit `enable_read_image_multimodal`, per-model `supports_vision`, the probe
+   cache.
+2. **Both topologies await `probe_image_support` before they build the agent**, as the probe module's docstring asks
+   of a caller with one `asyncio.run` per task. The verdict is cached per `(api_base, model_name)`, so only the
+   first build of a process waits (up to the probe's 5 s timeout, twice when the reasoning-off retry runs).
+   Inconclusive is `None`: not cached, treated as unsupported.
+3. **The worker takes the verdict** (`build_worker(..., image_support=)`), which turns on the screenshot-only tools
+   and the image blocks in tool results together. The worker prompt already names `browser_take_screenshot` only
+   "when it is present", so it needs no change.
+4. **Unit tests stub the probe** in a package conftest. Otherwise the topologies would call the model endpoint in
+   every test that starts a runtime, and the scripted models of the live tests would answer the probe.
+
+Rejected options:
+- Passing `enable_read_image_multimodal=<verdict>` to `create_browser_agent`: a `False` would override a model's
+  `supports_vision`, and the setting also switches the deep agent's `read_file`.
+- Walking from the inner agent to the outer one: the inner agent holds no reference to it.
+- Caching the verdict in the rail: the probe cache can change during the process; the rail reads it per call.
+
+Not done: `browser_take_screenshot` in the `core` capability. The tool is only in `vision`, and the runner grants the
+`CORE_BROWSER_TOOL_NAMES` allowlist, so the runner's agents still get no screenshot tool. Adding it to the core
+tuple leaves every golden byte for byte and the runner mirror unchanged, but moves two pinned assertions
+(`test_wv_runner_contract.py::test_core_browser_tool_names` and
+`test_browser_capabilities.py::test_core_only_selection_exposes_exactly_core_tools`). Stopped for the head's decision.
+
+Verification: 6 new cases fail before the fix (the outer agent's verdict in the inner hooks, the awaited probe in
+`Direct`, three probe verdicts on `DelegatedWorker`, `build_worker` with image support). The False cases pass
+before and after. Full unit suite: 2495 passed, 122 skipped. The golden diff against the start of this fix is
+empty. Live sets (Playwright MCP and browser-use conformance, helpers, assembly, agent rails, topology): 119 passed.
+
+Known leftovers:
+1. The probe adds one model call per process before the first task. It is sent under `LlmObservationSuppression`;
+   whether the runner's usage parser counts it is not checked.
+2. A model whose probe is inconclusive at the first build is probed again at the next build, never mid-task.
+
 ### Task rules in the prompt (both topologies)
 
 Eleven failures came from the model's choices, not from the harness: a date without a year read as this year

@@ -729,9 +729,11 @@ failure in steps 2–4 closes the session (stop, release). The caller owns the s
 `close()` when the agent is done. Neither function names a driver, a surface or a provisioner.
 
 `build_worker(session, bundle, *, provider, api_key, api_base, model_name, max_steps, core, capabilities,
-tool_result_observer, screenshot_subdir, artifacts_subdir) -> ReActAgent` (`runtime/agents.py`, async)
-is the worker's builder, called by `DelegatedWorker.start`: `build_agent_parts(session, bundle, capabilities=, image_support=False,
-language=WORKER_LANGUAGE, worker=True)`; `build_browser_worker_agent(provider=, api_key=, api_base=, model_name=,
+tool_result_observer, screenshot_subdir, artifacts_subdir, image_support=False) -> ReActAgent` (`runtime/agents.py`,
+async) is the worker's builder, called by `DelegatedWorker.start` with the probe verdict ("Topology"):
+`build_agent_parts(session, bundle, capabilities=, image_support=, language=WORKER_LANGUAGE, worker=True)`, so
+image support decides both the screenshot-only tools (left out without it) and the image blocks in the tool results;
+the worker prompt names `browser_take_screenshot` only as "when it is present"; `build_browser_worker_agent(provider=, api_key=, api_base=, model_name=,
 max_steps=, tools=parts.tools, screenshot_subdir=, artifacts_subdir=, tool_result_observer=, settings=core,
 driver_name=<the driver's display name>)`; then `register_rail` for `core_rails(bundle.profile, parts.builders,
 session.page_state)`, the parts' rails and `FinalAnswerRecoveryRail()`, in that order. The model identity and
@@ -1294,7 +1296,8 @@ facade (`main_agent_answer`).
   `create_browser_agent(model, language=WORKER_LANGUAGE, temperature=core.worker_temperature,
   max_iterations=guardrails.max_steps, workspace=runtime.workspace, browser_capabilities=runtime.capabilities,
   runtime=runtime)` with a `Model` from the service's provider, key, base and model name (`temperature` / `top_p`
-  from the core settings' worker values), after setting `runtime.dedicated_log = False`. No session is opened:
+  from the core settings' worker values), after setting `runtime.dedicated_log = False` and awaiting
+  `probe_image_support(model)`; the agent reads the verdict from the probe cache ("`BrowserRuntimeRail`"). No session is opened:
   it opens at the agent's first invoke (`BrowserRuntimeRail.before_invoke`), as for any `create_browser_agent`
   agent. `run`: `service.session_new(session_id)`, a request id, `Runner.run_agent(agent, {"query": task,
   "conversation_id": "<sid>.direct.<rid>.<uuid>", "request_id": rid})` under `asyncio.wait_for(timeout_s or the
@@ -1304,13 +1307,20 @@ facade (`main_agent_answer`).
   directory, so its separators are path-legal on every OS (`:` is not on Windows).
 - `DelegatedWorker` (`name="delegated_worker"`, the Playwright MCP default): `start` is
   `runtime.ensure_runtime_ready()` (the session opens here), then, when `service.browser_agent` is `None`,
-  `service.browser_agent = await build_worker(session, session.assembly.surface, provider=, api_key=, api_base=,
-  model_name=, max_steps=guardrails.max_steps, core=service.core, capabilities=runtime.capabilities,
+  `probe_image_support(<the same Model as Direct's>)` and `service.browser_agent = await build_worker(session,
+  session.assembly.surface, provider=, api_key=, api_base=, model_name=, max_steps=guardrails.max_steps,
+  core=service.core, capabilities=runtime.capabilities, image_support=<verdict is True>,
   tool_result_observer=service.observe_worker_tool_result, screenshot_subdir=, artifacts_subdir=)`, then
   `runtime.register_runtime_tools()`. `run` is `service.run_task(task=, session_id=, request_id=, timeout_s=,
   worker=)` with `worker` an async callable that runs `start(runtime)` and returns `service.browser_agent`: after
   a `reset()` the slot is empty and the next attempt rebuilds the worker on a fresh session. `drop` does nothing:
   the worker lives in the service's slot, which the service clears on reset and shutdown.
+
+Invariant (image probe): both strategies await `probe_image_support` for the model they build before they build the
+agent. A background probe (`schedule_image_support_probe`) dies with its event loop, and the runner runs one
+`asyncio.run` per task, so the first task of every process would otherwise never see a verdict. A conclusive verdict
+is cached per `(api_base, model_name)` for the process, so later tasks pay nothing; an inconclusive probe (`None`:
+timeout, call failure, empty answer) is not cached, counts as no image support, and is tried again at the next build.
 
 The runner reads `runtime._service.browser_agent` between `ensure_started()` and `run_browser_task` to remove the
 helpers; on `Direct` the slot is `None` and its guard skips the removal, so the main agent keeps the helpers it is
@@ -1329,6 +1339,14 @@ defines a hook name (`before_*`, `after_*`, `on_*`), so `AgentRail`'s dispatch s
 imports `runtime_rail.py` (the constants two of these modules share live in `rails/keys.py`, which imports nothing
 from the package); the rail imports the facade (`runtime/session.py`), never the reverse.
 
+- Image support: `should_enable_read_image_multimodal` (`openjiuwen/harness/rails/_multimodal.py`: the agent's
+  `enable_read_image_multimodal`, else the model's `supports_vision`, else the probe cache, `None` counting as
+  unsupported) of the agent `before_invoke` saw. Invariant: the three readers (the `agent_parts` key in
+  `before_invoke`, the image-capability prompt section in `before_model_call`, the batch screenshot gate in
+  `before_tool_call`) resolve against that one agent. On a deep agent only `before_invoke` / `after_invoke` fire on
+  the `DeepAgent`; the model and tool hooks fire on its inner `ReActAgent`, which has no `deep_config`, so resolving
+  `ctx.agent` there always answered "unsupported". A rail whose hooks run with no `before_invoke` first resolves
+  `ctx.agent`.
 - `before_invoke`: the browser log context for the invoke when `runtime.dedicated_log` is true (reset in
   `after_invoke`), `ensure_runtime_ready()`, then `agent_parts(image_support=<the agent's read-image support>,
   language=<the agent's own, resolve_language(agent.deep_config.language)>)`: a session that cannot start (or
