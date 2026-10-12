@@ -452,6 +452,8 @@ class _PhaseMixin:
         if script_tool or (kind.read_only and not kind.exempt_from_budget):
             return "extraction"
         current = str(state.get("current_phase") or "navigation")
+        if kind.known and kind.effect is Effect.ACT and current == "extraction":
+            return "form"
         return current if current in _BROWSER_PHASE_DEFINITIONS else "navigation"
 
     @classmethod
@@ -765,7 +767,7 @@ class _PhaseMixin:
             session.update_state({_BROWSER_PHASE_STATE_KEY: state})
             raise
 
-        details["attempts"] = attempts + 1
+        details["attempts"] = attempts + (0 if cls._repeated_script(details, phase, kind) else 1)
         details["status"] = "in_progress"
         details["last_signature"] = signature
         details["last_semantic_signature"] = signature
@@ -775,6 +777,18 @@ class _PhaseMixin:
         state["next_action_class"] = ""
         session.update_state({_BROWSER_PHASE_STATE_KEY: state})
         return action_class
+
+    @staticmethod
+    def _repeated_script(details: Dict[str, Any], phase: str, kind: ToolKind) -> bool:
+        """A page script read in this phase before; each distinct script costs one attempt."""
+        if phase != "extraction" or not isinstance(kind.action, RunScript):
+            return False
+        digest = hashlib.sha256(kind.action.code.encode("utf-8")).hexdigest()[:16]
+        scripts = details.setdefault("scripts", [])
+        if digest in scripts:
+            return True
+        scripts.append(digest)
+        return False
 
     @classmethod
     def _direct_navigation_is_required(
@@ -1025,6 +1039,8 @@ class _PhaseMixin:
         tool_name: str,
         tool_args: Any,
         tool_result: Any,
+        *,
+        progressed: bool = False,
     ) -> Dict[str, Any]:
         state = session.get_state(_BROWSER_PHASE_STATE_KEY)
         if not isinstance(state, dict):
@@ -1065,6 +1081,9 @@ class _PhaseMixin:
 
         details["successes"] = int(details.get("successes") or 0) + 1
         details["last_error"] = ""
+        # An action that changed the context or the observation was work, not a retry: only stalled actions count.
+        if progressed and phase != "extraction":
+            details["attempts"] = max(0, int(details.get("attempts") or 0) - 1)
         cls._record_price_interval(details, phase, kind, args)
         evidence_delta = cls._record_tool_evidence(state, result, kind=kind, tool_name=tool_name, tool_args=args)
         if evidence_delta.get("recovered"):

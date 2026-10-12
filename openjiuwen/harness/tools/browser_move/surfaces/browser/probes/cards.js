@@ -1302,9 +1302,13 @@ async (page) => {
       'message'
     ];
 
+    // "nav" as a token of its own: BEM names such as "mntl-fullscreen-nav__list" carry no "nav-".
+    const NAV_TOKEN = /(^|[^a-z])nav([^a-z]|$)/;
+    const NAVIGATION_CONTAINER = 'nav, [role="navigation"], [role="menu"], [role="menubar"]';
+
     const hasChromeFragment = (value) => {
       const text = String(value || '').toLowerCase();
-      return PAGE_CHROME_FRAGMENTS.some((fragment) => text.includes(fragment));
+      return NAV_TOKEN.test(text) || PAGE_CHROME_FRAGMENTS.some((fragment) => text.includes(fragment));
     };
 
     const elementChromeText = (el) => {
@@ -1998,6 +2002,7 @@ async (page) => {
 
     const selectable = scored.filter((item) => {
       if (looksLikePageChrome(item.data)) return false;
+      if (item.el.closest(NAVIGATION_CONTAINER)) return false;
 
       // If we already have rich listing-like candidates, remove weak nav-like entries.
       if (!hasRichCandidates) return true;

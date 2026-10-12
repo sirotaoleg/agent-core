@@ -125,6 +125,7 @@ class BrowserAgentRuntime:
         self._fields: dict[str, frozenset[str]] = {}
         self._flags: dict[str, ToolFlags] = {}
         self._tracker: Any = None
+        self._semantic_mark: tuple[int, Any] | None = None
         self.observations_reused = 0
         _ACTIVE_BROWSER_RUNTIMES.add(self)
 
@@ -163,6 +164,12 @@ class BrowserAgentRuntime:
         if self._tracker is None:
             self._tracker = self.surface.profile.semantic_tracker()
         return self._tracker
+
+    def _semantic_changed(self) -> bool:
+        """Whether the generation or the last observation moved since the previous semantic observation."""
+        mark = (self._page_state.generation, self._page_state.last_observation)
+        previous, self._semantic_mark = self._semantic_mark, mark
+        return previous is not None and mark != previous
 
     @property
     def surface(self) -> SurfaceBundle:
@@ -416,6 +423,7 @@ class BrowserAgentRuntime:
             semantic_progress = semantic_tracker.observe(
                 semantic_state,
                 action_group_id=action_group_id,
+                changed=self._semantic_changed(),
             )
         semantic_state = self._with_semantic_provenance(
             semantic_progress,
@@ -463,7 +471,9 @@ class BrowserAgentRuntime:
                 }
             )
         else:
-            semantic_progress = tracker.observe(semantic_state, action_group_id=action_group_id)
+            semantic_progress = tracker.observe(
+                semantic_state, action_group_id=action_group_id, changed=self._semantic_changed()
+            )
         semantic_state = self._with_semantic_provenance(
             semantic_progress,
             fallback_state=semantic_state,
@@ -498,6 +508,7 @@ class BrowserAgentRuntime:
         semantic_progress = semantic_tracker.observe(
             semantic_state,
             action_group_id=action_group_id,
+            changed=self._semantic_changed(),
         )
         semantic_state = self._with_semantic_provenance(
             semantic_progress,

@@ -315,6 +315,7 @@ class SemanticStateTracker:
         raw_state: Mapping[str, Any],
         *,
         action_group_id: str = "",
+        changed: bool = False,
     ) -> Dict[str, Any]:
         """Record one model action group and return its progress classification."""
         normalized_group_id = str(action_group_id or "").strip()
@@ -343,6 +344,11 @@ class SemanticStateTracker:
 
         if not self._history:
             progress = "initial"
+        # A group that changed the context or the observation progressed even when the digest reads the same: the
+        # semantic state has no field for a dialog, a cart or a size picker.
+        elif repeated_state and changed:
+            progress = "progress"
+            self._consecutive_no_progress = 0
         elif repeated_state:
             progress = "no_progress"
             self._consecutive_no_progress += 1

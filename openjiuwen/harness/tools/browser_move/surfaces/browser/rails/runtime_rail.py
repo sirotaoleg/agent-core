@@ -26,7 +26,7 @@ from openjiuwen.core.single_agent.prompts.builder import PromptSection
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext, AgentRail
 from openjiuwen.harness.prompts import resolve_language
 from openjiuwen.harness.rails._multimodal import should_enable_read_image_multimodal
-from openjiuwen.harness.tools.browser_move.contract import Click, PolicyDenied
+from openjiuwen.harness.tools.browser_move.contract import Click, Effect, PolicyDenied
 from openjiuwen.harness.tools.browser_move.runtime.browser_logging import (
     browser_agent_log_info,
     browser_agent_log_warning,
@@ -401,6 +401,7 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
                 "started_at": time.perf_counter(),
                 "action_class": action_class,
                 "evidence_fields": evidence_fields,
+                "generation": self._runtime.generation_id,
             }
 
     async def _add_agent_parts(self, ctx: AgentCallbackContext) -> None:
@@ -523,7 +524,9 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
             self._mark_action_group_call_completed(ctx, {})
             return
         evidence_args = self._tool_evidence_args(ctx, inputs)
-        progress_delta = self._record_phase_result(session, kind, tool_name, evidence_args, result)
+        progress_delta = self._record_phase_result(
+            session, kind, tool_name, evidence_args, result, progressed=self._progressed(ctx, inputs, record)
+        )
         progress_delta.update(
             {
                 "executed": executed,
@@ -559,6 +562,17 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
         return isinstance(tool_result, dict) and (
             tool_result.get("denied") is True or tool_result.get("executed") is False
         )
+
+    @classmethod
+    def _progressed(cls, ctx: AgentCallbackContext, inputs: Any, record: CommandRecord | None) -> bool:
+        """An action whose record shows a new context, or a generation other than the one it started in."""
+        if record is None or not record.ok or record.effect not in (Effect.ACT, Effect.NAVIGATE):
+            return False
+        extra = getattr(ctx, "extra", None)
+        states = extra.get(_BROWSER_TOOL_RUNTIME_STATE_KEY) if isinstance(extra, dict) else None
+        call_state = states.get(cls._tool_call_id(inputs)) if isinstance(states, dict) else None
+        before = call_state.get("generation") if isinstance(call_state, dict) else None
+        return record.context_changed or (before is not None and record.generation != before)
 
     @staticmethod
     def _kind_after(kind: ToolKind, record: CommandRecord | None) -> ToolKind:
