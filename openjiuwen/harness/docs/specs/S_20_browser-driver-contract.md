@@ -45,8 +45,14 @@ hooks, the worker prompt and the capability catalog from the surface profile, an
 from the core to a surface. The browser words left in the core are data keys and attributes (`page`, `url`), the
 surface name, identifiers and text the model reads, listed one by one in F_07 ("Phase 9: PR d").
 The browser profile store is `provisioning/profiles.py`. `playwright_runtime/` is an alias package for one release: importing it or any
-`playwright_runtime.<module>` yields the same module objects as `runtime.<module>`, `playwright_runtime.browser_capabilities`
-and `.profiles` are the moved modules under their old names, it re-exports `runtime.__all__` plus the five
+`playwright_runtime.<module>` yields the same module objects as `runtime.<module>`; every module that left
+`runtime/` keeps its old name there as the moved module: `browser_capabilities` (`surfaces/browser/capabilities.py`),
+`profiles` (`provisioning/profiles.py`), `runtime` (`runtime/session.py`), `probes` (the `surfaces/browser/probes/`
+package, which re-exports the three script builders), `probe_semantics`, `semantic_state`, `browser_working_context`
+(`working_context/store.py`), `browser_working_context_processor`, `browser_working_context_rail`,
+`browser_state_context_processor` (`state_processor.py`), `site_profiles` and `status_logging`. Not served:
+`runtime.page_state.BrowserPageState` and `CARD_EVIDENCE_FIELDS`, which moved with the browser page state to
+`surfaces/browser/page_state.py` while `runtime/page_state.py` stayed (its alias is the core module); it re-exports `runtime.__all__` plus the five
 context-processor and rail names `runtime` no longer exports, and it emits one `DeprecationWarning` per process.
 
 The browser surface profile (tool specs, renderer, capability catalog) is specified under "Browser surface

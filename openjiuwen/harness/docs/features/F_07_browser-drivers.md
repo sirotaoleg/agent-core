@@ -4594,3 +4594,27 @@ Verification: the rule's cases (inside, outside, relative climbing out, `~`, quo
 out of the root, skipped here because the account cannot create symlinks), the policy rail on both dialects for
 upload and drop, `set_input_files` with an outside path (no command sent), the profile and the facade's workspace.
 Unit suite: 2530 passed, 123 skipped.
+
+### No agent scaffolding in the test tree (C3)
+
+Running the suite from the test folder left `AGENT.md`, `HEARTBEAT.md`, `IDENTITY.md`, `SOUL.md`, `USER.md` and
+`agents/`, `context/`, `memory/`, `messages/`, `skills/`, `todo/` there, and `logs/browser_agent.log` in every working
+directory. Running each agent-building file from an empty directory showed two writers: the fake-surface run
+(`build_agent` without a workspace) and the Direct-topology test whose session cannot start. Both pass a tmp
+workspace now. The browser_move `conftest.py` sets `OPENJIUWEN_BROWSER_AGENT_LOG_FILE` to a tmp file before its
+first package import (the agent log is configured from the process environment at its first use, which can be at
+import), and a `pytest_sessionfinish` guard fails the run, naming the files, when `AGENT.md` or `SOUL.md` appears
+under the test root. The stray untracked files were deleted after the guard was in place. Left as is: pytest's own
+`report/index.html` (the project's `addopts`) and the facade tests' `screenshots/` folder under the runtime working
+directory.
+
+### Old alias paths of the moved browser modules (C4)
+
+The nine modules that moved from `runtime/` to `surfaces/browser/` (`probes`, `probe_semantics`, `semantic_state`,
+`browser_working_context` and its processor and rail, `browser_state_context_processor`, `site_profiles`,
+`status_logging`) did not import under `playwright_runtime.<old name>`. The alias package's `_MOVED` map now serves
+each as the moved module object; `probes` maps to the new package, whose `__init__` exports the three builders the
+old module had. `playwright_runtime.page_state` stays the core module (the shim's identity rule for every module of
+`runtime/`), so `BrowserPageState` under that path is a documented break for the release notes.
+Verification: the shim test lists the nine (fail before: `ModuleNotFoundError`). Unit suite: 2540 passed, 123
+skipped.
