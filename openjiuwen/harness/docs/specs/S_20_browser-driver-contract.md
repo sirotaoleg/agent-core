@@ -140,6 +140,9 @@ screen:
 | `HandleDialog` | `accept`, `prompt_text=None` | ACT |
 | `RunScript` | `code`, `args=None`, `sensitive=False`, `target: Ref \| None = None` | SCRIPT |
 
+`RunScript.code` is a JavaScript expression: when its value is a function the driver calls it (with `args`, and the
+element first when `target` is set), otherwise the value is the result (as Playwright MCP's `browser_evaluate`).
+
 A surface defines its own commands as `Action` subclasses in `surfaces/<name>/commands.py`. The browser surface
 has `Navigate(url)`, `Back`, `OpenContext(url=None)` (NAVIGATE); `SelectOption(target, values)`,
 `UploadFile(target: Ref | None, paths=())`, `FillForm(fields: tuple[FormField, ...])` with
@@ -343,6 +346,8 @@ scaled to the screenshot. An `IndexRef` cannot be built (skipped).
 - Happy paths: every shared command and every browser command (`Navigate`, `Back`, `OpenContext`, `SelectOption`,
   `UploadFile`, `FillForm`, `Drop`, `GetPdf`, `GetConsole`, `GetNetwork`) with `DriverRef`, `Locator` or `PointRef`.
 - Stale ref: a `DriverRef` from the start document clicked after `Navigate(second.html)`.
+- `RunScript` without a target is a bare expression (`document.title = 'script:ran'`); with a target, a function of
+  the element.
 - Intercepted: the "Covered button" is visible when the suite observes the page, so a driver whose observation drops
   occluded elements still gets a ref. A setup `RunScript` then calls the page's `cover()`, which puts an overlay over
   it, and the click uses the ref from that first observation (`observe_between=False`). Only with `DriverRef` or
@@ -1466,7 +1471,17 @@ no elements, no screenshot) instead of raising. Outside a dialog `dialog` is `No
   focus available - target may have detached"; an unclassified error whose message says `not connected`,
   `Reconnection wait timed out`, `No valid agent focus available` or `target may have detached` becomes
   `ConnectionLost(dispatched=True)`, so the driver session restarts (at `start()` too). Other codes it cannot
-  classify become `DriverError(dispatched=True)` and are logged raw.
+  classify become `DriverError(dispatched=True)` and are logged raw. A script error carries the first line of the
+  JavaScript error (`TypeError: …`), not CDP's bare "Uncaught".
+- Script source. The page-wide `evaluate` and the element-scoped script evaluate `(code)` and call the value only
+  when it is a function (the element-scoped one with the element and `args`; the element is also in scope for an
+  expression).
+- Locators. A `Locator` goes to the sidecar as a CSS selector for `querySelector`; Playwright-only syntax
+  (`:has-text()`, `:text()`, `:text-is()`, `:visible`, `>>`, an engine prefix such as `text=` or `xpath=`) is
+  `Unsupported(dispatched=False)` with a message naming the supported forms (a ref or `target_id`, plain CSS).
+- A hung page. Two transport timeouts in a row (requests that got no reply in 30 s) raise
+  `ConnectionLost(dispatched=True)` instead of the second `ActionTimeout`, so the driver session makes its single
+  restart; any reply, or `start()`, resets the count, and the driver's own `Wait` timeout does not count.
 - Cancellation. One request is in flight at a time; after 30 s without a reply the transport sends the sidecar a
   `cancel` for it and raises `ActionTimeout`. When the caller cancels the request instead (`Timeouts`), the
   transport sends the same `cancel` and re-raises the cancellation, so the sidecar does not run the action alongside

@@ -4050,3 +4050,40 @@ Known leftovers:
    guard and the step and time limits, not by the navigation budget.
 3. The first navigation from a blank tab advances no generation and is charged.
 4. Page scripts that mutate (a `.click()` in the code) still count as extraction reads.
+
+### browser-use driver gaps
+
+Three failures on browser-use came from the driver, not the agent: Wolfram Alpha--7 (`browser_evaluate` of
+`document.title` answered "evaluate: Uncaught"), Google Map--35 (navigate, evaluate and observe "timed out after
+30.0s" for the rest of the task, no recovery), Google Flights--6 (`button:has-text(...)` and `div[role=combobox]
+:has-text(...)` selectors failed with "DOM Error while querying").
+
+Decisions:
+1. **`RunScript.code` is an expression, called when it is a function**, on both drivers: Playwright MCP's
+   `browser_evaluate` does `eval('(' + code + ')')` and calls a function value; the sidecar now does the same
+   (page-wide and element-scoped). A newline before the closing parenthesis keeps a trailing line comment harmless.
+   The error text is the first line of the JS error description.
+2. **Two request timeouts in a row are a lost target** (browser-use only). The transport's 30 s request timeout
+   means the sidecar got no answer from the page; one can be a slow page, two in a row with nothing in between is a
+   hung tab, and the session's single restart is the only recovery. On Playwright MCP a click timeout is usually an
+   intercepted click on a live page, so the rule stays in the browser-use driver, not in the driver session.
+3. **Playwright selectors are refused, not translated.** The sidecar resolves a `Locator` with `querySelector`;
+   translating `:has-text()` would be a second selector engine. The refusal is `Unsupported(dispatched=False)` and
+   names what works (a ref or `target_id`, plain CSS, find/probe for text).
+4. **Conformance**: the scene's untargeted `RunScript` case is now a bare expression, so both drivers prove the
+   contract; the targeted case keeps the function form.
+
+Rejected options:
+- Counting timeouts in `DriverSession` for every driver: decision 2.
+- Reloading the page after the first timeout: the sidecar's request is still cancelled-pending; a restart is the
+  one recovery the session already owns.
+- Supporting `:has-text()` by a text filter in the sidecar: decision 3.
+
+Verification: 11 new cases fail before the fix (the evaluate wrapper and the scoped script in node, the error text,
+the second timeout, five Playwright selectors). Full unit suite 2474 passed, 122 skipped. Goldens unchanged. The
+live browser-use conformance set runs at the end of the Phase 10 fixes.
+
+Known leftovers:
+1. After the restart the managed Chrome is the same process; a tab that hangs the whole browser needs the
+   provisioner's dead-device path, which only `is_alive` decides.
+2. The timeout count is per driver, reset by any reply or `start()`, not by task boundaries the driver cannot see.
