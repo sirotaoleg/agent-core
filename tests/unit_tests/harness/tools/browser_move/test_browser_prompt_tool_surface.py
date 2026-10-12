@@ -109,7 +109,7 @@ class TestWorkerRequestPromptMatchesTools:
             helpers_removed=tuple(HELPER_TOOLS),
         )
 
-        assert tool_names == set(CORE_BROWSER_TOOL_NAMES)
+        assert tool_names == set(CORE_BROWSER_TOOL_NAMES) - {"browser_take_screenshot"}
         for fragment in (*HELPER_TOOLS, "generation_id", "target_id"):
             assert fragment not in system_prompt, f"{fragment!r} leaked into the narrowed worker prompt"
 

@@ -222,7 +222,8 @@ def test_before_invoke_builds_non_multimodal_allowlist_from_core() -> None:
 
     _run(rail.before_invoke(ctx))
 
-    assert {MCP_PREFIX + name for name in CORE_BROWSER_TOOL_NAMES} <= _added_names(ctx)
+    core = {MCP_PREFIX + name for name in CORE_BROWSER_TOOL_NAMES} - {MCP_PREFIX + "browser_take_screenshot"}
+    assert core <= _added_names(ctx)
     assert not any("screenshot" in name for name in _added_names(ctx))
 
 

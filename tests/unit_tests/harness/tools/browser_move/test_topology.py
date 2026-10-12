@@ -45,7 +45,6 @@ from openjiuwen.harness.tools.browser_move.runtime.topology import (
     Direct,
     topology_for,
 )
-from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import resolve_browser_capabilities
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails import runtime_rail as rail_module
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
@@ -62,10 +61,7 @@ BROWSER_USE = CoreSettings(driver="browser_use")
 
 
 def _runtime(
-    core: CoreSettings | None = None,
-    language: str | None = "en",
-    instance: BrowserInstanceConfig | None = None,
-    allowed_tool_names: tuple[str, ...] | None = None,
+    core: CoreSettings | None = None, language: str | None = "en", instance: BrowserInstanceConfig | None = None
 ) -> BrowserAgentRuntime:
     return BrowserAgentRuntime(
         provider="openai",
@@ -81,7 +77,6 @@ def _runtime(
         ),
         guardrails=BrowserRunGuardrails(max_steps=7, max_failures=1, timeout_s=30, retry_once=False),
         instance=instance,
-        allowed_tool_names=allowed_tool_names,
         core_settings=core,
         **({} if language is None else {"language": language}),
     )
@@ -361,7 +356,7 @@ class TestDelegatedWorker:
     def test_the_worker_is_built_on_the_probe_verdict_for_its_model(
         self, verdict: bool | None, image_support: bool
     ) -> None:
-        runtime = _runtime(MCP, allowed_tool_names=resolve_browser_capabilities(["vision"]).allowed_tool_names)
+        runtime = _runtime(MCP)
         probe = AsyncMock(return_value=verdict)
         with (
             _assembling(),

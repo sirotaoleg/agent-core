@@ -58,7 +58,8 @@ def test_the_worker_gets_the_core_tools_the_probes_the_batch_and_find_but_no_rec
     worker = _build(_session())
 
     names = {tool.name for tool in asyncio.run(worker.ability_manager.list_tool_info())}
-    assert names == {MCP_PREFIX + name for name in CORE_BROWSER_TOOL_NAMES} | WORKER_HELPERS
+    core = {MCP_PREFIX + name for name in CORE_BROWSER_TOOL_NAMES} - {MCP_PREFIX + "browser_take_screenshot"}
+    assert names == core | WORKER_HELPERS
 
 
 def test_the_worker_card_names_the_session_driver() -> None:
@@ -119,7 +120,7 @@ def test_the_parts_are_built_in_the_worker_language() -> None:
 def test_the_worker_gets_the_screenshot_tool_only_with_image_support(image_support: bool) -> None:
     options = {"image_support": image_support} if image_support else {}
     with patch.object(agents_module, "build_agent_parts", wraps=agents_module.build_agent_parts) as parts:
-        worker = _build(_session(), capabilities=("core", "vision"), **options)
+        worker = _build(_session(), **options)
 
     assert parts.call_args.kwargs["image_support"] is image_support
     names = {tool.name for tool in asyncio.run(worker.ability_manager.list_tool_info())}

@@ -109,6 +109,7 @@ def test_core_browser_tool_names() -> None:
         "browser_select_option",
         "browser_snapshot",
         "browser_tabs",
+        "browser_take_screenshot",
         "browser_type",
     )
 

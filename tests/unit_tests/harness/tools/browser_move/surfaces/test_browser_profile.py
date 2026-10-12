@@ -108,7 +108,6 @@ def test_core_entry_round_trips_the_public_core_tool_names(profile: SurfaceProfi
 
 def test_catalog_keeps_only_tools_a_command_or_extra_tool_serves(profile: SurfaceProfile) -> None:
     assert profile.capability_tools["vision"] == (
-        "browser_take_screenshot",
         "browser_mouse_click_xy",
         "browser_mouse_drag_xy",
         "browser_mouse_move_xy",
@@ -140,7 +139,7 @@ def test_core_pairs_take_element_refs_and_no_points(profile: SurfaceProfile) -> 
 
 def test_vision_pairs_take_points(profile: SurfaceProfile) -> None:
     vision = profile.capability_catalog["vision"]
-    assert (Click, PointRef) in vision and (Scroll, None) in vision and (Observe, None) in vision
+    assert (Click, PointRef) in vision and (Scroll, None) in vision and (Observe, None) not in vision
     assert (Click, DriverRef) not in vision
 
 
