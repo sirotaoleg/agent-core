@@ -4501,14 +4501,15 @@ activation without a driver call, and captures an observation with no observable
 `worker_prompt` gets the neutral prompt (no "browser" in it). All fail before the fix (`'NoneType' object is not
 callable`). Unit suite: 2512 passed, 122 skipped. Goldens unchanged.
 
-Known leftovers (step stopped here):
+Known leftovers:
 1. **The fake surface does not run through the facade.** `BrowserAgentRuntime` and `BrowserService` read browser
    settings no profile field covers: `BrowserService.__init__` resolves `mcp_cwd` (screenshot and artifact folders)
    and the lifecycle identity from `profile_name`, `managed_args` and the provisioning; `_open_session` does
    `replace(settings, mcp_server=self.mcp_cfg, mcp_cwd=...)`; the facade takes a required `mcp_cfg` and defaults
    its settings to `browser_surface_settings()` whatever `core.surface` is. With the screen surface's settings the
-   service fails at construction (`'ScreenSettings' object has no attribute 'mcp_cwd'`). The task's rule (stop, do
-   not add browser fields to the contract) applies; open for Aleh.
+   service fails at construction (`'ScreenSettings' object has no attribute 'mcp_cwd'`). Decided with Aleh (option
+   c): a surface-neutral service is out of scope for Phase 11; M4 is done with the hook-level tests, and the
+   fake-surface facade run is dropped from its done-when. The fake surface keeps running through `build_agent`.
 2. The Direct topology builds its agent with `create_browser_agent`, which imports `BrowserRuntimeRail`, the browser
    capability catalog and the browser context processors by name; only the delegated worker takes its prompt and
    tools from the profile. `main_agent_answer` reads `surface.url` / `surface.title` (P11-T3 territory).
