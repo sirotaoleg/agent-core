@@ -67,11 +67,8 @@ class Direct:
         runtime.dedicated_log = False
         service = runtime.service
         core = service.core
-        model = _model(service)
-        # The runner runs one asyncio.run per task, which a background probe would not outlive.
-        await probe_image_support(model)
         self._agent = create_browser_agent(
-            model,
+            _model(service),
             language=WORKER_LANGUAGE,
             temperature=core.worker_temperature,
             max_iterations=service.guardrails.max_steps,
@@ -93,6 +90,10 @@ class Direct:
         rid = (request_id or "").strip() or uuid.uuid4().hex
         timeout = int(timeout_s) if timeout_s else service.guardrails.timeout_s
         inputs = {"query": task, "conversation_id": f"{sid}.direct.{rid}.{uuid.uuid4().hex}", "request_id": rid}
+        # Not in start: the runner sends stdout to the task log only after ensure_started, and the first model call
+        # binds the model logger to the stdout of that moment. Awaited because one asyncio.run per task would end a
+        # background probe; the rail reads the verdict per model call.
+        await probe_image_support(_model(service))
         try:
             result = await asyncio.wait_for(Runner.run_agent(self._agent, inputs), timeout=float(timeout))
         except TimeoutError:
@@ -115,7 +116,7 @@ class DelegatedWorker:
         service = runtime.service
         if service.browser_agent is None:
             session = service.session
-            image_support = await probe_image_support(_model(service)) is True
+            # No image input for the worker: providers reject the image its screenshot results carry today.
             service.browser_agent = await build_worker(
                 session,
                 session.assembly.surface,
@@ -126,7 +127,6 @@ class DelegatedWorker:
                 max_steps=service.guardrails.max_steps,
                 core=service.core,
                 capabilities=runtime.capabilities,
-                image_support=image_support,
                 tool_result_observer=service.observe_worker_tool_result,
                 screenshot_subdir=service.screenshot_subdir,
                 artifacts_subdir=service.artifacts_subdir,
