@@ -322,6 +322,8 @@ CAPABILITY_CATALOG: Mapping[str, frozenset[tuple[type[Action], type | None]]] = 
 
 __all__ = [
     "ADVANCED_CODE_BROWSER_TOOL_NAMES",
+    "CAPABILITY_CATALOG",
+    "CAPABILITY_TOOLS",
     "CONFIG_BROWSER_TOOL_NAMES",
     "CORE_BROWSER_CAPABILITY_NAME",
     "CORE_BROWSER_TOOL_NAMES",
