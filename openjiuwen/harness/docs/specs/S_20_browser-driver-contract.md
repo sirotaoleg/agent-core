@@ -762,7 +762,8 @@ drivers.
 | `custom_actions`, `page_metadata`, `policy_probe`, `activate` | `helpers.register_custom_actions`, `helpers.page_metadata`, `helpers.probe_for_policy`, `helpers.activate_page` |
 | `semantic_tracker` | `SemanticStateTracker` (`semantic/state.py`) |
 | `worker_prompt` | `tools.build_browser_worker_system_prompt` |
-| `policy_rules`, `rails`, `native_tools` | empty |
+| `policy_rules` | `policy.POLICY_RULES`: the clipboard rules (see "Policy rail") |
+| `rails`, `native_tools` | empty |
 | `scene` | `None` (the conformance suite takes `browser_scene()` directly) |
 
 `BrowserContext` also carries `tab_urls` (parallel to `tabs`) and `current_tab` (index of the focused tab); both are
@@ -1019,6 +1020,15 @@ A reason, or a `ValueError` from parsing or decoding, denies the call:
 - `tool_result`: `PolicyDenied(reason)` (`dispatched=False`).
 
 Tools without a decoder pass unchecked.
+
+The browser surface's rules (`surfaces/browser/policy.py`, `POLICY_RULES`) keep the host's clipboard out of pages:
+the managed Chrome shares the OS clipboard. Invariants: a `PressKey` whose last token is `v` with a
+control/ctrl/meta/cmd/command/ControlOrMeta modifier, or `Insert` with shift, is denied; a `RunScript` whose code
+reads the clipboard (`clipboard.read`/`readText`, dotted or bracketed, or `execCommand('paste')`) is denied; the
+reason is `CLIPBOARD_DENIED`, which tells the model to read the value from the page and type it. `TypeText` has no
+rule: both drivers insert its text literally. Helpers that execute commands without the rail check the same rules:
+the batch calls `policy_denial(action, page_state.surface_context)` before every command and fails the step with the
+reason, so the command never reaches the driver.
 
 ## Tool factory (`runtime/tool_factory.py`)
 

@@ -3914,3 +3914,38 @@ Known leftovers:
    processors, session memory, compression and debug dumps) still use the raw id; with a path-safe id (all the
    browser agent produces now) they and the mapped name agree.
 2. The delegated worker's conversation id keeps `:`; it never reaches a path today.
+
+### Clipboard (security)
+
+Google Map--31 on browser-use: `navigator.clipboard.readText` failed, the agent pressed `Control+v` and pasted the
+host's OS clipboard (a PowerShell command) into the Google Maps search box. The managed Chrome shares the host's
+clipboard, so any paste hands a third-party page whatever the user last copied.
+
+Decisions:
+1. **The browser profile's first `PolicyRule`s** (`surfaces/browser/policy.py`): paste chords on `PressKey`
+   (control/ctrl/meta/cmd/command/ControlOrMeta + `v`, shift + `Insert`, any case, extra modifiers allowed) and
+   clipboard reads in `RunScript` (`clipboard.read*` dotted or bracketed, `execCommand('paste')`). The surface owns
+   them, the policy rail applies them for both dialects (they decode to the same commands).
+2. **The batch checks the same rules itself.** It executes commands through the `ToolContext`, past the rail; it calls
+   `policy_denial` before each command and fails the step with the reason. No contract change: the rules are the
+   surface's own constant and the batch is a surface helper.
+3. **No `TypeText` rule**: both drivers insert the text literally (browser-use `insert_text`, MCP `browser_type`), so
+   a typed "Control+v" is text, not a chord. The task listed `TypeText`; a rule there would never fire.
+4. **One message** for every case: the clipboard belongs to the host; read the value from the page and type it.
+
+Rejected options:
+- An isolated clipboard for the managed Chrome (suggested in the run analysis): a provisioning change with no
+  portable Chrome switch for it; the rules close the observed path.
+- Writing to the clipboard (`writeText`) denied too: it does not leak host data to the page; left allowed.
+
+Verification: before the fix the browser profile had `policy_rules == ()` and a batch `press` step with
+`Control+v` reached the driver as `PressKey("Control+v")`; after it, 34 new cases pass (the rules, the rail on the
+Playwright MCP and browser-use builders, the batch on a FakeDriver). Full unit suite 2439 passed, 122 skipped.
+Goldens unchanged.
+
+Known leftovers:
+1. Pass-through native tools without a decoder (the MCP server's `browser_run_code`, when the server exposes it) are
+   not checked: the rail checks decoded commands only.
+2. The script rule is a text match: obfuscated code (`navigator[atob(...)]`) passes. The paste-chord rule is the
+   one that stops the observed leak.
+3. Middle-click paste of the X11 primary selection is not covered (Windows and macOS have none).
