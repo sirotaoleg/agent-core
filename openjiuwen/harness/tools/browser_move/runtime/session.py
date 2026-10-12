@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional
 from weakref import WeakSet
 
@@ -93,7 +95,7 @@ class BrowserAgentRuntime:
     ) -> None:
         self._instance = instance
         self._core_settings = core_settings
-        self._browser_settings = browser_settings or browser_surface_settings()
+        self._browser_settings = _with_workspace(browser_settings or browser_surface_settings(), workspace)
         self._workspace = workspace
         self._language = language
         self._allowed_tool_names = None if allowed_tool_names is None else tuple(dict.fromkeys(allowed_tool_names))
@@ -689,6 +691,14 @@ class BrowserAgentRuntime:
     def reset_semantic_task(self) -> None:
         """Start semantic loop tracking for a new user task without resetting Chrome."""
         self._semantic_state_tracker.reset()
+
+
+def _with_workspace(settings: Any, workspace: Any) -> Any:
+    # Surface settings that confine file access to the agent's folders carry a workspace_root field.
+    if workspace is None or not hasattr(settings, "workspace_root"):
+        return settings
+    root = getattr(workspace, "root_path", workspace)
+    return dataclasses.replace(settings, workspace_root=Path(root).expanduser().resolve())
 
 
 class _NoSemanticState:

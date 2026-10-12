@@ -24,6 +24,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
 from openjiuwen.harness.tools.browser_move.runtime.controllers.action import ActionController
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import ToolContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate, UploadFile
+from openjiuwen.harness.tools.browser_move.surfaces.browser.policy import policy_denial, policy_rules
 
 _MARK = "data-openjiuwen-target-id"
 _ALIASES = "Aliases source/target and source_x/source_y/target_x/target_y are also supported."
@@ -169,6 +170,9 @@ async def set_input_files(context: ToolContext, **params: Any) -> dict[str, Any]
         return {"ok": False, "error": "paths is required and must be non-empty", **_ids(params)}
     target = Locator(css=selector, text=None, generation=context.page_state.generation_id)
     shape = {"selector": selector, "paths": paths}
+    denial = policy_denial(UploadFile(target, tuple(paths)), None, policy_rules(context.settings))
+    if denial:
+        return {"ok": False, "error": denial, **shape}
     try:
         if Locator in context.driver_info.actions.get(UploadFile, frozenset()):
             result = await context.execute(UploadFile(target, tuple(paths)))

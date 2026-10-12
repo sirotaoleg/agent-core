@@ -120,6 +120,8 @@ class BrowserSettings:
     # A server config given by the caller (the WebVoyager runner's): its command line wins over the fields above.
     mcp_server: McpServerConfig | None = None
     upload_root: Path | None = None
+    # The agent's workspace, set by the runtime facade; uploads may come from it as from upload_root.
+    workspace_root: Path | None = None
     sidecar_python: Path | None = None
     selector_cache_path: Path | None = None
     # Child processes start from it; the browser-use transport passes on only a credential-free subset.
