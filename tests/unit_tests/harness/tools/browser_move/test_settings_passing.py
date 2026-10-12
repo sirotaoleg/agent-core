@@ -17,6 +17,7 @@ from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.drivers.browser_use import transport as transport_module
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import create_browser_use_driver
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar.exceptions import DriverUnsupported
+from openjiuwen.harness.tools.browser_move.drivers.browser_use.upload_paths import resolve_upload_file_paths
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import _default_chrome_user_data_dir
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
@@ -37,7 +38,6 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
     runtime_server_environ,
 )
 from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
-from openjiuwen.harness.tools.browser_move.runtime.utils.upload_paths import resolve_upload_file_paths
 from openjiuwen.harness.tools.browser_move.surfaces.browser import site_profiles
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface

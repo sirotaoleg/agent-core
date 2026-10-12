@@ -39,10 +39,7 @@ KNOWN_CORE_TO_HARNESS_IMPORTS: dict[tuple[str, str], int] = {
 }
 
 # (driver file, imported package module) -> count.
-KNOWN_DRIVER_IMPORTS_OUTSIDE_THEIR_LAYER: dict[tuple[str, str], int] = {
-    # Upload path resolution moves to the browser surface once the surface sees UploadFile/Drop before dispatch.
-    ("drivers/browser_use/driver.py", "runtime.utils.upload_paths"): 1,
-}
+KNOWN_DRIVER_IMPORTS_OUTSIDE_THEIR_LAYER: dict[tuple[str, str], int] = {}
 # The composition root wraps drivers; the settings facade builds one driver's server config lazily.
 DRIVER_LAYER_IMPORTERS = frozenset({"runtime/assembly.py"})
 LAZY_DRIVER_LAYER_IMPORTERS = frozenset({"runtime/config.py"})

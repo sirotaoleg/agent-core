@@ -53,7 +53,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     handles,
 )
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.transport import SidecarTransport
-from openjiuwen.harness.tools.browser_move.runtime.utils.upload_paths import resolve_upload_file_paths
+from openjiuwen.harness.tools.browser_move.drivers.browser_use.upload_paths import resolve_upload_file_paths
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     Back,
     Drop,
