@@ -3623,3 +3623,125 @@ wheel (`uv build --wheel`) carries `openjiuwen/harness/tools/browser_move/surfac
    `I001` of `controllers/action.py` (its `.base` import block) is older than this phase. Neither was touched.
 4. The facade still imports four helper names, the catalog and the semantic tracker; `service.py` and `config.py`
    the catalog; `agents.py` the worker prompt: PR e.
+
+## Phase 9: PR d, the end state of the architecture tests
+
+No move in this step: a text pass over the core's remaining browser words, the import rule the scanner could not see,
+every allowlist at its end value, and the residual listed hit by hit. Three commits.
+
+### The text pass
+
+Thirteen core modules lose the browser words that named the surface in a docstring, a comment, a log line or a local
+name: the service and the registry speak of the session, the device and the lifecycle identity; the logging module of
+the agent log; the page state of the surface state; the worker loop's locals `page` and `url` are `location` and
+`address` (the keys they read are unchanged); the recovery, guard and runtime-tool docstrings and five log lines drop
+the word. Nothing the model reads, no key, no public attribute, parameter or message changed. Proof (a scratch
+script): the old and new modules parse to equal ASTs once docstrings are dropped, the two renames and the seven log
+strings are applied, for all thirteen files. Browser words in the core: 194 → 114 (14 keys → 10; `browser_logging.py`,
+`controllers/base.py`, `main.py` and `service_registry.py` are at zero).
+
+### The registry rule
+
+`runtime/` reaches the registries (`DRIVERS`, `PROVISIONERS`, `SURFACES`) from `runtime/assembly.py` only, and
+`SURFACES` also from `runtime/config.py` (`browser_surface_settings()`); the scanner ignored one-part import targets,
+so the bare packages were invisible to the boundary test. The rule holds today with no exception. The design named
+`surfaces` only; `drivers` and `provisioning` are the same kind of edge and hold with the same two importers, so the
+rule covers the three.
+
+### Decisions
+
+1. **Class A only** (design §5.1): comments, docstrings, log lines, local names. A docstring that names a parameter
+   (`activate_page`'s ``url``) keeps the name; a message the model reads keeps its words even in a docstring-like
+   position (`RECOVERY_MESSAGE`, the stale-target errors, the `_noop_note`).
+2. **The residual is accepted and listed** (Aleh, Q4): 114 hits in 10 core modules, each a data key, a public
+   attribute or parameter, the surface name, an identifier, driver error text the loop matches, or text the model
+   reads. No test narrowing.
+3. **Local renames only where the local itself is the hit**: `page` → `location` and `url` → `address` in the worker
+   loop; `page_url`, `last_page`, `normalized_url` are not whole-word hits and stay.
+4. **Log lines are class A**: five reworded (`dedicated agent log file enabled`, `Worker repeated the same tool call`,
+   `observation failed`, `Failed to reset active runtime`, `Failed to reset the managed runtime`, the two recovery
+   lines); no test asserts on any of them (checked before the pass).
+
+### Rejected options
+
+- **Narrowing the browser-word test** to comments, docstrings and log strings (design Q4 option b): the keys and the
+  model text would stop being counted, which hides the residual instead of documenting it.
+- **Renaming the public attributes and keys** (`BrowserPageState.url`, `page_id`, the runner answer's `page`/`url`,
+  the surface name): logic and contract changes outside the phase.
+- **Rewording the model-facing strings** (the resume text, the stale-target errors, the tool descriptions): the
+  goldens and the prompt snapshots pin some of them, and the rest is prompt engineering, not architecture.
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move tests/unit_tests/harness/test_deep_agent_terminal_stream.py -q`
+  after the test commit: **2400 passed, 122 skipped in 44.91s** (PR c's 2399 plus the registry test); the text pass
+  alone: 572 targeted
+  tests green (architecture, service, logging, config, page state, guard, recovery, runtime tools, registry, facade,
+  rail, topology, status logging, isolation, snapshots, terminal stream).
+- The no-logic proof: 13 files, 0 differ after normalisation.
+- Goldens unchanged; `ruff check` on the touched files: the pre-existing `ASYNC250` in `main.py` only.
+- Allowlists at the end of PR d:
+
+| list | value | notes |
+|---|---|---|
+| browser words | 10 keys / 114 | the residual below |
+| MCP tool names | **empty** | since PR b |
+| driver names | 4 keys / 7 | `runtime/browser_tools.py` 3 (the server's client config: the config facade's name, the `/mcp` path), `runtime/service.py` 1 (the CDP endpoint of the given server config, the lifecycle identity), `surfaces/browser/capabilities.py` 2, `surfaces/browser/helpers/batch_steps.py` 1 |
+| core imports of concrete modules | 6 keys / 14 | `session.py → helpers` 4, `→ capabilities` 2, `→ semantic.state` 1; `service.py → capabilities` 2; `config.py → capabilities` 3 (call-time); `agents.py → surfaces.browser.tools` 2; PR e empties the list |
+| module size | **empty** | since PR c |
+| registries | rule, no allowlist | `assembly.py` (three), `config.py` (`SURFACES`) |
+| surfaces → drivers/provisioning | rule, no allowlist | 0 violations since PR a |
+| env reads | unchanged | the two named exemptions |
+
+### The browser-word residual, hit by hit
+
+Classes: **B** text the model reads (prompt, tool description, error or message in a result); **C** a data key, a
+public attribute or parameter, an identifier, the surface name, or driver text the loop matches.
+
+| module | line (hits) | what | class | why it stays |
+|---|---|---|---|---|
+| `agents.py` | 194 (1) | the worker's `AgentCard` description | B | the card text the agent and its callers see |
+| `config.py` | 332 (1) | `CoreSettings.surface = "browser"` | C | the surface name, the registry key |
+| `config.py` | 421 (1) | `"demo-browser-session"` | C | the demo entry's default session id |
+| `config.py` | 466 (1) | `SURFACES.create("browser", …)` | C | the registry key (`browser_surface_settings`) |
+| `controllers/action.py` | 175 (1) | `recursive_browser_task_blocked: browser workers must not …` | B | the error returned to the caller of `browser_custom_action` |
+| `controllers/action.py` | 428, 431, 441 (3) | the `browser_task` / `run_browser_task` spec summary and `task` parameter text | B | `describe_actions` output, read by the model through `browser_list_custom_actions` |
+| `page_state.py` | 200 (1) | `self.page_id = page_id or f"page-…"` | C | public attribute, constructor parameter, the id format |
+| `page_state.py` | 210, 245 (2), 258, 443 (5) | `self.url` | C | public attribute (`BrowserPageState.url`), read by the rail and the facade |
+| `page_state.py` | 242, 253, 255 (3) | `advance(*, url=)`, `observe(*, url=)` and the parameter read | C | public signatures |
+| `page_state.py` | 273 (2), 290 (2), 447 (1) | `observe(url=payload.get("url"))`, `observe(url=address)` | C | the keyword and the observation payload key |
+| `page_state.py` | 442 (1) | `getattr(surface, "url", "")` | C | `BrowserPageState.record` reading the surface by attribute (design §9: a logic item for the benchmark phase) |
+| `page_state.py` | 268, 590, 639, 652 (4) | "Probe or snapshot the current page again", "Capture the current page snapshot again", "Probe the current page again" | B | the stale-target errors the model reads |
+| `page_state.py` | 762 (2), 776 (2) | `"url": self.url` | C | the `export` / index keys of every result's `page_state` |
+| `page_state.py` | 971 (1) | `payload.get("url")` | C | the observation payload key |
+| `rails/final_answer_recovery.py` | 21 (1) | `RECOVERY_MESSAGE` naming the `page` field | B | the recovery prompt; it lists the answer schema's keys |
+| `rails/repeated_call_guard.py` | 34 (1) | `document\.URL` in `_NOOP_ATOM` | C | the page JavaScript the guard recognises as a no-op |
+| `rails/repeated_call_guard.py` | 89 (2), 90 (1) | `_noop_note` | B | the note the model reads when tools are withheld |
+| `runtime_tools.py` | 26, 28, 49 (3) | the descriptions of `browser_custom_action` and `browser_list_custom_actions` | B | tool cards |
+| `service.py` | 379 (1) | `f"browser-{uuid}"` | C | the default session id (`session_new`), the worker conversation id derives from it |
+| `session.py` | 237 (1) | `parsed.get("url")` | C | the probe result key `_rewrite_primary_link_click` reads |
+| `session.py` | 379 (1) | `dom_error = f"page observation failed: {exc}"` | B | returned in the capture result (`dom_error`) |
+| `session.py` | 395 (3), 421 (3), 445 (3), 468 (3), 488 (3), 503 (2) | `"url": metadata.get("url") or exported["url"]` and the like | C | the `url` keys of the `capture_*` results and of the metadata / page-state / semantic-state exports they read |
+| `session.py` | 562 (3) | `"page": {"url": surface.url …, "title": …}` | C | `main_agent_answer`'s keys and the surface attribute (the runner contract) |
+| `session.py` | 595, 596, 598 (3) | `activate_page(self, url)`, its docstring naming ``url``, the call through | C | public parameter; PR e moves the hook behind the profile |
+| `worker.py` | 70, 97 (2) | `last_page.get("url")` | C | the stored progress state's key (`from_dict`, `from_task_state`) |
+| `worker.py` | 189 (1) | `"url": self.last_page_url` | C | `to_dict` key (the session state the rail reads) |
+| `worker.py` | 231 (2), 233, 235, 248 (2), 251 (7) | "target page, context or browser has been closed", "navigation failed because browser has disconnected", "page crashed" | C | driver error text the retry and restart predicates match (design §9: a logic item) |
+| `worker.py` | 257 (1) | `"browser-session"` | C | the default session id of the worker conversation id |
+| `worker.py` | 312 (2), 313 (2) | `value.get("page")`, `value.get("url")`, `location.get("url")` | C | the worker answer's keys (`_extract_page_snapshot`) |
+| `worker.py` | 341 (1) | `f"url={address}"` | B | a progress-summary line the model reads in the resume task |
+| `worker.py` | 517, 603 (2), 736, 778 (2), 804 (7) | "Recent browser tool activity", "current logical browser session/tab", "Continue from the current browser state", "Last page: url=" | B | the progress context and the resume task text |
+| `worker.py` | 660 (2), 675 (2), 842 (2), 982 (2), 1023 (2) | `"page": {"url": "", "title": ""}` | C | the runner answer's keys |
+| `worker.py` | 677, 1009, 1025 (3) | "Browser worker did not return valid JSON output", "unknown browser execution error" | B | error text in the runner answer |
+| `worker.py` | 891 (2), 905 (2), 909, 928 (2), 935, 936 (2), 955, 1005 (11) | `parsed.get("page")`, `location.get("url")`, `"page": {`, `"url": …`, `last_failure_page.get("url")` | C | the worker answer's keys and the runner answer's keys |
+
+Totals: `agents.py` 1, `config.py` 3, `controllers/action.py` 4, `page_state.py` 24, `final_answer_recovery.py` 1,
+`repeated_call_guard.py` 4, `runtime_tools.py` 3, `service.py` 1, `session.py` 25, `worker.py` 48 = 114; B 33, C 81.
+
+### Known leftovers
+
+1. PR e removes the six import keys and, with the hooks behind the profile, `session.py`'s `activate_page(url)` and
+   `main_agent_answer`'s `surface.url` stay as the facade's public surface (the keys are the runner contract).
+2. `BrowserPageState.record` reading `surface.url` / `title` by `getattr` and the restart predicates matching driver
+   error text are logic items (design §9), not this phase's.
+3. `ASYNC250` in `main.py` (an `input()` call in the demo's async entry) is older than this phase; untouched.

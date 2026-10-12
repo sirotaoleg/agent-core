@@ -34,6 +34,15 @@ worker prompt, the image and date-picker sections) is in `tools.py`; the facade 
 worker loop and its progress state are `runtime/worker.py`, the service's lifecycle `runtime/service.py`. The probe
 scripts are one module each (`probes/metadata.py`, `probes/interactives.py`, `probes/cards.py` with its template in
 the resource file `probes/cards.js`); the browser action specs and the upload listing are `helpers/custom.py`.
+The architecture tests hold this layout: no module under `runtime/` or `surfaces/` over 1,500 lines; no
+Playwright MCP tool name in the core; driver names in the core only in `runtime/browser_tools.py` (the runtime
+server's client config) and `runtime/service.py` (the CDP endpoint of the given server config); `contract/`
+imports the standard library and itself; `surfaces/` imports no driver package and no provisioner; the core
+reaches the registries (`DRIVERS`, `PROVISIONERS`, `SURFACES`) from `runtime/assembly.py` only, `SURFACES` also
+from `runtime/config.py` (the surface settings); the core imports no concrete driver, surface or provisioner
+module beyond the allowlisted facade, service, config and agent imports of `surfaces/browser/` that the
+profile fields remove. The browser words left in the core are data keys and attributes (`page`, `url`), the
+surface name, identifiers and text the model reads, listed one by one in F_07 ("Phase 9: PR d").
 The browser profile store is `provisioning/profiles.py`. `playwright_runtime/` is an alias package for one release: importing it or any
 `playwright_runtime.<module>` yields the same module objects as `runtime.<module>`, `playwright_runtime.browser_capabilities`
 and `.profiles` are the moved modules under their old names, it re-exports `runtime.__all__` plus the five
