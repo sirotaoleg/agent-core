@@ -25,6 +25,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
 )
 from openjiuwen.harness.tools.browser_move.runtime.assembly import build_agent
 from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
+from openjiuwen.harness.tools.browser_move.runtime.page_state import PageState
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import command_record
 
 from .surface import DEVICE, MESSAGES, Poke, ScreenDriver, ScreenProvisioner, screen_registries
@@ -65,9 +66,12 @@ class ToolResults(AgentRail):
     def __init__(self) -> None:
         super().__init__()
         self.by_call: dict[str, Any] = {}
+        self.identities: list[str] = []
+        self.page_state: PageState | None = None
 
     async def after_tool_call(self, ctx: AgentCallbackContext) -> None:
         self.by_call[ctx.inputs.tool_call.id] = ctx.inputs.tool_result
+        self.identities.append(self.page_state.identity)
 
 
 @dataclass
@@ -106,6 +110,7 @@ def run() -> Run:
             max_iterations=len(SCRIPT) + 2,
         )
         agent.add_rail(run.results)
+        run.results.page_state = session.page_state
         try:
             run.output = await agent.invoke({"query": "Poke the board", "conversation_id": "fake-surface"})
         finally:
@@ -164,6 +169,11 @@ def test_a_stale_point_observes_once_and_reports_the_fresh_observation(run: Run)
     assert run.tool_message(4) == (
         "### Error\nStaleRef: Stale PointRef belongs to g0; current generation is g1.\nfresh look at screen-1 in g1"
     )
+
+
+def test_the_core_page_state_tracks_the_screen_context_by_its_own_identity(run: Run) -> None:
+    assert type(run.results.page_state) is PageState
+    assert run.results.identities[0] == "board"
 
 
 def test_a_lost_connection_restarts_the_driver_once(run: Run) -> None:

@@ -57,6 +57,15 @@ class Poke(Action):
 
 
 @dataclass(frozen=True)
+class ScreenContext(SurfaceContext):
+    app: str
+
+    @property
+    def identity(self) -> str:
+        return self.app
+
+
+@dataclass(frozen=True)
 class ScreenSettings:
     provisioning: str = "screen"
 
@@ -130,7 +139,8 @@ class ScreenDriver(HandlerDriver):
     async def observe(self, command: Observe) -> Observation:
         self.calls.append(command)
         self._shots += 1
-        return Observation(context=SCREEN, screenshot=Screenshot(b"\x89PNG-%d" % self._shots, BOARD, BOARD))
+        screenshot = Screenshot(b"\x89PNG-%d" % self._shots, BOARD, BOARD)
+        return Observation(context=SCREEN, screenshot=screenshot, surface=ScreenContext("board"))
 
     @handles(Click, refs={PointRef})
     async def _click(self, action: Click) -> ActionResult:

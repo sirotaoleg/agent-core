@@ -50,3 +50,8 @@ class TestBrowserWords:
     def test_no_browser_words_in_contract_or_core(self):
         problems = _scan.compare_with_allowlist(_collect_browser_words(), KNOWN_BROWSER_WORDS, "browser word")
         assert not problems, "\n".join(problems)
+
+    def test_the_core_page_state_names_no_browser_field(self):
+        fields = re.compile(r"\b(?:url|title|tabs|price|rating|shop|href|captcha|login)\b", re.IGNORECASE)
+        hits = fields.findall(_text_without_imports("runtime/page_state.py"))
+        assert not hits, f"runtime/page_state.py names browser fields: {sorted(set(hits))}"
