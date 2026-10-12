@@ -15,12 +15,50 @@ import time
 import warnings
 from pathlib import Path
 from types import MappingProxyType
-from typing import Optional
+from typing import Optional, Protocol
 from urllib.request import urlopen
 
-from ..surfaces.browser.config import BrowserSettings
-from . import ProvisionedDevice
+from ..contract.device import ProvisionedDevice
 from .profiles import BrowserProfile, BrowserProfileStore
+
+
+class ManagedBrowserSettings(Protocol):
+    """The settings fields the managed browser provisioner reads; the browser surface settings have them."""
+
+    @property
+    def provisioning(self) -> str: ...
+    @property
+    def cdp_url(self) -> str: ...
+    @property
+    def cdp_headers(self) -> str: ...
+    @property
+    def cdp_timeout(self) -> str: ...
+    @property
+    def launch_args(self) -> tuple[str, ...]: ...
+    @property
+    def mcp_extension_token(self) -> str: ...
+    @property
+    def mcp_cwd(self) -> Path: ...
+    @property
+    def profile_store_path(self) -> Path | None: ...
+    @property
+    def profile_name(self) -> str: ...
+    @property
+    def managed_args(self) -> tuple[str, ...]: ...
+    @property
+    def browser_binary(self) -> str: ...
+    @property
+    def browser_binary_candidates(self) -> tuple[str, ...]: ...
+    @property
+    def managed_kill_existing(self) -> bool: ...
+    @property
+    def managed_port(self) -> int: ...
+    @property
+    def managed_host(self) -> str: ...
+    @property
+    def user_data_dir(self) -> str: ...
+    @property
+    def local_app_data(self) -> str: ...
 
 
 def _default_chrome_user_data_dir(local_app_data: str) -> str:
@@ -196,7 +234,7 @@ class ManagedBrowserProvisioner:
         self._process: Optional[subprocess.Popen] = None
         self._owns_process: bool = False
 
-    def provision(self, surface_settings: BrowserSettings) -> ProvisionedDevice:
+    def provision(self, surface_settings: ManagedBrowserSettings) -> ProvisionedDevice:
         settings = surface_settings
         if settings.provisioning == "remote":
             return ProvisionedDevice(
@@ -405,7 +443,7 @@ class ManagedBrowserProvisioner:
         process.poll()
 
 
-def _build_profile(settings: BrowserSettings) -> BrowserProfile:
+def _build_profile(settings: ManagedBrowserSettings) -> BrowserProfile:
     # managed_port 0: pick a free port (an isolated instance must not share one fixed port).
     port = settings.managed_port or _allocate_free_port()
     if settings.user_data_dir:
