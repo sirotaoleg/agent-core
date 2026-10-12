@@ -1040,46 +1040,8 @@ class BrowserService:
         return progress_state.to_dict()
 
     @classmethod
-    def build_progress_context(cls, progress_state: Optional[BrowserTaskProgressState]) -> str:
-        return cls._build_progress_context(progress_state)
-
-    def record_tool_progress(
-        self,
-        *,
-        session_id: str,
-        request_id: str,
-        tool_name: str,
-        tool_result: Any,
-    ) -> None:
-        self._update_progress_from_tool_observation(
-            session_id=session_id,
-            request_id=request_id,
-            tool_name=tool_name,
-            tool_result=tool_result,
-        )
-
-    @classmethod
     def should_treat_as_completed(cls, parsed: Dict[str, Any]) -> bool:
         return cls._should_treat_as_completed(parsed)
-
-    def record_worker_progress(
-        self,
-        *,
-        session_id: str,
-        request_id: str,
-        parsed: Dict[str, Any],
-    ) -> None:
-        self._update_progress_from_worker_result(
-            session_id=session_id,
-            request_id=request_id,
-            parsed=parsed,
-        )
-
-    def get_progress_state(self, session_id: str) -> Optional[BrowserTaskProgressState]:
-        return self._progress_by_session.get((session_id or "").strip())
-
-    def export_progress_state(self, session_id: str) -> Optional[Dict[str, Any]]:
-        return self._export_progress_state(session_id)
 
     def build_failure_summary(
         self,
