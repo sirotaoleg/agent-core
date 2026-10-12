@@ -1234,7 +1234,10 @@ lifetime, hands it to its `BrowserService`, and from `ensure_runtime_ready()` on
 - Capabilities are derived from `allowed_tool_names` on first read: the entries of the profile's catalog whose tool
   names are all allowed (the inverse of `resolve_browser_capabilities`); with no allowlist, the default entry's
   tools, and the service then holds `allowed_tool_names=None`. The semantic-state tracker is the profile's
-  `semantic_tracker()`, made on first use.
+  `semantic_tracker()`, made on first use; the three captures call `observe(state, action_group_id=..., changed=)`
+  with `changed` true when the generation or the last observation moved since the previous call. The browser
+  tracker scores a repeated state as `progress` when `changed` (a dialog or a cart has no semantic field), and a
+  revisit of an earlier state as a revisit whatever `changed` says.
 - `agent_parts(*, image_support, language)`: `build_agent_parts(session, assembly.surface, ..., language=)`, built
   once per `(image_support, language)`; the receiving agent decides the language ("one language per agent": the
   rail passes the agent's own, `build_worker` passes `WORKER_LANGUAGE`), and the facade's constructor `language`
@@ -1350,6 +1353,12 @@ from the package); the rail imports the facade (`runtime/session.py`), never the
   discovery (`browser_probe_cards` → structured extraction); `Click`, `Hover`, `Drag`, `Drop` → interaction;
   `exempt_from_budget` → no phase or replan budget; read-only recovery for `READ`, `SwitchContext`, a script that
   does not mutate, a batch of read-only ops.
+- Phase budgets are charged on what each command did. Invariants: a known `ACT` command that is not a form or
+  filter command keeps the current phase, except while extracting, when it goes to `form` (created on demand); an
+  `ACT` or `NAVIGATE` command whose record is ok and shows `context_changed`, or a generation other than the one
+  stored when the call started, gets its attempt back (`_record_phase_result(..., progressed=True)`); reads are
+  never refunded; in the extraction phase a `RunScript` costs one attempt per distinct code (a sha256 prefix kept
+  in the phase's `scripts`). Stalled actions and distinct reads still exhaust their phase.
 
 ### Context processors and the status log
 

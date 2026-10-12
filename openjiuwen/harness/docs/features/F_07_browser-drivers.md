@@ -4002,3 +4002,51 @@ unchanged.
 Known leftovers:
 1. The prose-rate rise is not explained (above); the baseline rerun decides.
 2. A recovery turn that answers with a tool call and no text yields no JSON; today's prose fallback applies.
+
+### Phase budgets on command records (browser-use main agent)
+
+The main agent's phase rail ended 16 browser-use tasks early (extraction 20/20: Amazon--1/15, ArXiv--11/41,
+Coursera--32, Google Flights--6/7, Google Map--5/40, Wolfram Alpha--7; navigation 12/12: Google Search--11/14;
+semantic replan: Apple--22, Booking--9/24) and nav-menu cards forced `must_finish` on Allrecipes--41. MCP passed
+them all: its delegated worker has no phase budgets. Read first: Amazon--1 (size, ZIP and cart clicks inherited the
+extraction phase; 15 distinct page scripts), Google Flights--6 (form clicks between probes counted as extraction),
+Allrecipes--41 (the cards were `#mntl-fullscreen-nav_1-0 … li.mntl-fullscreen-nav__list-item`, kind `result`),
+Google Search--11 (13 navigations, each to a new address).
+
+Decisions:
+1. **An action leaves extraction.** A known `ACT` command that is not a form or filter command used to inherit the
+   current phase; while extracting it now goes to `form` (created on demand, as typing already did), elsewhere it
+   keeps the current action phase (a click while filtering stays filtering).
+2. **Progress is free, stalls count.** An `ACT`/`NAVIGATE` command whose record shows `context_changed` or a new
+   generation (a new address, or an observation that changed past the page state's threshold) gets its attempt back.
+   This is what the step-limit-free MCP worker effectively has, and it keeps the budget as a guard against actions
+   that change nothing. Reads are never refunded.
+3. **A page script costs once.** In extraction a `RunScript` counts once per distinct code; polling the same script
+   is free (the repeated-call guard handles identical repeats).
+4. **A changed page is semantic progress.** The tracker's digest has no field for a dialog, a cart or a picker, so a
+   click that opened one scored `no_progress` and three of them forced a replan. The runtime now passes
+   `changed` (the generation or the last observation moved since the previous semantic observation); a repeated
+   digest with `changed` is progress. Revisits (A, B, A) stay revisits.
+5. **Menus are not cards.** "nav" is a token of its own in the chrome check (`-nav_`, `nav__` matched; `canvas` not),
+   and a candidate inside `nav`, `[role=navigation]`, `[role=menu]` or `[role=menubar]` is dropped whatever its kind.
+
+Rejected options:
+- Larger budgets: hides loops as well as work; the counting was wrong, not the numbers.
+- Charging after the call instead of refunding: moves the budget check past the dispatch; the refund keeps the deny
+  before anything reaches the driver.
+- Encoding the generation into the semantic digest: every state would look new, and the A-B-A revisit guard would
+  never fire.
+- Keeping the kind exemptions (`shop`, `product`, …) for the nav-container check: a link inside a real menu is a menu
+  link whatever its kind.
+
+Verification: 11 of the 18 new cases fail before the fix (classification, script count, refunds, the runtime's
+change mark, the tracker flag, both card cases); the 7 loop-guard cases pass before and after. The existing loop
+cases of `test_browser_runtime_rail.py` stay green (99). Full unit suite 2454 passed, 122 skipped. Goldens
+unchanged.
+
+Known leftovers:
+1. Whether the 16 tasks now finish is for the rerun; the budgets themselves (12/24/20/20) are unchanged.
+2. A navigation loop between distinct addresses (A, B, A, B) is refunded; it is bounded by the semantic revisit
+   guard and the step and time limits, not by the navigation budget.
+3. The first navigation from a blank tab advances no generation and is charged.
+4. Page scripts that mutate (a `.click()` in the code) still count as extraction reads.
