@@ -4675,4 +4675,11 @@ passed, 123 skipped.
   and checks the task is cancelled by `_terminate()` (fix → test → docs).
 
 Verification: unit suite 2560 passed, 123 skipped; goldens unchanged against `77091ac9e`; ruff clean on the touched
-files except findings present before the phase (ASYNC109 in the MCP clients, one E501 in `transport.py`).
+files except findings present before the phase (16 ASYNC109 and 3 F541 in the MCP clients, one E501 in
+`transport.py`, one ASYNC240 in `helpers/custom.py`).
+
+### Phase 11 live gate
+
+Both live sets once, at the end of the phase (`BROWSER_MOVE_LIVE_MCP=1`, `BROWSER_USE_SIDECAR_PYTHON` set):
+`test_conformance_playwright_mcp_live.py`, `test_conformance_browser_use_live.py` and `test_topology_live.py`:
+100 passed, none skipped, in 284 s.
