@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Import boundaries of browser_move (the core and ``surfaces/`` never reach a concrete driver or provisioner),
-and ``openjiuwen/core`` never importing ``openjiuwen.harness``."""
+"""Import boundaries of browser_move: the core and ``surfaces/`` never reach a concrete driver or provisioner, the core
+reaches the registries from the composition root only, and ``openjiuwen/core`` never imports ``openjiuwen.harness``."""
 
 from __future__ import annotations
 
@@ -11,6 +11,14 @@ import sys
 from collections import Counter
 
 from . import _scan
+
+# The registries live in the bare packages; only the composition root may import them, and config.py the surface
+# registry for the surface settings.
+REGISTRY_IMPORTERS: dict[str, frozenset[str]] = {
+    "drivers": frozenset({"runtime/assembly.py"}),
+    "provisioning": frozenset({"runtime/assembly.py"}),
+    "surfaces": frozenset({"runtime/assembly.py", "runtime/config.py"}),
+}
 
 # (file relative to the package, imported module relative to the package) -> count.
 KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {
@@ -86,6 +94,17 @@ def _collect_core_concrete_imports() -> Counter:
     return found
 
 
+def _collect_core_imports_of_registries() -> list[str]:
+    bad = []
+    for relpath in _scan.files_where(_scan.is_core):
+        for node, _lazy in _scan.iter_imports(_scan.parse(relpath)):
+            for target in _import_targets(relpath, node):
+                allowed = REGISTRY_IMPORTERS.get(target[0]) if len(target) == 1 else None
+                if allowed is not None and relpath not in allowed:
+                    bad.append(f"{relpath}:{node.lineno} imports the {target[0]} package")
+    return bad
+
+
 def _collect_surface_imports_of_drivers_or_provisioners() -> list[str]:
     bad = []
     for relpath in _scan.files_where(_scan.is_surface):
@@ -153,6 +172,11 @@ class TestImportBoundaries:
             "core import of a concrete driver/surface/provisioner",
         )
         assert not problems, "\n".join(problems)
+
+    def test_core_reaches_the_registries_from_the_composition_root_only(self):
+        bad = _collect_core_imports_of_registries()
+        message = "the registries are imported by runtime/assembly.py (surfaces also by config.py) only:\n"
+        assert not bad, message + "\n".join(bad)
 
     def test_surfaces_never_import_a_driver_or_provisioner(self):
         bad = _collect_surface_imports_of_drivers_or_provisioners()
