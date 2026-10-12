@@ -12,9 +12,7 @@ from . import _scan
 MAX_LINES = 1500
 
 # file relative to the package -> line count.
-KNOWN_OVERSIZED_MODULES: dict[str, int] = {
-    "surfaces/browser/probes/cards.py": 3010,
-}
+KNOWN_OVERSIZED_MODULES: dict[str, int] = {}
 
 
 def _collect_oversized_modules() -> Counter:

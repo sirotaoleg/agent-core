@@ -221,6 +221,7 @@ openjiuwen = [
     "rsi/**/*.template",
     "rsi/**/*.yaml",
     "harness/tools/browser_move/surfaces/browser/scene/pages/*",
+    "harness/tools/browser_move/surfaces/browser/probes/*.js",
 ]
 
 [tool.coverage.run]
