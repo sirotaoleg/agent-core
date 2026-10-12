@@ -4,20 +4,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Optional, Protocol
+from typing import Any, Protocol
 
+from ..contract.device import ProvisionedDevice
 from ..contract.registry import PROVISIONERS, register_provisioner
-
-
-@dataclass(frozen=True)
-class ProvisionedDevice:
-    """A device made ready by a provisioner (for the browser: a Chrome with a CDP endpoint)."""
-
-    kind: str
-    endpoint: str
-    extras: Mapping[str, Any]
-    cleanup: Optional[Callable[[], None]] = None
 
 
 class Provisioner(Protocol):

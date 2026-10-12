@@ -19,6 +19,7 @@ from .actions import (
     TypeText,
     Wait,
 )
+from .device import ProvisionedDevice
 from .driver import Driver, DriverInfo, HandlerDriver, Health, NativeTool, ensure_supported, handles, iter_refs
 from .errors import (
     ActionIntercepted,
@@ -97,6 +98,7 @@ __all__ = [
     "PointRef",
     "PolicyDenied",
     "PolicyRule",
+    "ProvisionedDevice",
     "PressKey",
     "Ref",
     "RefResolver",

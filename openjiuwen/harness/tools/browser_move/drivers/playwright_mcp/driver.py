@@ -41,6 +41,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     Observe,
     PointRef,
     PressKey,
+    ProvisionedDevice,
     RunScript,
     Screenshot,
     Scroll,
@@ -62,7 +63,6 @@ from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.snapshot impor
     without_boxes,
 )
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import DECODERS
-from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.runtime.config import BrowserInstanceConfig, playwright_mcp_config
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     Back,

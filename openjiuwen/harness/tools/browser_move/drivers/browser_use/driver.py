@@ -39,6 +39,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     Observation,
     Observe,
     PressKey,
+    ProvisionedDevice,
     RunScript,
     Screenshot,
     Scroll,
@@ -50,7 +51,6 @@ from openjiuwen.harness.tools.browser_move.contract import (
     handles,
 )
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.transport import SidecarTransport
-from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.runtime.browser_logging import get_browser_agent_logger
 from openjiuwen.harness.tools.browser_move.runtime.utils.upload_paths import resolve_upload_file_paths
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
