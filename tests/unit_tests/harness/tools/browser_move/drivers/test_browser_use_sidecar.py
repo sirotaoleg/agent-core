@@ -7,6 +7,9 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import inspect
+import json
+import shutil
+import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -648,3 +651,49 @@ def test_the_wire_error_carries_the_receiver():
     exc = errors.ActionIntercepted("click would reach it", by=OVERLAY)
     assert main._error_code_for(exc) == "ActionIntercepted"
     assert main._error_data_for(exc) == {"by": OVERLAY}
+
+
+# --- evaluate: an expression or a function, as Playwright MCP's evaluate ------------------------------------------
+
+cdp = _load_sidecar_module("cdp")
+
+
+def _sent_expression(source: str, args: Any = None) -> str:
+    client = SimpleNamespace(send=SimpleNamespace(Runtime=SimpleNamespace(evaluate=AsyncMock(return_value={}))))
+    asyncio.run(cdp.evaluate_expression(client, SESSION, source, args))
+    return client.send.Runtime.evaluate.await_args.kwargs["params"]["expression"]
+
+
+@pytest.mark.parametrize(
+    ("source", "args", "value"),
+    [
+        ("document.title", None, "Wolfram"),
+        ("() => document.title", None, "Wolfram"),
+        ("(input) => input.a + 1", {"a": 1}, 2),
+        ("document.title.length // a comment", None, 7),
+        ("async () => document.title", None, "Wolfram"),
+    ],
+)
+def test_evaluate_takes_an_expression_or_a_function(source: str, args: Any, value: Any) -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    script = f"globalThis.document = {{ title: 'Wolfram' }};\nPromise.resolve({_sent_expression(source, args)})"
+    script += ".then((value) => console.log(JSON.stringify(value)));"
+    completed = subprocess.run([node, "-e", script], check=True, text=True, capture_output=True)
+    assert json.loads(completed.stdout) == value
+
+
+def test_a_script_error_names_the_javascript_error_not_just_uncaught() -> None:
+    reply = {
+        "exceptionDetails": {
+            "text": "Uncaught",
+            "exception": {"description": "TypeError: document.title is not a function\n    at <anonymous>:1:16"},
+        }
+    }
+
+    with pytest.raises(errors.EvaluateError) as info:
+        cdp._unwrap_js_result(reply)
+
+    assert info.value.js_message == "TypeError: document.title is not a function"
+    assert str(info.value) == "TypeError: document.title is not a function"

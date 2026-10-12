@@ -7,7 +7,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import importlib
+import json
+import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -298,7 +301,7 @@ def test_run_script_with_target_stamps_the_element_then_scopes_the_script():
     assert eval_method == "evaluate"
     assert eval_params["args"] == {"selector": selector, "args": [1]}
     assert "document.querySelector(input.selector)" in eval_params["source"]
-    assert "return ((el, a) => el.textContent)(element, input.args);" in eval_params["source"]
+    assert "const value = ((el, a) => el.textContent" in eval_params["source"]
     assert result.value == "Buy"
 
 
@@ -915,3 +918,75 @@ def test_importing_browser_use_driver_does_not_load_browser_use_package() -> Non
     added = set(sys.modules) - snapshot
     browser_use_modules = [name for name in added if name == "browser_use" or name.startswith("browser_use.")]
     assert not browser_use_modules, f"unexpected browser_use imports: {browser_use_modules}"
+
+
+# --- the gaps the Phase 10 runs showed ----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("code", "value"), [("element.id", "save"), ("(el, a) => el.id + a", "save!"), ("() => document.title", "T")]
+)
+def test_a_scoped_script_takes_an_expression_or_a_function(code: str, value: str) -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    driver, request = _driver('[data-openjiuwen-target-id="bnid:42"]', None)
+    asyncio.run(driver.execute(RunScript(code, args="!", target=E1)))
+    params = _calls(request)[1][1]
+    script = (
+        "globalThis.document = { title: 'T', querySelector: () => ({ id: 'save' }) };\n"
+        f"console.log(JSON.stringify(({params['source']})({json.dumps(params['args'])})));"
+    )
+
+    completed = subprocess.run([node, "-e", script], check=True, text=True, capture_output=True)
+
+    assert json.loads(completed.stdout) == value
+
+
+def _timeout(method: str = "evaluate") -> Exception:
+    return _sidecar_error("ActionTimeout", f"{method} timed out after 30.0s")
+
+
+def test_a_second_request_timeout_in_a_row_is_a_lost_connection() -> None:
+    driver, _ = _driver(_timeout("navigate"), _timeout("observe"))
+
+    with pytest.raises(ActionTimeout):
+        asyncio.run(driver.execute(Navigate("https://www.google.com/maps")))
+    with pytest.raises(ConnectionLost) as info:
+        asyncio.run(driver.execute(RunScript("document.title")))
+
+    assert info.value.dispatched is True
+    assert "stopped answering" in str(info.value)
+
+
+def test_an_answer_between_two_timeouts_resets_the_count() -> None:
+    driver, _ = _driver(_timeout(), {"answer": 1}, _timeout(), {"answer": 2})
+
+    for _ in range(2):
+        with pytest.raises(ActionTimeout):
+            asyncio.run(driver.execute(RunScript("document.title")))
+        assert asyncio.run(driver.execute(RunScript("document.title"))).ok is True
+
+
+@pytest.mark.parametrize(
+    "css",
+    ['button:has-text("Done")', "text=One way", "div[role=combobox] >> span", "li:text-is('Rome')", "input:visible"],
+)
+def test_a_playwright_selector_is_unsupported_before_dispatch(css: str) -> None:
+    driver, request = _driver()
+
+    with pytest.raises(Unsupported) as info:
+        asyncio.run(driver.execute(Click(Locator(css, None, "g3"))))
+
+    assert info.value.dispatched is False
+    assert "plain CSS selectors only" in str(info.value) and "target_id" in str(info.value)
+    request.assert_not_awaited()
+
+
+@pytest.mark.parametrize("css", ["#save", "a:nth-of-type(2)", '[id="app-container-Copy Link"]', ".text-label"])
+def test_plain_css_still_goes_to_the_sidecar(css: str) -> None:
+    driver, request = _driver(ACT_OK)
+
+    asyncio.run(driver.execute(Click(Locator(css, None, "g3"))))
+
+    assert _calls(request)[0][1]["ref"]["css"] == css
