@@ -38,6 +38,18 @@ KNOWN_CORE_TO_HARNESS_IMPORTS: dict[tuple[str, str], int] = {
     ("memory/lite/memory_tools.py", "openjiuwen.harness.workspace.workspace"): 1,
 }
 
+# (driver file, imported package module) -> count.
+KNOWN_DRIVER_IMPORTS_OUTSIDE_THEIR_LAYER: dict[tuple[str, str], int] = {
+    # Upload path resolution moves to the browser surface once the surface sees UploadFile/Drop before dispatch.
+    ("drivers/browser_use/driver.py", "runtime.utils.upload_paths"): 1,
+}
+# The composition root wraps drivers; the settings facade builds one driver's server config lazily.
+DRIVER_LAYER_IMPORTERS = frozenset({"runtime/assembly.py"})
+LAZY_DRIVER_LAYER_IMPORTERS = frozenset({"runtime/config.py"})
+# The package, the deprecated module alias and the runtime server entry point; everything else lives in a layer.
+ROOT_MODULES = frozenset({"__init__.py", "offload_recall.py", "playwright_runtime_mcp_server.py"})
+SURFACE_MODULES_A_DRIVER_MAY_IMPORT = frozenset({"commands", "context"})
+
 _STDLIB = frozenset(sys.stdlib_module_names) | {"__future__"}
 _CONTRACT_TESTING_EXTRA = frozenset({"pytest"})
 
@@ -149,6 +161,69 @@ def _collect_core_to_harness_imports() -> Counter:
     return found
 
 
+def _outside_modules(node: ast.stmt) -> list[str]:
+    if isinstance(node, ast.Import):
+        return [alias.name for alias in node.names]
+    return [node.module or ""] if not node.level else []
+
+
+def _imports_harness_outside_core(module: str) -> bool:
+    return module.startswith("openjiuwen.") and not module.startswith(("openjiuwen.core.", _scan.PKG_DOTTED))
+
+
+def _driver_may_import(driver: str, target: tuple[str, ...]) -> bool:
+    if target[:1] == (_scan.CONTRACT_FOLDER,) or target[:2] == ("drivers", driver):
+        return True
+    if target == ("drivers", "middleware"):
+        return True
+    return (
+        target[:1] == (_scan.SURFACES_FOLDER,)
+        and len(target) >= 3
+        and target[2] in SURFACE_MODULES_A_DRIVER_MAY_IMPORT
+    )
+
+
+def _collect_driver_imports_outside_their_layer() -> Counter:
+    found: Counter = Counter()
+    for relpath in _scan.files_where(lambda f: f.startswith("drivers/") and f.count("/") >= 2):
+        driver = relpath.split("/")[1]
+        for node, _lazy in _scan.iter_imports(_scan.parse(relpath)):
+            for target in _import_targets(relpath, node):
+                if not _driver_may_import(driver, target):
+                    found[(relpath, ".".join(target))] += 1
+            for module in _outside_modules(node):
+                if _imports_harness_outside_core(module):
+                    found[(relpath, module)] += 1
+    return found
+
+
+def _collect_provisioning_imports_outside_the_contract() -> list[str]:
+    bad = []
+    for relpath in _scan.files_where(lambda f: _scan.in_folder(f, "provisioning")):
+        for node, _lazy in _scan.iter_imports(_scan.parse(relpath)):
+            for target in _import_targets(relpath, node):
+                if target[:1] not in ((_scan.CONTRACT_FOLDER,), ("provisioning",)):
+                    bad.append(f"{relpath}:{node.lineno} imports {'.'.join(target)}")
+            for module in _outside_modules(node):
+                if _imports_harness_outside_core(module):
+                    bad.append(f"{relpath}:{node.lineno} imports {module}")
+    return bad
+
+
+def _collect_imports_of_the_driver_layer() -> list[str]:
+    bad = []
+    for relpath in _scan.files_where(lambda f: _scan.in_folder(f, "runtime") or _scan.is_surface(f)):
+        if relpath in DRIVER_LAYER_IMPORTERS:
+            continue
+        for node, lazy in _scan.iter_imports(_scan.parse(relpath)):
+            if lazy and relpath in LAZY_DRIVER_LAYER_IMPORTERS:
+                continue
+            for target in _import_targets(relpath, node):
+                if target[:1] == ("drivers",):
+                    bad.append(f"{relpath}:{node.lineno} imports {'.'.join(target)}")
+    return bad
+
+
 class TestImportBoundaries:
     def test_contract_imports_only_stdlib_and_itself(self):
         bad = _collect_contract_imports()
@@ -169,7 +244,7 @@ class TestImportBoundaries:
 
     def test_surfaces_never_import_a_driver_or_provisioner(self):
         bad = _collect_surface_imports_of_drivers_or_provisioners()
-        assert not bad, "surfaces/ may import contract/, runtime/ and drivers/middleware.py only:\n" + "\n".join(bad)
+        assert not bad, "surfaces/ may import contract/ and runtime/ only:\n" + "\n".join(bad)
 
     def test_openjiuwen_core_never_imports_harness(self):
         problems = _scan.compare_with_allowlist(
@@ -178,3 +253,24 @@ class TestImportBoundaries:
             "openjiuwen.core import of openjiuwen.harness",
         )
         assert not problems, "\n".join(problems)
+
+    def test_drivers_import_only_the_contract_their_package_and_surface_commands_and_contexts(self):
+        problems = _scan.compare_with_allowlist(
+            _collect_driver_imports_outside_their_layer(),
+            KNOWN_DRIVER_IMPORTS_OUTSIDE_THEIR_LAYER,
+            "driver import outside contract/, its own package and surface commands/contexts",
+        )
+        assert not problems, "\n".join(problems)
+
+    def test_provisioning_imports_only_the_contract(self):
+        bad = _collect_provisioning_imports_outside_the_contract()
+        assert not bad, "provisioning/ may import contract/ only:\n" + "\n".join(bad)
+
+    def test_runtime_and_surfaces_reach_drivers_from_the_composition_root_only(self):
+        bad = _collect_imports_of_the_driver_layer()
+        message = "only runtime/assembly.py imports drivers/ (runtime/config.py lazily, for the settings facade):\n"
+        assert not bad, message + "\n".join(bad)
+
+    def test_every_module_at_the_package_root_is_known(self):
+        stray = sorted(f for f in _scan.pkg_files() if "/" not in f and f not in ROOT_MODULES)
+        assert not stray, f"modules at the package root belong to no layer; move them: {stray}"

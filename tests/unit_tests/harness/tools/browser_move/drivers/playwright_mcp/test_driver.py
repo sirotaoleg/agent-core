@@ -355,11 +355,20 @@ def test_execute_before_start_is_connection_lost_before_dispatch(tmp_path: Path)
 
 
 def test_transport_failure_is_connection_lost_dispatched(tmp_path: Path) -> None:
-    (outcome,), calls = _execute(tmp_path, {"browser_press_key": RuntimeError("pipe broke")}, PressKey("Enter"))
+    (outcome,), calls = _execute(tmp_path, {"browser_press_key": RuntimeError("broken pipe")}, PressKey("Enter"))
 
     assert isinstance(outcome, ConnectionLost)
     assert outcome.dispatched is True
-    assert "pipe broke" in str(outcome)
+    assert "broken pipe" in str(outcome)
+    assert calls == [("browser_press_key", {"key": "Enter"})]
+
+
+def test_a_client_error_that_is_not_a_transport_failure_is_a_driver_error_before_dispatch(tmp_path: Path) -> None:
+    (outcome,), calls = _execute(tmp_path, {"browser_press_key": ValueError("bad argument")}, PressKey("Enter"))
+
+    assert type(outcome) is DriverError
+    assert outcome.dispatched is False
+    assert "ValueError: bad argument" in str(outcome)
     assert calls == [("browser_press_key", {"key": "Enter"})]
 
 
