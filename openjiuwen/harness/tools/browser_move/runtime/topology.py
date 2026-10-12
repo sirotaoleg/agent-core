@@ -111,12 +111,14 @@ class DelegatedWorker:
 
     name = "delegated_worker"
 
+    def __init__(self) -> None:
+        self._image_support = False
+
     async def start(self, runtime: BrowserAgentRuntime) -> None:
         await runtime.ensure_runtime_ready()
         service = runtime.service
         if service.browser_agent is None:
             session = service.session
-            # No image input for the worker: providers reject the image its screenshot results carry today.
             service.browser_agent = await build_worker(
                 session,
                 session.assembly.surface,
@@ -130,6 +132,7 @@ class DelegatedWorker:
                 tool_result_observer=service.observe_worker_tool_result,
                 screenshot_subdir=service.screenshot_subdir,
                 artifacts_subdir=service.artifacts_subdir,
+                image_support=self._image_support,
             )
         runtime.register_runtime_tools()
 
@@ -141,6 +144,12 @@ class DelegatedWorker:
         request_id: str | None,
         timeout_s: int | None,
     ) -> dict[str, Any]:
+        # As in Direct: not in start, so starting makes no model call. A worker built before the verdict is
+        # rebuilt once with the screenshot tool and image results.
+        if await probe_image_support(_model(runtime.service)) and not self._image_support:
+            self._image_support = True
+            runtime.service.browser_agent = None
+
         async def worker() -> Any:
             await self.start(runtime)
             return runtime.service.browser_agent

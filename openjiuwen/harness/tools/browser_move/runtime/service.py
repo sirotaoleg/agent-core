@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import mimetypes
 import os
 import shutil
 import uuid
@@ -33,6 +32,18 @@ from .driver_session import DriverSession
 from .page_state import PageState
 from .service_registry import BROWSER_SERVICE_REGISTRY, BrowserServiceIdentity
 from .worker import BrowserTaskProgressState, _WorkerLoop
+
+
+def _image_mime_type(data: bytes) -> str | None:
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
 
 
 class BrowserService(_WorkerLoop):
@@ -308,39 +319,35 @@ class BrowserService(_WorkerLoop):
         except Exception:
             return source_path
 
-    def _normalize_screenshot_value(self, screenshot: Any) -> Any:
-        """Normalize screenshot for downstream multimodal APIs.
+    def _normalize_screenshot_value(self, screenshot: Any) -> str | None:
+        """The answer's screenshot as an http(s) link or an image data link; ``None`` when it is neither.
 
-        - Keep remote URLs and existing data URLs as-is.
-        - Ensure local screenshots are copied into screenshots/ folder.
-        - Convert local image file paths to data URLs.
+        Callers send it to a vision model as an image, so a path that names no image file must not pass through.
         """
-        if screenshot is None or not isinstance(screenshot, str):
-            return screenshot
-
-        raw = screenshot.strip()
-        if not raw:
+        if not isinstance(screenshot, str) or not screenshot.strip():
             return None
-
+        raw = screenshot.strip()
         lowered = raw.lower()
-        if lowered.startswith(("http://", "https://", "data:image/")):
+        if lowered.startswith(("http://", "https://")):
             return raw
+        if lowered.startswith("data:image/"):
+            _, _, encoded = raw.partition(",")
+            try:
+                data = base64.b64decode(encoded, validate=True)
+            except ValueError:
+                return None
+            return raw if _image_mime_type(data) else None
 
-        local_path_str = raw[7:] if lowered.startswith("file://") else raw
-        local_path = self._resolve_local_screenshot_path(local_path_str)
-        if not local_path.exists() or not local_path.is_file():
-            return raw
+        local_path = self._resolve_local_screenshot_path(raw[7:] if lowered.startswith("file://") else raw)
+        if not local_path.is_file():
+            return None
         local_path = self._ensure_screenshot_in_folder(local_path)
-
-        mime_type, _ = mimetypes.guess_type(str(local_path))
-        if not mime_type or not mime_type.startswith("image/"):
-            return raw
-
         try:
-            encoded = base64.b64encode(local_path.read_bytes()).decode("ascii")
-        except Exception:
-            return raw
-        return f"data:{mime_type};base64,{encoded}"
+            data = local_path.read_bytes()
+        except OSError:
+            return None
+        mime_type = _image_mime_type(data)
+        return f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}" if mime_type else None
 
     async def request_cancel(self, session_id: str, request_id: Optional[str] = None) -> None:
         sid = (session_id or "").strip()
