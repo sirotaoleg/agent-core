@@ -39,7 +39,7 @@ from ..contract import (
     SurfaceProfile,
     ToolSpec,
 )
-from ..drivers.middleware import masked
+from ..contract.masking import masked
 from .driver_session import DriverSession
 from .page_state import BrowserPageState
 

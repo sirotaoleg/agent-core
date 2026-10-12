@@ -36,7 +36,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     Unsupported,
     Wait,
 )
-from openjiuwen.harness.tools.browser_move.drivers.middleware import masked
+from openjiuwen.harness.tools.browser_move.contract.masking import masked
 from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState, BrowserTarget
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandRecord, ToolContext, ToolFlags
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
