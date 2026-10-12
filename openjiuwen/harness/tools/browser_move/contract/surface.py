@@ -95,6 +95,41 @@ class Scene:
     sensitive: Mapping[str, Callable[[HandledActions, str], SceneCase | str]] = field(default_factory=dict, hash=False)
 
 
+class ContextFactory(Protocol):
+    """Builds one tool or rail from the core's tool context (``runtime.tool_factory.ToolContext``)."""
+
+    def __call__(self, context: Any, /) -> Any: ...
+
+
+class CustomActions(Protocol):
+    def __call__(self, controller: Any, context: Any, /) -> None: ...
+
+
+class Metadata(Protocol):
+    """``(metadata, error)`` of the current context; ``error`` is ``None`` on success."""
+
+    def __call__(self, context: Any, /) -> Awaitable[tuple[Mapping[str, Any], str | None]]: ...
+
+
+class PolicyProbe(Protocol):
+    def __call__(self, context: Any, source: str, params: Mapping[str, Any], /) -> Awaitable[Mapping[str, Any]]: ...
+
+
+class Activate(Protocol):
+    def __call__(self, context: Any, address: str, /) -> Awaitable[bool]: ...
+
+
+class WorkerPrompt(Protocol):
+    def __call__(
+        self,
+        screenshot_subdir: str,
+        artifacts_subdir: str,
+        *,
+        tool_names: tuple[str, ...] | None = None,
+        driver_name: str,
+    ) -> str: ...
+
+
 @dataclass(frozen=True)
 class Capability:
     """One entry of a surface's capability catalog: a name an agent can be granted and the tools it selects.
@@ -115,36 +150,35 @@ class SurfaceProfile:
     ``capability_catalog`` maps a catalog entry to its (command, ref kind) pairs, ``None`` for a call without an element
     ref; ``capability_tools`` maps the same entry to the names of the tools it selects; ``capabilities`` is the catalog
     in order, its first entry the default one every agent gets. The agent runtime facade and the delegated worker use
-    the rest: ``custom_actions(controller, context)`` registers the surface's custom actions, ``page_metadata(context)``
-    returns ``(metadata, error)``, ``policy_probe(context, source, params)`` runs a policy-owned script,
-    ``activate(context, address)`` brings a context to the front, ``semantic_tracker()`` makes the surface's semantic
-    state tracker and ``worker_prompt(screenshot_subdir, artifacts_subdir, *, tool_names=None, driver_name)`` renders
-    the worker's system prompt; a surface driven through ``build_agent`` alone leaves them ``None``.
+    the rest when a surface fills them, each optional: ``custom_actions(controller, context)`` registers the surface's
+    custom actions, ``page_metadata(context)`` returns ``(metadata, error)``, ``policy_probe(context, source, params)``
+    runs a policy-owned script, ``activate(context, address)`` brings a context to the front, ``semantic_tracker()``
+    makes the surface's semantic state tracker and ``worker_prompt`` renders the worker's system prompt (the core's
+    neutral one when ``None``).
     """
 
     name: str
     commands: tuple[type[Action], ...]
     renderer: Renderer
     tool_specs: tuple[ToolSpec, ...] = ()
-    native_tools: tuple[Any, ...] = ()
     capability_catalog: Mapping[str, frozenset[tuple[type[Action], type | None]]] = field(
         default_factory=dict, hash=False
     )
     capability_tools: Mapping[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
-    extra_tools: tuple[Any, ...] = ()
-    rails: tuple[Any, ...] = ()
+    extra_tools: tuple[ContextFactory, ...] = ()
+    rails: tuple[ContextFactory, ...] = ()
     policy_rules: tuple[PolicyRule, ...] = ()
     timeouts: Mapping[Effect, float] = field(default_factory=dict, hash=False)
     messages: Mapping[str, str] = field(default_factory=dict, hash=False)
     settings: Any = field(default=None, hash=False)
     scene: Scene | None = None
     capabilities: tuple[Capability, ...] = ()
-    custom_actions: Callable[[Any, Any], None] | None = None
-    page_metadata: Callable[[Any], Awaitable[tuple[Mapping[str, Any], str | None]]] | None = None
-    policy_probe: Callable[[Any, str, Mapping[str, Any]], Awaitable[Mapping[str, Any]]] | None = None
-    activate: Callable[[Any, str], Awaitable[bool]] | None = None
+    custom_actions: CustomActions | None = None
+    page_metadata: Metadata | None = None
+    policy_probe: PolicyProbe | None = None
+    activate: Activate | None = None
     semantic_tracker: Callable[[], Any] | None = None
-    worker_prompt: Callable[..., str] | None = None
+    worker_prompt: WorkerPrompt | None = None
 
 
 @dataclass(frozen=True)

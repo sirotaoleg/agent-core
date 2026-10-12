@@ -15,7 +15,7 @@ from openjiuwen.core.common.logging import logger
 from openjiuwen.core.runner import Runner
 from openjiuwen.core.single_agent.agents.react_agent import ReActAgent
 
-from .agents import refresh_browser_worker_system_prompt, worker_driver_name
+from .agents import default_worker_prompt, refresh_browser_worker_system_prompt, worker_driver_name
 from .rails.final_answer_recovery import (
     final_answer_recovery,
     recovery_message,
@@ -605,7 +605,7 @@ class _WorkerLoop:
         if isinstance(agent, ReActAgent):
             await refresh_browser_worker_system_prompt(
                 agent,
-                worker_prompt=self._session.assembly.surface.profile.worker_prompt,
+                worker_prompt=self._session.assembly.surface.profile.worker_prompt or default_worker_prompt,
                 screenshot_subdir=self._screenshot_subdir,
                 artifacts_subdir=self._artifacts_subdir,
                 driver_name=worker_driver_name(self._session.assembly.stack.info),

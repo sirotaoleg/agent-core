@@ -162,8 +162,13 @@ class BrowserAgentRuntime:
     @property
     def _semantic_state_tracker(self) -> Any:
         if self._tracker is None:
-            self._tracker = self.surface.profile.semantic_tracker()
+            factory = self.surface.profile.semantic_tracker
+            self._tracker = _NoSemanticState() if factory is None else factory()
         return self._tracker
+
+    async def _metadata(self) -> tuple[Mapping[str, Any], str | None]:
+        hook = self.surface.profile.page_metadata
+        return ({}, None) if hook is None else await hook(self._context)
 
     def _semantic_changed(self) -> bool:
         """Whether the generation or the last observation moved since the previous semantic observation."""
@@ -347,7 +352,8 @@ class BrowserAgentRuntime:
         )
         self._session = session
         self._controller.register_builtin_actions()
-        profile.custom_actions(self._controller, self._context)
+        if profile.custom_actions is not None:
+            profile.custom_actions(self._controller, self._context)
 
     def agent_parts(self, *, image_support: bool, language: str) -> AgentParts:
         """The factory tools of the started session in the receiving agent's language, once per key."""
@@ -396,7 +402,7 @@ class BrowserAgentRuntime:
         if observation is not None:
             snapshot_audit = write_browser_agent_audit_artifact("ax_snapshot", observation.native_text or "")
 
-        metadata, metadata_error = await self.surface.profile.page_metadata(self._context)
+        metadata, metadata_error = await self._metadata()
         exported = page_state.export()
 
         errors = [error for error in (dom_error, metadata_error) if error]
@@ -449,7 +455,7 @@ class BrowserAgentRuntime:
         """Reconcile an ambiguous mutation from the surface metadata alone, without observing."""
 
         await self.ensure_runtime_ready()
-        metadata, metadata_error = await self.surface.profile.page_metadata(self._context)
+        metadata, metadata_error = await self._metadata()
         page_state = self.export_page_state()
         semantic_state = metadata.get("semantic_state")
         if not isinstance(semantic_state, dict):
@@ -607,12 +613,17 @@ class BrowserAgentRuntime:
     async def probe_for_policy(self, source: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Run a policy-owned probe script and register its elements as PageState targets."""
         await self.ensure_runtime_ready()
-        return await self.surface.profile.policy_probe(self._context, source, params)
+        probe = self.surface.profile.policy_probe
+        if probe is None:
+            error = f"surface {self.surface.profile.name!r} has no policy probe"
+            return {"ok": False, "error": error, "elements": [], "page_state": self.export_page_state()}
+        return await probe(self._context, source, params)
 
     async def activate_page(self, url: str) -> bool:
         """Bring the context at ``url`` (else the current one) to the front so its timers run and its menus render."""
         await self.ensure_runtime_ready()
-        return await self.surface.profile.activate(self._context, url)
+        activate = self.surface.profile.activate
+        return False if activate is None else await activate(self._context, url)
 
     async def list_actions(self) -> Dict[str, Any]:
         return {
@@ -676,6 +687,27 @@ class BrowserAgentRuntime:
     def reset_semantic_task(self) -> None:
         """Start semantic loop tracking for a new user task without resetting Chrome."""
         self._semantic_state_tracker.reset()
+
+
+class _NoSemanticState:
+    """The tracker of a surface without semantic state: progress is never observable."""
+
+    @property
+    def latest(self) -> Dict[str, Any]:
+        return {}
+
+    @property
+    def current_state(self) -> Dict[str, Any]:
+        return {}
+
+    def observe(self, state: Mapping[str, Any], *, action_group_id: str, changed: bool) -> Dict[str, Any]:
+        return {"progress": "unknown", "observable_progress": False}
+
+    def reset(self) -> None:
+        pass
+
+    def acknowledge_replan(self) -> None:
+        pass
 
 
 async def reset_active_browser_runtimes() -> int:

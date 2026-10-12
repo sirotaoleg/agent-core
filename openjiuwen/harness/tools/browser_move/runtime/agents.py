@@ -169,6 +169,22 @@ def worker_driver_name(info: DriverInfo) -> str:
     return info.display_name or info.name
 
 
+def default_worker_prompt(
+    screenshot_subdir: str,
+    artifacts_subdir: str,
+    *,
+    tool_names: tuple[str, ...] | None = None,
+    driver_name: str,
+) -> str:
+    """The worker's system prompt for a surface that brings none."""
+    tools = f" ({', '.join(tool_names)})" if tool_names else ""
+    return (
+        f"You are a worker agent. Complete the task with the {driver_name} tools{tools} only. "
+        f"Save screenshots under {screenshot_subdir}/ and other files under {artifacts_subdir}/. "
+        "When the task is done, answer with the result."
+    )
+
+
 # pylint: disable=too-many-arguments
 def build_browser_worker_agent(
     provider: str,
@@ -257,7 +273,7 @@ async def build_worker(
         artifacts_subdir=artifacts_subdir,
         tool_result_observer=tool_result_observer,
         settings=core,
-        worker_prompt=bundle.profile.worker_prompt,
+        worker_prompt=bundle.profile.worker_prompt or default_worker_prompt,
         driver_name=worker_driver_name(session.assembly.stack.info),
     )
     rails = core_rails(bundle.profile, parts.builders, session.page_state)
