@@ -16,8 +16,17 @@ _PKG = __name__.rsplit(".", 1)[0]
 # Modules that left runtime/ but have a consumer outside the repo, keyed by their old name under this package.
 _MOVED = {
     "browser_capabilities": "surfaces.browser.capabilities",
+    "browser_state_context_processor": "surfaces.browser.state_processor",
+    "browser_working_context": "surfaces.browser.working_context.store",
+    "browser_working_context_processor": "surfaces.browser.working_context.processor",
+    "browser_working_context_rail": "surfaces.browser.rails.working_context",
+    "probe_semantics": "surfaces.browser.probes.semantics",
+    "probes": "surfaces.browser.probes",
     "profiles": "provisioning.profiles",
     "runtime": "runtime.session",
+    "semantic_state": "surfaces.browser.semantic.state",
+    "site_profiles": "surfaces.browser.site_profiles",
+    "status_logging": "surfaces.browser.status_logging",
 }
 # Names runtime.__all__ used to export lazily, now served from their new modules.
 _MOVED_NAMES = {
