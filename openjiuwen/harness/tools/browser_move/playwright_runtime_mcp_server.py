@@ -33,10 +33,12 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
 from openjiuwen.harness.tools.browser_move.runtime.controllers.action import (
     bind_runtime,
     clear_runtime_runner,
+    get_default_controller,
     list_actions,
     register_builtin_actions,
     run_action,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import register_custom_action_specs
 
 if TYPE_CHECKING:
     from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
@@ -120,6 +122,7 @@ def _resolve_request_id(explicit_request_id: str, ctx: Context | None = None) ->
 async def _lifespan(_server: FastMCP):
     try:
         register_builtin_actions()
+        register_custom_action_specs(get_default_controller(), upload_root=None)
         yield {}
     finally:
         await _shutdown_runtime()

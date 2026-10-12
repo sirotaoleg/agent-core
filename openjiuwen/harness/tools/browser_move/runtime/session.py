@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import json
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Mapping, Optional
@@ -21,7 +20,7 @@ from openjiuwen.core.single_agent.rail.base import AgentRail
 
 from ..contract import Action, DriverError, Effect, Health, Observe, SurfaceBundle
 from ..surfaces.browser.capabilities import CORE_BROWSER_TOOL_NAMES, capabilities_of
-from ..surfaces.browser.helpers import CUSTOM_ACTIONS, activate_page, page_metadata, probe_for_policy
+from ..surfaces.browser.helpers import activate_page, page_metadata, probe_for_policy, register_custom_actions
 from ..surfaces.browser.semantic.state import SemanticStateTracker
 from .assembly import AgentParts, assemble_surface, build_agent_parts, core_rails
 from .browser_logging import write_browser_agent_audit_artifact
@@ -334,9 +333,8 @@ class BrowserAgentRuntime:
             self._language,
         )
         self._session = session
-        self._controller.register_builtin_actions(upload_root=self._browser_settings.upload_root)
-        for name, handler in CUSTOM_ACTIONS.items():
-            self._controller.register_action(name, functools.partial(handler, self._context))
+        self._controller.register_builtin_actions()
+        register_custom_actions(self._controller, self._context, upload_root=self._browser_settings.upload_root)
 
     def agent_parts(self, *, image_support: bool, language: str) -> AgentParts:
         """The factory tools of the started session in the receiving agent's language, once per key."""

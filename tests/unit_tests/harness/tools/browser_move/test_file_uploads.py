@@ -8,10 +8,10 @@ import asyncio
 import tempfile
 from pathlib import Path
 
-from openjiuwen.harness.tools.browser_move.runtime.controllers.action import (
-    ActionController,
+from openjiuwen.harness.tools.browser_move.runtime.controllers.action import ActionController, register_builtin_actions
+from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers.custom import (
     _list_dir_files,
-    register_builtin_actions,
+    register_custom_action_specs,
 )
 
 
@@ -21,7 +21,8 @@ def _run(coro):
 
 def _make_ctl_with_builtins(upload_root: Path | None = None) -> ActionController:
     ctl = ActionController()
-    register_builtin_actions(controller=ctl, upload_root=upload_root)
+    register_builtin_actions(controller=ctl)
+    register_custom_action_specs(ctl, upload_root=upload_root)
     return ctl
 
 

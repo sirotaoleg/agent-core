@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+import functools
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
+from pathlib import Path
 from typing import Any
 
 from openjiuwen.harness.tools.browser_move.contract import (
@@ -19,6 +21,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     Ref,
     RunScript,
 )
+from openjiuwen.harness.tools.browser_move.runtime.controllers.action import ActionController
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import ToolContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate, UploadFile
 
@@ -188,6 +191,130 @@ CUSTOM_ACTIONS: Mapping[str, Callable[..., Awaitable[dict[str, Any]]]] = {
 }
 
 
+def register_custom_actions(controller: ActionController, context: ToolContext, *, upload_root: Path | None) -> None:
+    """Register the custom actions on the controller as handlers over the context, with their specs."""
+    register_custom_action_specs(controller, upload_root=upload_root)
+    for name, handler in CUSTOM_ACTIONS.items():
+        controller.register_action(name, functools.partial(handler, context))
+
+
+def register_custom_action_specs(controller: ActionController, *, upload_root: Path | None) -> None:
+    """The three custom actions' specs and the list_upload_files action over the upload root."""
+
+    async def list_upload_files(
+        session_id: str = "",
+        request_id: str = "",
+        **kwargs: Any,
+    ) -> ActionResult:
+        del kwargs
+        if upload_root is None:
+            return {
+                "ok": False,
+                "error": (
+                    "BROWSER_UPLOAD_ROOT is not configured. "
+                    "Set this env var to the directory where uploadable files are stored."
+                ),
+                "files": [],
+                "session_id": session_id,
+                "request_id": request_id,
+            }
+        if not upload_root.exists():
+            return {
+                "ok": False,
+                "error": f"Upload root directory does not exist: {upload_root}",
+                "files": [],
+                "upload_root": str(upload_root),
+                "session_id": session_id,
+                "request_id": request_id,
+            }
+        files = _list_dir_files(upload_root)
+        return {
+            "ok": True,
+            "upload_root": str(upload_root),
+            "files": files,
+            "session_id": session_id,
+            "request_id": request_id,
+        }
+
+    controller.register_action_spec(
+        "browser_get_element_coordinates",
+        summary="Resolves source/target screen coordinates by selectors or explicit coordinates.",
+        when_to_use=(
+            "Use when you need coordinates for one element (element_source only) or two (source + target). "
+            "element_target is optional."
+        ),
+        params={
+            "url": "string: optional URL to open before resolving coordinates",
+            "element_source": "string: source selector/text alias (required for selector mode)",
+            "element_target": "string: target selector/text alias (optional)",
+            "coord_source_x": "int: source x coordinate",
+            "coord_source_y": "int: source y coordinate",
+            "coord_target_x": "int: target x coordinate",
+            "coord_target_y": "int: target y coordinate",
+            "source/target": "string aliases for element_source/element_target",
+            "source_x/source_y/target_x/target_y": "int aliases for coord_* fields",
+        },
+    )
+    controller.register_action_spec(
+        "browser_drag_and_drop",
+        summary="Performs drag-and-drop using selectors or explicit coordinates.",
+        when_to_use=("Use for drag-and-drop tasks instead of generic browser_run_task text-only instructions."),
+        params={
+            "url": "string: optional URL to open before drag-and-drop",
+            "element_source": "string: source selector/text alias",
+            "element_target": "string: target selector/text alias",
+            "coord_source_x": "int: source x coordinate",
+            "coord_source_y": "int: source y coordinate",
+            "coord_target_x": "int: target x coordinate",
+            "coord_target_y": "int: target y coordinate",
+            "steps": "int: optional drag interpolation steps",
+            "delay_ms": "int: optional delay between drag steps",
+            "source/target": "string aliases for element_source/element_target",
+            "source_x/source_y/target_x/target_y": "int aliases for coord_* fields",
+        },
+    )
+    controller.register_action_spec(
+        "browser_set_input_files",
+        summary=(
+            "Sets files on an <input type='file'> element. Requires prior page inspection"
+            " to select the correct input — do not call this without first reading the page snapshot."
+        ),
+        when_to_use=(
+            "Use for all file upload tasks. Does NOT require a file chooser dialog — sets files directly "
+            "on the DOM element. Call list_upload_files first to get absolute paths, then call this action. "
+            "IMPORTANT: pages may have multiple file inputs (e.g. a visible input plus a hidden Dropzone input). "
+            "Always prefer a specific selector such as '#file-upload' or 'input#id' over the generic "
+            "'input[type=\"file\"]' to avoid strict mode violations. If you have not yet inspected the page, "
+            "delegate this action to browser_run_task so the worker can read the page snapshot first."
+        ),
+        params={
+            "selector": (
+                "string: CSS/Playwright selector targeting exactly one file input "
+                "(default: 'input[type=\"file\"]'). Use a specific ID selector like '#file-upload' "
+                "when the page has more than one file input element."
+            ),
+            "paths": (
+                "list[string]: absolute file paths to set on the input (required, non-empty). "
+                "Parameter name is 'paths' — not 'files', not 'file_paths'."
+            ),
+        },
+    )
+    controller.register_action(
+        "list_upload_files",
+        list_upload_files,
+        overwrite=True,
+    )
+    controller.register_action_spec(
+        "list_upload_files",
+        summary="Lists files available for upload from the configured BROWSER_UPLOAD_ROOT directory.",
+        when_to_use=(
+            "Call this to discover what files are available and get their exact absolute paths "
+            "before calling browser_set_input_files to attach them to a file input. "
+            "Returns a list of {name, path, size_bytes} entries."
+        ),
+    )
+
+
 async def _navigate(context: ToolContext, params: Mapping[str, Any]) -> str | None:
     url = str(params.get("url") or "").strip()
     return _error(await context.execute(Navigate(url))) if url else None
@@ -246,8 +373,31 @@ def _failure(action: str, error: DriverError, params: Mapping[str, Any]) -> dict
     return {"ok": False, "error": f"{action} failed: {error}", **_ids(params)}
 
 
+def _list_dir_files(root: Path) -> list[dict[str, Any]]:
+    """Return a flat list of files under *root* with name, path, and size."""
+    entries: list[dict[str, Any]] = []
+    try:
+        for item in sorted(root.iterdir()):
+            if item.is_file():
+                try:
+                    size = item.stat().st_size
+                except OSError:
+                    size = -1
+                entries.append({"name": item.name, "path": str(item), "size_bytes": size})
+    except OSError:
+        pass
+    return entries
+
+
 def _ids(params: Mapping[str, Any]) -> dict[str, str]:
     return {"session_id": str(params.get("session_id") or ""), "request_id": str(params.get("request_id") or "")}
 
 
-__all__ = ["CUSTOM_ACTIONS", "drag_and_drop", "get_element_coordinates", "set_input_files"]
+__all__ = [
+    "CUSTOM_ACTIONS",
+    "drag_and_drop",
+    "get_element_coordinates",
+    "register_custom_action_specs",
+    "register_custom_actions",
+    "set_input_files",
+]

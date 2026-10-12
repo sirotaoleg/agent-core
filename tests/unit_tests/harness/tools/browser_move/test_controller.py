@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from openjiuwen.harness.tools.browser_move.runtime import controller
+from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import register_custom_action_specs
 
 
 @pytest.fixture(autouse=True)
@@ -132,6 +133,7 @@ def test_describe_actions_includes_registered_specs() -> None:
         return {"ok": True}
 
     controller.register_example_actions()
+    register_custom_action_specs(controller.get_default_controller(), upload_root=None)
     controller.register_action("browser_drag_and_drop", drag)
     details = controller.describe_actions()
     assert "browser_drag_and_drop" in details

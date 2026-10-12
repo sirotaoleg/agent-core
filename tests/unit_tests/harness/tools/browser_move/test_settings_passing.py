@@ -201,11 +201,12 @@ class TestEntryPoints:
         assembly = DriverAssembly(FakeDriver(), device, None, surface=bundle)
         with patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=assembly)):
             asyncio.run(runtime.ensure_runtime_ready())
-        controller.register_builtin_actions.assert_called_once_with(upload_root=Path.cwd())
+        controller.register_builtin_actions.assert_called_once_with()
         assert sorted(name for name, _ in (c.args for c in controller.register_action.call_args_list)) == [
             "browser_drag_and_drop",
             "browser_get_element_coordinates",
             "browser_set_input_files",
+            "list_upload_files",
         ]
 
 
