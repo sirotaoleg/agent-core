@@ -30,7 +30,7 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
     build_playwright_mcp_config,
     build_runtime_settings,
 )
-from openjiuwen.harness.tools.browser_move.runtime.runtime import (
+from openjiuwen.harness.tools.browser_move.runtime.session import (
     BrowserAgentRuntime,
     BrowserRuntimeRail,
 )

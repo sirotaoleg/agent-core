@@ -28,7 +28,7 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
     CoreSettings,
     playwright_mcp_config,
 )
-from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import CORE_BROWSER_TOOL_NAMES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene import PAGES

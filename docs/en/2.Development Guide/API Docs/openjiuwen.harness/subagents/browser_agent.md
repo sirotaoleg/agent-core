@@ -330,7 +330,7 @@ Retryable transport failures (detached frame, target closed, page crash, `net::E
 
 ---
 
-## class openjiuwen.harness.tools.browser_move.runtime.runtime.BrowserAgentRuntime
+## class openjiuwen.harness.tools.browser_move.runtime.session.BrowserAgentRuntime
 
 ```python
 class BrowserAgentRuntime(
@@ -360,7 +360,7 @@ Runtime kernel shared by all browser helper tools. Owns the underlying `BrowserS
 
 ---
 
-## class openjiuwen.harness.tools.browser_move.runtime.runtime.BrowserRuntimeRail
+## class openjiuwen.harness.tools.browser_move.runtime.session.BrowserRuntimeRail
 
 ```python
 class BrowserRuntimeRail(runtime: BrowserAgentRuntime)

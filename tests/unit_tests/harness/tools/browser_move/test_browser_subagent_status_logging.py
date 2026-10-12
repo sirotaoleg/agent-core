@@ -245,7 +245,7 @@ def test_direct_browser_runtime_rail_wires_status_logger() -> None:
         / "tools"
         / "browser_move"
         / "runtime"
-        / "runtime.py"
+        / "session.py"
     )
     source = runtime_path.read_text(encoding="utf-8")
 

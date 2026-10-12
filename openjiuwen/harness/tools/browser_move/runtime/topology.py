@@ -17,7 +17,7 @@ from .agents import WORKER_LANGUAGE, build_worker
 from .config import CoreSettings
 
 if TYPE_CHECKING:
-    from .runtime import BrowserAgentRuntime
+    from .session import BrowserAgentRuntime
 
 
 class Topology(Protocol):

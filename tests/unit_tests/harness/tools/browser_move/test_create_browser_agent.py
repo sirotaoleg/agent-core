@@ -28,7 +28,7 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserRunGuardrails,
     RuntimeSettings,
 )
-from openjiuwen.harness.tools.browser_move.runtime.runtime import (
+from openjiuwen.harness.tools.browser_move.runtime.session import (
     BrowserAgentRuntime,
     BrowserRuntimeRail,
 )

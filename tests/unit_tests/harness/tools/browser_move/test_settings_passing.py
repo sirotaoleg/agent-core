@@ -35,7 +35,7 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
     runtime_server_child_env,
     runtime_server_environ,
 )
-from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.runtime.utils.upload_paths import resolve_upload_file_paths
 from openjiuwen.harness.tools.browser_move.surfaces.browser import site_profiles
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings

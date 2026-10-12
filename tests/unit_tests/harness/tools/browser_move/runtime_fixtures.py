@@ -30,7 +30,7 @@ from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
-from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime, ToolKind
+from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime, ToolKind
 from openjiuwen.harness.tools.browser_move.runtime.utils.parsing import sanitize_json_schema
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     Back,

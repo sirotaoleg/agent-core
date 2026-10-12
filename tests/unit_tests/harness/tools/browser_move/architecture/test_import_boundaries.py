@@ -18,13 +18,13 @@ KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {
     ("runtime/config.py", "surfaces.browser.capabilities"): 3,
     # the facade's capability check, decision-policy hooks, page metadata, custom actions and semantic tracker;
     # moved behind the profile once the surface carries them
-    ("runtime/runtime.py", "surfaces.browser.capabilities"): 2,
-    ("runtime/runtime.py", "surfaces.browser.helpers"): 4,
-    ("runtime/runtime.py", "surfaces.browser.semantic.state"): 2,
+    ("runtime/session.py", "surfaces.browser.capabilities"): 2,
+    ("runtime/session.py", "surfaces.browser.helpers"): 4,
+    ("runtime/session.py", "surfaces.browser.semantic.state"): 2,
     # read by the browser rail only; leave with it
-    ("runtime/runtime.py", "surfaces.browser.site_profiles"): 1,
-    ("runtime/runtime.py", "surfaces.browser.status_logging"): 2,
-    ("runtime/runtime.py", "surfaces.browser.working_context.store"): 3,
+    ("runtime/session.py", "surfaces.browser.site_profiles"): 1,
+    ("runtime/session.py", "surfaces.browser.status_logging"): 2,
+    ("runtime/session.py", "surfaces.browser.working_context.store"): 3,
     # the service's capability check
     ("runtime/service.py", "surfaces.browser.capabilities"): 2,
 }

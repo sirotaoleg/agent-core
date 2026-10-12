@@ -442,7 +442,7 @@ async def _capability_view(view: str, captured: list[dict[str, Any]]) -> list[di
 async def _runner_view(captured: list[dict[str, Any]], notes: dict[str, Any], role: str) -> list[dict[str, Any]]:
     # Same imports, constructor arguments, helper removal and call as run_one_task.
     from openjiuwen.harness.tools.browser_move.runtime.config import build_runtime_settings
-    from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime
+    from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
     from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
         CORE_BROWSER_TOOL_NAMES,
     )

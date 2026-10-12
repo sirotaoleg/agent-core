@@ -25,7 +25,7 @@ from openjiuwen.harness.tools.browser_move.contract import ConnectionLost
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.runtime import agents as agents_module
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
-from openjiuwen.harness.tools.browser_move.runtime import runtime as runtime_module
+from openjiuwen.harness.tools.browser_move.runtime import session as runtime_module
 from openjiuwen.harness.tools.browser_move.runtime import topology as topology_module
 from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserInstanceConfig,
@@ -36,7 +36,7 @@ from openjiuwen.harness.tools.browser_move.runtime.rails.action_policy import Ac
 from openjiuwen.harness.tools.browser_move.runtime.rails.final_answer_recovery import FinalAnswerRecoveryRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.intercepted_action import InterceptedActionHintRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.repeated_call_guard import RepeatedCallGuardRail
-from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime, BrowserRuntimeRail
+from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime, BrowserRuntimeRail
 from openjiuwen.harness.tools.browser_move.runtime.topology import (
     WORKER_LANGUAGE,
     DelegatedWorker,

@@ -109,7 +109,7 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
 # they move to surfaces/browser/ with the prompt text in Phase 9.
 KNOWN_MCP_TOOL_NAMES: dict[str, int] = {
     "runtime/agents.py": 11,
-    "runtime/runtime.py": 9,
+    "runtime/session.py": 9,
 }
 
 

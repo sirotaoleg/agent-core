@@ -10,12 +10,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
-from openjiuwen.harness.tools.browser_move.runtime import runtime as runtime_module
+from openjiuwen.harness.tools.browser_move.runtime import session as runtime_module
 from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
 from openjiuwen.harness.tools.browser_move.runtime.rails.action_policy import ActionPolicy
 from openjiuwen.harness.tools.browser_move.runtime.rails.intercepted_action import InterceptedActionHintRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.repeated_call_guard import RepeatedCallGuardRail
-from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     DEVICE,
     MCP_PREFIX,

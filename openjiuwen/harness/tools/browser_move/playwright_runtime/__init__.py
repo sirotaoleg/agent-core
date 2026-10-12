@@ -14,7 +14,11 @@ from openjiuwen.harness.tools.browser_move import runtime as _runtime
 
 _PKG = __name__.rsplit(".", 1)[0]
 # Modules that left runtime/ but have a consumer outside the repo, keyed by their old name under this package.
-_MOVED = {"browser_capabilities": "surfaces.browser.capabilities", "profiles": "provisioning.profiles"}
+_MOVED = {
+    "browser_capabilities": "surfaces.browser.capabilities",
+    "profiles": "provisioning.profiles",
+    "runtime": "runtime.session",
+}
 # Names runtime.__all__ used to export lazily, now served from their new modules.
 _MOVED_NAMES = {
     "BrowserStateContextProcessor": "surfaces.browser.state_processor",

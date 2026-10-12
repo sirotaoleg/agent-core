@@ -23,7 +23,7 @@ from openjiuwen.core.single_agent.schema.agent_card import AgentCard
 from openjiuwen.harness.deep_agent import DeepAgent
 from openjiuwen.harness.schema.config import DeepAgentConfig
 from openjiuwen.harness.tools.browser_move.contract import Effect, RunScript
-from openjiuwen.harness.tools.browser_move.runtime.runtime import (
+from openjiuwen.harness.tools.browser_move.runtime.session import (
     BrowserAgentRuntime,
     BrowserRuntimeRail,
     ToolKind,

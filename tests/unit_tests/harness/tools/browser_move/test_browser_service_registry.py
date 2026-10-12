@@ -19,15 +19,15 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserInstanceConfig,
     BrowserRunGuardrails,
 )
-from openjiuwen.harness.tools.browser_move.runtime.runtime import (
+from openjiuwen.harness.tools.browser_move.runtime.service import BrowserService
+from openjiuwen.harness.tools.browser_move.runtime.service_registry import (
+    BROWSER_SERVICE_REGISTRY,
+)
+from openjiuwen.harness.tools.browser_move.runtime.session import (
     _ACTIVE_BROWSER_RUNTIMES,
     BrowserAgentRuntime,
     reset_active_browser_runtimes,
     reset_managed_browser_runtime,
-)
-from openjiuwen.harness.tools.browser_move.runtime.service import BrowserService
-from openjiuwen.harness.tools.browser_move.runtime.service_registry import (
-    BROWSER_SERVICE_REGISTRY,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import DEVICE, mcp_fake_driver

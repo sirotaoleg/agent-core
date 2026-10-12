@@ -18,7 +18,7 @@ from .config import (
     process_environ,
     read_demo_inputs,
 )
-from .runtime import BrowserAgentRuntime
+from .session import BrowserAgentRuntime
 from .topology import WORKER_LANGUAGE
 
 

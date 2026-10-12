@@ -30,7 +30,7 @@ def _shim_warnings(caught: list[warnings.WarningMessage]) -> list[warnings.Warni
 
 @pytest.mark.parametrize(
     "suffix",
-    ["runtime", "config", "assembly", "controllers", "controllers.action", "utils.env"],
+    ["session", "config", "assembly", "controllers", "controllers.action", "utils.env"],
 )
 def test_old_module_is_the_new_module(suffix: str) -> None:
     assert importlib.import_module(f"{OLD}.{suffix}") is importlib.import_module(f"{NEW}.{suffix}")
@@ -46,7 +46,11 @@ def test_every_module_under_runtime_is_aliased() -> None:
 
 @pytest.mark.parametrize(
     "suffix, target",
-    [("browser_capabilities", "surfaces.browser.capabilities"), ("profiles", "provisioning.profiles")],
+    [
+        ("browser_capabilities", "surfaces.browser.capabilities"),
+        ("profiles", "provisioning.profiles"),
+        ("runtime", "runtime.session"),
+    ],
 )
 def test_moved_module_keeps_its_old_name(suffix: str, target: str) -> None:
     assert importlib.import_module(f"{OLD}.{suffix}") is importlib.import_module(f"{PKG}.{target}")
@@ -64,7 +68,7 @@ def test_moved_names_are_served() -> None:
 def test_classes_are_identical() -> None:
     from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime as old_runtime
 
-    from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime as new_runtime
+    from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime as new_runtime
 
     assert old_runtime is new_runtime
 
@@ -93,5 +97,5 @@ def test_warns_once_per_process() -> None:
 def test_reload_keeps_the_aliases() -> None:
     module = importlib.import_module(OLD)
     importlib.reload(module)
-    assert importlib.import_module(f"{OLD}.runtime") is importlib.import_module(f"{NEW}.runtime")
+    assert importlib.import_module(f"{OLD}.runtime") is importlib.import_module(f"{NEW}.session")
     assert importlib.import_module(f"{OLD}.utils.env") is importlib.import_module(f"{NEW}.utils.env")

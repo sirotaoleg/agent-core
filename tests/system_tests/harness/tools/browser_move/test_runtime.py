@@ -16,7 +16,7 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
     build_runtime_settings,
     load_repo_dotenv,
 )
-from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 
 
 def _system_tests_enabled() -> bool:

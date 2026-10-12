@@ -39,7 +39,7 @@ from openjiuwen.harness.tools.browser_move.runtime.controllers.action import (
 )
 
 if TYPE_CHECKING:
-    from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime
+    from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 
 _runtime: Optional["BrowserAgentRuntime"] = None
 _runtime_lock = asyncio.Lock()
@@ -51,7 +51,7 @@ load_repo_dotenv()
 
 
 def _build_runtime() -> "BrowserAgentRuntime":
-    from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime
+    from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 
     settings = build_runtime_settings(core_settings=_core_settings, browser_settings=_browser_settings)
     if not settings.api_key:
