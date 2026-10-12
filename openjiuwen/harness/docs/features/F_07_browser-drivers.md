@@ -6,7 +6,7 @@
 |---|---|
 | Type | feature |
 | Date | 2026-10-12 |
-| Scope | `openjiuwen/harness/tools/browser_move/` (`contract/`, `drivers/`, `provisioning/`, `surfaces/browser/`, `runtime/`, `runtime/controllers/action.py`, `runtime/utils/`, `playwright_runtime_mcp_server.py`), `openjiuwen/harness/subagents/browser_agent.py`, `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/single_agent/agents/react_agent.py`, `tests/unit_tests/harness/tools/browser_move/` |
+| Scope | `openjiuwen/harness/tools/browser_move/` (`contract/`, `drivers/`, `provisioning/`, `surfaces/browser/`, `runtime/`, `runtime/controllers/action.py`, `runtime/utils/`, `playwright_runtime_mcp_server.py`), `openjiuwen/harness/subagents/browser_agent.py`, `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/single_agent/agents/react_agent.py`, `openjiuwen/core/context_engine/` (offload directory name), `tests/unit_tests/harness/tools/browser_move/` |
 | Test baseline | see "Verification" in each section |
 | Related spec | [[S_20_browser-driver-contract]] |
 | Refs | #driver-architecture |
@@ -3869,3 +3869,48 @@ core to a surface, which is the plan's done-when for Phase 9 that moves alone co
 3. `service.allowed_tool_names` is `None` when the caller gave no allowlist (decision 5).
 4. Two registry reads per server-config build (decision 7).
 5. The alias package: remove with the next release.
+
+## Phase 10 fixes
+
+The full WebVoyager runs on both drivers (code of the Phase 9 close) were read task by task; the failures on the
+agent side are fixed here, one commit triple per fix. Benchmark-side failures (judge, geo, stale or blocked sites)
+are out of scope.
+
+### Offload path on Windows (browser-use)
+
+`Direct.run` built the conversation id as `<sid>:direct:<rid>:<uuid>`. The context engine uses the conversation id
+as its session id and the session id as a directory name (`<workspace>/context/<session id>_context/offload/`);
+Windows rejects `:` (`WinError 123`), so on browser-use every offloaded tool result fell back to memory, the model saw
+only the preview, and `browser_recall_offload` answered "invalid browser runtime session" (226 of 559 tasks). The
+delegated worker (MCP) never offloads, so its `:`-separated id never reached a path.
+
+Decisions:
+1. **Both sides.** The id now uses `.` (`<sid>.direct.<rid>.<uuid>`), and the core maps the session id to a directory
+   name at the point the path is built: `ContextUtils.offload_session_dir_name` keeps a path-safe id
+   (`[A-Za-z0-9_.-]+`, not `.`/`..`) unchanged and turns any other id into one safe component plus a 16-hex sha256
+   suffix, so ids that read alike (`a:b`, `a/b`) stay apart.
+2. **One function for the writer and both readers**: the tool-result offloader (budget and window processors), the
+   core reload buffer (`OffloadMessageBuffer`) and the browser recall tool. The recall tool's own id pattern goes;
+   the mapping makes any id safe and the "inside the workspace" check stays.
+3. **Path-safe ids keep their directory**: nothing changes for the ids that worked.
+
+Rejected options:
+- Sanitising in the harness only (the conversation id): a caller's session id could still carry an illegal
+  character, and the task asked for the path to be safe where it is built.
+- Changing every `<session id>_context` builder in the core (forked processors, session memory, compression dumps,
+  debug dumps): outside this fix; the forked tree and the session-memory paths are not used by the browser agent.
+  Leftover 1.
+- A plain character replacement without a digest: `a:b` and `a-b` would share a directory, and the recall tool
+  would read another session's files by handle.
+
+Verification: before the fix the new real-filesystem tests failed with `WinError 123` (core reload, browser recall)
+and the topology test with the old id; after it they pass. The browser_move unit suite, the terminal-stream test and
+`tests/unit_tests/core/context_engine` together: 2922 passed, 122 skipped, 1 failed
+(`test_compression_recall.py::test_recall_rejects_chunk_symlink_escape`, which fails identically on the code before
+the fix: creating a symlink needs a privilege this Windows account lacks). Goldens unchanged.
+
+Known leftovers:
+1. Other core writers of `<session id>_context` (`processor/base.py`, `offloader/message_offloader.py`, the forked
+   processors, session memory, compression and debug dumps) still use the raw id; with a path-safe id (all the
+   browser agent produces now) they and the mapped name agree.
+2. The delegated worker's conversation id keeps `:`; it never reaches a path today.
