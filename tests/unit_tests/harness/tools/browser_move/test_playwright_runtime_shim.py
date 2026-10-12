@@ -50,10 +50,29 @@ def test_every_module_under_runtime_is_aliased() -> None:
         ("browser_capabilities", "surfaces.browser.capabilities"),
         ("profiles", "provisioning.profiles"),
         ("runtime", "runtime.session"),
+        ("probes", "surfaces.browser.probes"),
+        ("probe_semantics", "surfaces.browser.probes.semantics"),
+        ("semantic_state", "surfaces.browser.semantic.state"),
+        ("browser_working_context", "surfaces.browser.working_context.store"),
+        ("browser_working_context_processor", "surfaces.browser.working_context.processor"),
+        ("browser_working_context_rail", "surfaces.browser.rails.working_context"),
+        ("browser_state_context_processor", "surfaces.browser.state_processor"),
+        ("site_profiles", "surfaces.browser.site_profiles"),
+        ("status_logging", "surfaces.browser.status_logging"),
     ],
 )
 def test_moved_module_keeps_its_old_name(suffix: str, target: str) -> None:
     assert importlib.import_module(f"{OLD}.{suffix}") is importlib.import_module(f"{PKG}.{target}")
+
+
+def test_the_old_probes_module_still_offers_its_script_builders() -> None:
+    from openjiuwen.harness.tools.browser_move.playwright_runtime.probes import (
+        build_browser_state_metadata_js,
+        build_card_probe_js,
+        build_interactive_probe_js,
+    )
+
+    assert all(callable(f) for f in (build_browser_state_metadata_js, build_card_probe_js, build_interactive_probe_js))
 
 
 def test_moved_names_are_served() -> None:
