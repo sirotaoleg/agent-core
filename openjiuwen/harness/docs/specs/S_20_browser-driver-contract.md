@@ -1,9 +1,5 @@
 # S_20 Browser Driver Contract
 
-> **DRAFT.** Written during the driver-architecture refactor of `browser_move` (Phase 2). Sections are added as
-> the phases land: the conformance suite (Phase 2), the composition root (Phase 3), the surface profile and the
-> tool factory (Phase 4). Until the draft mark is removed, the code in `contract/` is the reference.
-
 ## Meta
 
 | Item | Value |

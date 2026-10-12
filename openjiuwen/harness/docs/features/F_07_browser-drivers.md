@@ -4662,3 +4662,17 @@ replacement: a surface that needs a shorter bound for one effect keeps it, and a
 stays unbounded (no surface does that today). With the defaults (240 s both) nothing changes. Verification: a 3600 s
 profile bound under a 0.05 s core timeout times out at 0.05 s and the reverse (fails before). Unit suite: 2559
 passed, 123 skipped.
+
+### Hygiene (S2)
+
+- The three modules moved to `surfaces/browser/` with their old import order (`semantic/state.py`,
+  `site_profiles.py`, `status_logging.py`, ruff I001) are sorted.
+- S_20 loses its DRAFT banner: every section it announced has landed.
+- Tests no longer name review phases (`Phase 10`, `Phase 9 PR d`); the browser-use golden keeps the commit it was
+  taken from as data, and its test checks the value is a commit hash instead of pinning it.
+- `SidecarTransport` keeps the stderr drain task it starts (a task with no reference can be collected while it waits
+  for a line) and cancels it when it terminates the sidecar; a test starts a transport over a stderr that never ends
+  and checks the task is cancelled by `_terminate()` (fix → test → docs).
+
+Verification: unit suite 2560 passed, 123 skipped; goldens unchanged against `77091ac9e`; ruff clean on the touched
+files except findings present before the phase (ASYNC109 in the MCP clients, one E501 in `transport.py`).
