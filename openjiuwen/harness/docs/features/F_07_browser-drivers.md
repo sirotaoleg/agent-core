@@ -4228,3 +4228,88 @@ Verification: 13 new cases; full unit suite green after the regeneration (see th
 Known leftovers:
 1. The main agent is built once per process; the date in its section is fresh per model call, the worker's per task.
 2. Whether the rules change outcomes is for the rerun; they add about 230 tokens to every request.
+
+### Phase 10 fixes: extraction budget
+
+After the step on command records (above), eight browser-use tasks still ended `partial` on
+`extraction_phase_budget_exhausted` (20/20) in the run at 12c332832: Google Flights--6/7, Google Search--14,
+Google Map--40, ArXiv--11/41, Apple--14, ESPN--20. In the run at 109f6fccf four of them failed the same way
+(Google Flights--6, Google Search--14, Google Map--40, ArXiv--11); the other four passed. Playwright MCP's worker,
+which has no phase budgets, passed all eight.
+
+Diagnosis. The call sequences were rebuilt from the shard `llm.log` (tool calls and results, offloaded results
+read back from `work\context`) and replayed through `_consume_phase_budget` and `_record_phase_result`. For the
+12c332832 run the replay denies the same call as the run in all eight tasks, so the accounting below is the
+accounting the run had. Columns count the 20 charged extraction attempts: a read that added evidence (a new page
+observation or probe result), a read that added nothing, a page script that clicks or sets a value. "After" is
+the extraction count of the replay with the fix at the call the run was denied on.
+
+| Task | What the agent was doing | New evidence | Nothing new | Mutating script | After |
+|---|---|---|---|---|---|
+| Google Flights--6 | filling the form (route, dates, cabin), a script reading the inputs or options after each step | 14 | 3 | 3 | 7 |
+| Google Flights--7 | the same form, a probe of the inputs after each field | 16 | 2 | 2 | 5 |
+| Google Search--14 | Wikipedia and Transfermarkt profiles, one navigation and one read per page | 18 | 1 | 1 | 3 |
+| Google Map--40 | a restaurant's reviews: reading tabs and menus, opening the sort menu | 12 | 4 | 4 | 9 |
+| ArXiv--11 | three help pages, revisited, a different slice or pattern per read | 19 | 1 | 0 | 2 |
+| ArXiv--41 | the store page and its share dialog | 14 | 4 | 2 | 7 |
+| Apple--14 | the MacBook Pro configurator: option and price slices, radio clicks by script | 14 | 3 | 3 | 7 |
+| ESPN--20 | stats tables: table addresses with filters, then the rows | 11 | 7 | 2 | 10 |
+
+The rule that spent the budget in every task is the same: each successful read in extraction cost one attempt
+whether or not it added anything ("reads are never refunded", decision 2 of the step on command records).
+Mutating page scripts counted as reads in addition (0 to 4 per task). No charge came from retries: denied calls
+are never charged, and the failed clicks of these runs were charged to `form`, not extraction. So the budget was
+not too low for the work; it counted the work. Without the reads that added evidence the tasks used 2 to 10 of
+20. Apple--14 and ESPN--20 passed again at 109f6fccf with the same accounting; their failure at 12c332832 came
+from longer read sequences in that run, not from the step on command records.
+
+Decisions:
+1. **A read that adds evidence is free.** In the extraction phase a successful call whose result adds a
+   `structured_evidence` entry (a page observation from another source or with other text, a probe result) or a
+   newly covered field gets its attempt back in `_record_phase_result`, as an action with progress already did.
+   Reads that return what the agent already saw, failed reads and stalls still count; the deny stays before the
+   call.
+2. **Only a charged call is refunded.** The rail notes per call whether `_consume_phase_budget` raised the phase
+   attempts (`charged` in the call's runtime state) and passes it to `_record_phase_result`, so a repeated page
+   script, which costs nothing, cannot take back an attempt it never paid.
+3. **The budgets and the terminal stop stay.** 12/24/20/20 are unchanged and exhaustion still ends the task
+   `partial`: a run of reads that show nothing new is the loop the budget is for.
+
+Rejected options:
+- Making exhaustion a warning and letting the agent continue to the step and time limits: the data shows wrong
+  charges, not a wrong stop; the warning would also drop the only bound on reads that show nothing new.
+- A larger extraction budget, or one per task type or site: Google Search--14 and ArXiv--11 read 18 and 19 new
+  pages; any number would be the next one they reach.
+- Not charging retries of commands that never dispatched: no extraction charge in the eight tasks came from one.
+- Moving mutating page scripts to `form`: they are 0 to 4 per task and fit the budget; reclassifying scripts by
+  their code is a separate change (leftover 4 of the step on command records).
+- Charging after the call instead of refunding: the same reason as before, the budget check must stay before the
+  dispatch.
+- Dropping the per-code script rule now that new evidence is free: it would charge polling a script whose output
+  has not changed yet, and its test is a contract of the previous step.
+
+Verification: five new cases in `test_browser_phase_accounting.py`. Three replays through `FakeDriver` modelled on
+Google Flights--6 (seven fields, a read of the inputs, a read of the options and a clicking script after each),
+Google Search--14 (21 profile pages, one read each) and Apple--14 (17 option slices, a snapshot, three clicking
+scripts) exhaust extraction 20/20 at the pre-fix code and end at 7, 0 and 3 attempts with the fix. The guard that
+22 reads returning the same text still exhaust extraction passes before and after; the case that a repeated free
+script earns no refund fails before (2 attempts, the first read was charged). The loop and budget cases of
+`test_browser_runtime_rail.py` and `test_browser_phase_accounting.py` stay green. Browser_move unit suite and the
+terminal stream test: 2498 passed, 122 skipped. Live sets: both sets in one run, 119 passed. Goldens unchanged.
+
+Known leftovers:
+1. Whether the eight tasks now finish is for the rerun.
+2. A screenshot's page observation is the constant text "1 image(s) attached as multimodal input.", so a
+   screenshot adds evidence only when the address changed. The 109f6fccf runs, the first with the screenshot in
+   the core capability, spent 10 to 12 attempts on screenshots in Google Flights--6 and Google Map--40; the replay
+   (which only moves the address on navigations) ends Google Map--40 at 16/20. Pages that change without a new
+   address can still spend the budget on screenshots.
+3. The replay does not model click progress, so it cannot tell the form budget: replaying the 109f6fccf Google
+   Flights--6 run reaches form 24/24 at call 52, with every click charged. The real run refunds clicks that
+   changed the page.
+4. A sequence of reads whose text always changes (a clock, a counter) is refunded; it is bounded by the semantic
+   loop detection and the step and time limits, not by the extraction budget.
+5. The evidence store keeps the last 20 entries; a read repeating text older than that counts as new.
+6. After a first navigation that lands on another host (the consent page), the refund leaves no attempts, and
+   the next action is denied once with "Navigate to it directly" (call 2 of Google Flights--6/7, Google Map--40,
+   ArXiv--11). One wasted call per task; unchanged here.

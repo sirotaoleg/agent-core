@@ -1394,9 +1394,15 @@ from the package); the rail imports the facade (`runtime/session.py`), never the
 - Phase budgets are charged on what each command did. Invariants: a known `ACT` command that is not a form or
   filter command keeps the current phase, except while extracting, when it goes to `form` (created on demand); an
   `ACT` or `NAVIGATE` command whose record is ok and shows `context_changed`, or a generation other than the one
-  stored when the call started, gets its attempt back (`_record_phase_result(..., progressed=True)`); reads are
-  never refunded; in the extraction phase a `RunScript` costs one attempt per distinct code (a sha256 prefix kept
-  in the phase's `scripts`). Stalled actions and distinct reads still exhaust their phase.
+  stored when the call started, gets its attempt back (`_record_phase_result(..., progressed=True)`); in the
+  extraction phase a `RunScript` costs one attempt per distinct code (a sha256 prefix kept in the phase's
+  `scripts`), and a successful read that adds evidence (a new `structured_evidence` entry, such as a page
+  observation from another source or with other text, or a newly covered field) gets its attempt back. A refund
+  only returns an attempt the call was charged: the rail stores `charged` per call (the phase attempts grew in
+  `_consume_phase_budget`) and passes it as `_record_phase_result(..., charged=...)`, so a repeated script is
+  never refunded. Failed reads, reads that add nothing and stalled actions count; a mutating page script records
+  no page observation, so it counts unless it returns a requested field. They still exhaust their phase, and the budget check stays before the call. Exhaustion is terminal: status
+  `partial`, blocker `<phase>_phase_budget_exhausted`.
 
 ### Context processors and the status log
 
