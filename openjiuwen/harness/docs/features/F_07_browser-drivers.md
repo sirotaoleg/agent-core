@@ -4652,3 +4652,13 @@ Verification: `test_answer_screenshot.py` (the runs' missing paths are dropped; 
 worker image test in `test_build_worker.py`, the first-run probe and rebuild cases and the kept removals in
 `test_topology.py`. Unit suite: 2557 passed, 123 skipped. Goldens unchanged. Live: the gate run at the end of the
 phase; whether judge errors disappear is for the next WebVoyager run.
+
+### The tool timeout bounds the driver stack again (S1)
+
+`BROWSER_TIMEOUT_S` / `PLAYWRIGHT_TOOL_TIMEOUT_S` bounded only the delegated worker's tool calls; the stack used the
+browser profile's 240 s for every effect, so on the Direct topology the setting did nothing. The composition root
+now takes, per effect, the smaller of the profile's bound and `CoreSettings.tool_timeout_s`. A cap and not a
+replacement: a surface that needs a shorter bound for one effect keeps it, and an effect the profile leaves unbounded
+stays unbounded (no surface does that today). With the defaults (240 s both) nothing changes. Verification: a 3600 s
+profile bound under a 0.05 s core timeout times out at 0.05 s and the reverse (fails before). Unit suite: 2559
+passed, 123 skipped.

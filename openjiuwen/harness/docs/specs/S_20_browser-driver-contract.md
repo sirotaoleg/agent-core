@@ -442,7 +442,8 @@ listed in [[F_07_browser-drivers]] ("Settings", inventory).
 
 - **`CoreSettings`** (core): `driver`, `surface` (`"browser"`, a registry name), `topology` (`direct`,
   `delegated_worker`, or `""` = the driver's registered default; see `BROWSER_TOPOLOGY` below), `provider`, `api_key`,
-  `api_base`, `model_name`, `worker_temperature`, `worker_top_p`, `tool_timeout_s`, `guardrails`
+  `api_base`, `model_name`, `worker_temperature`, `worker_top_p`, `tool_timeout_s` (caps the driver stack's
+  per-effect timeouts, "Composition root" step 5), `guardrails`
   (`BrowserRunGuardrails`), `log_file` (`None` = no dedicated file), `log_level`, `log_mirror_common`,
   `log_audit_raw`, `status_log`, `runtime_server` (`RuntimeServerSettings`, client side). It has no field that only
   a browser has.
@@ -718,8 +719,12 @@ the main agent and the worker share.
 4. `device = provisioner.provision(surface.settings)`, run in a worker thread.
 5. The stack for the device: `driver = registries.drivers.create(core.driver, device, surface.settings)`; when
    `core.surface not in driver.info.surfaces`, `ValueError` naming the driver, the surface and the surfaces the
-   driver serves; `stack = Tracing(RetryOnStale(Timeouts(driver, profile.timeouts)), sink)`. An effect missing from
-   `profile.timeouts` runs unbounded; the sink writes each trace record to the debug log.
+   driver serves; `stack = Tracing(RetryOnStale(Timeouts(driver, per_effect)), sink)` with `per_effect[e] =
+   min(profile.timeouts[e], core.tool_timeout_s)`. Precedence: the surface sets a bound per effect, and the core's
+   tool timeout (`PLAYWRIGHT_TOOL_TIMEOUT_S`, else `PLAYWRIGHT_MCP_TIMEOUT_S`, else `BROWSER_TIMEOUT_S`, default
+   240 s) caps every one of them; the delegated worker's tool calls are bounded by the same value once more
+   (`ensure_execute_signature_compat`). An effect missing from `profile.timeouts` runs unbounded; the sink writes
+   each trace record to the debug log.
 6. `await stack.start()`.
 
 A failure in step 5 releases the device; a failure in `start` calls `close()`. A failure in `provision` leaves
