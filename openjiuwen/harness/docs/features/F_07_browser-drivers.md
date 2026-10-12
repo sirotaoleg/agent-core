@@ -3511,3 +3511,115 @@ two methods as changed and the class shell (new bases); everything else is ident
 3. The import allowlist is at the design's PR d end state already (6 keys); PR e empties it.
 4. `KNOWN_OVERSIZED_MODULES` still says `service.py` 1910 (actual 1570); PR c removes the key.
 5. The alias package: `_MOVED` has three entries now; remove with the package next release.
+
+## Phase 9: PR c, the service, the probes and the action specs
+
+Five code commits and this one: the five progress wrappers go; `BrowserService` is cut into the lifecycle
+(`runtime/service.py`) and the worker loop (`runtime/worker.py`); the three probe builders get one module each and
+the card template becomes a resource file; the browser action specs and the upload listing leave the controller
+module for `surfaces/browser/helpers/custom.py`. After them the module-size allowlist is empty and the only browser
+words left in `controllers/action.py` are the four of the builtin `browser_task` spec and the blocked-recursion error.
+
+### What changed
+
+| commit | from | to |
+|---|---|---|
+| deletion | `BrowserService.build_progress_context`, `record_tool_progress`, `record_worker_progress`, `get_progress_state`, `export_progress_state` (no package caller; mocks in three rail tests) | gone, with the mocks; the private helpers they wrapped stay, the loop uses them |
+| worker cut | `service.py` 1,532 lines: `MAX_ITERATION_MESSAGE`, the two observer context variables, `BrowserTaskProgressState`, 33 loop methods | `runtime/worker.py` (1,033): the four verbatim plus `_WorkerLoop`, a plain mixin with the 33 methods; `class BrowserService(_WorkerLoop)` keeps 34 lifecycle methods (516 lines); the rail and its terminal mixin import the two names from `worker.py` |
+| probes split | `surfaces/browser/probes/cards.py` 3,010 lines | `probes/metadata.py` (`build_browser_state_metadata_js`, 234), `probes/interactives.py` (`build_interactive_probe_js`, 636, imports `_clamp_int` from `cards.py`), `probes/cards.py` (`_clamp_int`, `build_card_probe_js`, 46) and `probes/cards.js` (2,113 lines, the raw template), shipped by a `pyproject` package-data glob; the package re-exports the three builders |
+| action specs | `controllers/action.py` 600 lines: `_list_dir_files`, the `list_upload_files` action, the three browser specs and `upload_root` of `register_builtin_actions` | `helpers/custom.py`: `register_custom_action_specs(controller, *, upload_root)` (the specs, the upload action and `_list_dir_files`, verbatim apart from the receiver's name) and `register_custom_actions(controller, context, *, upload_root)` (those specs, then the `CUSTOM_ACTIONS` handlers over the context, the loop the facade ran inline); `action.py` keeps the registry and `ping`, `echo`, `browser_task`, `run_browser_task` (468 lines) |
+
+The facade's `ensure_runtime_ready` calls `register_builtin_actions()` then `register_custom_actions(...)`; the server
+entry registers the builtin actions and then `register_custom_action_specs(get_default_controller(), upload_root=None)`
+on its default controller, which is what it registered before (the upload root was never passed there). Registration
+order is the old one on both controllers: `list_upload_files` is the tail of the action dict and the three specs plus
+the upload spec are the tail of the spec dict, so registering them right after the builtin actions keeps both orders.
+
+### The card template as a resource
+
+`cards.py` reads `cards.js` once at import, `importlib.resources.files(__package__).joinpath("cards.js").read_text(encoding="utf-8").strip()`,
+and `build_card_probe_js` substitutes the parameters into that string as before. Reading with universal newlines makes
+the string equal to the old `r"""…""".strip()` whatever the checkout's line endings; the output of the three builders
+was compared old against new on 19 parameter sets (the probe tests' grids, the defaults, `None`/string arguments, the
+builtin site profiles, a selector cache record) and is byte-identical. The module-size test sees no `.js` file; the
+wheel (`uv build --wheel`) carries `openjiuwen/harness/tools/browser_move/surfaces/browser/probes/cards.js`.
+
+### Decisions
+
+1. **The five wrappers are deleted** (head, Q8): one-line forwards to the private loop helpers with no package
+   caller; the tests that set them on a `MagicMock` service lose those lines and assert the same session state.
+2. **`_WorkerLoop` is a mixin in `worker.py`, the same mechanism as the rail's cut**: methods verbatim, no call-site
+   change, the attributes set by `BrowserService.__init__` reached through `self` as before; `service.py` keeps its
+   name (thirteen test modules, the harness and the alias package import it) and `worker.py` imports nothing from it.
+3. **`cards.js` is a package resource, not a 2,140-line Python module on the size allowlist** (head, Q2).
+4. **`register_custom_actions` takes the handler loop out of the facade.** The design named only
+   `register_custom_action_specs` and had the facade import it next to `CUSTOM_ACTIONS`; that fifth imported name
+   would have raised the import allowlist key `session.py → surfaces.browser.helpers` from 4 to 5, and the step's
+   rule is that no allowlist grows. The facade now imports `register_custom_actions` in place of `CUSTOM_ACTIONS`
+   (the key stays at 4) and the loop it ran inline lives next to the actions it registers, which is the shape the
+   profile's custom-actions hook takes in PR e. `register_custom_action_specs` keeps the design's name and
+   signature for the server, which has no context.
+5. **Tests follow the code**: the two service tests that patched `Runner.run_agent` through the service module
+   patch it through `runtime.worker`, where `Runner` is imported now; the controller test that expected the browser
+   specs from `register_example_actions` registers them as the server does; the upload tests register the builtin
+   actions and the specs in two calls; the settings test counts `list_upload_files` among the handlers the facade's
+   controller registers.
+6. **`controllers/action.py` keeps 4 browser words, not the design's 1**: the `browser_task` spec's model-facing
+   text ("browser task", "the browser worker" twice) and the blocked-recursion error; all class B.
+
+### Rejected options
+
+- **Keeping `upload_root` on `register_builtin_actions` and moving the specs alone**: the upload listing is the
+  surface's action (its parameter and its text are browser-specific), so it leaves with the specs.
+- **A `cards.py` of 2,140 lines on the size allowlist, or the raw string split over two modules** (design Q2).
+- **Importing the helpers package by module** (`from ..surfaces.browser import helpers`) to keep the import count at
+  4 with five names: it games the count and changes four call sites' spelling.
+- **`_list_dir_files` into `runtime/utils/upload_paths.py`** next to the path resolution: it serves the surface's
+  action only and would add an import of the core from `custom.py` for one 14-line function.
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move tests/unit_tests/harness/test_deep_agent_terminal_stream.py -q`
+  after the last code commit: **2399 passed, 122 skipped in 49.69s** (as at the PR b close). Targeted runs at each
+  commit: the rail, service, recovery and terminal-stream suites (153) after the deletion; service, rail,
+  architecture, shim, topology, facade, recovery, isolation, registry, contracts, assembly and the terminal stream
+  (286) after the worker cut; the probe, surface, snapshot and architecture suites (821) after the probes split;
+  controller, uploads, settings, server entry, architecture, facade, snapshots, surfaces, runtime tools, worker
+  allowlist, create agent, assembly, shim, build agent (899) after the action-spec move.
+- AST identity (the scratch script): the deletion, old `service.py` against new, **102 accounted for, 0 problems**
+  (5 expected missing); the worker cut, old `service.py` against `service.py` + `worker.py`, **97 / 97** (1 expected
+  changed: the class shell's new base); the probes split, old `cards.py` against the three modules, **4 / 4**
+  (`build_card_probe_js` and `_TEMPLATE` listed as the rewrite); the action-spec move, old `action.py` + `custom.py`
+  against new, **68 / 68** (the two `register_builtin_actions` signatures and `__all__` listed).
+- Builder output equality: **19 cases, 0 differ**. Registration order: the facade controller for three upload roots
+  (none, a missing directory, a directory with files) and the module-level default controller, action order, spec
+  order, `list_actions`, `describe_actions` and the results of `list_upload_files`, `ping`, `echo`: **0 problems**.
+- Goldens: `git diff a632b30f9 --stat -- tests/unit_tests/harness/tools/browser_move/snapshots/golden/` is empty.
+- The wheel: `uv build --wheel` into a scratch directory, exit 0; the archive lists `.../probes/cards.js` next to the
+  seven probe modules. `python -m …playwright_runtime_mcp_server --help`: exit 0. The alias package: one
+  `DeprecationWarning`, `playwright_runtime.runtime is runtime.session`.
+- `ruff check --select I` over the package, the harness callers and the tests: the same 27 `I001` in the same files
+  before and after the step (none in a file this step created or re-sorted). `ruff check` on the touched files: the
+  same findings as before minus four `E501` (lines that were inside the card template); the `ASYNC240` of the
+  `list_upload_files` closure moved with it to `custom.py`; `I001` in `controllers/action.py` is pre-existing.
+- Allowlists, PR b → PR c:
+
+| list | after PR b | after PR c |
+|---|---|---|
+| browser words | 13 keys / 203 | 14 keys / 194: `service.py` 82 → 10 and `worker.py` 72 (the split), `controllers/action.py` 13 → 4 |
+| MCP tool names | empty | empty |
+| driver names | 4 keys / 7 | unchanged |
+| core imports of concrete modules | 6 keys / 14 | unchanged (`session.py → helpers` 4: `register_custom_actions` replaces `CUSTOM_ACTIONS`) |
+| module size | 2 keys | **empty** (`service.py` 1910 → 516, `cards.py` 3010 → 46) |
+| env reads | unchanged | unchanged |
+
+### Known leftovers
+
+1. `worker.py` holds 72 browser words: the answer keys `page`/`url`, the model-facing resume and failure text, the
+   session-id prefix and the restart tokens that match driver error text (design §9, a logic item); the text pass
+   (PR d) takes the comments, docstrings and log lines, the rest is the documented residual.
+2. `_TEMPLATE` is read when `probes.cards` is imported: a missing resource fails at import, not at the first probe.
+3. The `ASYNC240` finding (a `Path` call in an async function) moved with the `list_upload_files` closure; the
+   `I001` of `controllers/action.py` (its `.base` import block) is older than this phase. Neither was touched.
+4. The facade still imports four helper names, the catalog and the semantic tracker; `service.py` and `config.py`
+   the catalog; `agents.py` the worker prompt: PR e.

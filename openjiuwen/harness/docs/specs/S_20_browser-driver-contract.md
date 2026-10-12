@@ -9,7 +9,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/runtime/session.py`, `openjiuwen/harness/tools/browser_move/runtime/topology.py`, `openjiuwen/harness/tools/browser_move/runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/action_policy.py`, `openjiuwen/harness/tools/browser_move/runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/final_answer_recovery.py`, `openjiuwen/harness/tools/browser_move/runtime/config.py`, `openjiuwen/harness/tools/browser_move/runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/runtime/service.py`, `openjiuwen/harness/tools/browser_move/runtime/utils/env.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/__init__.py` (alias), `openjiuwen/harness/tools/browser_move/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py` / `profiles.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `site_profiles.py` / `state_processor.py` / `status_logging.py` / `helpers/` / `probes/` / `semantic/` / `working_context/` / `rails/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/runtime/session.py`, `openjiuwen/harness/tools/browser_move/runtime/topology.py`, `openjiuwen/harness/tools/browser_move/runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/action_policy.py`, `openjiuwen/harness/tools/browser_move/runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/final_answer_recovery.py`, `openjiuwen/harness/tools/browser_move/runtime/config.py`, `openjiuwen/harness/tools/browser_move/runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/runtime/service.py`, `openjiuwen/harness/tools/browser_move/runtime/worker.py`, `openjiuwen/harness/tools/browser_move/runtime/utils/env.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/__init__.py` (alias), `openjiuwen/harness/tools/browser_move/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py` / `profiles.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `site_profiles.py` / `state_processor.py` / `status_logging.py` / `helpers/` / `probes/` / `semantic/` / `working_context/` / `rails/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py` |
 | Last revised | 2026-10-12 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -30,7 +30,10 @@ the probe scripts (`probes/`), the semantic state (`semantic/`), the working con
 context processor, the status log and the browser-only rails (`rails/`): the main agent's rail is
 `rails/runtime_rail.py`, its mixins beside it (`rails/terminal.py`, `rails/results.py`, `probes/results.py`,
 `semantic/phases.py`, `semantic/evidence.py`, the shared keys in `rails/keys.py`), and the prompt text (the
-worker prompt, the image and date-picker sections) is in `tools.py`; the facade stays in `runtime/session.py`.
+worker prompt, the image and date-picker sections) is in `tools.py`; the facade stays in `runtime/session.py`, the
+worker loop and its progress state are `runtime/worker.py`, the service's lifecycle `runtime/service.py`. The probe
+scripts are one module each (`probes/metadata.py`, `probes/interactives.py`, `probes/cards.py` with its template in
+the resource file `probes/cards.js`); the browser action specs and the upload listing are `helpers/custom.py`.
 The browser profile store is `provisioning/profiles.py`. `playwright_runtime/` is an alias package for one release: importing it or any
 `playwright_runtime.<module>` yields the same module objects as `runtime.<module>`, `playwright_runtime.browser_capabilities`
 and `.profiles` are the moved modules under their old names, it re-exports `runtime.__all__` plus the five
@@ -482,13 +485,13 @@ value from one.
 - Entry points build settings once: `runtime/main.py` from `process_environ()` (its own inputs through
   `read_demo_inputs(environ)`), `playwright_runtime_mcp_server.py` from `runtime_server_environ(process_environ())`.
   They pass `core_settings` / `browser_settings` to `BrowserAgentRuntime`, which hands them to `BrowserService` and
-  takes `upload_root` and `selector_cache_path` for its builtin actions and selector cache.
+  takes `upload_root` and `selector_cache_path` for its custom actions and selector cache.
 - Public functions keep their signatures and gain keyword-only settings or values. Where a caller passes none, the
   function builds them through the config module at the same moment it read the environment before
   (`build_browser_runtime_mcp_config`, `ensure_execute_signature_compat`, `build_browser_worker_agent`,
   `is_browser_subagent_status_log_enabled`).
   Helpers whose value has an obvious "not configured" take the value and treat `None` as not configured:
-  `resolve_upload_file_paths(paths, *, upload_root)`, `register_builtin_actions(controller, *, upload_root)`,
+  `resolve_upload_file_paths(paths, *, upload_root)`, `register_custom_action_specs(controller, *, upload_root)`,
   `get_selector_cache(path)`, `discover_sidecar_python(override)`.
 - The env-read architecture test allows two exceptions: the browser-use sidecar (a separate process with its own
   config boundary) and the one `env_map` read in `service.py` (the CDP endpoint of the given server config, part of
@@ -575,7 +578,16 @@ there is nothing to probe or to provision again.
 
 `ManagedBrowserDriver` stays a deprecated alias of the class.
 
-### The browser service (`runtime/service.py`)
+### The browser service (`runtime/service.py`, `runtime/worker.py`)
+
+`BrowserService` is `BrowserService(_WorkerLoop)`: `service.py` holds the lifecycle (construction, the lifecycle
+identity and the registry lease, the task binding, cancellation, the session, screenshots, `shutdown`);
+`worker.py` holds `_WorkerLoop`, a plain mixin with the worker loop (`run_task`, `run_task_once`, the retry and
+restart predicates, the resume task, the failure summary, the progress recording), and `BrowserTaskProgressState`,
+`MAX_ITERATION_MESSAGE` and the observer context variables; the rail imports the two names from `worker.py`, and
+`worker.py` imports nothing from `service.py`. The progress state is reached through `set_progress_state`,
+`clear_progress_state`, `should_treat_as_completed`, `build_failure_summary` and `observe_worker_tool_result`;
+there are no other public progress methods.
 
 `BrowserService` takes the keywords `browser_settings: SurfaceSettings | None` (`None` means
 `browser_surface_settings()`, read once at construction), `core_settings: CoreSettings | None` and
@@ -804,8 +816,13 @@ the five tools (`EXTRA_TOOLS`: both probes, the batch, find, recall) to a main-a
 them at its first invoke; a worker build (`worker=True`) leaves out the tools flagged `worker=False` (recall), so
 the worker gets both probes, the batch and find; the runtime facade calls `probe_for_policy`, `activate_page` and
 `page_metadata` itself.
-`CUSTOM_ACTIONS` are not tools: they are the controller's custom actions as functions of the context, registered
-on the controller by the runtime when its session starts, for `browser_custom_action`.
+`CUSTOM_ACTIONS` are not tools: they are the controller's custom actions as functions of the context.
+`register_custom_actions(controller, context, *, upload_root)` registers them on the controller when the runtime's
+session starts, for `browser_custom_action`: first `register_custom_action_specs(controller, *, upload_root)` (the
+specs of the three actions and the `list_upload_files` action with its spec over the upload root, `None` = not
+configured), then the three handlers bound to the context. The server entry registers the specs on its default
+controller the same way, with no upload root, after the builtin actions. The builtin actions (`ping`, `echo`,
+`browser_task`, `run_browser_task`) stay in `runtime/controllers/action.py`, which names no browser spec.
 
 Each helper tool declares `flags: ToolFlags` (class attribute): the probes and find `ToolFlags()` (`READ`, not exempt
 from budgets, progress, offered to a worker), the batch `ToolFlags(effect=ACT)`, the recall tool
@@ -817,8 +834,8 @@ rails count.
 
 | Helper | Commands | Contract |
 |---|---|---|
-| `ProbeInteractivesTool` (`browser_probe_interactives`) | `RunScript(code=<page function>, args=<params>)`, a second time if the value is not a JSON object | card equals the runtime helper's; `max_items` 1–30 (default 30); the probe page function of `probes/cards.py` without its `async (page) => page.evaluate(...)` wrapper; result dict as the runtime helper's (`ok`, `error`, `url`, `title`, `generation_id`, `count`, `elements`, `page_state`, `diagnostics`, `audit`) |
-| `ProbeCardsTool` (`browser_probe_cards`) | same | card equals the runtime helper's; `max_cards` 1–12 (default 12); selector cache records go in and out as before; primary links registered in `selector_primary_links` |
+| `ProbeInteractivesTool` (`browser_probe_interactives`) | `RunScript(code=<page function>, args=<params>)`, a second time if the value is not a JSON object | card equals the runtime helper's; `max_items` 1–30 (default 30); the probe page function of `probes/interactives.py` without its `async (page) => page.evaluate(...)` wrapper; result dict as the runtime helper's (`ok`, `error`, `url`, `title`, `generation_id`, `count`, `elements`, `page_state`, `diagnostics`, `audit`) |
+| `ProbeCardsTool` (`browser_probe_cards`) | same | card equals the runtime helper's; `max_cards` 1–12 (default 12); the page function of `probes/cards.py` (its script is the resource `cards.js`, the parameters inlined at build time); selector cache records go in and out as before; primary links registered in `selector_primary_links` |
 | `BatchTool` (`browser_batch_interact`) | one command for a step that maps to one; otherwise page scripts and one command per step | see below |
 | `FindTool` (`browser_find`) | none, or one `Observe` when the page state has no fresh observation | see below |
 | `RecallOffloadTool` (`browser_recall_offload`) | none | `BrowserOffloadRecallTool(context.workspace, language=context.language)`: card and behaviour of `offload_recall.py`; no record |
