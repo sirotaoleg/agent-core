@@ -121,6 +121,7 @@ class SidecarTransport:
         self._lock = asyncio.Lock()
         self._hello: dict[str, Any] | None = None
         self._closed = False
+        self._stderr_task: asyncio.Future[None] | None = None
 
     @property
     def hello(self) -> dict[str, Any] | None:
@@ -141,7 +142,7 @@ class SidecarTransport:
             env=_sidecar_env(self._environ, self._upload_root),
             limit=wire.MAX_LINE_BYTES,
         )
-        asyncio.ensure_future(self._drain_stderr())
+        self._stderr_task = asyncio.ensure_future(self._drain_stderr())
 
         assert self._process.stdout is not None
         try:
@@ -309,6 +310,9 @@ class SidecarTransport:
         await self._terminate()
 
     async def _terminate(self) -> None:
+        if self._stderr_task is not None:
+            self._stderr_task.cancel()
+            self._stderr_task = None
         if self._process is None:
             return
         if self._process.returncode is None:
