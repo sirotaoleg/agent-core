@@ -5,13 +5,18 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import dataclasses
+import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from openjiuwen.core.foundation.llm import AssistantMessage, Model, ModelClientConfig, ModelRequestConfig, ToolCall
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.result import _screenshot as decode_screenshot
 from openjiuwen.harness.tools.browser_move.runtime import agents as agents_module
 from openjiuwen.harness.tools.browser_move.runtime.agents import WORKER_LANGUAGE, build_worker, default_worker_prompt
 from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
@@ -22,8 +27,15 @@ from openjiuwen.harness.tools.browser_move.runtime.rails.intercepted_action impo
 from openjiuwen.harness.tools.browser_move.runtime.rails.repeated_call_guard import RepeatedCallGuardRail
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import CORE_BROWSER_TOOL_NAMES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
-from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import MCP_PREFIX, fake_assembly, mcp_driver_info
+from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
+    MCP_PREFIX,
+    fake_assembly,
+    mcp_driver_info,
+    mcp_fake_driver,
+    observation,
+)
 
+SCREENSHOT_FIXTURE = Path(__file__).parent / "fixtures" / "mcp" / "screenshot_element.json"
 WORKER_HELPERS = {"browser_probe_interactives", "browser_probe_cards", "browser_batch_interact"}
 CORE = CoreSettings(worker_temperature=0.3, worker_top_p=0.9)
 
@@ -151,3 +163,42 @@ def test_a_surface_without_a_worker_prompt_gets_the_neutral_one() -> None:
     prompt = worker.config.prompt_template[0]["content"]
     assert prompt == default_worker_prompt("shots", "out", driver_name="Playwright MCP")
     assert "browser" not in prompt.lower()
+
+
+class _ScreenshotModel(Model):
+    """Asks for one screenshot, then answers."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            model_client_config=ModelClientConfig(
+                client_provider="OpenAI", api_key="mock-api-key", api_base="http://mock.invalid", verify_ssl=False
+            ),
+            model_config=ModelRequestConfig(model="scripted"),
+        )
+        self.requests: list[dict[str, Any]] = []
+
+    async def invoke(self, *args: Any, **kwargs: Any) -> AssistantMessage:
+        self.requests.append(kwargs)
+        if len(self.requests) == 1:
+            call = ToolCall(id="c1", type="function", name=MCP_PREFIX + "browser_take_screenshot", arguments="{}")
+            return AssistantMessage(content="", tool_calls=[call])
+        return AssistantMessage(content="done")
+
+
+def test_a_worker_with_images_sends_the_servers_screenshot_as_a_valid_png_image() -> None:
+    recorded = json.loads(SCREENSHOT_FIXTURE.read_text(encoding="utf-8"))["raw_result"]["content"][1]["data"]
+    png = base64.b64decode(recorded)
+    driver = mcp_fake_driver([observation(screenshot=decode_screenshot(base64.b64encode(png).decode("ascii")))])
+    assembly = fake_assembly(driver)
+    session = DriverSession(assembly, BrowserPageState(), assembly.surface.profile.messages)
+    worker = _build(session, image_support=True)
+    model = _ScreenshotModel()
+    worker.set_llm(model)
+
+    asyncio.run(worker.invoke({"query": "take a screenshot", "conversation_id": "c"}))
+
+    messages = model.requests[1]["messages"]
+    parts = [part for message in messages if isinstance(message.content, list) for part in message.content]
+    urls = [part["image_url"]["url"] for part in parts if part.get("type") == "image_url"]
+    assert len(urls) == 1 and urls[0].startswith("data:image/png;base64,")
+    assert base64.b64decode(urls[0].partition(",")[2], validate=True) == png

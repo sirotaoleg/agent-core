@@ -373,6 +373,33 @@ class TestDelegatedWorker:
         names = {tool.name for tool in run(runtime.service.browser_agent.ability_manager.list_tool_info())}
         assert MCP_PREFIX + "browser_take_screenshot" not in names
 
+    @pytest.mark.parametrize(("verdict", "images"), [(True, True), (False, False), (None, False)])
+    def test_the_first_run_probes_the_model_and_rebuilds_the_worker_with_images_only_on_a_yes(
+        self, verdict: bool | None, images: bool
+    ) -> None:
+        runtime = _runtime(MCP)
+        probe = AsyncMock(return_value=verdict)
+
+        async def run_task(*, worker: Any, **kwargs: Any) -> dict[str, Any]:
+            await worker()
+            return {"ok": True}
+
+        with (
+            _assembling(),
+            _registering_runtime_tools(),
+            patch.object(topology_module, "probe_image_support", probe),
+            patch.object(runtime.service, "run_task", AsyncMock(side_effect=run_task)),
+        ):
+            run(runtime.ensure_started())
+            started = runtime.service.browser_agent
+            run(runtime.run_browser_task(task="Open the scene", session_id="s", request_id="r"))
+            run(runtime.run_browser_task(task="Open it again", session_id="s", request_id="r2"))
+
+        assert probe.await_count == 2
+        names = {tool.name for tool in run(runtime.service.browser_agent.ability_manager.list_tool_info())}
+        assert (MCP_PREFIX + "browser_take_screenshot" in names) is images
+        assert (runtime.service.browser_agent is started) is not images
+
     def test_the_worker_is_built_again_after_a_task_release(self) -> None:
         runtime = _runtime(MCP)
         with _assembling(), _registering_runtime_tools():
