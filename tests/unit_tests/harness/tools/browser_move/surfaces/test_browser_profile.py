@@ -38,6 +38,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import (
     probe_for_policy,
     register_custom_actions,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.policy import POLICY_RULES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.renderer import BrowserRenderer
 from openjiuwen.harness.tools.browser_move.surfaces.browser.semantic.state import SemanticStateTracker
 from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import (
@@ -64,7 +65,7 @@ def test_profile_fields_are_filled(profile: SurfaceProfile) -> None:
     assert isinstance(profile.renderer, BrowserRenderer)
     assert profile.tool_specs == BROWSER_TOOL_SPECS
     assert set(profile.capability_catalog) == set(profile.capability_tools)
-    assert profile.policy_rules == () and profile.rails == ()
+    assert profile.policy_rules == POLICY_RULES and profile.rails == ()
     assert profile.extra_tools == EXTRA_TOOLS
     assert profile.native_tools == ()
 

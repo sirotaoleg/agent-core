@@ -25,6 +25,7 @@ from .commands import (
 )
 from .config import BrowserSettings
 from .helpers import EXTRA_TOOLS, activate_page, page_metadata, probe_for_policy, register_custom_actions
+from .policy import POLICY_RULES
 from .renderer import BrowserRenderer
 from .semantic.state import SemanticStateTracker
 from .tools import BROWSER_TOOL_SPECS, build_browser_worker_system_prompt
@@ -57,6 +58,7 @@ def create_browser_surface(
         capability_catalog=CAPABILITY_CATALOG,
         capability_tools=CAPABILITY_TOOLS,
         extra_tools=EXTRA_TOOLS,
+        policy_rules=POLICY_RULES,
         timeouts={effect: _EFFECT_TIMEOUT_S for effect in Effect},
         messages=MESSAGES,
         settings=settings,

@@ -61,6 +61,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers.batch_steps 
     step_errors,
     text_of,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.policy import policy_denial
 
 _ACTION = "browser_batch_interact"
 _OBSERVED_KEYS = ("url", "text", "value", "count", "stable", "tabs")
@@ -373,6 +374,9 @@ class _Run:
         )
 
     async def _execute(self, action: Action) -> ActionResult:
+        denial = policy_denial(action, self._page_state.surface_context)
+        if denial:
+            raise _StepError(denial)
         self._last = action
         try:
             result = await self._context.execute(action)
