@@ -212,3 +212,77 @@ def test_card_probe_reports_sort_tab_scrolled_out_of_view(probe_results: dict[st
     cards = _flight_cards(probe_results["off_viewport_tab"])
 
     assert [card["sort_state"] for card in cards] == ["Lowest price"] * 3
+
+
+# Recipe cards next to a site menu, as on allrecipes.com: the menu's links must not come back as cards.
+_NAV_FIXTURE_JS = r"""
+const box = (top, height, width = 800) => ({ rect: { left: 10, top, width, height } });
+const recipe = (index) => h('li', { class: 'result-item' }, [
+  h('a', { href: `https://recipes.example.test/recipe/${index}`, class: 'result-title' }, [], {
+    text: `Weeknight lasagna number ${index}`, ...box(400 + index * 120, 24, 400),
+  }),
+  h('span', { class: 'rating' }, [], { text: '4.6 stars 117 ratings', ...box(430 + index * 120, 20, 200) }),
+], box(390 + index * 120, 100));
+const menuItem = (name, index) => h('li', { class: 'mntl-fullscreen-nav__list-item' }, [
+  h('a', {
+    href: `https://recipes.example.test/recipes/${index}/`, class: 'mntl-fullscreen-nav__title text-label',
+  }, [], { text: name, ...box(60 + index * 30, 24, 300) }),
+], box(55 + index * 30, 30, 300));
+const deep = (inner, levels) => (levels ? h('div', {}, [deep(inner, levels - 1)], box(0, 300, 1280)) : inner);
+const names = ['Dinner Tonight', 'One-Pot Meals', 'Quick & Easy', '30-Minute Meals', 'Family Dinners', 'Soups'];
+const cases = {
+  bem_menu: h('body', {}, [
+    h('div', { id: 'mntl-fullscreen-nav_1-0', class: 'mntl-fullscreen-nav' }, [
+      h('ul', { class: 'mntl-fullscreen-nav__list' }, names.map(menuItem), box(50, 300, 1280)),
+    ], box(40, 320, 1280)),
+    h('ul', { class: 'result-list' }, [recipe(1), recipe(2), recipe(3)], box(380, 400, 1280)),
+  ], box(0, 2000, 1280)),
+  nav_ancestor: h('body', {}, [
+    h('nav', {}, [deep(h('ul', { class: 'links' }, names.map((name, index) => h('li', { class: 'item' }, [
+      h('a', { href: `https://recipes.example.test/recipes/${index}/` }, [], {
+        text: name, ...box(60 + index * 30, 24, 300),
+      }),
+    ], box(55 + index * 30, 30, 300))), box(50, 300, 1280)), 6)], box(40, 320, 1280)),
+    h('ul', { class: 'result-list' }, [recipe(1), recipe(2), recipe(3)], box(380, 400, 1280)),
+  ], box(0, 2000, 1280)),
+};
+
+(async () => {
+  const results = {};
+  for (const [name, body] of Object.entries(cases)) {
+    installDom(body);
+    try {
+      const result = await probe({ evaluate: async (fn, arg) => fn(arg) });
+      results[name] = { ok: result.ok, titles: result.cards.map((item) => item.title) };
+    } catch (error) {
+      results[name] = { error: String(error) };
+    }
+  }
+  console.log(JSON.stringify(results));
+})();
+"""
+
+RECIPE_TITLES = [f"Weeknight lasagna number {index}" for index in (1, 2, 3)]
+
+
+@pytest.fixture(scope="module")
+def nav_results(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed; skipping generated JavaScript execution test")
+
+    runner = tmp_path_factory.mktemp("card_probe_nav") / "run_card_probe_nav.js"
+    runner.write_text(
+        f"const probe = ({build_card_probe_js()});\n{_DOM_DOUBLE_JS}\n{_NAV_FIXTURE_JS}",
+        encoding="utf-8",
+    )
+    completed = subprocess.run([node, str(runner)], check=True, text=True, capture_output=True)
+    return json.loads(completed.stdout)
+
+
+@pytest.mark.parametrize("case", ["bem_menu", "nav_ancestor"])
+def test_card_probe_leaves_out_site_menu_links(nav_results: dict[str, Any], case: str) -> None:
+    result = nav_results[case]
+
+    assert "error" not in result, f"card probe threw: {result.get('error')}"
+    assert sorted(result["titles"]) == RECIPE_TITLES
