@@ -1,6 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Phase budgets are charged on what each command did: actions leave extraction, progress is free, reads count once."""
+"""Phase budgets are charged on what each command did: actions leave extraction, progress and new evidence are free."""
 
 from __future__ import annotations
 
@@ -13,13 +13,14 @@ import pytest
 from openjiuwen.core.foundation.llm import ToolCall
 from openjiuwen.core.foundation.llm.schema.message import ToolMessage
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext, ToolCallInputs
-from openjiuwen.harness.tools.browser_move.contract import Click, DriverRef, Observe, RunScript
+from openjiuwen.harness.tools.browser_move.contract import Click, DriverRef, Observation, Observe, RunScript
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
 from openjiuwen.harness.tools.browser_move.surfaces.browser.semantic.state import SemanticStateTracker
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     MCP_PREFIX,
     command_kind,
+    element,
     make_runtime,
     mcp_fake_driver,
     observation,
@@ -30,6 +31,8 @@ STATE_KEY = "__browser_phase_budget_state__"
 CLICK = MCP_PREFIX + "browser_click"
 NAVIGATE = MCP_PREFIX + "browser_navigate"
 EVALUATE = MCP_PREFIX + "browser_evaluate"
+SNAPSHOT = MCP_PREFIX + "browser_snapshot"
+TYPE = MCP_PREFIX + "browser_type"
 SIZE_CLICK = command_kind(Click(DriverRef("e7", "g1")))
 
 
@@ -101,7 +104,7 @@ def test_an_action_is_refunded_only_when_its_record_shows_progress(progressed: b
     assert session.phase("navigation")["attempts"] == attempts
 
 
-def test_a_read_is_never_refunded() -> None:
+def test_a_read_that_adds_nothing_is_not_refunded() -> None:
     session = _Session("Read the price", current_phase="extraction")
     kind = command_kind(Observe())
     _consume(session, kind, MCP_PREFIX + "browser_snapshot", {})
@@ -169,6 +172,99 @@ def test_a_click_that_changes_nothing_is_charged() -> None:
     _play(rail, runtime, session, CLICK, {"target": "e1", "element": "Size M"})
 
     assert session.phase("navigation")["attempts"] == 1
+
+
+def _replay(task: str, steps: list[tuple[str, dict[str, Any], Any]]) -> _Session:
+    driver = mcp_fake_driver(
+        observations=[answer for _, _, answer in steps if isinstance(answer, Observation)],
+        results=[answer for _, _, answer in steps if not isinstance(answer, Observation)],
+    )
+    runtime = make_runtime(driver)
+    session = _Session(task)
+    rail = BrowserRuntimeRail(runtime)
+    for tool, args, _ in steps:
+        _play(rail, runtime, session, tool, args)
+    return session
+
+
+def _read(url: str, code: str, value: str) -> tuple[str, dict[str, Any], Any]:
+    return EVALUATE, {"function": code}, result(url=url, value=value)
+
+
+def test_form_filling_with_a_read_after_each_field_does_not_exhaust_extraction() -> None:
+    flights = "https://www.google.com/travel/flights/"
+    steps = [(NAVIGATE, {"url": flights}, result(url=flights, title="Google Flights"))]
+    for field, text in (
+        ("Where from?", "Tel Aviv"),
+        ("Where to?", "Venice"),
+        ("Departure", "Sat, Dec 19"),
+        ("Return", "Sat, Dec 26"),
+        ("Cabin class", "First"),
+        ("Passengers", "1 adult"),
+        ("Trip type", "Round trip"),
+    ):
+        steps += [
+            (TYPE, {"target": "e1", "element": field, "text": text}, result(url=flights)),
+            _read(flights, f"() => inputValues('{field}')", f"{field}: {text}, the other inputs unchanged"),
+            _read(flights, f"() => listOptions('{field}')", f"Suggestions for {field}: {text}; {text} (all)"),
+            _read(flights, f"() => {{ pickOption('{field}').click(); return 'ok' }}", "ok"),
+        ]
+
+    session = _replay("Search Google Flights for a first class round trip from Tel Aviv to Venice", steps)
+
+    assert session.phase("extraction")["attempts"] == 7
+
+
+def test_reading_a_new_page_after_each_navigation_does_not_exhaust_extraction() -> None:
+    steps = []
+    for index in range(21):
+        url = f"https://www.transfermarkt.com/james-smith/profil/spieler/{38096 + index}"
+        steps += [
+            (NAVIGATE, {"url": url}, result(url=url, title="Transfermarkt")),
+            _read(url, f"() => profile({index})", f"James Smith #{index}: clubs 2019-2022, retired {2020 + index % 5}"),
+        ]
+
+    session = _replay("Which club did the footballer James Smith, retired in 2024, play for in 2020-2021?", steps)
+
+    assert (session.phase("navigation")["attempts"], session.phase("extraction")["attempts"]) == (1, 0)
+
+
+def test_reading_one_configurator_in_many_slices_does_not_exhaust_extraction() -> None:
+    url = "https://www.apple.com/shop/buy-mac/macbook-pro/14-inch-m5"
+    steps = [(NAVIGATE, {"url": url}, result(url=url, title="Buy MacBook Pro"))]
+    steps.append((SNAPSHOT, {}, observation([element("e3", "radio", "M5 chip")], url=url, title="Buy MacBook Pro")))
+    for index in range(17):
+        steps.append(_read(url, f"() => optionText({index})", f"Upgrade option {index}: +${200 * index} over base"))
+    for option in ("memory", "storage", "power"):
+        steps.append(_read(url, f"() => {{ document.querySelector('#{option}').click(); return 1 }}", "1"))
+
+    session = _replay("Find the upgrade options for the cheapest MacBook Pro 14-inch with M5 chip", steps)
+
+    assert session.phase("extraction")["attempts"] == 3
+
+
+def test_reads_that_show_nothing_new_still_exhaust_extraction() -> None:
+    url = "https://example.com/results"
+    steps = [(NAVIGATE, {"url": url}, result(url=url, title="Results"))]
+    steps += [_read(url, f"() => read({index})", "Results: 3 items, page 1 of 1") for index in range(22)]
+
+    with pytest.raises(ValueError, match="extraction phase budget exhausted"):
+        _replay("Read the results", steps)
+
+
+def test_a_repeated_script_that_was_free_earns_no_refund() -> None:
+    url = "https://example.com/item"
+    session = _replay(
+        "Read the price",
+        [
+            (NAVIGATE, {"url": url}, result(url=url, title="Item")),
+            _read(url, "() => { document.querySelector('#buy').click(); return 1 }", "1"),
+            _read(url, "() => document.body.innerText", "Price: $10, in stock today"),
+            _read(url, "() => document.body.innerText", "Price: $12, in stock tomorrow"),
+        ],
+    )
+
+    assert session.phase("extraction")["attempts"] == 1
 
 
 def test_a_changed_page_after_a_repeated_semantic_state_is_progress() -> None:
