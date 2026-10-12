@@ -11,12 +11,11 @@ from openjiuwen.core.context_engine import ContextEngine, ContextWindow, ModelCo
 from openjiuwen.core.context_engine.processor.base import ContextEvent, ContextProcessor
 from openjiuwen.core.foundation.llm import BaseMessage, ToolMessage, UserMessage
 
-from .browser_working_context import (
+from .store import (
     BROWSER_TOOL_MEMORY_METADATA_KEY,
     BrowserWorkingContextConfig,
     BrowserWorkingContextStore,
 )
-
 
 _BROWSER_WORKING_CONTEXT_MESSAGE_NAME = "browser_working_context"
 _BROWSER_WORKING_CONTEXT_METADATA_KEY = "browser_working_context"

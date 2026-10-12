@@ -22,7 +22,7 @@ from .assembly import build_agent_parts, core_rails
 from .browser_logging import configure_browser_agent_logging
 from .config import CoreSettings
 from .driver_session import DriverSession
-from .final_answer_recovery import FinalAnswerRecoveryRail
+from .rails.final_answer_recovery import FinalAnswerRecoveryRail
 
 WORKER_LANGUAGE = "en"
 ToolResultObserver = Callable[[str, Any], Awaitable[None]]

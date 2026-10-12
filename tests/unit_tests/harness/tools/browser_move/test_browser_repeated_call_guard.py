@@ -27,7 +27,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.runtime.agents import build_browser_worker_agent
 from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
-from openjiuwen.harness.tools.browser_move.runtime.repeated_call_guard import (
+from openjiuwen.harness.tools.browser_move.runtime.rails.repeated_call_guard import (
     RepeatedCallGuardRail,
     _is_noop_script,
 )

@@ -20,7 +20,7 @@ from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.runtime.agents import build_browser_worker_agent
 from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
-from openjiuwen.harness.tools.browser_move.runtime.final_answer_recovery import (
+from openjiuwen.harness.tools.browser_move.runtime.rails.final_answer_recovery import (
     RECOVERY_MESSAGE,
     STEP_LIMIT_SENTENCE,
     FinalAnswerRecoveryRail,

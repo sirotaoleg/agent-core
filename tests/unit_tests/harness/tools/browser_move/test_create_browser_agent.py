@@ -24,12 +24,6 @@ from openjiuwen.harness.subagents.browser_agent import (
     build_browser_agent_config,
     create_browser_agent,
 )
-from openjiuwen.harness.tools.browser_move.runtime.browser_capabilities import (
-    CORE_BROWSER_TOOL_NAMES,
-)
-from openjiuwen.harness.tools.browser_move.runtime.browser_working_context_rail import (
-    BrowserWorkingContextRail,
-)
 from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserRunGuardrails,
     RuntimeSettings,
@@ -37,6 +31,12 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
 from openjiuwen.harness.tools.browser_move.runtime.runtime import (
     BrowserAgentRuntime,
     BrowserRuntimeRail,
+)
+from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
+    CORE_BROWSER_TOOL_NAMES,
+)
+from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.working_context import (
+    BrowserWorkingContextRail,
 )
 
 

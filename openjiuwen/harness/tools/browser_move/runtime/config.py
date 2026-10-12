@@ -16,12 +16,12 @@ from openjiuwen.core.foundation.tool import McpServerConfig
 
 from ..contract import SurfaceSettings
 from ..surfaces import SURFACES
-from . import REPO_ROOT
-from .browser_capabilities import (
+from ..surfaces.browser.capabilities import (
     CORE_BROWSER_CAPABILITY_NAME,
     DEFAULT_BROWSER_CAPABILITIES,
     POLICY_ONLY_BROWSER_CAPABILITY_NAMES,
 )
+from . import REPO_ROOT
 from .utils.env import (
     DEFAULT_BROWSER_TIMEOUT_S,
     DEFAULT_GUARDRAIL_MAX_FAILURES,

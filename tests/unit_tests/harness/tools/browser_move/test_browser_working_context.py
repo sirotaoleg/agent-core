@@ -16,28 +16,28 @@ from openjiuwen.core.foundation.llm import AssistantMessage, ToolMessage, UserMe
 from openjiuwen.core.foundation.llm.schema.tool_call import ToolCall
 from openjiuwen.core.session.agent import create_agent_session
 from openjiuwen.core.single_agent.rail.base import (
-    AgentCallbackEvent,
     AgentCallbackContext,
+    AgentCallbackEvent,
     InvokeInputs,
     ModelCallInputs,
     ToolCallInputs,
 )
 from openjiuwen.core.single_agent.schema.agent_card import AgentCard
 from openjiuwen.harness.tools.base_tool import ToolOutput
-from openjiuwen.harness.tools.browser_move.runtime.browser_working_context import (
+from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.working_context import (
+    BrowserWorkingContextRail,
+)
+from openjiuwen.harness.tools.browser_move.surfaces.browser.working_context.processor import (
+    BrowserWorkingContextProcessor,
+    BrowserWorkingContextProcessorConfig,
+)
+from openjiuwen.harness.tools.browser_move.surfaces.browser.working_context.store import (
     BROWSER_TASK_STATE_KEY,
     BROWSER_TOOL_MEMORY_METADATA_KEY,
     BROWSER_WORKING_CONTEXT_STATE_KEY,
     BROWSER_WORKING_MEMORY_RECORD_BEGIN,
     BROWSER_WORKING_MEMORY_RECORD_END,
     BrowserWorkingContextStore,
-)
-from openjiuwen.harness.tools.browser_move.runtime.browser_working_context_processor import (
-    BrowserWorkingContextProcessor,
-    BrowserWorkingContextProcessorConfig,
-)
-from openjiuwen.harness.tools.browser_move.runtime.browser_working_context_rail import (
-    BrowserWorkingContextRail,
 )
 
 

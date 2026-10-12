@@ -22,7 +22,8 @@ _STATUS_LOGGING_PATH = (
     / "harness"
     / "tools"
     / "browser_move"
-    / "runtime"
+    / "surfaces"
+    / "browser"
     / "status_logging.py"
 )
 _SPEC = importlib.util.spec_from_file_location("browser_status_logging", _STATUS_LOGGING_PATH)
@@ -248,7 +249,7 @@ def test_direct_browser_runtime_rail_wires_status_logger() -> None:
     )
     source = runtime_path.read_text(encoding="utf-8")
 
-    assert "from .status_logging import BrowserSubagentStatusLogger" in source
+    assert "from ..surfaces.browser.status_logging import BrowserSubagentStatusLogger" in source
     assert 'self._emit_status("before_invoke", ctx)' in source
     assert 'self._emit_status("before_model_call", ctx)' in source
     assert 'self._emit_status("after_model_call", ctx)' in source

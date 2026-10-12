@@ -18,8 +18,8 @@ from openjiuwen.harness.rails.security.base_security_rail import (
     SecurityReject,
 )
 
-from ..contract import Action, PolicyDenied, PolicyRule, RefResolver
-from .page_state import BrowserPageState
+from ...contract import Action, PolicyDenied, PolicyRule, RefResolver
+from ..page_state import BrowserPageState
 
 Builder = Callable[[Mapping[str, Any], RefResolver], Action]
 

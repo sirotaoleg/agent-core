@@ -11,8 +11,10 @@ from typing import Any, Dict, Iterable, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from openjiuwen.core.foundation.llm import BaseMessage, ToolMessage, UserMessage
-
-from .browser_logging import browser_agent_log_info, browser_agent_log_warning
+from openjiuwen.harness.tools.browser_move.runtime.browser_logging import (
+    browser_agent_log_info,
+    browser_agent_log_warning,
+)
 
 BROWSER_WORKING_CONTEXT_STATE_KEY = "__browser_subagent_working_context__"
 BROWSER_TASK_STATE_KEY = "__browser_phase_budget_state__"

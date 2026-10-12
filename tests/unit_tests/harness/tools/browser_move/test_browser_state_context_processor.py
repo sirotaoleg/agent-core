@@ -19,18 +19,18 @@ from openjiuwen.harness.prompts.prompt_attachment_manager import (
     PROMPT_ATTACHMENT_PRESERVE_TAIL_METADATA_KEY,
     PromptAttachmentManager,
 )
-from openjiuwen.harness.tools.browser_move.runtime.browser_state_context_processor import (
+from openjiuwen.harness.tools.browser_move.contract import ActionResult, DriverError
+from openjiuwen.harness.tools.browser_move.surfaces.browser.probes import (
+    build_browser_state_metadata_js,
+)
+from openjiuwen.harness.tools.browser_move.surfaces.browser.state_processor import (
     BrowserStateContextProcessor,
     BrowserStateContextProcessorConfig,
 )
-from openjiuwen.harness.tools.browser_move.runtime.browser_working_context import (
+from openjiuwen.harness.tools.browser_move.surfaces.browser.working_context.store import (
     BROWSER_TASK_STATE_KEY,
     BrowserWorkingContextStore,
 )
-from openjiuwen.harness.tools.browser_move.runtime.probes import (
-    build_browser_state_metadata_js,
-)
-from openjiuwen.harness.tools.browser_move.contract import ActionResult, DriverError
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     element,
     make_runtime,

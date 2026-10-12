@@ -15,8 +15,8 @@ from openjiuwen.core.common.logging import logger
 from openjiuwen.core.single_agent.prompts.builder import PromptSection
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext, AgentRail
 
-from ..contract import RunScript
-from .tool_factory import CommandRecord, command_record
+from ...contract import RunScript
+from ..tool_factory import CommandRecord, command_record
 
 REPEAT_NOTE_THRESHOLD = 3
 REPEAT_WITHHOLD_TOOLS_THRESHOLD = 5

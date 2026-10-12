@@ -7,11 +7,11 @@ from __future__ import annotations
 import asyncio
 
 from openjiuwen.harness.tools.browser_move.runtime.agents import build_browser_worker_system_prompt
-from openjiuwen.harness.tools.browser_move.runtime.browser_capabilities import (
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
+from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
     CORE_BROWSER_TOOL_NAMES,
     PDF_BROWSER_TOOL_NAMES,
 )
-from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import MCP_PREFIX, make_runtime
 
 WORKER_HELPERS = {"browser_probe_interactives", "browser_probe_cards", "browser_batch_interact"}

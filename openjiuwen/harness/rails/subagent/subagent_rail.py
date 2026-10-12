@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Callable, Collection, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Collection, List, Optional
 
 from openjiuwen.core.common.logging import logger
 from openjiuwen.core.foundation.tool import ToolCard
@@ -15,7 +15,7 @@ from openjiuwen.harness.prompts.tools import get_tool_description
 from openjiuwen.harness.rails.base import DeepAgentRail
 from openjiuwen.harness.schema.config import SubAgentConfig
 from openjiuwen.harness.tools import SessionToolkit, build_session_tools, create_task_tool
-from openjiuwen.harness.tools.browser_move.runtime.browser_capabilities import (
+from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
     DEFAULT_BROWSER_CAPABILITIES,
 )
 from openjiuwen.harness.tools.subagent._control_registry import release_all_subagent_controls

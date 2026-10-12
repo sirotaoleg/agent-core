@@ -29,17 +29,17 @@ def _shim_warnings(caught: list[warnings.WarningMessage]) -> list[warnings.Warni
 
 @pytest.mark.parametrize(
     "suffix",
-    ["runtime", "config", "browser_capabilities", "assembly", "controllers", "controllers.action", "utils.env"],
+    ["runtime", "config", "assembly", "controllers", "controllers.action", "utils.env"],
 )
 def test_old_module_is_the_new_module(suffix: str) -> None:
     assert importlib.import_module(f"{OLD}.{suffix}") is importlib.import_module(f"{NEW}.{suffix}")
 
 
 def test_every_module_under_runtime_is_aliased() -> None:
-    importlib.import_module(OLD)
+    shim = importlib.import_module(OLD)
     new_modules = {n for n in sys.modules if n.startswith(NEW + ".")}
     aliased = {n.replace(OLD, NEW, 1) for n in sys.modules if n.startswith(OLD + ".")}
-    assert aliased == new_modules
+    assert aliased - {f"{NEW}.{old}" for old in shim._MOVED} == new_modules
     assert {f"{NEW}.controllers.action", f"{NEW}.utils.parsing", f"{NEW}.main"} <= aliased
 
 

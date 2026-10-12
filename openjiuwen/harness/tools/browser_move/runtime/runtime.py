@@ -54,18 +54,21 @@ from ..contract import (
     SurfaceBundle,
     SwitchContext,
 )
+from ..surfaces.browser.capabilities import CORE_BROWSER_TOOL_NAMES, capabilities_of
 from ..surfaces.browser.helpers import CUSTOM_ACTIONS, activate_page, page_metadata, probe_for_policy
+from ..surfaces.browser.semantic.state import SemanticStateTracker, price_interval_signature
+from ..surfaces.browser.site_profiles import infer_profile_evidence_entity
+from ..surfaces.browser.status_logging import BrowserSubagentStatusLogger, is_browser_subagent_status_log_enabled
+from ..surfaces.browser.working_context.store import (
+    BROWSER_TASK_STATE_KEY,
+    BrowserWorkingContextStore,
+    latest_browser_user_request,
+)
 from .assembly import AgentParts, assemble_surface, build_agent_parts, core_rails
-from .browser_capabilities import CORE_BROWSER_TOOL_NAMES, capabilities_of
 from .browser_logging import (
     browser_agent_log_info,
     browser_agent_log_warning,
     write_browser_agent_audit_artifact,
-)
-from .browser_working_context import (
-    BROWSER_TASK_STATE_KEY,
-    BrowserWorkingContextStore,
-    latest_browser_user_request,
 )
 from .config import (
     BrowserInstanceConfig,
@@ -78,10 +81,7 @@ from .config import (
 from .controllers import ActionController, BaseController
 from .driver_session import DriverSession
 from .page_state import CARD_EVIDENCE_FIELDS, BrowserPageState, BrowserTarget
-from .semantic_state import SemanticStateTracker, price_interval_signature
 from .service import MAX_ITERATION_MESSAGE, BrowserService, BrowserTaskProgressState
-from .site_profiles import infer_profile_evidence_entity
-from .status_logging import BrowserSubagentStatusLogger, is_browser_subagent_status_log_enabled
 from .tool_factory import Builder, CommandRecord, ToolContext, ToolFlags, command_record
 from .topology import Topology, topology_for
 from .utils.parsing import extract_json_object

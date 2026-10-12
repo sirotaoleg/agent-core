@@ -39,17 +39,17 @@ from openjiuwen.harness.tools.browser_move.contract import (
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.contract.testing.fake import DEFAULT_ACTIONS
 from openjiuwen.harness.tools.browser_move.runtime import runtime as runtime_module
-from openjiuwen.harness.tools.browser_move.runtime.browser_capabilities import (
-    CORE_BROWSER_TOOL_NAMES,
-    resolve_browser_capabilities,
-)
-from openjiuwen.harness.tools.browser_move.runtime.browser_working_context import (
-    BrowserWorkingContextStore,
-)
 from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime, BrowserRuntimeRail
 from openjiuwen.harness.tools.browser_move.runtime.service import MAX_ITERATION_MESSAGE
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandRecord, command_record
+from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
+    CORE_BROWSER_TOOL_NAMES,
+    resolve_browser_capabilities,
+)
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate
+from openjiuwen.harness.tools.browser_move.surfaces.browser.working_context.store import (
+    BrowserWorkingContextStore,
+)
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     BATCH,
     MCP_PREFIX,

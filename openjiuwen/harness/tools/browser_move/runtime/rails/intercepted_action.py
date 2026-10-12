@@ -9,8 +9,8 @@ import re
 
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext, AgentRail
 
-from ..contract import ActionIntercepted, DriverRef, Locator, PointRef
-from .tool_factory import CommandRecord, command_record
+from ...contract import ActionIntercepted, DriverRef, Locator, PointRef
+from ..tool_factory import CommandRecord, command_record
 
 _CONSENT = re.compile(
     r"onetrust|cookie|consent|cmp|didomi|usercentrics|cookiebot|gdpr|truste|qc-cmp|sp_message",

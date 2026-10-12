@@ -22,12 +22,12 @@ from openjiuwen.harness.tools.browser_move.contract import (
     SurfaceProfile,
     SwitchContext,
 )
-from openjiuwen.harness.tools.browser_move.runtime.browser_capabilities import (
+from openjiuwen.harness.tools.browser_move.surfaces import SURFACES
+from openjiuwen.harness.tools.browser_move.surfaces.browser import commands
+from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
     CORE_BROWSER_TOOL_NAMES,
     DEFAULT_BROWSER_CAPABILITIES,
 )
-from openjiuwen.harness.tools.browser_move.surfaces import SURFACES
-from openjiuwen.harness.tools.browser_move.surfaces.browser import commands
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import GetPdf, OpenContext, UploadFile
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import EXTRA_TOOLS

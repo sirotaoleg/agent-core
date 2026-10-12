@@ -22,12 +22,12 @@ from ..drivers import DRIVERS
 from ..drivers.middleware import RetryOnStale, Timeouts, Tracing
 from ..provisioning import PROVISIONERS, ProvisionedDevice, Provisioner
 from ..surfaces import SURFACES
-from .action_policy import ActionPolicy
 from .config import CoreSettings
 from .driver_session import DriverSession
-from .intercepted_action import InterceptedActionHintRail
 from .page_state import BrowserPageState
-from .repeated_call_guard import RepeatedCallGuardRail
+from .rails.action_policy import ActionPolicy
+from .rails.intercepted_action import InterceptedActionHintRail
+from .rails.repeated_call_guard import RepeatedCallGuardRail
 from .tool_factory import Builder, ToolContext, ToolFactory
 
 

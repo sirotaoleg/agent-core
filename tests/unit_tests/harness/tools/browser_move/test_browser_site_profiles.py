@@ -4,18 +4,18 @@ import json
 import logging
 from pathlib import Path
 
-from openjiuwen.harness.tools.browser_move.runtime.probe_semantics import (
+from openjiuwen.harness.tools.browser_move.surfaces.browser.probes.semantics import (
     normalize_card_probe_payload,
 )
-from openjiuwen.harness.tools.browser_move.runtime.site_profiles import (
+from openjiuwen.harness.tools.browser_move.surfaces.browser.site_profiles import (
     BrowserSelectorCache,
     apply_site_card_semantics,
     builtin_site_profiles,
     deduplicate_site_cards,
     domain_from_url,
     infer_profile_evidence_entity,
-    normalize_site_card_fields,
     normalize_route_signature,
+    normalize_site_card_fields,
     profile_detail_link_key,
     site_profile_for_host,
     site_profiles_for_url,

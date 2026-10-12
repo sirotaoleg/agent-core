@@ -12,15 +12,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from openjiuwen.core.foundation.tool import McpServerConfig
+from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.drivers.browser_use import transport as transport_module
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import create_browser_use_driver
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar.exceptions import DriverUnsupported
+from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
+from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import _default_chrome_user_data_dir
+from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.runtime import main as main_module
-from openjiuwen.harness.tools.browser_move.runtime import site_profiles
 from openjiuwen.harness.tools.browser_move.runtime.agents import (
     build_browser_worker_agent,
     ensure_execute_signature_compat,
 )
+from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.runtime.browser_tools import build_browser_runtime_mcp_config
 from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserRunGuardrails,
@@ -31,18 +35,14 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
     runtime_server_child_env,
     runtime_server_environ,
 )
-from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
-from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
-from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.runtime.runtime import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.runtime.utils.upload_paths import resolve_upload_file_paths
+from openjiuwen.harness.tools.browser_move.surfaces.browser import site_profiles
+from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
-from openjiuwen.harness.tools.browser_move.runtime.status_logging import (
+from openjiuwen.harness.tools.browser_move.surfaces.browser.status_logging import (
     is_browser_subagent_status_log_enabled,
 )
-from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
-from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import _default_chrome_user_data_dir
-from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
-from openjiuwen.harness.tools.browser_move.runtime.utils.upload_paths import resolve_upload_file_paths
 
 
 def _mcp_cfg() -> McpServerConfig:

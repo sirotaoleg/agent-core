@@ -169,7 +169,7 @@ The sub-session ID for `browser_agent` is deterministic (`{parent_session}_sub_b
 
 ## Browser Capabilities
 
-Module: `openjiuwen.harness.tools.browser_move.runtime.browser_capabilities`
+Module: `openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities`
 
 Playwright MCP tools are grouped into a trusted, explicit catalog of capabilities. Matching is by exact tool name — never by prefix — so a newly introduced Playwright tool is not exposed before its policy is reviewed. The main agent selects capability names per task; the resolver performs no task interpretation of its own.
 

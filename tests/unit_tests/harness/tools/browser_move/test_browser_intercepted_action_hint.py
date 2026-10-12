@@ -26,7 +26,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.runtime.agents import build_browser_worker_agent
 from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
-from openjiuwen.harness.tools.browser_move.runtime.intercepted_action import (
+from openjiuwen.harness.tools.browser_move.runtime.rails.intercepted_action import (
     InterceptedActionHintRail,
     explain_blocked_command,
 )

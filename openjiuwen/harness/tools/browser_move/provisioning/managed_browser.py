@@ -18,9 +18,9 @@ from types import MappingProxyType
 from typing import Optional
 from urllib.request import urlopen
 
-from ..runtime.profiles import BrowserProfile, BrowserProfileStore
 from ..surfaces.browser.config import BrowserSettings
 from . import ProvisionedDevice
+from .profiles import BrowserProfile, BrowserProfileStore
 
 
 def _default_chrome_user_data_dir(local_app_data: str) -> str:

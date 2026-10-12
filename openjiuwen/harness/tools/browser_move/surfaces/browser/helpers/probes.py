@@ -18,17 +18,17 @@ from openjiuwen.harness.tools.browser_move.runtime.browser_logging import (
     write_browser_agent_audit_artifact,
 )
 from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
-from openjiuwen.harness.tools.browser_move.runtime.probe_semantics import normalize_card_probe_payload
-from openjiuwen.harness.tools.browser_move.runtime.probes import (
+from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandRecord, ToolContext, ToolFlags
+from openjiuwen.harness.tools.browser_move.runtime.utils.parsing import extract_json_object
+from openjiuwen.harness.tools.browser_move.surfaces.browser.probes import (
     build_card_probe_js,
     build_interactive_probe_js,
 )
-from openjiuwen.harness.tools.browser_move.runtime.site_profiles import (
+from openjiuwen.harness.tools.browser_move.surfaces.browser.probes.semantics import normalize_card_probe_payload
+from openjiuwen.harness.tools.browser_move.surfaces.browser.site_profiles import (
     get_selector_cache,
     site_profiles_for_url,
 )
-from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandRecord, ToolContext, ToolFlags
-from openjiuwen.harness.tools.browser_move.runtime.utils.parsing import extract_json_object
 
 _PROBE_INTERACTIVES_DESC = (
     "Return a compact list of visible, high-value interactive elements on the current page. "

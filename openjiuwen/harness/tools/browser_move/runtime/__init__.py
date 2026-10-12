@@ -24,11 +24,6 @@ sys.modules.setdefault("runtime", sys.modules[__name__])
 __all__ = [
     "REPO_ROOT",
     "SRC_ROOT",
-    "BrowserStateContextProcessor",
-    "BrowserStateContextProcessorConfig",
-    "BrowserWorkingContextProcessor",
-    "BrowserWorkingContextProcessorConfig",
-    "BrowserWorkingContextRail",
     "build_browser_runtime_mcp_config",
     "browser_tools",
     "controller",
@@ -39,22 +34,6 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
-    if name in {"BrowserStateContextProcessor", "BrowserStateContextProcessorConfig"}:
-        module = import_module(
-            "openjiuwen.harness.tools.browser_move.runtime.browser_state_context_processor"
-        )
-        return getattr(module, name)
-    if name in {
-        "BrowserWorkingContextProcessor",
-        "BrowserWorkingContextProcessorConfig",
-    }:
-        module = import_module(
-            "openjiuwen.harness.tools.browser_move.runtime.browser_working_context_processor"
-        )
-        return getattr(module, name)
-    if name == "BrowserWorkingContextRail":
-        module = import_module("openjiuwen.harness.tools.browser_move.runtime.browser_working_context_rail")
-        return getattr(module, name)
     if name == "controller":
         return import_module("openjiuwen.harness.tools.browser_move.runtime.controllers")
     if name == "browser_tools":

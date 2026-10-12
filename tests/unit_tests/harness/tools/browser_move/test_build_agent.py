@@ -29,7 +29,6 @@ from openjiuwen.harness.tools.browser_move.contract import (
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
-from openjiuwen.harness.tools.browser_move.runtime.action_policy import ActionPolicy
 from openjiuwen.harness.tools.browser_move.runtime.assembly import (
     Registries,
     assemble_driver,
@@ -39,9 +38,10 @@ from openjiuwen.harness.tools.browser_move.runtime.assembly import (
 )
 from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
 from openjiuwen.harness.tools.browser_move.runtime.driver_session import DriverSession
-from openjiuwen.harness.tools.browser_move.runtime.intercepted_action import InterceptedActionHintRail
 from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
-from openjiuwen.harness.tools.browser_move.runtime.repeated_call_guard import RepeatedCallGuardRail
+from openjiuwen.harness.tools.browser_move.runtime.rails.action_policy import ActionPolicy
+from openjiuwen.harness.tools.browser_move.runtime.rails.intercepted_action import InterceptedActionHintRail
+from openjiuwen.harness.tools.browser_move.runtime.rails.repeated_call_guard import RepeatedCallGuardRail
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import ToolContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.renderer import BrowserRenderer
 

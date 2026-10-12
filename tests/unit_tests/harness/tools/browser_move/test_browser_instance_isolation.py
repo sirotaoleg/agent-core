@@ -24,12 +24,12 @@ from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import (
     ManagedBrowserProvisioner,
     _build_profile,
 )
+from openjiuwen.harness.tools.browser_move.provisioning.profiles import BrowserProfile, BrowserProfileStore
 from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserInstanceConfig,
     BrowserRunGuardrails,
     build_playwright_mcp_config,
 )
-from openjiuwen.harness.tools.browser_move.runtime.profiles import BrowserProfile, BrowserProfileStore
 from openjiuwen.harness.tools.browser_move.runtime.service import BrowserService
 from openjiuwen.harness.tools.browser_move.surfaces import SURFACES
 

@@ -11,7 +11,7 @@ import pytest
 from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import (
     ManagedBrowserProvisioner,
 )
-from openjiuwen.harness.tools.browser_move.runtime.profiles import (
+from openjiuwen.harness.tools.browser_move.provisioning.profiles import (
     BrowserProfile,
 )
 

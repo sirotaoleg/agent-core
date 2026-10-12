@@ -10,9 +10,9 @@ from typing import TYPE_CHECKING, Any
 
 from openjiuwen.core.common.logging import tool_logger
 from openjiuwen.harness.tools.browser_move.contract import ContextRef, DriverError, Observe, RunScript, SwitchContext
-from openjiuwen.harness.tools.browser_move.runtime.probes import build_browser_state_metadata_js
 from openjiuwen.harness.tools.browser_move.runtime.utils.parsing import extract_json_object
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
+from openjiuwen.harness.tools.browser_move.surfaces.browser.probes import build_browser_state_metadata_js
 
 if TYPE_CHECKING:
     from openjiuwen.harness.tools.browser_move.runtime.tool_factory import ToolContext

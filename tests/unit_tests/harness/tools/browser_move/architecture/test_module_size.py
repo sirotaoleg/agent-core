@@ -14,9 +14,9 @@ MAX_LINES = 1500
 # file relative to the package -> line count.
 KNOWN_OVERSIZED_MODULES: dict[str, int] = {
     # shrink with the runtime split
-    "runtime/probes.py": 3010,
     "runtime/runtime.py": 6396,
     "runtime/service.py": 1910,
+    "surfaces/browser/probes/cards.py": 3010,
 }
 
 
