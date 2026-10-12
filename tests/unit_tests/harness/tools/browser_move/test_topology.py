@@ -400,6 +400,27 @@ class TestDelegatedWorker:
         assert (MCP_PREFIX + "browser_take_screenshot" in names) is images
         assert (runtime.service.browser_agent is started) is not images
 
+    def test_a_worker_rebuilt_for_images_leaves_out_the_tools_the_caller_removed(self) -> None:
+        runtime = _runtime(MCP)
+
+        async def run_task(*, worker: Any, **kwargs: Any) -> dict[str, Any]:
+            await worker()
+            return {"ok": True}
+
+        with (
+            _assembling(),
+            _registering_runtime_tools(),
+            patch.object(topology_module, "probe_image_support", AsyncMock(return_value=True)),
+            patch.object(runtime.service, "run_task", AsyncMock(side_effect=run_task)),
+        ):
+            run(runtime.ensure_started())
+            runtime.service.browser_agent.ability_manager.remove_ability(sorted(HELPERS))
+            run(runtime.run_browser_task(task="Open the scene", session_id="s", request_id="r"))
+
+        names = {tool.name for tool in run(runtime.service.browser_agent.ability_manager.list_tool_info())}
+        assert HELPERS.isdisjoint(names)
+        assert MCP_PREFIX + "browser_take_screenshot" in names
+
     def test_the_worker_is_built_again_after_a_task_release(self) -> None:
         runtime = _runtime(MCP)
         with _assembling(), _registering_runtime_tools():
