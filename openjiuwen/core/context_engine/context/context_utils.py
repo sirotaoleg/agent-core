@@ -1,6 +1,8 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
+import hashlib
+import re
 import threading
 import time
 import uuid
@@ -18,6 +20,7 @@ from openjiuwen.core.foundation.llm import AssistantMessage, BaseMessage, ToolMe
 CONTEXT_MESSAGE_ID_KEY = "context_message_id"
 CONTEXT_USAGE_STALE_KEY = "context_usage_stale"
 DEFAULT_CONTEXT_MAX_TOKENS = 200000
+_PATH_UNSAFE_CHARS = re.compile(r"[^A-Za-z0-9_.-]+")
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 OPENROUTER_MODEL_CACHE_TTL_SECONDS = 3600
 _OPENROUTER_MODEL_CONTEXT_WINDOW_TOKENS: Dict[str, int] = {}
@@ -163,6 +166,15 @@ class ContextUtils:
     Utility helper functions for manipulating and parsing conversation contexts.
     All methods are static and stateless.
     """
+
+    @staticmethod
+    def offload_session_dir_name(session_id: str) -> str:
+        """Directory name for a session's offload files; ids that are not path-safe get a digest suffix."""
+        if session_id and not _PATH_UNSAFE_CHARS.search(session_id) and session_id not in {".", ".."}:
+            return session_id
+        digest = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:16]
+        readable = _PATH_UNSAFE_CHARS.sub("-", session_id).strip("-.")[:120]
+        return f"{readable}-{digest}" if readable else digest
 
     @staticmethod
     def _get_positive_int_by_model_name(mapping: Optional[Dict[str, int]], model_name: str) -> Optional[int]:

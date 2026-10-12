@@ -11,6 +11,7 @@ from os import PathLike
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, Optional
 
+from openjiuwen.core.context_engine.context.context_utils import ContextUtils
 from openjiuwen.core.foundation.tool import Tool, ToolCard
 from openjiuwen.harness.tools.base_tool import ToolOutput, render_fields
 
@@ -19,7 +20,6 @@ if TYPE_CHECKING:
 
 
 _HANDLE_PATTERN = re.compile(r"^[0-9a-fA-F]{32}$")
-_SESSION_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 _OFFLOAD_FILE_PREFIX = "ToolResultWindowProcessor"
 _DEFAULT_LIMIT = 8000
 _MAX_LIMIT = 16000
@@ -128,11 +128,7 @@ class BrowserOffloadRecallTool(Tool):
         if not callable(get_session_id):
             raise ValueError("browser offload recall requires the current runtime session")
         session_id = str(get_session_id() or "").strip()
-        if (
-            not session_id
-            or not _SESSION_PATTERN.fullmatch(session_id)
-            or session_id in {".", ".."}
-        ):
+        if not session_id:
             raise ValueError("invalid browser runtime session")
         return session_id
 
@@ -174,7 +170,7 @@ class BrowserOffloadRecallTool(Tool):
         offload_dir = (
             self._workspace_root
             / "context"
-            / f"{session_id}_context"
+            / f"{ContextUtils.offload_session_dir_name(session_id)}_context"
             / "offload"
         ).resolve()
         if not offload_dir.is_relative_to(self._workspace_root):

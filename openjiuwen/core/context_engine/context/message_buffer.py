@@ -6,6 +6,7 @@ from typing import List, Optional, Union, Dict
 
 from openjiuwen.core.foundation.llm import BaseMessage
 from openjiuwen.core.common.logging import logger
+from openjiuwen.core.context_engine.context.context_utils import ContextUtils
 
 
 class ContextMessageBuffer:
@@ -147,9 +148,8 @@ class OffloadMessageBuffer:
         if not (self._workspace_dir and self._session_id):
             return [offload_handle]
 
-        offload_dir = os.path.join(
-            self._workspace_dir, "context", self._session_id + "_context", "offload"
-        )
+        session_dir = ContextUtils.offload_session_dir_name(self._session_id)
+        offload_dir = os.path.join(self._workspace_dir, "context", session_dir + "_context", "offload")
         exact_path = os.path.join(offload_dir, offload_handle + ".json")
         paths = [exact_path]
         prefixed_paths = sorted(glob.glob(os.path.join(offload_dir, f"*_{offload_handle}.json")))

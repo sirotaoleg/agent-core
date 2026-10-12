@@ -253,12 +253,12 @@ class ToolResultBudgetProcessor(MessageOffloader):
 
     def _new_offload_handle_and_path(self, context: ModelContext) -> tuple[str, str | None]:
         offload_handle = uuid.uuid4().hex
-        session_id = context.session_id()
+        session_dir = ContextUtils.offload_session_dir_name(context.session_id())
         workspace_dir = context.workspace_dir()
         file_prefix = self.config.offload_file_prefix or self.processor_type()
         file_name = f"{file_prefix}_{offload_handle}.json"
         if workspace_dir:
-            offload_path = os.path.join(workspace_dir, "context", f"{session_id}_context", "offload", file_name)
+            offload_path = os.path.join(workspace_dir, "context", f"{session_dir}_context", "offload", file_name)
             return offload_handle, offload_path
         return offload_handle, None
 

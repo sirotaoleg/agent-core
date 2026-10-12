@@ -84,7 +84,7 @@ class Direct:
         sid = service.session_new(session_id)
         rid = (request_id or "").strip() or uuid.uuid4().hex
         timeout = int(timeout_s) if timeout_s else service.guardrails.timeout_s
-        inputs = {"query": task, "conversation_id": f"{sid}:direct:{rid}:{uuid.uuid4().hex}", "request_id": rid}
+        inputs = {"query": task, "conversation_id": f"{sid}.direct.{rid}.{uuid.uuid4().hex}", "request_id": rid}
         try:
             result = await asyncio.wait_for(Runner.run_agent(self._agent, inputs), timeout=float(timeout))
         except TimeoutError:
