@@ -319,6 +319,20 @@ class TestAssembleDriver:
 
         assert caught.value.dispatched is True
 
+    @pytest.mark.parametrize(("profile_s", "core_s"), [(3600.0, 0.05), (0.05, 3600.0)])
+    def test_the_smaller_of_the_profile_and_the_core_tool_timeout_bounds_a_call(
+        self, profile_s: float, core_s: float
+    ) -> None:
+        world = World(HangingDriver(info=_fake_info()), timeouts={Effect.ACT: profile_s})
+
+        async def run() -> None:
+            core = CoreSettings(driver="fake_driver", surface="fake", tool_timeout_s=core_s)
+            stack = (await assemble_driver(core, ENVIRON, registries=world.registries)).stack
+            await stack.execute(Click(DriverRef("e1", "g1")))
+
+        with pytest.raises(ActionTimeout, match="longer than 0.05s"):
+            asyncio.run(run())
+
     def test_the_timeout_cases_cover_every_effect(self) -> None:
         commands = (Observe(), Click(DriverRef("e1", "g1")), SwitchContext(ContextRef("w2", "window")), RunScript("1"))
         assert {command.effect for command in commands} == set(Effect)
