@@ -3949,3 +3949,56 @@ Known leftovers:
 2. The script rule is a text match: obfuscated code (`navigator[atob(...)]`) passes. The paste-chord rule is the
    one that stops the observed leak.
 3. Middle-click paste of the X11 primary selection is not covered (Windows and macOS have none).
+
+### Final-answer recovery (MCP worker)
+
+The recovery turn fired in 125 of 553 MCP tasks (baseline 83 of 559). Its message ("If the task is not fully
+complete, set ok=false and say in final what you found and what is missing") made the worker re-audit answers it had
+already given in prose; Apple--8, Apple--11 and ESPN--25 came back as hedges the judge failed.
+
+Decisions:
+1. **A prose ending is restated, not re-audited.** `non_json_output` gets `RESTATE_MESSAGE`: restate the answer
+   already given as the final JSON, do not re-check, change it or add caveats, `ok=false` only if that reply said the
+   task could not be completed. The prose endings of both runs are finished answers (below), so restating is right.
+2. **Empty output and the step limit keep the old message**: there is no answer to restate; reporting what was
+   found and what is missing is still the right request. Both messages share one phrase for the JSON fields, so
+   `RECOVERY_MESSAGE` is byte-identical to before.
+3. **The tool list stays in the recovery request** (D-R1): dropping it changed the prompt prefix and paid a full cache
+   write for the whole conversation ($0.41 of $1.17 on one smoke task). The rail still runs no tool call of the
+   recovery turn (forced finish with the turn's text) and stops after one model call. The recovery call is told apart
+   by its message, no longer by an empty tool list.
+
+Why the worker ends in prose more often (investigated on the run logs, not fixed):
+- All of the rise is prose: `non_json_output` 54 → 114 (9.7% → 20.6%); `empty_output` 28 → 7; step limit 1 → 4. On
+  the tasks both runs ran, 83 ended in prose only in the refactor run and 23 only in the baseline.
+- The prose endings are complete answers ("I found a recipe that fits: …"); the task text asks for "your final
+  answer as text", the system prompt for JSON only.
+- Same inputs: system prompt, user message template, the 14 tool schemas and the guard and hint texts are byte
+  identical, one user message per request, nothing injected before the final turn.
+- No harness message precedes the prose turn (no denial, intercept hint or repeated-call hint). The model's usual
+  way to finish (a no-op script or the repeated-call hint, then JSON) fell from 254 to 210 endings, and after a real
+  tool result prose roughly doubled (evaluate 19% → 37%, snapshot 20% → 34%, find 9% → 29%), across sites.
+- What the refactor changed in what the model sees: tools listed alphabetically (`browser_find` last), "### Events"
+  and the snapshot file links gone, evaluate strings shown raw instead of as a quoted JSON string, errors no longer
+  wrapped in `{"result": ...}`, larger action results. None of these is tied to the prose turns in the logs.
+- The model also changed where its input was identical: after the byte-identical repeated-call hint, empty replies
+  fell from 27/134 to 5/133. The smokes point weakly to model drift (2 of 3 prose endings on Oct 10 with the old
+  result format, 0 of 3 on Sep 30 and Oct 8).
+- Conclusion: not attributable to our code on this evidence; the decisive check is the baseline code rerun today on
+  the 86 refactor-only recovery tasks plus controls (about 20% prose means drift; about 10% means the refactor, then
+  A/B the tool order and the result formatting). Decision 1 handles the prose endings either way.
+
+Rejected options:
+- One message for every reason: an empty reply or the step limit has no answer to restate.
+- `tool_choice: none` in the recovery request: a request parameter change of its own; the rail's forced finish
+  already keeps tools from running.
+- Changing the result formatting or tool order back on the strength of a correlation: unproven, and each moves every
+  golden.
+
+Verification: before the fix the empty-output and prose recovery tests failed on the tool list (no tools in the
+request). Full unit suite at the fix: 2439 passed, 122 skipped. No golden carries a recovery message; goldens
+unchanged.
+
+Known leftovers:
+1. The prose-rate rise is not explained (above); the baseline rerun decides.
+2. A recovery turn that answers with a tool call and no text yields no JSON; today's prose fallback applies.
