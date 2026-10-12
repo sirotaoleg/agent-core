@@ -125,11 +125,13 @@ def test_the_extra_tools_are_the_probes_the_batch_find_and_recall() -> None:
 
 
 def test_the_helpers_declare_read_progress_and_only_recall_is_exempt_from_budgets() -> None:
-    assert ToolFlags() == ToolFlags(effect=Effect.READ, exempt_from_budget=False, progress=True, worker=True)
+    assert ToolFlags() == ToolFlags(
+        effect=Effect.READ, exempt_from_budget=False, progress=True, worker=True, requires=()
+    )
     assert [tool.flags for tool in EXTRA_TOOLS] == [
-        ToolFlags(),
-        ToolFlags(),
-        ToolFlags(effect=Effect.ACT),
+        ToolFlags(requires=(RunScript,)),
+        ToolFlags(requires=(RunScript,)),
+        BatchTool.flags,
         ToolFlags(),
         ToolFlags(exempt_from_budget=True, worker=False),
     ]

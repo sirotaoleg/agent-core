@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -44,6 +45,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
     TypeText,
     Unsupported,
 )
+from openjiuwen.harness.tools.browser_move.contract.refs import REF_KINDS
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.contract.testing.fake import DEFAULT_ACTIONS
 from openjiuwen.harness.tools.browser_move.drivers.middleware import MASK, Tracing
@@ -63,6 +65,8 @@ from openjiuwen.harness.tools.browser_move.runtime.tool_factory import (
     command_record,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
+from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import EXTRA_TOOLS, FindTool, RecallOffloadTool
+from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
 from openjiuwen.harness.tools.browser_move.surfaces.browser.renderer import BrowserRenderer
 
 MESSAGES = {"driver_restarted": "restarted; observe again", "driver_lost": "the device is gone"}
@@ -289,6 +293,39 @@ def test_a_worker_build_leaves_out_the_extra_tools_flagged_for_the_main_agent_on
 
     assert built(worker=False) == [ForBoth, MainAgentOnly, ForBoth]
     assert built(worker=True) == [ForBoth, ForBoth]
+
+
+def test_an_extra_tool_is_left_out_when_the_driver_does_not_handle_a_command_it_requires() -> None:
+    class Scripted:
+        flags = ToolFlags(requires=(RunScript,))
+
+        def __init__(self, context: ToolContext) -> None:
+            self.card = _build(FakeDriver())[0].tools[0].card
+
+    class Plain(Scripted):
+        flags = ToolFlags()
+
+    profile = _profile(extra_tools=(Scripted, Plain))
+    without_script = _info(actions={c: r for c, r in DEFAULT_ACTIONS.items() if c is not RunScript})
+
+    assert [type(tool) for tool in _build(FakeDriver(), profile=profile)[0].tools[4:]] == [Scripted, Plain]
+    assert [type(tool) for tool in _build(FakeDriver(info=without_script), profile=profile)[0].tools[3:]] == [Plain]
+
+
+def test_a_browser_driver_without_run_script_gets_no_probe_or_batch_tools() -> None:
+    profile = create_browser_surface({}).profile
+    actions = {**DEFAULT_ACTIONS, **{command: frozenset(REF_KINDS) for command in profile.commands}}
+    with_script = DriverInfo(name="fake", surfaces=frozenset({"browser"}), actions=actions)
+    without_script = replace(with_script, actions={c: r for c, r in actions.items() if c is not RunScript})
+
+    def extra_tools(info: DriverInfo) -> list[type]:
+        built = ToolFactory(profile, info).build(
+            (), image_support=False, session=None, page_state=BrowserPageState(page_id="page-test")
+        )
+        return [type(tool) for tool in built.tools]
+
+    assert extra_tools(with_script) == list(EXTRA_TOOLS)
+    assert extra_tools(without_script) == [FindTool, RecallOffloadTool]
 
 
 def test_extra_tools_get_the_workspace_and_language_the_agent_is_built_with(tmp_path: Path) -> None:

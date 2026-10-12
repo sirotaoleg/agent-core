@@ -146,7 +146,10 @@ def _marked(action: Any) -> bool:
 
 
 def test_the_batch_declares_that_it_acts() -> None:
-    assert BatchTool.flags == ToolFlags(effect=Effect.ACT)
+    assert BatchTool.flags == ToolFlags(
+        effect=Effect.ACT,
+        requires=(Click, TypeText, PressKey, SelectOption, FillForm, Navigate, Wait, SwitchContext, RunScript),
+    )
 
 
 def test_batch_interact_action_rejects_more_than_25_steps() -> None:
