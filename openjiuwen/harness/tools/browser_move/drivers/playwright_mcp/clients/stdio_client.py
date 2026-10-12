@@ -107,7 +107,7 @@ class BrowserMoveStdioClient(StdioClient):
         return configured
 
     @staticmethod
-    def _is_retryable_transport_error(error: Exception) -> bool:
+    def is_transport_error(error: Exception) -> bool:
         name = type(error).__name__.lower()
         text = str(error).lower()
         markers = (
@@ -339,7 +339,7 @@ class BrowserMoveStdioClient(StdioClient):
                     f"Stdio list_tools timed out after {effective_timeout:.1f}s"
                 ) from e
             except Exception as e:
-                if attempt == 0 and self._is_retryable_transport_error(e):
+                if attempt == 0 and self.is_transport_error(e):
                     logger.warning(
                         f"Stdio list_tools retry after reconnect: type={type(e).__name__}, repr={e!r}"
                     )
@@ -385,7 +385,7 @@ class BrowserMoveStdioClient(StdioClient):
                     f"Stdio tool call timed out for '{tool_name}' after {effective_timeout:.1f}s"
                 ) from e
             except Exception as e:
-                if attempt == 0 and self._is_retryable_transport_error(e):
+                if attempt == 0 and self.is_transport_error(e):
                     logger.warning(
                         f"Stdio tool call '{tool_name}' retry after reconnect: type={type(e).__name__}, repr={e!r}"
                     )

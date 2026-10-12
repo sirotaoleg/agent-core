@@ -476,7 +476,9 @@ class PlaywrightMcpDriver(HandlerDriver):
         except TimeoutError as exc:
             raise ActionTimeout(f"{tool}: the server did not answer in time", dispatched=True) from exc
         except Exception as exc:
-            raise ConnectionLost(f"{tool}: {exc}", dispatched=True) from exc
+            if self._client.is_transport_error(exc):
+                raise ConnectionLost(f"{tool}: {exc}", dispatched=True) from exc
+            raise DriverError(f"{tool}: {type(exc).__name__}: {exc}", dispatched=False) from exc
         return result.model_dump(mode="json", by_alias=True, exclude_none=True)
 
     async def _decode(self, tool: str, raw: dict[str, Any], *, sensitive: bool = False) -> ActionResult:

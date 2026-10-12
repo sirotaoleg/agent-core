@@ -34,7 +34,7 @@ class BrowserMoveStreamableHttpClient(StreamableHttpClient):
         self._reconnect_lock = asyncio.Lock()
 
     @staticmethod
-    def _is_retryable_transport_error(error: Exception) -> bool:
+    def is_transport_error(error: Exception) -> bool:
         name = error.__class__.__name__.lower()
         text = str(error).lower()
         markers = (
@@ -135,7 +135,7 @@ class BrowserMoveStreamableHttpClient(StreamableHttpClient):
                 logger.info(f"Retrieved {len(tools_list)} tools from Streamable HTTP server")
                 return tools_list
             except Exception as e:
-                if attempt == 0 and self._is_retryable_transport_error(e):
+                if attempt == 0 and self.is_transport_error(e):
                     logger.warning(f"Streamable HTTP list_tools retry after reconnect: {e}")
                     connected = await self._reconnect(timeout=timeout)
                     if connected:
@@ -160,7 +160,7 @@ class BrowserMoveStreamableHttpClient(StreamableHttpClient):
                 logger.info(f"Tool '{tool_name}' call completed via Streamable HTTP")
                 return tool_result
             except Exception as e:
-                if attempt == 0 and self._is_retryable_transport_error(e):
+                if attempt == 0 and self.is_transport_error(e):
                     logger.warning(
                         f"Streamable HTTP tool call '{tool_name}' retry after reconnect: {e}"
                     )
