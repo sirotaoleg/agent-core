@@ -12,7 +12,8 @@ from openjiuwen.core.foundation.llm import ToolCall
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext, ModelCallInputs, ToolCallInputs
 from openjiuwen.harness.deep_agent import DeepAgent
 from openjiuwen.harness.tools.browser_move.contract import ActionTimeout, RunScript
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime, BrowserRuntimeRail
+from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     BATCH,
     MCP_PREFIX,

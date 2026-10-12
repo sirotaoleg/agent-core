@@ -30,14 +30,12 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
     build_playwright_mcp_config,
     build_runtime_settings,
 )
-from openjiuwen.harness.tools.browser_move.runtime.session import (
-    BrowserAgentRuntime,
-    BrowserRuntimeRail,
-)
+from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
     DEFAULT_BROWSER_CAPABILITIES,
     resolve_browser_capabilities,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
 from openjiuwen.harness.tools.browser_move.surfaces.browser.state_processor import (
     BrowserStateContextProcessorConfig,
 )

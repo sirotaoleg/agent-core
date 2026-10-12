@@ -806,7 +806,7 @@ async def test_processor_requires_replan_for_semantic_loop_even_when_dom_changes
         def update_state(self, value):
             self.state.update(value)
 
-    from openjiuwen.harness.tools.browser_move.runtime.session import BrowserRuntimeRail
+    from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
 
     session = Session()
     state["semantic_progress"]["revision"] = 1

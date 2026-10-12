@@ -36,13 +36,15 @@ from openjiuwen.harness.tools.browser_move.runtime.rails.action_policy import Ac
 from openjiuwen.harness.tools.browser_move.runtime.rails.final_answer_recovery import FinalAnswerRecoveryRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.intercepted_action import InterceptedActionHintRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.repeated_call_guard import RepeatedCallGuardRail
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime, BrowserRuntimeRail
+from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.runtime.topology import (
     WORKER_LANGUAGE,
     DelegatedWorker,
     Direct,
     topology_for,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.rails import runtime_rail as rail_module
+from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     MCP_PREFIX,
     fake_assembly,
@@ -212,7 +214,7 @@ class TestDirect:
             )
             ctx = AgentCallbackContext(agent=agent)
             await BrowserRuntimeRail(runtime).before_invoke(ctx)
-            return is_browser_agent_log_context(), runtime_module._BROWSER_LOG_CONTEXT_TOKEN_KEY in ctx.extra
+            return is_browser_agent_log_context(), rail_module._BROWSER_LOG_CONTEXT_TOKEN_KEY in ctx.extra
 
         with _assembling():
             assert (direct.dedicated_log, run(invoked(direct))) == (False, (False, False))

@@ -244,12 +244,17 @@ def test_direct_browser_runtime_rail_wires_status_logger() -> None:
         / "harness"
         / "tools"
         / "browser_move"
-        / "runtime"
-        / "session.py"
+        / "surfaces"
+        / "browser"
+        / "rails"
+        / "runtime_rail.py"
     )
     source = runtime_path.read_text(encoding="utf-8")
 
-    assert "from ..surfaces.browser.status_logging import BrowserSubagentStatusLogger" in source
+    assert (
+        "from openjiuwen.harness.tools.browser_move.surfaces.browser.status_logging import (\n"
+        "    BrowserSubagentStatusLogger,\n"
+    ) in source
     assert 'self._emit_status("before_invoke", ctx)' in source
     assert 'self._emit_status("before_model_call", ctx)' in source
     assert 'self._emit_status("after_model_call", ctx)' in source

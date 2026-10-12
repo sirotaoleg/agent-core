@@ -104,12 +104,10 @@ KNOWN_DRIVER_NAMES: dict[str, int] = {
 }
 
 # file relative to the package -> number of MCP tool-name matches.
-# Model-facing bytes pinned by the goldens (the worker prompt, the main agent's screenshot guidance,
-# primary-link rewrite and evaluate provenance) and the browser_resume run-context key;
-# they move to surfaces/browser/ with the prompt text in Phase 9.
+# Model-facing bytes pinned by the goldens: the worker prompt, which moves to surfaces/browser/ with the
+# prompt text in Phase 9.
 KNOWN_MCP_TOOL_NAMES: dict[str, int] = {
     "runtime/agents.py": 11,
-    "runtime/session.py": 9,
 }
 
 

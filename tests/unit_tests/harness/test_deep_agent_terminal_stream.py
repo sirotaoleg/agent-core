@@ -23,11 +23,8 @@ from openjiuwen.core.single_agent.schema.agent_card import AgentCard
 from openjiuwen.harness.deep_agent import DeepAgent
 from openjiuwen.harness.schema.config import DeepAgentConfig
 from openjiuwen.harness.tools.browser_move.contract import Effect, RunScript
-from openjiuwen.harness.tools.browser_move.runtime.session import (
-    BrowserAgentRuntime,
-    BrowserRuntimeRail,
-    ToolKind,
-)
+from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime, ToolKind
+from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
 from openjiuwen.harness.tools.subagent.task_tool import TaskTool, _run_subagent_with_observable_stream
 from tests.unit_tests.harness.test_deep_agent import FakeReactAgent, _create_dummy_model
 

@@ -40,13 +40,15 @@ from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.contract.testing.fake import DEFAULT_ACTIONS
 from openjiuwen.harness.tools.browser_move.runtime import session as runtime_module
 from openjiuwen.harness.tools.browser_move.runtime.service import MAX_ITERATION_MESSAGE
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime, BrowserRuntimeRail
+from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandRecord, command_record
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
     CORE_BROWSER_TOOL_NAMES,
     resolve_browser_capabilities,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate
+from openjiuwen.harness.tools.browser_move.surfaces.browser.rails import runtime_rail as rail_module
+from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
 from openjiuwen.harness.tools.browser_move.surfaces.browser.working_context.store import (
     BrowserWorkingContextStore,
 )
@@ -961,7 +963,7 @@ def test_retryable_model_failure_retries_once_then_returns_structured_error() ->
     ctx = AgentCallbackContext(
         agent=MagicMock(),
         session=session,
-        extra={"__browser_task_deadline__": runtime_module.time.monotonic() + 60},
+        extra={"__browser_task_deadline__": rail_module.time.monotonic() + 60},
         exception=RuntimeError("model_provider_response_error: code=504"),
     )
 
@@ -1873,7 +1875,7 @@ def test_unfinished_text_tool_intent_retries_once_in_same_task() -> None:
         session=session,
         inputs=ModelCallInputs(response=response),
     )
-    ctx.extra["__browser_task_deadline__"] = runtime_module.time.monotonic() + 60
+    ctx.extra["__browser_task_deadline__"] = rail_module.time.monotonic() + 60
     rail = BrowserRuntimeRail(runtime)
 
     _run(rail.after_model_call(ctx))
@@ -1901,7 +1903,7 @@ def test_invocation_slice_returns_retryable_partial_with_shared_time_remaining()
     rail = BrowserRuntimeRail(runtime)
     rail._bind_shared_task_deadline(ctx, session, state)
     shared_deadline = state["deadline_at"]
-    ctx.extra["__browser_invocation_deadline__"] = runtime_module.time.monotonic() - 1
+    ctx.extra["__browser_invocation_deadline__"] = rail_module.time.monotonic() - 1
 
     assert rail._finish_if_task_deadline_exhausted(ctx, session, state) is True
 
@@ -1942,7 +1944,7 @@ def test_resume_keeps_shared_deadline_and_gets_a_fresh_invocation_slice() -> Non
     assert resumed["resume_count"] == 1
     assert "task_invocation_slice_exhausted" not in resumed["blockers"]
     assert second_remaining > 0
-    assert second_ctx.extra["__browser_invocation_deadline__"] > runtime_module.time.monotonic()
+    assert second_ctx.extra["__browser_invocation_deadline__"] > rail_module.time.monotonic()
 
 
 def test_structured_resume_preserves_original_slots_and_evidence() -> None:
@@ -2201,7 +2203,7 @@ def test_after_tool_call_treats_a_policy_denial_as_not_executed() -> None:
         inputs=ToolCallInputs(
             tool_name=CLICK,
             tool_args={"target": "e1"},
-            tool_result=runtime_module.PolicyDenied("off limits"),
+            tool_result=rail_module.PolicyDenied("off limits"),
             tool_msg=ToolMessage(tool_call_id="denied", content="### Error\noff limits"),
         ),
     )
@@ -2346,9 +2348,9 @@ def test_a_failing_status_logger_is_logged_and_stays_inside_the_rail() -> None:
     rail = BrowserRuntimeRail(_mock_runtime())
     error = RuntimeError("status sink closed")
     rail._status_logger = SimpleNamespace(before_invoke=MagicMock(side_effect=error))
-    warn = runtime_module.browser_agent_log_warning
+    warn = rail_module.browser_agent_log_warning
 
-    with patch.object(runtime_module, "browser_agent_log_warning", wraps=warn) as warned:
+    with patch.object(rail_module, "browser_agent_log_warning", wraps=warn) as warned:
         rail._emit_status("before_invoke", AgentCallbackContext(agent=MagicMock()))
 
     assert warned.call_args.args[1:] == ("before_invoke", error)

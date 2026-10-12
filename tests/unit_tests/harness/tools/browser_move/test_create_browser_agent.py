@@ -28,13 +28,11 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserRunGuardrails,
     RuntimeSettings,
 )
-from openjiuwen.harness.tools.browser_move.runtime.session import (
-    BrowserAgentRuntime,
-    BrowserRuntimeRail,
-)
+from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
     CORE_BROWSER_TOOL_NAMES,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.working_context import (
     BrowserWorkingContextRail,
 )
