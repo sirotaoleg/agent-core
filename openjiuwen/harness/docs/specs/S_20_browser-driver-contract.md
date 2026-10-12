@@ -39,9 +39,10 @@ Playwright MCP tool name in the core; driver names in the core only in `runtime/
 server's client config) and `runtime/service.py` (the CDP endpoint of the given server config); `contract/`
 imports the standard library and itself; `surfaces/` imports no driver package and no provisioner; the core
 reaches the registries (`DRIVERS`, `PROVISIONERS`, `SURFACES`) from `runtime/assembly.py` only, `SURFACES` also
-from `runtime/config.py` (the surface settings); the core imports no concrete driver, surface or provisioner
-module beyond the allowlisted facade, service, config and agent imports of `surfaces/browser/` that the
-profile fields remove. The browser words left in the core are data keys and attributes (`page`, `url`), the
+from `runtime/config.py` (the surface settings); the core imports no module of `drivers/<name>/`,
+`surfaces/<name>/` or `provisioning/`: the facade, the service, the config and the agent builders read the
+hooks, the worker prompt and the capability catalog from the surface profile, and the registry is the only way
+from the core to a surface. The browser words left in the core are data keys and attributes (`page`, `url`), the
 surface name, identifiers and text the model reads, listed one by one in F_07 ("Phase 9: PR d").
 The browser profile store is `provisioning/profiles.py`. `playwright_runtime/` is an alias package for one release: importing it or any
 `playwright_runtime.<module>` yields the same module objects as `runtime.<module>`, `playwright_runtime.browser_capabilities`
@@ -253,7 +254,15 @@ Data types only; their use is specified with the composition root and the tool f
 - `SurfaceProfile`: `name`, `commands`, `renderer: Renderer`, `tool_specs`, `native_tools`, `capability_catalog`
   (entry -> `(command, ref kind | None)` pairs; `None` is a call without an element ref), `capability_tools`
   (the same entries -> the names of the tools they select), `extra_tools`, `rails`, `policy_rules`, `timeouts`
-  (per `Effect`), `messages`, `settings`, `scene`.
+  (per `Effect`), `messages`, `settings`, `scene`; and the fields the agent runtime facade and the delegated
+  worker read: `capabilities` (the catalog, a tuple of `Capability` in order, its first entry the default one
+  every agent gets), `custom_actions(controller, context)`, `page_metadata(context) -> (metadata, error)`,
+  `policy_probe(context, source, params)`, `activate(context, address) -> bool`, `semantic_tracker()` (a
+  factory) and `worker_prompt(screenshot_subdir, artifacts_subdir, *, tool_names=None, driver_name)`. Each is
+  `None` (the catalog empty) unless the surface fills it; a surface driven through `build_agent` alone (the fake
+  screen surface) fills the catalog only, and the facade calls the hooks without checking them.
+- `Capability(name, description, tool_names, policy_only=False)`: one catalog entry; `policy_only` marks an
+  entry a policy rule alone grants, which the driver has no feature to enable for.
 - `ToolSpec(name, commands, description, prompt_section, schema=None, build=None)`: one model-facing tool; it may
   cover several commands. `schema` is the JSON schema of its arguments; `build(args, resolver) -> Action` is the
   pure decoder (raises `ValueError` for invalid arguments). A spec without either is served only by a driver's
@@ -449,11 +458,12 @@ Public facades; their signatures do not change:
   browser_settings=None)` builds it from the given objects: `None` core settings are `CoreSettings.from_process_env()`,
   `None` browser settings are `browser_surface_settings()`. `build_playwright_mcp_config`,
   `build_browser_guardrails` and `resolve_playwright_mcp_cwd` read the same two objects. `playwright_mcp_config`
-  builds the `--caps` list when it is called: every entry of `DEFAULT_BROWSER_CAPABILITIES` except `core` and the
-  policy-only ones, in catalog order, then the caller's `required_capability`; the catalog is imported inside the
-  function, so `config.py` loads no `surfaces/browser/` module at import (the rule under "Registries" holds for
-  `openjiuwen.harness.tools`, which reaches `config.py`), and the core keeps no module-level copy of the names.
-- `browser_surface_settings(environ=None)` is `SURFACES.create("browser", environ).settings`, with the process
+  builds the `--caps` list when it is called: every entry of the surface profile's catalog after the first (the
+  default one) that is not `policy_only`, in catalog order, then the caller's `required_capability`; the catalog
+  is read through the registry (`browser_surface({}, settings).profile.capabilities`), so `config.py` imports no
+  `surfaces/browser/` module and the core keeps no copy of the names.
+- `browser_surface(environ=None, settings=None)` is `SURFACES.create("browser", environ, None, settings)` and
+  `browser_surface_settings(environ=None)` its `.settings`, with the process
   environment when `environ` is `None`. The core modules (`config.py`, `service.py`, `session.py`) and the entry
   points get the browser settings through it or from their caller and type them as `SurfaceSettings`.
 - `BrowserInstanceConfig` keeps its eight positional fields and appends `provisioning` and `driver` (`""` = from
@@ -494,7 +504,8 @@ value from one.
 - Entry points build settings once: `runtime/main.py` from `process_environ()` (its own inputs through
   `read_demo_inputs(environ)`), `playwright_runtime_mcp_server.py` from `runtime_server_environ(process_environ())`.
   They pass `core_settings` / `browser_settings` to `BrowserAgentRuntime`, which hands them to `BrowserService` and
-  takes `upload_root` and `selector_cache_path` for its custom actions and selector cache.
+  takes `selector_cache_path` for its selector cache; the custom actions read `upload_root` from the context's
+  settings.
 - Public functions keep their signatures and gain keyword-only settings or values. Where a caller passes none, the
   function builds them through the config module at the same moment it read the environment before
   (`build_browser_runtime_mcp_config`, `ensure_execute_signature_compat`, `build_browser_worker_agent`,
@@ -723,9 +734,10 @@ session.page_state)`, the parts' rails and `FinalAnswerRecoveryRail()`, in that 
 and logging. `WORKER_LANGUAGE` (`"en"`, written once in `agents.py`, re-exported by `topology.py`) is the language of
 every agent the facade's entry points build: the worker, and the main agent in the `Direct` topology.
 
-The worker prompt (`build_browser_worker_system_prompt(..., driver_name)` in `surfaces/browser/tools.py`,
-re-rendered per task by
-`refresh_browser_worker_system_prompt(agent, ..., driver_name)`) names the driver in two sentences, "with
+The worker prompt (the profile's `worker_prompt`, `build_browser_worker_system_prompt(..., driver_name)` in
+`surfaces/browser/tools.py`; `build_worker` hands it to `build_browser_worker_agent(..., worker_prompt=)` and the
+loop re-renders it per task by `refresh_browser_worker_system_prompt(agent, worker_prompt=, ..., driver_name)`)
+names the driver in two sentences, "with
 `<driver_name>` tools and approved runtime helper tools only" and "required by a `<driver_name>` action", from
 `worker_driver_name(info)`: `DriverInfo.display_name`, else `name`. On Playwright MCP the prompt reads exactly as
 before (the `runner` golden); on browser-use it says "browser-use tools" / "a browser-use action". The prompt's
@@ -746,6 +758,10 @@ drivers.
 | `timeouts` | 240 s for every `Effect` |
 | `messages` | `driver_restarted`: "the browser restarted; take a fresh observation"; `driver_lost`: "the browser connection was lost again; the task cannot continue"; `context_changed`: "Call browser_snapshot again and use refs from generation {generation}." (a format string); `retry`: "Then retry the action (take a fresh browser_snapshot if the page changed)." (the last line of the intercepted-action hint) |
 | `extra_tools` | `helpers.EXTRA_TOOLS`: `ProbeInteractivesTool`, `ProbeCardsTool`, `FindTool` (see "Helpers") |
+| `capabilities` | `DEFAULT_BROWSER_CAPABILITIES` (`capabilities.py`) |
+| `custom_actions`, `page_metadata`, `policy_probe`, `activate` | `helpers.register_custom_actions`, `helpers.page_metadata`, `helpers.probe_for_policy`, `helpers.activate_page` |
+| `semantic_tracker` | `SemanticStateTracker` (`semantic/state.py`) |
+| `worker_prompt` | `tools.build_browser_worker_system_prompt` |
 | `policy_rules`, `rails`, `native_tools` | empty |
 | `scene` | `None` (the conformance suite takes `browser_scene()` directly) |
 
@@ -815,7 +831,10 @@ unchanged public API) to those of its tool names that a spec or the `browser_fin
 `browser_close`, `browser_drag`, `browser_drop`; `pdf`, `devtools`, `network` keep one tool each; `advanced_code`,
 `unsafe_dev`, `config`, `storage`, `testing` are empty. `CAPABILITY_CATALOG` gives each entry the
 `(command, ref kind)` pairs of its specs: element tools take `DriverRef` and `Locator`, `browser_file_upload` and
-`browser_evaluate` also `None`, the three `xy` tools `PointRef`, all others `None`.
+`browser_evaluate` also `None`, the three `xy` tools `PointRef`, all others `None`. `DEFAULT_BROWSER_CAPABILITIES`
+is a tuple of the contract's `Capability` (`BrowserCapability` is that type under its old name); its
+`advanced_code`, `extended_interaction` and `unsafe_dev` entries are `policy_only`, and
+`POLICY_ONLY_BROWSER_CAPABILITY_NAMES` is derived from them. The profile's `capabilities` is this tuple.
 
 ### Helpers (`surfaces/browser/helpers/`)
 
@@ -824,10 +843,11 @@ they send goes through `context.execute` / `context.observe`, which record it in
 the five tools (`EXTRA_TOOLS`: both probes, the batch, find, recall) to a main-agent build, so the main agent gets
 them at its first invoke; a worker build (`worker=True`) leaves out the tools flagged `worker=False` (recall), so
 the worker gets both probes, the batch and find; the runtime facade calls `probe_for_policy`, `activate_page` and
-`page_metadata` itself.
+`page_metadata` through the profile (`policy_probe`, `activate`, `page_metadata`).
 `CUSTOM_ACTIONS` are not tools: they are the controller's custom actions as functions of the context.
-`register_custom_actions(controller, context, *, upload_root)` registers them on the controller when the runtime's
-session starts, for `browser_custom_action`: first `register_custom_action_specs(controller, *, upload_root)` (the
+`register_custom_actions(controller, context)`, the profile's `custom_actions`, registers them on the controller
+when the runtime's session starts, for `browser_custom_action`: first `register_custom_action_specs(controller,
+upload_root=context.settings.upload_root)` (the
 specs of the three actions and the `list_upload_files` action with its spec over the upload root, `None` = not
 configured), then the three handlers bound to the context. The server entry registers the specs on its default
 controller the same way, with no upload root, after the builtin actions. The builtin actions (`ping`, `echo`,
@@ -1157,8 +1177,8 @@ lifetime, hands it to its `BrowserService`, and from `ensure_runtime_ready()` on
 
 - `ensure_runtime_ready()`: `service.ensure_runtime_ready()`; when the service's session is a new one, a
   `ToolContext` for the runtime's own calls (no image support, the given workspace and language), the controller's
-  builtin actions and `CUSTOM_ACTIONS` registered on the controller as `functools.partial(handler, context)`, and
-  the cached parts dropped.
+  builtin actions registered, the profile's `custom_actions(controller, context)` called, and the cached parts
+  dropped.
 - `ensure_started()` and `run_browser_task(task, session_id=, request_id=, timeout_s=)`, the runner's entry points,
   delegate to the topology: `ensure_started()` picks it once, `topology_for(service.core)` ("Topology",
   `BROWSER_TOPOLOGY`), and calls its `start(self)`; `run_browser_task` is `ensure_started()` then
@@ -1191,8 +1211,10 @@ lifetime, hands it to its `BrowserService`, and from `ensure_runtime_ready()` on
 - `shutdown()`: `service.shutdown()`, the facade's session view dropped, the topology dropped (`drop()`, so a
   `Direct` agent is forgotten and the next `ensure_started` picks and starts a topology again), then
   `OpenAIModelClient.aclose()` so the next event loop (the runner runs one per task) gets fresh clients.
-- Capabilities are derived from `allowed_tool_names`: the entries of `DEFAULT_BROWSER_CAPABILITIES` whose tool
-  names are all allowed (the inverse of `resolve_browser_capabilities`).
+- Capabilities are derived from `allowed_tool_names` on first read: the entries of the profile's catalog whose tool
+  names are all allowed (the inverse of `resolve_browser_capabilities`); with no allowlist, the default entry's
+  tools, and the service then holds `allowed_tool_names=None`. The semantic-state tracker is the profile's
+  `semantic_tracker()`, made on first use.
 - `agent_parts(*, image_support, language)`: `build_agent_parts(session, assembly.surface, ..., language=)`, built
   once per `(image_support, language)`; the receiving agent decides the language ("one language per agent": the
   rail passes the agent's own, `build_worker` passes `WORKER_LANGUAGE`), and the facade's constructor `language`
@@ -1206,12 +1228,12 @@ lifetime, hands it to its `BrowserService`, and from `ensure_runtime_ready()` on
   `progress` is `True` for every factory tool and as declared for a helper.
 - `capture_browser_state(action_group_id="")`, the browser state processor's provider: `page_state.fresh_observation`,
   else one `Observe()` through the context (a `DriverError` becomes `dom_error`, `page observation failed: …`);
-  `observations_reused` counts the reuses; then `page_metadata(context)`. The result keeps its keys (`ok`, `error`,
+  `observations_reused` counts the reuses; then the profile's `page_metadata(context)`. The result keeps its keys (`ok`, `error`,
   `url`, `title`, `tabs`, `page_position`, `semantic_state`, `semantic_progress`, `field_coverage`, `page_state`,
   `dom=""`, `dom_error`, `audit`). `capture_reconciliation_browser_state` runs `page_metadata` only;
   `capture_compact_browser_state` sends nothing. A task failure from the session propagates.
-- `probe_for_policy(source, params)` and `activate_page(url)`, the `DecisionPolicyModel` hooks, call the helpers of
-  the same name on the context; `run_custom_action` binds the runtime to the controller and dispatches.
+- `probe_for_policy(source, params)` and `activate_page(url)`, the `DecisionPolicyModel` hooks, call the profile's
+  `policy_probe` and `activate` on the context; `run_custom_action` binds the runtime to the controller and dispatches.
 - `resolve_model_target_id`, `target_recovery_state`, `resolve_primary_link`, `export_page_state`,
   `set_task_requested_fields`: the page-state views the rail reads.
 - `acquire_task_resources`: the service binding (which calls `session.begin_task()`); `release_task_resources`:

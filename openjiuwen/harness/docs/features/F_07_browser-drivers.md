@@ -3745,3 +3745,127 @@ Totals: `agents.py` 1, `config.py` 3, `controllers/action.py` 4, `page_state.py`
 2. `BrowserPageState.record` reading `surface.url` / `title` by `getattr` and the restart predicates matching driver
    error text are logic items (design §9), not this phase's.
 3. `ASYNC250` in `main.py` (an `input()` call in the demo's async entry) is older than this phase; untouched.
+
+## Phase 9: PR e, the profile carries what the core needed from the surface
+
+A `feat` triple (code, tests, docs) plus one test fix. `SurfaceProfile` gains the fields the facade, the service, the
+config and the agent builders took from `surfaces/browser/` by import: the facade hooks, the worker prompt and the
+capability catalog. After it `runtime/` imports no module of `surfaces/` at all: the core-import allowlist is empty
+and the registry (`assembly.py`, and `config.py` for the surface settings and the catalog) is the only way from the
+core to a surface, which is the plan's done-when for Phase 9 that moves alone could not reach (design §11).
+
+### The contract change
+
+- `Capability(name, description, tool_names, policy_only=False)`: one catalog entry; `policy_only` marks an entry a
+  policy rule alone grants, which the driver has no feature to enable for.
+- `SurfaceProfile` gains `capabilities: tuple[Capability, ...]` (the catalog in order, its first entry the default one
+  every agent gets), `custom_actions(controller, context)`, `page_metadata(context) -> (metadata, error)`,
+  `policy_probe(context, source, params)`, `activate(context, address) -> bool`, `semantic_tracker()` (a factory)
+  and `worker_prompt(screenshot_subdir, artifacts_subdir, *, tool_names=None, driver_name)`. Each is `None` (the
+  catalog empty) unless the surface fills it. Invariants: the agent runtime facade and the delegated worker call
+  them without checking them (a facade over a surface without hooks is a programming error); a surface driven
+  through `build_agent` alone fills the catalog only.
+- The browser profile fills all seven: `DEFAULT_BROWSER_CAPABILITIES` (now a tuple of `Capability`;
+  `BrowserCapability` is that type under its old name, the three policy-only entries carry the flag and
+  `POLICY_ONLY_BROWSER_CAPABILITY_NAMES` is derived from them), `register_custom_actions`, `page_metadata`,
+  `probe_for_policy`, `activate_page`, `SemanticStateTracker`, `build_browser_worker_system_prompt`.
+
+### What the core reads now
+
+| module | before | after |
+|---|---|---|
+| `runtime/session.py` | `CORE_BROWSER_TOOL_NAMES`, `capabilities_of` at construction; `SemanticStateTracker()` at construction; `page_metadata`, `probe_for_policy`, `activate_page`, `register_custom_actions` imported | `capabilities` computed from `profile.capabilities` on first read (the default entry's tools when no allowlist was given, the same result as before); the tracker from `profile.semantic_tracker()` on first use; `ensure_runtime_ready` calls `profile.custom_actions(controller, context)`; the capture, probe and activate methods call the profile's hooks |
+| `runtime/service.py` | `capabilities_of(...)` into an attribute nobody read | gone; `allowed_tool_names` is the allowlist as given (`None` when none) |
+| `runtime/agents.py` | `build_browser_worker_system_prompt` imported; the refresh log named the helper subset | `worker_prompt` is a required keyword of `build_browser_worker_agent` and `refresh_browser_worker_system_prompt`; `build_worker` and the loop pass the session profile's; the log lists the tools the prompt was rendered for |
+| `runtime/config.py` | the catalog imported inside `playwright_mcp_config` | `browser_surface(environ, settings) -> SurfaceBundle` (used by `browser_surface_settings` too); the `--caps` list is the catalog after its first entry minus `policy_only`, read through the registry with the given settings |
+| `surfaces/browser/helpers/custom.py` | `register_custom_actions(controller, context, *, upload_root)` | `register_custom_actions(controller, context)`, the upload root from `context.settings`; `register_custom_action_specs` unchanged for the server |
+
+### Decisions
+
+1. **Typed fields on `SurfaceProfile`, not a `hooks` mapping** (the design's sketch): every hook has a signature the
+   core relies on; a mapping of callables hides them from the reader and the type checker.
+2. **Optional fields, `None` by default, required by the facade without checks.** The alternative, required fields,
+   makes every test profile and the fake surface fill seven callables they never use; a no-op implementation per
+   hook in the contract would put the tracker's interface into the contract. The fake screen surface fills its
+   catalog (one `Capability`, `core`) and leaves the rest `None`: a screen has no metadata script, no probes, no
+   custom actions, no semantic state and no delegated worker; the E2E test runs unchanged.
+3. **The default capability is the catalog's first entry.** The browser catalog lists `core` first and every test
+   profile keys its tools by `core`; a `default` flag or a profile field would say the same thing twice. The `--caps`
+   list is "the rest minus `policy_only`", and `policy_only` lives on `Capability` because the core cannot import
+   the surface's constant.
+4. **Lazy `capabilities` and tracker.** Both need the profile; the facade assembles its surface bundle lazily
+   (`service.core` is read at first use, a documented invariant), so they are computed on first read. Every path
+   reads them after `ensure_runtime_ready`, which assembles the bundle anyway; no observable change.
+5. **The service's own capability computation is deleted**, not moved: nothing read it. Its `allowed_tool_names`
+   is now the allowlist as given, `None` when the caller gave none (it was the core tool names); no package code
+   and no test read it in that case.
+6. **`register_custom_actions(controller, context)`** reads the upload root from the context's settings so the hook
+   signature stays surface-neutral; in production the context's settings are the facade's (the service opens the
+   session with them).
+7. **`config.py` reads the catalog through the registry per server-config build.** The Playwright MCP driver builds
+   its server config from settings alone (`drivers/playwright_mcp/driver.py`), so a catalog parameter would need
+   the same fallback; one registry read more per build makes a dataclass of constants.
+8. **The feat commit carries the test adaptations its signature changes force** (the `worker_prompt` keyword in the
+   four tests that build the worker agent directly, the empty import allowlist), the tests commit the new
+   coverage, as the moves carried their import fixes. One test was missed: the facades test's fake surface factory
+   took `environ` alone (the registry documents `(environ, instance=None, settings=None)`) and returned no profile;
+   fixed in a following `test(harness)` commit, so the feat commit is red for that one test.
+9. **The refresh log line lists all tool names**: the helper subset needed the surface's constant.
+
+### Rejected options
+
+- `hooks: Mapping[str, Callable]` (design sketch): decision 1.
+- Required fields, or contract-level no-op defaults: decision 2.
+- `Capability.default` or `SurfaceProfile.default_capability`: decision 3.
+- Passing the catalog into `playwright_mcp_config` as a keyword: decision 7.
+- Assembling the surface at construction to keep `capabilities` eager: reads the core settings at construction,
+  against the documented lazy read; the facade's other lazy properties already assemble on first use.
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move tests/unit_tests/harness/test_deep_agent_terminal_stream.py -q`
+  after the last commit: **2404 passed, 122 skipped in 51.20s (PR d's 2400 plus the four new tests)**. After the feat commit with its adaptations, 1368 targeted tests green
+  (architecture, contract, surfaces, config, service, facade, worker build, topology, recovery, hint, guard,
+  settings, create agent, capabilities, snapshots, assembly, rail, policy probe, semantic state, worker allowlist,
+  server entry, uploads, terminal stream); the new tests 93 with their files.
+- The eleven harness files outside `browser_move`: **248 passed**.
+- Both live sets, one run (`BROWSER_MOVE_LIVE_MCP=1`, `BROWSER_USE_SIDECAR_PYTHON` set): **119 passed in 353.63s (0:05:53): 51 MCP conformance, 45 browser-use conformance, the helpers, assembly, rails and the four topology cases, as at the Phase 8 and PR b closes**.
+- Goldens: `git diff a632b30f9 --stat -- tests/unit_tests/harness/tools/browser_move/snapshots/golden/` is empty.
+- The alias package: one `DeprecationWarning`, `playwright_runtime.runtime is runtime.session`; the server entry's
+  `--help` exits 0.
+- `ruff check` on the touched files: the pre-existing `ASYNC240` only; `ruff check --select I` over the package, the
+  harness callers and the tests: 27 `I001`, the same files as at the PR b close.
+- Allowlists at the end of Phase 9:
+
+| list | value |
+|---|---|
+| browser words | 10 keys / 114, the residual of PR d (unchanged by PR e) |
+| MCP tool names | empty |
+| driver names | 4 keys / 7: `runtime/browser_tools.py` 3, `runtime/service.py` 1, `surfaces/browser/capabilities.py` 2, `surfaces/browser/helpers/batch_steps.py` 1 |
+| core imports of concrete modules | **empty** |
+| module size | empty |
+| registries | 0 violations (`assembly.py` three, `config.py` `SURFACES`) |
+| surfaces → drivers/provisioning | 0 violations |
+| env reads | unchanged |
+
+### The plan's done-when
+
+- No module in `runtime/` or `surfaces/` over 1,500 lines: holds (the size allowlist is empty).
+- The import-boundary test with `surfaces/` in its rules: `surfaces/` imports `contract/` and `runtime/` helpers and
+  never a driver (holds); `runtime/` never imports `surfaces/` except through the registry (holds: the allowlist is
+  empty, and the registry rule names `assembly.py` and `config.py`).
+- The browser-word allowlist empty: not reachable without renaming keys and public names; the documented residual
+  stands in its place (Aleh, Q4; F_07 "Phase 9: PR d").
+- The snapshots match: the goldens are byte for byte those of `a632b30f9`.
+- The smoke tasks on both drivers: not run in this session (no WebVoyager run); the live conformance, assembly,
+  helper, rail and topology sets ran on both drivers (above).
+
+### Known leftovers
+
+1. `BrowserAgentRuntime` keeps its browser-flavoured public surface (`activate_page(url)`, the `capture_*` methods,
+   `main_agent_answer`'s keys): the runner contract, the residual.
+2. `openjiuwen/harness/subagents/browser_agent.py` and `rails/subagent/subagent_rail.py` import the catalog module
+   directly: outside the package, they compose the browser agent and may.
+3. `service.allowed_tool_names` is `None` when the caller gave no allowlist (decision 5).
+4. Two registry reads per server-config build (decision 7).
+5. The alias package: remove with the next release.
