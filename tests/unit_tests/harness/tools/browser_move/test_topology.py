@@ -19,6 +19,7 @@ from openjiuwen.core.foundation.llm.model_clients.openai_model_client import Ope
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext
 from openjiuwen.harness import deep_agent as deep_agent_module
+from openjiuwen.harness import image_modality_probe
 from openjiuwen.harness.rails.context_engineer import ContextProcessorRail
 from openjiuwen.harness.subagents import browser_agent as browser_agent_module
 from openjiuwen.harness.subagents.browser_agent import DEFAULT_BROWSER_AGENT_SYSTEM_PROMPT
@@ -44,6 +45,7 @@ from openjiuwen.harness.tools.browser_move.runtime.topology import (
     Direct,
     topology_for,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import resolve_browser_capabilities
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails import runtime_rail as rail_module
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
@@ -60,7 +62,10 @@ BROWSER_USE = CoreSettings(driver="browser_use")
 
 
 def _runtime(
-    core: CoreSettings | None = None, language: str | None = "en", instance: BrowserInstanceConfig | None = None
+    core: CoreSettings | None = None,
+    language: str | None = "en",
+    instance: BrowserInstanceConfig | None = None,
+    allowed_tool_names: tuple[str, ...] | None = None,
 ) -> BrowserAgentRuntime:
     return BrowserAgentRuntime(
         provider="openai",
@@ -76,6 +81,7 @@ def _runtime(
         ),
         guardrails=BrowserRunGuardrails(max_steps=7, max_failures=1, timeout_s=30, retry_once=False),
         instance=instance,
+        allowed_tool_names=allowed_tool_names,
         core_settings=core,
         **({} if language is None else {"language": language}),
     )
@@ -168,6 +174,28 @@ class TestDirect:
             "status": "completed",
             "progress": {"status": "completed", "completed_steps": ["read the heading"]},
         }
+
+    def test_start_awaits_the_image_probe_so_the_agent_is_built_on_its_verdict(self) -> None:
+        runtime = _runtime(BROWSER_USE)
+        seen: list[bool | None] = []
+
+        def create(model: Any, **kwargs: Any) -> MagicMock:
+            seen.append(image_modality_probe.get_cached_image_support(model))
+            return MagicMock()
+
+        with (
+            patch.object(topology_module, "probe_image_support", image_modality_probe.probe_image_support),
+            patch.object(image_modality_probe, "_run_probe", AsyncMock(return_value=True)) as probe,
+            patch.object(browser_agent_module, "create_browser_agent", side_effect=create),
+        ):
+            run(runtime.ensure_started())
+
+        assert seen == [True]
+        model = probe.await_args.args[0]
+        assert (model.model_client_config.api_base, model.model_config.model_name) == (
+            "https://example.invalid/v1",
+            "test-model",
+        )
 
     def test_the_agent_speaks_the_workers_language_and_gets_the_core_rails_at_construction(self) -> None:
         runtime = _runtime(BROWSER_USE, language=None)
@@ -328,6 +356,31 @@ class TestDelegatedWorker:
             "browser_custom_action",
             "browser_list_custom_actions",
         ]
+
+    @pytest.mark.parametrize(("verdict", "image_support"), [(True, True), (False, False), (None, False)])
+    def test_the_worker_is_built_on_the_probe_verdict_for_its_model(
+        self, verdict: bool | None, image_support: bool
+    ) -> None:
+        runtime = _runtime(MCP, allowed_tool_names=resolve_browser_capabilities(["vision"]).allowed_tool_names)
+        probe = AsyncMock(return_value=verdict)
+        with (
+            _assembling(),
+            _registering_runtime_tools(),
+            patch.object(topology_module, "probe_image_support", probe),
+            patch.object(agents_module, "build_agent_parts", wraps=agents_module.build_agent_parts) as parts,
+        ):
+            run(runtime.ensure_started())
+            run(runtime.ensure_started())
+
+        model = probe.await_args.args[0]
+        assert probe.await_count == 1
+        assert (model.model_client_config.api_base, model.model_config.model_name) == (
+            "https://example.invalid/v1",
+            "test-model",
+        )
+        assert parts.call_args.kwargs["image_support"] is image_support
+        names = {tool.name for tool in run(runtime.service.browser_agent.ability_manager.list_tool_info())}
+        assert (MCP_PREFIX + "browser_take_screenshot" in names) is image_support
 
     def test_the_worker_is_built_again_after_a_task_release(self) -> None:
         runtime = _runtime(MCP)

@@ -9,6 +9,8 @@ import dataclasses
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.runtime import agents as agents_module
 from openjiuwen.harness.tools.browser_move.runtime.agents import WORKER_LANGUAGE, build_worker
@@ -36,23 +38,20 @@ def _session(display_name: str = "") -> DriverSession:
     return DriverSession(assembly, BrowserPageState(), assembly.surface.profile.messages)
 
 
-def _build(session: DriverSession) -> Any:
-    return asyncio.run(
-        build_worker(
-            session,
-            session.assembly.surface,
-            provider="openai",
-            api_key="test-key",
-            api_base="https://example.invalid/v1",
-            model_name="test-model",
-            max_steps=3,
-            core=CORE,
-            capabilities=("core",),
-            tool_result_observer=_observer,
-            screenshot_subdir="shots",
-            artifacts_subdir="out",
-        )
-    )
+def _build(session: DriverSession, **options: Any) -> Any:
+    kwargs: dict[str, Any] = {
+        "provider": "openai",
+        "api_key": "test-key",
+        "api_base": "https://example.invalid/v1",
+        "model_name": "test-model",
+        "max_steps": 3,
+        "core": CORE,
+        "capabilities": ("core",),
+        "tool_result_observer": _observer,
+        "screenshot_subdir": "shots",
+        "artifacts_subdir": "out",
+    }
+    return asyncio.run(build_worker(session, session.assembly.surface, **(kwargs | options)))
 
 
 def test_the_worker_gets_the_core_tools_the_probes_the_batch_and_find_but_no_recall() -> None:
@@ -114,3 +113,14 @@ def test_the_parts_are_built_in_the_worker_language() -> None:
 
     assert parts.call_args.kwargs["language"] == WORKER_LANGUAGE == "en"
     assert parts.call_args.kwargs["worker"] is True
+
+
+@pytest.mark.parametrize("image_support", [True, False])
+def test_the_worker_gets_the_screenshot_tool_only_with_image_support(image_support: bool) -> None:
+    options = {"image_support": image_support} if image_support else {}
+    with patch.object(agents_module, "build_agent_parts", wraps=agents_module.build_agent_parts) as parts:
+        worker = _build(_session(), capabilities=("core", "vision"), **options)
+
+    assert parts.call_args.kwargs["image_support"] is image_support
+    names = {tool.name for tool in asyncio.run(worker.ability_manager.list_tool_info())}
+    assert (MCP_PREFIX + "browser_take_screenshot" in names) is image_support

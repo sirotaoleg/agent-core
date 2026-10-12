@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from openjiuwen.core.foundation.llm import ToolCall
+from openjiuwen.core.foundation.llm import Model, ModelClientConfig, ModelRequestConfig, ToolCall
 from openjiuwen.core.foundation.llm.schema.message import ToolMessage, UserMessage
 from openjiuwen.core.runner.callback.errors import AbortError
 from openjiuwen.core.single_agent.ability_manager import AbilityManager
@@ -24,6 +24,7 @@ from openjiuwen.core.single_agent.rail.base import (
     ModelCallInputs,
     ToolCallInputs,
 )
+from openjiuwen.harness.image_modality_probe import probe_cache_key, set_cached_image_support
 from openjiuwen.harness.tools.browser_move.contract import (
     ActionResult,
     ActionTimeout,
@@ -2343,3 +2344,46 @@ def test_a_failing_status_logger_is_logged_and_stays_inside_the_rail() -> None:
         rail._emit_status("before_invoke", AgentCallbackContext(agent=MagicMock()))
 
     assert warned.call_args.args[1:] == ("before_invoke", error)
+
+
+def _deep_agent_shaped(verdict: bool) -> tuple[AgentCallbackContext, SimpleNamespace]:
+    model = Model(
+        model_client_config=ModelClientConfig(
+            client_provider="openai", api_key="test-key", api_base="https://example.invalid/v1", verify_ssl=False
+        ),
+        model_config=ModelRequestConfig(model="test-model"),
+    )
+    set_cached_image_support(probe_cache_key(model), verdict)
+    outer = MagicMock()
+    outer.deep_config = SimpleNamespace(enable_read_image_multimodal=None, model=model, language="en")
+    inner = SimpleNamespace(system_prompt_builder=SystemPromptBuilder(language="en"))
+    return AgentCallbackContext(agent=outer), inner
+
+
+def _screenshot_batch(inner: SimpleNamespace) -> AgentCallbackContext:
+    return AgentCallbackContext(
+        agent=inner,
+        inputs=ToolCallInputs(tool_name="browser_batch_interact", tool_args={"steps": [{"op": "screenshot"}]}),
+    )
+
+
+@pytest.mark.parametrize("verdict", [True, False])
+def test_the_inner_agents_hooks_take_image_support_from_the_outer_deep_agents_probe_verdict(verdict: bool) -> None:
+    runtime = make_runtime(image_support=None)
+    runtime.ensure_runtime_ready = AsyncMock()
+    rail = BrowserRuntimeRail(runtime)
+    outer_ctx, inner = _deep_agent_shaped(verdict)
+
+    with patch.object(runtime, "agent_parts", wraps=runtime.agent_parts) as parts:
+        _run(rail.before_invoke(outer_ctx))
+    _run(rail.before_model_call(AgentCallbackContext(agent=inner)))
+    tool_ctx = _screenshot_batch(inner)
+    with patch.object(rail, "_consume_phase_budget", return_value=""):
+        _run(rail.before_tool_call(tool_ctx))
+
+    parts.assert_called_once_with(image_support=verdict, language="en")
+    prompt = inner.system_prompt_builder.build()
+    assert ("The current model can inspect image input" in prompt) is verdict
+    assert ("Image input is unavailable" in prompt) is not verdict
+    denied = tool_ctx.inputs.tool_result
+    assert (denied is not None and denied["error"]["code"] == "browser_image_input_unavailable") is not verdict
