@@ -16,11 +16,16 @@ from openjiuwen.harness.tools.browser_move.runtime.rails.action_policy import Ac
 from openjiuwen.harness.tools.browser_move.runtime.rails.intercepted_action import InterceptedActionHintRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.repeated_call_guard import RepeatedCallGuardRail
 from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
+    CORE_BROWSER_TOOL_NAMES,
+    VISION_BROWSER_TOOL_NAMES,
+)
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     DEVICE,
     MCP_PREFIX,
     element,
     fake_assembly,
+    make_runtime,
     mcp_fake_driver,
     observation,
     result,
@@ -190,3 +195,10 @@ def test_register_runtime_tools_adds_the_two_custom_action_tools_once() -> None:
         "browser_custom_action",
         "browser_list_custom_actions",
     ]
+
+
+def test_capabilities_are_the_catalog_entries_the_allowlist_covers() -> None:
+    assert make_runtime().capabilities == ("core",)
+    vision = make_runtime(allowed_tool_names=CORE_BROWSER_TOOL_NAMES + VISION_BROWSER_TOOL_NAMES)
+    assert vision.capabilities == ("core", "vision")
+    assert vision.service.allowed_tool_names == CORE_BROWSER_TOOL_NAMES + VISION_BROWSER_TOOL_NAMES

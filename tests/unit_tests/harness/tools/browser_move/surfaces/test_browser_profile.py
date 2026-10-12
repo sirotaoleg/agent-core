@@ -27,12 +27,23 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser import commands
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
     CORE_BROWSER_TOOL_NAMES,
     DEFAULT_BROWSER_CAPABILITIES,
+    POLICY_ONLY_BROWSER_CAPABILITY_NAMES,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import GetPdf, OpenContext, UploadFile
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
-from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import EXTRA_TOOLS
+from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import (
+    EXTRA_TOOLS,
+    activate_page,
+    page_metadata,
+    probe_for_policy,
+    register_custom_actions,
+)
 from openjiuwen.harness.tools.browser_move.surfaces.browser.renderer import BrowserRenderer
-from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import BROWSER_TOOL_SPECS
+from openjiuwen.harness.tools.browser_move.surfaces.browser.semantic.state import SemanticStateTracker
+from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import (
+    BROWSER_TOOL_SPECS,
+    build_browser_worker_system_prompt,
+)
 
 DRIVER_NAME_RE = re.compile(r"playwright_mcp|browser_use|browser-use|\bmcp\b", re.IGNORECASE)
 
@@ -134,3 +145,18 @@ def test_vision_pairs_take_points(profile: SurfaceProfile) -> None:
 
 def test_pdf_entry_needs_the_pdf_command(profile: SurfaceProfile) -> None:
     assert profile.capability_catalog["pdf"] == frozenset({(GetPdf, None)})
+
+
+def test_profile_carries_the_catalog_the_hooks_and_the_worker_prompt(profile: SurfaceProfile) -> None:
+    assert profile.capabilities == DEFAULT_BROWSER_CAPABILITIES
+    assert profile.capabilities[0].name == "core" and profile.capabilities[0].tool_names == CORE_BROWSER_TOOL_NAMES
+    policy_only = tuple(entry.name for entry in profile.capabilities if entry.policy_only)
+    assert policy_only == POLICY_ONLY_BROWSER_CAPABILITY_NAMES
+    assert policy_only == ("advanced_code", "extended_interaction", "unsafe_dev")
+    assert profile.custom_actions is register_custom_actions
+    assert profile.page_metadata is page_metadata
+    assert profile.policy_probe is probe_for_policy
+    assert profile.activate is activate_page
+    assert isinstance(profile.semantic_tracker(), SemanticStateTracker)
+    assert profile.semantic_tracker() is not profile.semantic_tracker()
+    assert profile.worker_prompt is build_browser_worker_system_prompt

@@ -10,6 +10,7 @@ from typing import Any
 from openjiuwen.harness.tools.browser_move.contract import (
     Action,
     ActionResult,
+    Capability,
     Click,
     ContentBlock,
     ContextRef,
@@ -162,3 +163,17 @@ def test_surface_profile_has_no_capability_tools_by_default() -> None:
     first = SurfaceProfile(name="toy", commands=(), renderer=_Renderer())
     second = SurfaceProfile(name="toy", commands=(), renderer=_Renderer())
     assert first.capability_tools == {} and first.capability_tools is not second.capability_tools
+
+
+def test_surface_profile_has_no_catalog_and_no_hooks_by_default() -> None:
+    profile = SurfaceProfile(name="toy", commands=(), renderer=_Renderer())
+    assert profile.capabilities == ()
+    assert (profile.custom_actions, profile.page_metadata, profile.policy_probe) == (None, None, None)
+    assert (profile.activate, profile.semantic_tracker, profile.worker_prompt) == (None, None, None)
+
+
+def test_capability_is_a_name_its_tools_and_whether_policy_alone_grants_it() -> None:
+    look = Capability("core", "Look around.", ("look",))
+    assert (look.name, look.description, look.tool_names) == ("core", "Look around.", ("look",))
+    assert look.policy_only is False
+    assert Capability("unsafe", "Anything.", (), policy_only=True).policy_only

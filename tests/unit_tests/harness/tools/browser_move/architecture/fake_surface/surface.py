@@ -12,6 +12,7 @@ from typing import Any, ClassVar
 from openjiuwen.harness.tools.browser_move.contract import (
     Action,
     ActionResult,
+    Capability,
     Click,
     ContentBlock,
     ContextRef,
@@ -85,6 +86,8 @@ def _look(args: Mapping[str, Any], refs: RefResolver) -> Action:
     return Observe(include_screenshot=True)
 
 
+# A screen has no metadata script, no probes, no custom actions, no semantic state and no delegated worker:
+# the hooks and the worker prompt stay None.
 PROFILE = SurfaceProfile(
     name="fake",
     commands=(Poke,),
@@ -96,6 +99,7 @@ PROFILE = SurfaceProfile(
     ),
     capability_catalog={"core": frozenset({(Observe, None), (Click, PointRef), (Poke, PointRef)})},
     capability_tools={"core": ("look", "click", "poke")},
+    capabilities=(Capability("core", "Look at, click and poke the screen.", ("look", "click", "poke")),),
     policy_rules=(PolicyRule(Poke, _on_the_board),),
     timeouts=dict.fromkeys(Effect, 5.0),
     messages=MESSAGES,

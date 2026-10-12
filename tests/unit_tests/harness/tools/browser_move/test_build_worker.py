@@ -84,6 +84,7 @@ def test_the_worker_is_built_with_the_model_identity_the_core_settings_and_the_o
     )
     assert (kwargs["max_steps"], kwargs["settings"], kwargs["tool_result_observer"]) == (3, CORE, _observer)
     assert (kwargs["screenshot_subdir"], kwargs["artifacts_subdir"], kwargs["driver_name"]) == ("shots", "out", "fake")
+    assert kwargs["worker_prompt"] is session.assembly.surface.profile.worker_prompt
     assert [type(call.args[0]) for call in worker.register_rail.await_args_list] == [
         ActionPolicy,
         RepeatedCallGuardRail,
