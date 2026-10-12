@@ -23,9 +23,9 @@ from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import _
 from openjiuwen.harness.tools.browser_move.runtime.assembly import assemble_driver
 from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
 from openjiuwen.harness.tools.browser_move.runtime.driver_session import DriverSession
-from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
+from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
 
 _SIDECAR_PYTHON_ENV = "BROWSER_USE_SIDECAR_PYTHON"
 

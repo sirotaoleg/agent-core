@@ -30,10 +30,10 @@ from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import D
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.runtime.driver_session import DriverSession
-from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import ToolFactory
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
+from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.renderer import BrowserRenderer
 
 COMMANDS = {

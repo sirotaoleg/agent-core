@@ -21,7 +21,6 @@ from openjiuwen.harness.tools.browser_move.contract import (
 from openjiuwen.harness.tools.browser_move.contract.testing.fake import DEFAULT_ACTIONS, FakeDriver
 from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.runtime.driver_session import DriverSession
-from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import ToolContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate, UploadFile
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
@@ -31,6 +30,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import (
     get_element_coordinates,
     set_input_files,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import MESSAGES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.renderer import BrowserRenderer
 

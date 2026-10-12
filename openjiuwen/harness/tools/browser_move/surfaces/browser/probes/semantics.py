@@ -10,7 +10,7 @@ import re
 from typing import Any, Dict, Mapping
 from urllib.parse import urlsplit
 
-from openjiuwen.harness.tools.browser_move.runtime.page_state import CARD_EVIDENCE_FIELDS
+from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import CARD_EVIDENCE_FIELDS
 
 from ..site_profiles import (
     apply_site_card_semantics,

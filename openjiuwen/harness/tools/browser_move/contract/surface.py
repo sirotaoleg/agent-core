@@ -154,7 +154,8 @@ class SurfaceProfile:
     custom actions, ``page_metadata(context)`` returns ``(metadata, error)``, ``policy_probe(context, source, params)``
     runs a policy-owned script, ``activate(context, address)`` brings a context to the front, ``semantic_tracker()``
     makes the surface's semantic state tracker and ``worker_prompt`` renders the worker's system prompt (the core's
-    neutral one when ``None``).
+    neutral one when ``None``). ``page_state()`` makes the surface's subclass of the core's ``PageState`` (the core's
+    own when ``None``).
     """
 
     name: str
@@ -179,6 +180,7 @@ class SurfaceProfile:
     activate: Activate | None = None
     semantic_tracker: Callable[[], Any] | None = None
     worker_prompt: WorkerPrompt | None = None
+    page_state: Callable[[], Any] | None = None
 
 
 @dataclass(frozen=True)

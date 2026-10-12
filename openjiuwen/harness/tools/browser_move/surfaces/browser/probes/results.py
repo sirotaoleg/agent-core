@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from openjiuwen.harness.tools.browser_move.runtime.page_state import CARD_EVIDENCE_FIELDS
+from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import CARD_EVIDENCE_FIELDS
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.keys import (
     _BROWSER_PHASE_STATE_KEY,
     _BROWSER_SELECTED_SORT_LABELS,

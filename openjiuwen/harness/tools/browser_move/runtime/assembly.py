@@ -24,7 +24,7 @@ from ..provisioning import PROVISIONERS, ProvisionedDevice, Provisioner
 from ..surfaces import SURFACES
 from .config import CoreSettings
 from .driver_session import DriverSession
-from .page_state import BrowserPageState
+from .page_state import PageState
 from .rails.action_policy import ActionPolicy
 from .rails.intercepted_action import InterceptedActionHintRail
 from .rails.repeated_call_guard import RepeatedCallGuardRail
@@ -130,7 +130,7 @@ async def open_session(
     core: CoreSettings,
     environ: Mapping[str, str],
     *,
-    page_state: BrowserPageState,
+    page_state: PageState,
     instance: Any = None,
     settings: Any = None,
     registries: Registries | None = None,
@@ -143,8 +143,13 @@ async def open_session(
     return DriverSession(assembly, page_state, assembly.surface.profile.messages)
 
 
+def new_page_state(profile: SurfaceProfile) -> PageState:
+    """The surface's ``PageState`` subclass when its profile brings one, else the core's own."""
+    return PageState() if profile.page_state is None else profile.page_state()
+
+
 def core_rails(
-    profile: SurfaceProfile, builders: Mapping[str, Builder], page_state: BrowserPageState
+    profile: SurfaceProfile, builders: Mapping[str, Builder], page_state: PageState
 ) -> tuple[AgentRail, ...]:
     """The policy, the repeated-call guard and the intercepted-action hint, over the live ``builders`` mapping."""
     return (
@@ -199,7 +204,7 @@ async def build_agent(
 ) -> tuple[DeepAgent, DriverSession]:
     """A deep agent over a started driver session; the caller closes the session when the agent is done."""
     assembly = await assemble_driver(core, environ, instance=instance, registries=registries)
-    session = DriverSession(assembly, BrowserPageState(), assembly.surface.profile.messages)
+    session = DriverSession(assembly, new_page_state(assembly.surface.profile), assembly.surface.profile.messages)
     try:
         parts = build_agent_parts(
             session,
@@ -233,5 +238,6 @@ __all__ = [
     "build_agent",
     "build_agent_parts",
     "core_rails",
+    "new_page_state",
     "open_session",
 ]

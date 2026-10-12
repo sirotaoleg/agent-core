@@ -41,7 +41,7 @@ from ..contract import (
 )
 from ..contract.masking import masked
 from .driver_session import DriverSession
-from .page_state import BrowserPageState
+from .page_state import PageState
 
 Builder = Callable[[Mapping[str, Any], RefResolver], Action]
 
@@ -53,7 +53,7 @@ class ToolContext:
     """What the profile's ``extra_tools`` and ``rails`` factories receive; ``driver`` is the session."""
 
     driver: DriverSession
-    page_state: BrowserPageState
+    page_state: PageState
     renderer: Renderer
     driver_info: DriverInfo
     settings: Any
@@ -126,7 +126,7 @@ class CommandRecord:
 
     @classmethod
     def failed(
-        cls, action: Action, error: DriverError, page_state: BrowserPageState, *, effect: Effect | None = None
+        cls, action: Action, error: DriverError, page_state: PageState, *, effect: Effect | None = None
     ) -> CommandRecord:
         """The record of a command the driver refused or failed."""
         return cls(
@@ -269,7 +269,7 @@ class ToolFactory:
         *,
         image_support: bool,
         session: DriverSession,
-        page_state: BrowserPageState,
+        page_state: PageState,
         workspace: Any = None,
         language: str = "cn",
         worker: bool = False,

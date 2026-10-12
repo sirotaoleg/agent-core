@@ -54,7 +54,6 @@ from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.runtime import tool_factory
 from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.runtime.driver_session import DriverSession
-from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.runtime.rails.action_policy import ActionPolicy
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import (
     AgentTools,
@@ -66,6 +65,7 @@ from openjiuwen.harness.tools.browser_move.runtime.tool_factory import (
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import EXTRA_TOOLS, FindTool, RecallOffloadTool
+from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
 from openjiuwen.harness.tools.browser_move.surfaces.browser.renderer import BrowserRenderer
 

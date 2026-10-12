@@ -10,10 +10,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from openjiuwen.harness.tools.browser_move.runtime.page_state import (
-    BrowserPageState,
-)
-from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import make_runtime, run as _run
+from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
+from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import make_runtime
+from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import run as _run
 
 
 def _interactive(selector: str, text: str) -> dict:
@@ -325,7 +324,7 @@ def test_replacing_ax_snapshot_preserves_present_refs_and_removes_missing_refs()
 
 def test_runtime_reset_invalidates_current_page_state() -> None:
     runtime = make_runtime()
-    runtime._service = SimpleNamespace(reset=AsyncMock())
+    runtime._service = SimpleNamespace(reset=AsyncMock(), page_state=runtime.page_state)
     payload = {"elements": [_interactive("#query", "Search")]}
     runtime.page_state.register_interactives(payload)
     target_id = payload["elements"][0]["target_id"]
@@ -343,7 +342,9 @@ def test_runtime_reset_invalidates_current_page_state() -> None:
 
 def test_runtime_reset_failure_still_invalidates_current_page_state() -> None:
     runtime = make_runtime()
-    runtime._service = SimpleNamespace(reset=AsyncMock(side_effect=RuntimeError("reset failed")))
+    runtime._service = SimpleNamespace(
+        reset=AsyncMock(side_effect=RuntimeError("reset failed")), page_state=runtime.page_state
+    )
 
     with pytest.raises(RuntimeError, match="reset failed"):
         _run(runtime.reset())

@@ -37,7 +37,6 @@ from openjiuwen.harness.tools.browser_move.contract import (
     Wait,
 )
 from openjiuwen.harness.tools.browser_move.contract.masking import masked
-from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState, BrowserTarget
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandRecord, ToolContext, ToolFlags
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     FieldKind,
@@ -61,6 +60,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers.batch_steps 
     step_errors,
     text_of,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState, BrowserTarget
 from openjiuwen.harness.tools.browser_move.surfaces.browser.policy import policy_denial
 
 _ACTION = "browser_batch_interact"

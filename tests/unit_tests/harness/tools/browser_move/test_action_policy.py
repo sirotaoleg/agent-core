@@ -23,10 +23,10 @@ from openjiuwen.harness.tools.browser_move.contract import (
     RefResolver,
 )
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
-from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.runtime.rails.action_policy import ActionPolicy
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
+from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
 
 NAVIGATE_TOOL = "mcp_playwright-official_browser_navigate"
 CLICK_TOOL = "mcp_playwright-official_browser_click"

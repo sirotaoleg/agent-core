@@ -25,6 +25,7 @@ from .commands import (
 )
 from .config import BrowserSettings
 from .helpers import EXTRA_TOOLS, activate_page, page_metadata, probe_for_policy, register_custom_actions
+from .page_state import BrowserPageState
 from .policy import POLICY_RULES
 from .renderer import BrowserRenderer
 from .semantic.state import SemanticStateTracker
@@ -69,5 +70,6 @@ def create_browser_surface(
         activate=activate_page,
         semantic_tracker=SemanticStateTracker,
         worker_prompt=build_browser_worker_system_prompt,
+        page_state=BrowserPageState,
     )
     return SurfaceBundle(settings=settings, profile=profile)

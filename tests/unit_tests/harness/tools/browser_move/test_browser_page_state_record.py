@@ -26,7 +26,6 @@ from openjiuwen.harness.tools.browser_move.contract import (
     SwitchContext,
 )
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import DECODERS
-from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     FieldKind,
     FillForm,
@@ -34,6 +33,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     Navigate,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
+from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
 
 TAB_0 = ContextRef(id="0", kind="tab", title="Shop")
 TAB_1 = ContextRef(id="1", kind="tab", title="Cart")

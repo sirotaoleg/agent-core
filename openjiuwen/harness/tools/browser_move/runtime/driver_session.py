@@ -15,7 +15,7 @@ from openjiuwen.core.common.exception.codes import StatusCode
 from openjiuwen.core.common.exception.errors import build_error
 
 from ..contract import Action, ActionResult, ConnectionLost, DriverError, Health, Observation, Observe
-from .page_state import BrowserPageState
+from .page_state import PageState
 
 if TYPE_CHECKING:
     from .assembly import DriverAssembly
@@ -27,7 +27,7 @@ class DriverSession:
     A live device gets the same stack restarted; a dead one is released, provisioned again and gets a new stack.
     """
 
-    def __init__(self, assembly: DriverAssembly, page_state: BrowserPageState, messages: Mapping[str, str]) -> None:
+    def __init__(self, assembly: DriverAssembly, page_state: PageState, messages: Mapping[str, str]) -> None:
         self.assembly = assembly
         self._page_state = page_state
         self._restarted = messages["driver_restarted"]
@@ -35,7 +35,7 @@ class DriverSession:
         self._losses = 0
 
     @property
-    def page_state(self) -> BrowserPageState:
+    def page_state(self) -> PageState:
         return self._page_state
 
     def begin_task(self) -> None:

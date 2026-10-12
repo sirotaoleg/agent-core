@@ -20,7 +20,7 @@ from openjiuwen.core.foundation.store.kv.in_memory_kv_store import InMemoryKVSto
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.single_agent.agents.react_agent import ReActAgent
 
-from .assembly import open_session
+from .assembly import assemble_surface, new_page_state, open_session
 from .config import (
     BrowserInstanceConfig,
     BrowserRunGuardrails,
@@ -30,7 +30,7 @@ from .config import (
     process_environ,
 )
 from .driver_session import DriverSession
-from .page_state import BrowserPageState
+from .page_state import PageState
 from .service_registry import BROWSER_SERVICE_REGISTRY, BrowserServiceIdentity
 from .worker import BrowserTaskProgressState, _WorkerLoop
 
@@ -51,7 +51,7 @@ class BrowserService(_WorkerLoop):
         allowed_tool_names: Optional[Iterable[str]] = None,
         browser_settings: Optional[SurfaceSettings] = None,
         core_settings: Optional[CoreSettings] = None,
-        page_state: Optional[BrowserPageState] = None,
+        page_state: Optional[PageState] = None,
     ) -> None:
         self.provider = provider
         self.api_key = api_key
@@ -69,7 +69,7 @@ class BrowserService(_WorkerLoop):
             else tuple(dict.fromkeys(allowed_tool_names))
         )
         self._cancel_store: BaseKVStore = cancel_store or InMemoryKVStore()
-        self._page_state = page_state or BrowserPageState()
+        self._page_state = page_state
         self._session: Optional[DriverSession] = None
 
         self.started = False
@@ -89,6 +89,14 @@ class BrowserService(_WorkerLoop):
         self._lifecycle_identity = self._build_lifecycle_identity()
         self._registry_acquired = False
         self._task_binding_ref_count = 0
+
+    @property
+    def page_state(self) -> PageState:
+        """Made by the surface's profile at first use, so it is the surface's own subclass."""
+        if self._page_state is None:
+            surface = assemble_surface(self.core, process_environ(), instance=self._instance, settings=self._settings)
+            self._page_state = new_page_state(surface.profile)
+        return self._page_state
 
     @property
     def browser_agent(self) -> Optional[ReActAgent]:
@@ -381,7 +389,7 @@ class BrowserService(_WorkerLoop):
     async def _open_session(self) -> DriverSession:
         settings = replace(self._settings, mcp_server=self.mcp_cfg, mcp_cwd=self._mcp_cwd)
         session = await open_session(
-            self.core, process_environ(), page_state=self._page_state, instance=self._instance, settings=settings
+            self.core, process_environ(), page_state=self.page_state, instance=self._instance, settings=settings
         )
         BROWSER_SERVICE_REGISTRY.register_managed_driver(self._lifecycle_identity, self, session.assembly.provisioner)
         return session

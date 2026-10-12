@@ -31,7 +31,7 @@ from .config import (
 )
 from .controllers import ActionController, BaseController
 from .driver_session import DriverSession
-from .page_state import BrowserPageState, BrowserTarget
+from .page_state import PageState, Target
 from .service import BrowserService
 from .tool_factory import Builder, ToolContext, ToolFlags
 from .topology import Topology, topology_for
@@ -98,7 +98,6 @@ class BrowserAgentRuntime:
         self._language = language
         self._allowed_tool_names = None if allowed_tool_names is None else tuple(dict.fromkeys(allowed_tool_names))
         self._capabilities: tuple[str, ...] | None = None
-        self._page_state = BrowserPageState()
         self._service = BrowserService(
             provider=provider,
             api_key=api_key,
@@ -110,7 +109,6 @@ class BrowserAgentRuntime:
             allowed_tool_names=self._allowed_tool_names,
             browser_settings=self._browser_settings,
             core_settings=core_settings,
-            page_state=self._page_state,
         )
         self._browser_custom_action_tool = None
         self._browser_list_actions_tool = None
@@ -198,8 +196,12 @@ class BrowserAgentRuntime:
         return self._controller
 
     @property
-    def page_state(self) -> BrowserPageState:
-        return self._page_state
+    def page_state(self) -> PageState:
+        return self._service.page_state
+
+    @property
+    def _page_state(self) -> Any:
+        return self._service.page_state
 
     @property
     def session(self) -> DriverSession | None:
@@ -221,7 +223,7 @@ class BrowserAgentRuntime:
 
         self._page_state.set_requested_fields(fields)
 
-    def resolve_model_target_id(self, target_id: str) -> BrowserTarget:
+    def resolve_model_target_id(self, target_id: str) -> Target:
         """Resolve or safely refresh a runtime-owned model target."""
 
         page_state = self._page_state

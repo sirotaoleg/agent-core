@@ -23,7 +23,7 @@ from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.runtime.driver_session import DriverSession
-from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
+from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
 
 MESSAGES = {"driver_restarted": "restarted; observe again", "driver_lost": "the device is gone"}
 CLICK = Click(DriverRef("e1", "g0"))

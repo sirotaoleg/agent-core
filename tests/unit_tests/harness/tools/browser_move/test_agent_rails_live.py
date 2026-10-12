@@ -23,7 +23,6 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
     CoreSettings,
     playwright_mcp_config,
 )
-from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.runtime.rails.final_answer_recovery import (
     NON_JSON_OUTPUT,
     RESTATE_MESSAGE,
@@ -31,6 +30,7 @@ from openjiuwen.harness.tools.browser_move.runtime.rails.final_answer_recovery i
 from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import CORE_BROWSER_TOOL_NAMES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
+from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import MESSAGES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene import PAGES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene.server import SceneServer

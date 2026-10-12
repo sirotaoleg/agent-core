@@ -19,7 +19,7 @@ from openjiuwen.harness.rails.security.base_security_rail import (
 )
 
 from ...contract import Action, PolicyDenied, PolicyRule, RefResolver
-from ..page_state import BrowserPageState
+from ..page_state import PageState
 
 Builder = Callable[[Mapping[str, Any], RefResolver], Action]
 
@@ -32,7 +32,7 @@ class ActionPolicy(BaseSecurityRail):
 
     supported_events = {AgentCallbackEvent.BEFORE_TOOL_CALL}
 
-    def __init__(self, builders: Mapping[str, Builder], rules: Iterable[PolicyRule], page_state: BrowserPageState):
+    def __init__(self, builders: Mapping[str, Builder], rules: Iterable[PolicyRule], page_state: PageState):
         super().__init__()
         self._builders = builders
         self._rules = tuple(rules)

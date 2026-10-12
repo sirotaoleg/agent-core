@@ -15,8 +15,8 @@ from openjiuwen.core.foundation.llm import ToolCall
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext, ToolCallInputs
 from openjiuwen.harness.tools.browser_move.contract import PolicyDenied, PressKey, RunScript
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import DECODERS
-from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.runtime.rails.action_policy import ActionPolicy
+from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.policy import CLIPBOARD_DENIED, policy_denial
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
 from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import BROWSER_TOOL_SPECS

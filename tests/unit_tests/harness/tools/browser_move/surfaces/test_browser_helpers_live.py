@@ -22,7 +22,6 @@ from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import D
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.runtime.driver_session import DriverSession
-from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandTool, ToolContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate, OpenContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
@@ -35,6 +34,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import (
     drag_and_drop,
     set_input_files,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import MESSAGES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.renderer import BrowserRenderer
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene import PAGES

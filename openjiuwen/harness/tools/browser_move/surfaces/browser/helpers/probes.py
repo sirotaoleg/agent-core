@@ -17,9 +17,9 @@ from openjiuwen.harness.tools.browser_move.contract import ActionResult, DriverE
 from openjiuwen.harness.tools.browser_move.runtime.browser_logging import (
     write_browser_agent_audit_artifact,
 )
-from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandRecord, ToolContext, ToolFlags
 from openjiuwen.harness.tools.browser_move.runtime.utils.parsing import extract_json_object
+from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.probes import (
     build_card_probe_js,
     build_interactive_probe_js,
