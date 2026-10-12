@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from openjiuwen.core.foundation.llm import Model, ModelClientConfig, ModelRequestConfig
 from openjiuwen.core.runner import Runner
+from openjiuwen.harness.image_modality_probe import probe_image_support
 
 from ..contract.registry import default_topology
 from .agents import WORKER_LANGUAGE, build_worker
@@ -37,6 +38,18 @@ class Topology(Protocol):
     def drop(self) -> None: ...
 
 
+def _model(service: Any) -> Model:
+    core = service.core
+    return Model(
+        model_client_config=ModelClientConfig(
+            client_provider=service.provider, api_key=service.api_key, api_base=service.api_base, verify_ssl=False
+        ),
+        model_config=ModelRequestConfig(
+            model=service.model_name, temperature=core.worker_temperature, top_p=core.worker_top_p
+        ),
+    )
+
+
 class Direct:
     """The main agent, built on the facade, calls the tools itself; one run per task under the guardrails' timeout."""
 
@@ -54,14 +67,9 @@ class Direct:
         runtime.dedicated_log = False
         service = runtime.service
         core = service.core
-        model = Model(
-            model_client_config=ModelClientConfig(
-                client_provider=service.provider, api_key=service.api_key, api_base=service.api_base, verify_ssl=False
-            ),
-            model_config=ModelRequestConfig(
-                model=service.model_name, temperature=core.worker_temperature, top_p=core.worker_top_p
-            ),
-        )
+        model = _model(service)
+        # The runner runs one asyncio.run per task, which a background probe would not outlive.
+        await probe_image_support(model)
         self._agent = create_browser_agent(
             model,
             language=WORKER_LANGUAGE,
@@ -107,6 +115,7 @@ class DelegatedWorker:
         service = runtime.service
         if service.browser_agent is None:
             session = service.session
+            image_support = await probe_image_support(_model(service)) is True
             service.browser_agent = await build_worker(
                 session,
                 session.assembly.surface,
@@ -117,6 +126,7 @@ class DelegatedWorker:
                 max_steps=service.guardrails.max_steps,
                 core=service.core,
                 capabilities=runtime.capabilities,
+                image_support=image_support,
                 tool_result_observer=service.observe_worker_tool_result,
                 screenshot_subdir=service.screenshot_subdir,
                 artifacts_subdir=service.artifacts_subdir,

@@ -240,10 +240,11 @@ async def build_worker(
     tool_result_observer: ToolResultObserver,
     screenshot_subdir: str,
     artifacts_subdir: str,
+    image_support: bool = False,
 ) -> ReActAgent:
     """The worker over a started session: the factory's worker tools, the core rails, the final-answer recovery."""
     parts = build_agent_parts(
-        session, bundle, capabilities=capabilities, image_support=False, language=WORKER_LANGUAGE, worker=True
+        session, bundle, capabilities=capabilities, image_support=image_support, language=WORKER_LANGUAGE, worker=True
     )
     worker = build_browser_worker_agent(
         provider=provider,

@@ -105,6 +105,7 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
     def __init__(self, runtime: BrowserAgentRuntime) -> None:
         super().__init__()
         self._runtime = runtime
+        self._agent: Any = None
         self._status_logger = (
             BrowserSubagentStatusLogger(command_of=self._command_of)
             if is_browser_subagent_status_log_enabled(runtime.core_settings)
@@ -135,6 +136,9 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
             browser_agent_log_warning("[BROWSER_SUBAGENT_ERROR] method=%s error=%s", method_name, exc)
 
     async def before_invoke(self, ctx: AgentCallbackContext) -> None:
+        # Only the invoke hooks fire on the DeepAgent; the model and tool hooks get its inner ReActAgent,
+        # which has no deep_config to resolve image support from.
+        self._agent = ctx.agent
         if isinstance(getattr(ctx, "extra", None), dict):
             if self._runtime.dedicated_log:
                 ctx.extra[_BROWSER_LOG_CONTEXT_TOKEN_KEY] = set_browser_agent_log_context(True)
@@ -1244,6 +1248,5 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
             }
         )
 
-    @staticmethod
-    def _image_input_supported(agent: Any) -> bool:
-        return should_enable_read_image_multimodal(agent)
+    def _image_input_supported(self, agent: Any) -> bool:
+        return should_enable_read_image_multimodal(self._agent if self._agent is not None else agent)
