@@ -113,6 +113,8 @@ class DelegatedWorker:
 
     def __init__(self) -> None:
         self._image_support = False
+        self._offered: frozenset[str] = frozenset()
+        self._dropped: frozenset[str] = frozenset()
 
     async def start(self, runtime: BrowserAgentRuntime) -> None:
         await runtime.ensure_runtime_ready()
@@ -134,6 +136,10 @@ class DelegatedWorker:
                 artifacts_subdir=service.artifacts_subdir,
                 image_support=self._image_support,
             )
+            if self._dropped:
+                service.browser_agent.ability_manager.remove_ability(sorted(self._dropped))
+                self._dropped = frozenset()
+            self._offered = _tool_names(service.browser_agent)
         runtime.register_runtime_tools()
 
     async def run(
@@ -148,7 +154,11 @@ class DelegatedWorker:
         # rebuilt once with the screenshot tool and image results.
         if await probe_image_support(_model(runtime.service)) and not self._image_support:
             self._image_support = True
-            runtime.service.browser_agent = None
+            started = runtime.service.browser_agent
+            if started is not None:
+                # The caller may have removed tools from the started worker (the runner drops the helpers).
+                self._dropped = self._offered - _tool_names(started)
+                runtime.service.browser_agent = None
 
         async def worker() -> Any:
             await self.start(runtime)
@@ -160,6 +170,10 @@ class DelegatedWorker:
 
     def drop(self) -> None:
         """The worker lives in the service's slot, which the service clears on reset and shutdown."""
+
+
+def _tool_names(agent: Any) -> frozenset[str]:
+    return frozenset(ability.name for ability in agent.ability_manager.list())
 
 
 _TOPOLOGIES: dict[str, type[Direct] | type[DelegatedWorker]] = {
