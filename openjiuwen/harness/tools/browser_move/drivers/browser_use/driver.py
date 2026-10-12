@@ -7,14 +7,16 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import dataclasses
 import re
 import struct
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Mapping
 
+from openjiuwen.core.common.logging import logger as _logger
 from openjiuwen.harness.tools.browser_move.contract import (
     ActionIntercepted,
     ActionResult,
@@ -51,7 +53,6 @@ from openjiuwen.harness.tools.browser_move.contract import (
     handles,
 )
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.transport import SidecarTransport
-from openjiuwen.harness.tools.browser_move.runtime.browser_logging import get_browser_agent_logger
 from openjiuwen.harness.tools.browser_move.runtime.utils.upload_paths import resolve_upload_file_paths
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     Back,
@@ -64,8 +65,6 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     UploadFile,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
-
-_logger = get_browser_agent_logger()
 
 _CONTEXT_KIND = "tab"
 # Element-scoped scripts: the target is stamped with this attribute, then found by the returned selector.
@@ -126,6 +125,7 @@ class BrowserUseConfig:
     timeout_s: float = 30.0
     sidecar_python: Path | None = None
     upload_root: Path | None = None
+    environ: Mapping[str, str] = dataclasses.field(default_factory=dict, repr=False)
 
 
 def _translate_error(method: str, exc: Exception) -> DriverError:
@@ -261,7 +261,9 @@ class BrowserUseDriver(HandlerDriver):
             raise DriverError("BrowserUseDriver.start() needs a BrowserUseConfig", dispatched=False)
         if self._transport is not None:
             await self.stop()
-        transport = SidecarTransport(sidecar_python=config.sidecar_python, upload_root=config.upload_root)
+        transport = SidecarTransport(
+            sidecar_python=config.sidecar_python, upload_root=config.upload_root, environ=config.environ
+        )
         try:
             await transport.start(timeout_s=config.timeout_s)
             result = await transport.request(
@@ -584,6 +586,7 @@ def create_browser_use_driver(device: ProvisionedDevice, surface_settings: Any) 
             cdp_url=device.endpoint,
             sidecar_python=surface_settings.sidecar_python,
             upload_root=surface_settings.upload_root,
+            environ=surface_settings.process_env,
         )
     )
 

@@ -48,6 +48,7 @@ from openjiuwen.harness.tools.browser_move.contract import (
 )
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp import driver as driver_module
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.clients import BrowserMoveStdioClient
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.clients.stdio_client import sanitize_json_schema
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.driver import (
     PlaywrightMcpConfig,
     PlaywrightMcpDriver,
@@ -61,7 +62,6 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserInstanceConfig,
     build_playwright_mcp_config,
 )
-from openjiuwen.harness.tools.browser_move.runtime.utils.parsing import sanitize_json_schema
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     Back,
     Drop,

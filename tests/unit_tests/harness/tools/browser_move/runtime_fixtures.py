@@ -25,13 +25,13 @@ from openjiuwen.harness.tools.browser_move.contract import (
 )
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.contract.testing.fake import DEFAULT_ACTIONS
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.clients.stdio_client import sanitize_json_schema
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import DECODERS
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
 from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime, ToolKind
-from openjiuwen.harness.tools.browser_move.runtime.utils.parsing import sanitize_json_schema
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     Back,
     Drop,

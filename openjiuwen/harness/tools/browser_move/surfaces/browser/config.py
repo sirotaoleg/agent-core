@@ -122,6 +122,8 @@ class BrowserSettings:
     upload_root: Path | None = None
     sidecar_python: Path | None = None
     selector_cache_path: Path | None = None
+    # Child processes start from it; the browser-use transport passes on only a credential-free subset.
+    process_env: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}), repr=False, compare=False)
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str]) -> BrowserSettings:
@@ -163,6 +165,7 @@ class BrowserSettings:
             upload_root=Path(upload_root).expanduser().resolve() if upload_root else None,
             sidecar_python=Path(sidecar_python) if sidecar_python else None,
             selector_cache_path=_optional_path((environ.get("OPENJIUWEN_BROWSER_SELECTOR_CACHE") or "").strip()),
+            process_env=MappingProxyType(dict(environ)),
         )
 
     @classmethod

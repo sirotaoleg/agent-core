@@ -2,16 +2,14 @@
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 import asyncio
 from contextlib import AsyncExitStack
-from typing import Any, List, Optional, Dict
+from typing import Any, Dict, List, Optional
 
 from openjiuwen.core.common.logging import logger
 from openjiuwen.core.foundation.tool import McpServerConfig, McpToolCard
 from openjiuwen.core.foundation.tool.mcp.base import NO_TIMEOUT
-from openjiuwen.harness.tools.browser_move.runtime.browser_logging import (
-    browser_agent_log_info,
-    browser_agent_log_warning,
-)
+
 from .logging_utils import summarize_tool_arguments_for_log
+
 try:
     from openjiuwen.core.foundation.tool.mcp.client.streamable_http_client import StreamableHttpClient
 except ModuleNotFoundError:
@@ -154,16 +152,16 @@ class BrowserMoveStreamableHttpClient(StreamableHttpClient):
 
         for attempt in range(2):
             try:
-                browser_agent_log_info(
+                logger.info(
                     f"Calling tool '{tool_name}' via Streamable HTTP with arguments_summary: "
                     f"{summarize_tool_arguments_for_log(tool_name, arguments)}"
                 )
                 tool_result = await self._session.call_tool(tool_name, arguments=arguments)
-                browser_agent_log_info(f"Tool '{tool_name}' call completed via Streamable HTTP")
+                logger.info(f"Tool '{tool_name}' call completed via Streamable HTTP")
                 return tool_result
             except Exception as e:
                 if attempt == 0 and self._is_retryable_transport_error(e):
-                    browser_agent_log_warning(
+                    logger.warning(
                         f"Streamable HTTP tool call '{tool_name}' retry after reconnect: {e}"
                     )
                     connected = await self._reconnect(timeout=timeout)
@@ -180,12 +178,12 @@ class BrowserMoveStreamableHttpClient(StreamableHttpClient):
         """The ``CallToolResult`` of one call via Streamable HTTP, never re-sent: a failed call may already have run."""
         if not self._session:
             raise RuntimeError("Not connected to Streamable HTTP server")
-        browser_agent_log_info(
+        logger.info(
             f"Calling tool '{tool_name}' via Streamable HTTP with arguments_summary: "
             f"{summarize_tool_arguments_for_log(tool_name, arguments)}"
         )
         tool_result = await self._session.call_tool(tool_name, arguments=arguments)
-        browser_agent_log_info(f"Tool '{tool_name}' call completed via Streamable HTTP")
+        logger.info(f"Tool '{tool_name}' call completed via Streamable HTTP")
         return tool_result
 
     async def call_tool(self, tool_name: str, arguments: dict, *, timeout: float = NO_TIMEOUT) -> Any:

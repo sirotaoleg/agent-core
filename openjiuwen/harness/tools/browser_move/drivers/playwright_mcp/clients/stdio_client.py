@@ -8,12 +8,53 @@ from openjiuwen.core.common.logging import logger
 from openjiuwen.core.foundation.tool import McpToolCard
 from openjiuwen.core.foundation.tool.mcp.base import NO_TIMEOUT, preserve_mcp_tool_result_status
 from openjiuwen.core.foundation.tool.mcp.client.stdio_client import StdioClient
-from openjiuwen.harness.tools.browser_move.runtime.browser_logging import (
-    browser_agent_log_info,
-    browser_agent_log_warning,
-)
-from ....runtime.utils.parsing import sanitize_json_schema
+
 from .logging_utils import summarize_tool_arguments_for_log
+
+# Top-level schema keys that OpenAI-compatible APIs (including Dashscope) reject.
+_UNSUPPORTED_SCHEMA_KEYS = {"$schema", "$id", "$defs", "definitions", "$comment", "$anchor", "$vocabulary"}
+
+
+def sanitize_json_schema(schema: Any) -> Any:
+    """Recursively strip schema keywords unsupported by OpenAI-compatible APIs.
+
+    Converts ``anyOf: [{type: X}, {type: "null"}]`` nullable patterns to the
+    plain type so Dashscope doesn't reject the schema with error 181001.
+    """
+    if not isinstance(schema, dict):
+        return schema
+
+    # Collapse anyOf/oneOf nullable shorthands: [{type: X}, {type: "null"}] → type: X
+    for kw in ("anyOf", "oneOf"):
+        variants = schema.get(kw)
+        if isinstance(variants, list) and len(variants) == 2:
+            non_null = [v for v in variants if v != {"type": "null"} and v.get("type") != "null"]
+            null_count = len(variants) - len(non_null)
+            if null_count == 1 and len(non_null) == 1:
+                merged = {k: v for k, v in schema.items() if k != kw}
+                merged.update(non_null[0])
+                schema = merged
+
+    cleaned = {k: v for k, v in schema.items() if k not in _UNSUPPORTED_SCHEMA_KEYS}
+
+    # Normalize null type to "object": some tool servers emit {"type": null}
+    # for tools with no parameters, but OpenAI-compatible APIs require type to be a string.
+    if cleaned.get("type") is None and "type" in cleaned:
+        cleaned["type"] = "object"
+
+    if "properties" in cleaned and isinstance(cleaned["properties"], dict):
+        cleaned["properties"] = {k: sanitize_json_schema(v) for k, v in cleaned["properties"].items()}
+
+    for kw in ("items", "additionalProperties", "not"):
+        if kw in cleaned:
+            cleaned[kw] = sanitize_json_schema(cleaned[kw])
+
+    for kw in ("anyOf", "oneOf", "allOf"):
+        if kw in cleaned and isinstance(cleaned[kw], list):
+            cleaned[kw] = [sanitize_json_schema(v) for v in cleaned[kw]]
+
+    return cleaned
+
 
 
 class BrowserMoveStdioClient(StdioClient):
@@ -318,7 +359,7 @@ class BrowserMoveStdioClient(StdioClient):
         effective_timeout = self._resolve_timeout(timeout)
         for attempt in range(2):
             try:
-                browser_agent_log_info(
+                logger.info(
                     f"Calling tool '{tool_name}' via Stdio with arguments_summary: "
                     f"{summarize_tool_arguments_for_log(tool_name, arguments)}"
                 )
@@ -326,11 +367,11 @@ class BrowserMoveStdioClient(StdioClient):
                     self._session.call_tool(tool_name, arguments=arguments),
                     timeout=effective_timeout,
                 )
-                browser_agent_log_info(f"Tool '{tool_name}' call completed via Stdio")
+                logger.info(f"Tool '{tool_name}' call completed via Stdio")
                 return tool_result
             except asyncio.TimeoutError as e:
                 if attempt == 0:
-                    browser_agent_log_warning(
+                    logger.warning(
                         f"Stdio tool call '{tool_name}' timed out after"
                         f" {effective_timeout:.1f}s, retrying after reconnect"
                     )
@@ -345,7 +386,7 @@ class BrowserMoveStdioClient(StdioClient):
                 ) from e
             except Exception as e:
                 if attempt == 0 and self._is_retryable_transport_error(e):
-                    browser_agent_log_warning(
+                    logger.warning(
                         f"Stdio tool call '{tool_name}' retry after reconnect: type={type(e).__name__}, repr={e!r}"
                     )
                     connected = await self._reconnect(timeout=timeout)
@@ -367,7 +408,7 @@ class BrowserMoveStdioClient(StdioClient):
         """The ``CallToolResult`` of one call via Stdio, never re-sent: a failed call may already have run."""
         if not self._session:
             raise RuntimeError("Not connected to Stdio server")
-        browser_agent_log_info(
+        logger.info(
             f"Calling tool '{tool_name}' via Stdio with arguments_summary: "
             f"{summarize_tool_arguments_for_log(tool_name, arguments)}"
         )
@@ -375,7 +416,7 @@ class BrowserMoveStdioClient(StdioClient):
             self._session.call_tool(tool_name, arguments=arguments),
             timeout=self._resolve_timeout(),
         )
-        browser_agent_log_info(f"Tool '{tool_name}' call completed via Stdio")
+        logger.info(f"Tool '{tool_name}' call completed via Stdio")
         return tool_result
 
     async def call_tool(self, tool_name: str, arguments: dict, *, timeout: float = NO_TIMEOUT) -> Any:

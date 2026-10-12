@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import platform
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -311,10 +312,12 @@ class TestBrowserUseSidecar:
 
     def test_factory_takes_sidecar_python_and_upload_root_from_surface_settings(self) -> None:
         device = ProvisionedDevice(kind="chrome", endpoint="http://127.0.0.1:9333", extras={}, cleanup=None)
-        settings = BrowserSettings(sidecar_python=Path("/py"), upload_root=Path("/uploads"))
+        settings = BrowserSettings.from_env({"PATH": "/bin", "BROWSER_UPLOAD_ROOT": "/uploads"})
+        settings = replace(settings, sidecar_python=Path("/py"))
         config = create_browser_use_driver(device, settings)._config
-        assert (config.cdp_url, config.sidecar_python, config.upload_root) == (
+        assert (config.cdp_url, config.sidecar_python, config.upload_root, dict(config.environ)) == (
             "http://127.0.0.1:9333",
             Path("/py"),
-            Path("/uploads"),
+            Path("/uploads").resolve(),
+            {"PATH": "/bin", "BROWSER_UPLOAD_ROOT": "/uploads"},
         )
