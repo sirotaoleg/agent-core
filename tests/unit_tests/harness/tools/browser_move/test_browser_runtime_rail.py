@@ -2114,7 +2114,6 @@ def test_before_model_call_initializes_runtime_task_state_without_progress_attac
 
 def test_after_tool_call_records_browser_tool_progress() -> None:
     runtime = make_runtime(mcp_fake_driver(results=[result(url="https://example.com", title="Example")]))
-    runtime.service.record_tool_progress = MagicMock()
     session = _FakeSession()
     session.update_state({"__browser_phase_budget_state__": BrowserRuntimeRail._build_phase_state("open example.com")})
     output = _invoke(runtime, NAVIGATE, {"url": "https://example.com"})
@@ -2123,7 +2122,6 @@ def test_after_tool_call_records_browser_tool_progress() -> None:
 
     _run(rail.after_tool_call(ctx))
 
-    runtime.service.record_tool_progress.assert_not_called()
     task_state = session.get_state("__browser_phase_budget_state__")
     assert len(task_state["recent_actions"]) == 1
     assert task_state["recent_actions"][0]["action_class"] == "navigation"
@@ -2224,7 +2222,6 @@ def test_after_invoke_rewrites_max_iteration_with_failure_summary() -> None:
             last_screenshot=None,
         )
     }
-    runtime.service.export_progress_state = MagicMock(return_value={"status": "partial"})
     runtime.service.build_failure_summary = MagicMock(return_value="Failure summary for continuation:\n- step")
     session = _FakeSession()
     session.update_state(
@@ -2279,14 +2276,6 @@ def test_after_invoke_renders_authoritative_max_iteration_result() -> None:
 def test_after_invoke_promotes_completed_progress_block() -> None:
     runtime = MagicMock(spec=BrowserAgentRuntime)
     runtime.service = MagicMock()
-    runtime.service.get_progress_state = MagicMock(return_value=MagicMock(is_empty=MagicMock(return_value=False)))
-    runtime.service.record_worker_progress = MagicMock()
-    runtime.service.export_progress_state = MagicMock(
-        return_value={
-            "status": "completed",
-            "completion_evidence": ["Saved the settings page"],
-        }
-    )
     runtime.service.should_treat_as_completed = MagicMock(return_value=True)
     session = _FakeSession()
     result = {
