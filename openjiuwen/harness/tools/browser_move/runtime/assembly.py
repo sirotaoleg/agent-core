@@ -76,7 +76,9 @@ def _stack_builder(core: CoreSettings, surface: SurfaceBundle, drivers: Registry
         if core.surface not in driver.info.surfaces:
             served = ", ".join(sorted(driver.info.surfaces)) or "none"
             raise ValueError(f"driver {core.driver!r} does not serve surface {core.surface!r} (it serves: {served})")
-        return Tracing(RetryOnStale(Timeouts(driver, surface.profile.timeouts)), _log_trace)
+        # The core's tool timeout (PLAYWRIGHT_TOOL_TIMEOUT_S / BROWSER_TIMEOUT_S) caps every bound the surface sets.
+        per_effect = {effect: min(seconds, core.tool_timeout_s) for effect, seconds in surface.profile.timeouts.items()}
+        return Tracing(RetryOnStale(Timeouts(driver, per_effect)), _log_trace)
 
     return build
 
