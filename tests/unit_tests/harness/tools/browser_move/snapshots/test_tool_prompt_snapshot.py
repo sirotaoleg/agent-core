@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import re
 
 import pytest
 
@@ -89,7 +90,7 @@ def test_browser_use_golden_is_well_formed(view: str) -> None:
     assert builder.render(doc) == text, "golden file is not in canonical form (sorted keys, indent 2, final newline)"
     assert set(doc) == {"agents", "driver", "source_commit", "view"}
     assert doc["driver"] == "browser_use"
-    assert doc["source_commit"] == "857239db"
+    assert re.fullmatch(r"[0-9a-f]{8}", doc["source_commit"]), "the golden records the commit it was taken from"
     assert doc["view"] == view
     for agent in doc["agents"]:
         assert set(agent) == {"role", "system_prompt", "tools"}

@@ -1,6 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""The task rules block: today's date and one rule per Phase 10 failure, read by the worker and the main agent."""
+"""The task rules block: today's date and one rule per live-run failure, read by the worker and the main agent."""
 
 from __future__ import annotations
 

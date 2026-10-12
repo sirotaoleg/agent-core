@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping
 from urllib.parse import parse_qsl, urlparse
 
-
 logger = logging.getLogger(__name__)
 
 

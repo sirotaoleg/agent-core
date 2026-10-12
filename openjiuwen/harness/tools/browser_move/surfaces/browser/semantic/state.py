@@ -13,7 +13,6 @@ from collections import deque
 from typing import Any, Dict, Iterable, Mapping
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-
 _FILTER_KEY_TOKENS = (
     "filter",
     "sort",

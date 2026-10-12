@@ -15,7 +15,7 @@ BROWSER_WORD_RE = re.compile(r"\b(?:browser|page|tab|url)\b", re.IGNORECASE)
 
 # file relative to the package -> number of browser-word matches.
 KNOWN_BROWSER_WORDS: dict[str, int] = {
-    # the documented residual (F_07, Phase 9 PR d): data keys and attributes (page, url), the surface name,
+    # the documented residual (F_07): data keys and attributes (page, url), the surface name,
     # identifiers and the text the model reads; each hit is listed there with its reason
     "runtime/agents.py": 1,
     "runtime/config.py": 3,

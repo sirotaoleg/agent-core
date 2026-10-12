@@ -11,6 +11,7 @@ import time
 from collections import Counter
 from typing import Any, Callable, Mapping, Optional
 from urllib.parse import urlsplit, urlunsplit
+
 from openjiuwen.harness.tools.browser_move.runtime.browser_logging import (
     browser_agent_log_info,
 )
