@@ -3402,3 +3402,112 @@ since earlier phases; the ratchet only fails on growth) and `browser_logging.py`
    imports and `semantic.state` at 2 (the rail still imports `price_interval_signature`) leave with the rail in PR b.
 3. The pre-existing compile-time warning `invalid escape sequence '\s'` now names `surfaces/browser/probes/cards.py:265`.
 4. The alias package, its test and the two map entries: remove in the next release (Phase 8 decision 5).
+
+## Phase 9: PR b, the rail leaves the core
+
+`runtime/runtime.py` becomes `runtime/session.py` and keeps the facade; `BrowserRuntimeRail` moves to
+`surfaces/browser/rails/runtime_rail.py` as a hook class over five mixins; the prompt text (the worker prompt, the
+image and date-picker sections) moves to `surfaces/browser/tools.py`. Three commits, each proved by goldens and AST
+identity; after them the MCP tool-name allowlist is empty and no core module names a browser tool.
+
+### What moved
+
+| commit | from | to |
+|---|---|---|
+| rename | `runtime/runtime.py` | `runtime/session.py` (R100; imports in `main.py`, `topology.py`, `runtime_tools.py`, the two lazy `__init__` exports, the server, `browser_agent.py`, `decision_policy.py`, the tests, the two API docs; `_MOVED["runtime"] = "runtime.session"`) |
+| cut | `BrowserRuntimeRail` (149 methods, 46 module constants, 3 helpers) | `rails/runtime_rail.py`: the class statement with 45 methods (the hooks, `__init__`, `_emit_status`, lifecycle, deadlines, progress, target normalisation) and 19 constants (15 once the prompt commit moves four on); `rails/terminal.py` `_TerminalMixin` 15 methods + 5 constants; `rails/results.py` `_ResultsMixin` 8 + 2; `probes/results.py` `_ProbeResultsMixin` 8; `semantic/phases.py` `_PhaseMixin` 44 + 9 constants + 2 helpers (and `_NUMBER_WORDS`); `semantic/evidence.py` `_EvidenceMixin` 29 + 3; `rails/keys.py` the 8 constants and `_contains_any_token` two or more of these use |
+| prompt | `runtime_rail.py` (4 section constants), `runtime/agents.py` (`_BROWSER_WORKER_HELPER_TOOL_NAMES`, `build_browser_worker_system_prompt`) | `surfaces/browser/tools.py`, appended verbatim; `before_model_call` and `agents.py` import them |
+
+`runtime/session.py` keeps `_ACTIVE_BROWSER_RUNTIMES`, `ToolKind`, `_tool_args`, `BrowserAgentRuntime` and the two
+reset functions (732 lines). The mixin modules import `rails/keys.py`, `runtime/session.py` (`ToolKind`,
+`_tool_args`, the facade type) and the rest of what their methods use; `runtime_rail.py` imports the five mixins;
+nothing imports `runtime_rail.py` but `browser_agent.py` and the tests. Every constant landed where its users are,
+and the by-use placement agreed with the design's table for all 46 (the nine shared ones in `keys.py`).
+
+### The cut mechanism
+
+Each mixin is a plain class whose methods are the old methods, decorators and bodies included; the class statement
+lists them before `AgentRail`, so `self._x(...)` resolves through the MRO exactly as before and no call site, no
+`patch.object(BrowserRuntimeRail, ...)` target and no golden changes. No mixin defines a hook name (`before_*`,
+`after_*`, `on_*`): `AgentRail.get_callbacks` sees the class alone. A `_NUMBER_WORDS` class attribute moves with its
+only reader (`_infer_requested_result_count`, which reads it through `cls`).
+
+### Two bodies changed: the static methods that named the class
+
+The design's premise was "methods verbatim". Four call sites in two static methods named `BrowserRuntimeRail` to
+reach a phase classmethod: `_recommended_recovery` (`rails/terminal.py`) calls `_missing_evidence_slots` and
+`_unavailable_evidence_slots`; `_build_phase_state` (`semantic/phases.py`) calls `_infer_required_evidence_slots`
+and `_infer_requested_result_count`. A mixin module cannot import `runtime_rail.py` (it is imported by it), so the
+four tokens name `_PhaseMixin`, the class that now owns the callees; `terminal.py` imports it from `phases.py`. This
+is why `_NUMBER_WORDS` is on `_PhaseMixin`: called through the mixin, `cls` is the mixin. The transitive `cls.`
+closure of the four callees stays inside `_PhaseMixin`, checked before the cut. The AST check lists exactly these
+two methods as changed and the class shell (new bases); everything else is identical.
+
+### Decisions
+
+1. **One mixin per target module, the class statement with the hooks** (design §2.1): no wrapper layer, no
+   `self → rail` renames, the ≈60 test call sites and patch targets untouched.
+2. **A name, not a signature, for the four cross-references.** The alternative, turning the two static methods
+   into classmethods and writing `cls._x(...)`, changes two signatures and two decorators for the same effect; a
+   caller through the rail class would see no difference either way. Aleh can ask for the classmethod form.
+3. **The prompt constants travel with the rail in the cut commit** and move on to `tools.py` in the prompt commit,
+   rather than staying in `session.py` for one commit with a `surfaces → runtime` import of private names.
+4. **Tests that read or patch module attributes follow the code**: `browser_agent_log_warning` is patched on the
+   rail module (`_emit_status` lives there), `time` and `PolicyDenied` are read from it, the log-context key too;
+   the status-log source test reads `runtime_rail.py`. Module attributes the facade still uses (`Runner`,
+   `OpenAIModelClient`, `ToolKind`, the registry) stay read from `session.py`.
+5. **Absolute imports in the new surface modules**, as the rest of `surfaces/browser/` outside the package-internal
+   relative ones; `session.py` keeps its relative imports (same folder).
+6. **The alias package serves `playwright_runtime.runtime` as the session module** through `_MOVED`, so the
+   WebVoyager runner's `BrowserAgentRuntime` import resolves unchanged; the runner-contract mirror is green as it is.
+
+### Rejected options
+
+- **Cutting the facade** across modules (design §2.1): its browser hooks cannot leave without the PR e contract change.
+- **Module-level functions with one-line methods** (design §2.1): ≈450 lines of wrappers, every body renamed.
+- **A late import of `runtime_rail` at the bottom of `terminal.py` / `phases.py`** to keep the four tokens: the
+  cycle fails whenever the import starts from `runtime_rail.py` (the class is not defined yet).
+- **Leaving `_NUMBER_WORDS` on the rail**: `_PhaseMixin._infer_requested_result_count` would raise on `cls`.
+- **A forwarding `runtime/runtime.py`**: a `runtime → runtime` alias nobody outside the repo imports (the runner
+  imports the alias package); the shim covers it.
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move tests/unit_tests/harness/test_deep_agent_terminal_stream.py -q`
+  at the cut and at the prompt commit: **2399 passed, 122 skipped** (2398 / 122 after PR a plus the alias map case
+  for `runtime`); at the rename, the touched suites green (485 tests over two runs).
+- AST identity (the scratch script): the cut, old `session.py` against the eight files, **262 old definitions
+  accounted for, 0 problems** (3 expected changed: the class shell, `_recommended_recovery`, `_build_phase_state`; 1
+  expected moved: `_NUMBER_WORDS`); the prompt move, `agents.py` + `runtime_rail.py` + `tools.py` before and after,
+  **128 / 128**; the rename is R100.
+- Method set: `vars(BrowserRuntimeRail) ∪ vars(mixins)` equals the old `vars(BrowserRuntimeRail)` (150 names);
+  no hook name on any mixin; MRO `BrowserRuntimeRail, _TerminalMixin, _ResultsMixin, _ProbeResultsMixin,
+  _PhaseMixin, _EvidenceMixin, AgentRail`.
+- Goldens: `git diff a632b30f9 --stat -- tests/unit_tests/harness/tools/browser_move/snapshots/golden/` is empty.
+- The eleven harness files outside `browser_move`: **248 passed** (as at the Phase 8 close).
+- Both live sets, one run, `BROWSER_MOVE_LIVE_MCP=1` and `BROWSER_USE_SIDECAR_PYTHON` set: **100 passed in 296.16s (0:04:56)** (51 MCP conformance, 4 assembly, 45 browser-use conformance) and, in a second invocation, **19 passed in 74.87s** (helpers, rails, the four topology cases): 119, as at the Phase 8 close.
+- `uv run python -W always -c "import …playwright_runtime.browser_capabilities, …playwright_runtime.runtime"`: one
+  `DeprecationWarning`; `playwright_runtime.runtime is runtime.session`.
+- `ruff check --select I` over the package, the harness callers and the tests: 10 `I001`, as after PR a (the
+  blocks the moves touched were re-sorted; the ten left are pre-existing in files not edited). `ruff check` on the
+  touched files: only pre-existing findings (`E501` ×4 in the status-log test, `ASYNC250` in `main.py`). The new
+  modules are clean, and `ruff format --diff` over the eight files sums to the old file's 144 lines: no new drift.
+- Allowlists, PR a → PR b:
+
+| list | after PR a | after PR b |
+|---|---|---|
+| browser words | 13 keys / 280 | 13 keys / 203: `runtime.py` 95 → `session.py` 39 (the design predicted ≈ 23: the rail's share was 56, not 73), `agents.py` 23 → 2 |
+| MCP tool names | 2 keys / 20 | **empty** |
+| driver names | 4 keys / 7 | unchanged |
+| core imports of concrete modules | 8 keys / 19 | 6 keys / 14: `session.py → helpers` 4, `→ capabilities` 2, `→ semantic.state` 1 (`price_interval_signature` left with the rail), `service.py → capabilities` 2, `config.py → capabilities` 3, new `agents.py → surfaces.browser.tools` 2 (the design's §5.4 end state) |
+| module size | 3 keys | 2 keys (`session.py` gone; `service.py` 1910 stale at 1570, untouched) |
+| env reads | unchanged | unchanged |
+
+### Known leftovers
+
+1. The four `_PhaseMixin.` tokens in two static bodies (decision 2); the classmethod form is the alternative.
+2. `session.py` keeps 39 browser words (its own `page`/`url` keys and `activate_page`); the text pass (PR d) and PR e
+   decide what stays.
+3. The import allowlist is at the design's PR d end state already (6 keys); PR e empties it.
+4. `KNOWN_OVERSIZED_MODULES` still says `service.py` 1910 (actual 1570); PR c removes the key.
+5. The alias package: `_MOVED` has three entries now; remove with the package next release.
