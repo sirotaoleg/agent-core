@@ -461,9 +461,14 @@ listed in [[F_07_browser-drivers]] ("Settings", inventory).
 | `BROWSER_DRIVER` | `CoreSettings.driver` | `BrowserSettings.provisioning` |
 |---|---|---|
 | unset or empty | `playwright_mcp` | `BROWSER_PROVISIONING`, default `remote` (`extension` when `PLAYWRIGHT_MCP_EXTENSION` is true) |
-| `playwright_mcp`, `browser_use` | that value | as for unset |
-| `managed`, `remote`, `extension` (legacy) | `playwright_mcp` | `BROWSER_PROVISIONING` if set, else the legacy value; one `DeprecationWarning` per parse from `BrowserSettings` (Python's warning registry shows it once per value and call site) |
-| anything else | `ValueError` | as for unset |
+| `managed`, `remote`, `extension` (legacy) | `playwright_mcp` (`DEFAULT_DRIVER`) | `BROWSER_PROVISIONING` if set, else the legacy value; one `DeprecationWarning` per parse from `BrowserSettings` (Python's warning registry shows it once per value and call site) |
+| any other name | that value | as for unset |
+
+The parser does not check the name: a driver registered from another package (`register_driver`) is selected by
+setting `BROWSER_DRIVER` to its name. The driver registry checks it when the driver is built
+(`assemble_driver` → `DRIVERS.create`): an unregistered name is `KeyError("unknown driver '<name>'; registered:
+<names>")` after provisioning, and the device is released; `topology_for` raises the same error when no topology is
+given. `BrowserInstanceConfig.driver` takes any registered name the same way.
 
 Values are compared after trimming and lower-casing. An explicit `BROWSER_PROVISIONING` or a legacy value wins over
 `PLAYWRIGHT_MCP_EXTENSION`; without one, the provisioner and the Playwright MCP config agree on extension mode. `BROWSER_DRIVER_BACKEND` is not read.
@@ -477,7 +482,7 @@ happen when the composition root imports `drivers/`, so a `CoreSettings` built a
 The resolution happens where the driver is known, in `topology_for(service.core)` at the facade's
 `ensure_started()` ("Topology"), so an instance's `driver` override takes its own default.
 
-Errors: `ValueError` for an unknown `BROWSER_DRIVER`, `BROWSER_TOPOLOGY` or `BROWSER_PROVISIONING`, a `BROWSER_MANAGED_PORT` that is not
+Errors: `ValueError` for an unknown `BROWSER_TOPOLOGY` or `BROWSER_PROVISIONING`, a `BROWSER_MANAGED_PORT` that is not
 a positive integer, and a `PLAYWRIGHT_MCP_ENV_JSON` that is not JSON. Every other invalid value falls back to the
 next key or the default. `CoreSettings` keeps an unsupported `MODEL_PROVIDER` as given (the harness path takes its
 model from the parent agent and must not fail on it); `build_runtime_settings` rejects it as before.

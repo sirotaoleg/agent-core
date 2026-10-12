@@ -4409,3 +4409,35 @@ the end of the phase).
    resolved by the server against its working directory.
 2. The browser log context decides where driver lines go; a driver used outside an agent invoke logs to the process
    log.
+
+## Phase 11: selection, offering, optional hooks
+
+Three `fix` triples from the reviews (I1, P1; P5; P3, I10, D19): a registered driver is selectable by name, a tool is
+offered only when the driver can run what it needs, and a surface that leaves the browser hooks empty runs through the
+production facade.
+
+### Any registered driver by name (M1)
+
+`CoreSettings` accepted only `playwright_mcp` and `browser_use` for `BROWSER_DRIVER`, so `register_driver` from another
+package worked but the setting could not choose it; the fake-surface test only reached its driver through
+`CoreSettings(driver=...)` in Python.
+
+Decisions:
+1. **The registry is the only check.** `_driver` keeps legacy provisioning values mapped to `DEFAULT_DRIVER` and returns
+   any other name; `DRIVERS.create` raises `unknown driver '<name>'; registered: <names>` when the stack is built. The
+   `DRIVERS` tuple of `config.py` is gone (`DEFAULT_DRIVER` replaces its first entry; nothing else read it).
+2. **The error comes after provisioning.** The stack is built from the provisioned device, so an unknown name provisions
+   first and releases the device on the failure (existing behaviour of `assemble_driver`). Checking the name in the
+   parser would need the registry at parse time, when the built-in registrations may not have happened yet (the same
+   reason the topology default is resolved late).
+
+Rejected options:
+- Validating against `DRIVERS.names()` in `CoreSettings.from_env`: the parser runs before `drivers/` is imported, so the
+  built-in names would be missing; importing `drivers/` from `config.py` adds a core → driver edge.
+
+Verification: `test_assembly.py` selects a driver registered in a test registry through
+`CoreSettings.from_env({"BROWSER_DRIVER": "fake_driver"})` and `assemble_driver` (fails before: `ValueError` at parse),
+and an unregistered name fails at build with the registered names and a released device;
+`test_settings_facades.py`'s `BROWSER_DRIVER=cua` builds the runtime settings and fails at `assemble_driver` with
+`unknown driver 'cua'; registered: browser_use, playwright_mcp`; `test_core_settings.py` keeps any name as given.
+Unit suite: 2506 passed, 122 skipped.
