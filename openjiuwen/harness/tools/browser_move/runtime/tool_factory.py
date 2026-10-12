@@ -78,12 +78,17 @@ class ToolContext:
 
 @dataclass(frozen=True)
 class ToolFlags:
-    """What an extra tool declares for the rails in place of its name; ``worker``: offered to a delegated worker too."""
+    """What an extra tool declares in place of its name.
+
+    ``worker``: offered to a delegated worker too; ``requires``: the commands the tool sends, all of which the driver
+    must handle for the tool to be offered.
+    """
 
     effect: Effect = Effect.READ
     exempt_from_budget: bool = False
     progress: bool = True
     worker: bool = True
+    requires: tuple[type[Action], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -299,9 +304,16 @@ class ToolFactory:
             builders[card.name] = build
             if spec.prompt_section:
                 sections.append(spec.prompt_section)
-        tools.extend(
-            factory(context) for factory in self._profile.extra_tools if not worker or _flags(factory).worker
-        )
+        for factory in self._profile.extra_tools:
+            flags = _flags(factory)
+            if worker and not flags.worker:
+                continue
+            missing = [command.__name__ for command in flags.requires if command not in self._info.actions]
+            if missing:
+                name = getattr(factory, "__name__", repr(factory))
+                self._report(name, f"{self._info.name} does not handle {missing}")
+                continue
+            tools.append(factory(context))
         names = {tool.card.name for tool in tools}
         for name in self._unserved(capabilities):
             if name not in names and self._info.tool_name_prefix + name not in names:

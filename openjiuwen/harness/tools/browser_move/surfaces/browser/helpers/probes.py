@@ -158,7 +158,7 @@ async def probe_for_policy(context: ToolContext, source: str, params: Mapping[st
 class ProbeInteractivesTool(Tool):
     """``browser_probe_interactives`` as one page script."""
 
-    flags = ToolFlags()
+    flags = ToolFlags(requires=(RunScript,))
 
     def __init__(self, context: ToolContext) -> None:
         super().__init__(
@@ -226,7 +226,7 @@ class ProbeInteractivesTool(Tool):
 class ProbeCardsTool(Tool):
     """``browser_probe_cards`` as one page script; results feed the selector cache as before."""
 
-    flags = ToolFlags()
+    flags = ToolFlags(requires=(RunScript,))
 
     def __init__(self, context: ToolContext) -> None:
         super().__init__(

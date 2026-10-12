@@ -293,7 +293,10 @@ class _Timing:
 class BatchTool(Tool):
     """``browser_batch_interact``: one command per step, after the step targets were checked on the page."""
 
-    flags = ToolFlags(effect=Effect.ACT)
+    flags = ToolFlags(
+        effect=Effect.ACT,
+        requires=(Click, TypeText, PressKey, SelectOption, FillForm, Navigate, Wait, SwitchContext, RunScript),
+    )
 
     def __init__(self, context: ToolContext) -> None:
         super().__init__(ToolCard(name=_ACTION, description=DESCRIPTION, input_params=PARAMETERS))
