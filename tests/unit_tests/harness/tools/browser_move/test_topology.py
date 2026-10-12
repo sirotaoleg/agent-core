@@ -60,7 +60,10 @@ BROWSER_USE = CoreSettings(driver="browser_use")
 
 
 def _runtime(
-    core: CoreSettings | None = None, language: str | None = "en", instance: BrowserInstanceConfig | None = None
+    core: CoreSettings | None = None,
+    language: str | None = "en",
+    instance: BrowserInstanceConfig | None = None,
+    workspace: Path | None = None,
 ) -> BrowserAgentRuntime:
     return BrowserAgentRuntime(
         provider="openai",
@@ -77,6 +80,7 @@ def _runtime(
         guardrails=BrowserRunGuardrails(max_steps=7, max_failures=1, timeout_s=30, retry_once=False),
         instance=instance,
         core_settings=core,
+        workspace=None if workspace is None else str(workspace),
         **({} if language is None else {"language": language}),
     )
 
@@ -246,8 +250,8 @@ class TestDirect:
             assert (direct.dedicated_log, run(invoked(direct))) == (False, (False, False))
             assert (_runtime().dedicated_log, run(invoked(_runtime()))) == (True, (True, True))
 
-    def test_a_session_that_cannot_start_fails_the_task_before_any_model_call(self) -> None:
-        runtime = _runtime(BROWSER_USE)
+    def test_a_session_that_cannot_start_fails_the_task_before_any_model_call(self, tmp_path: Path) -> None:
+        runtime = _runtime(BROWSER_USE, workspace=tmp_path)
         failing = AsyncMock(side_effect=ConnectionLost("connect: No valid agent focus available", dispatched=True))
         model_calls = AsyncMock(side_effect=RuntimeError("the model was called"))
         with (

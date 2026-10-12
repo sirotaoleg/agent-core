@@ -93,8 +93,9 @@ class Run:
 
 
 @pytest.fixture(scope="module")
-def run() -> Run:
+def run(tmp_path_factory: pytest.TempPathFactory) -> Run:
     run = Run()
+    workspace = tmp_path_factory.mktemp("fake-surface-workspace")
 
     async def scenario() -> None:
         agent, session = await build_agent(
@@ -108,6 +109,7 @@ def run() -> Run:
             enable_task_loop=False,
             enable_read_image_multimodal=False,
             max_iterations=len(SCRIPT) + 2,
+            workspace=str(workspace),
         )
         agent.add_rail(run.results)
         run.results.page_state = session.page_state
