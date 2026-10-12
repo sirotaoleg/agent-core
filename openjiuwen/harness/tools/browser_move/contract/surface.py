@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol, Union
 
@@ -96,11 +96,30 @@ class Scene:
 
 
 @dataclass(frozen=True)
+class Capability:
+    """One entry of a surface's capability catalog: a name an agent can be granted and the tools it selects.
+
+    ``policy_only``: granted by a policy rule alone; the driver has no feature to enable for it.
+    """
+
+    name: str
+    description: str
+    tool_names: tuple[str, ...]
+    policy_only: bool = False
+
+
+@dataclass(frozen=True)
 class SurfaceProfile:
     """The contract between the core and one surface; the core uses nothing else from a surface.
 
     ``capability_catalog`` maps a catalog entry to its (command, ref kind) pairs, ``None`` for a call without an element
-    ref; ``capability_tools`` maps the same entry to the names of the tools it selects.
+    ref; ``capability_tools`` maps the same entry to the names of the tools it selects; ``capabilities`` is the catalog
+    in order, its first entry the default one every agent gets. The agent runtime facade and the delegated worker use
+    the rest: ``custom_actions(controller, context)`` registers the surface's custom actions, ``page_metadata(context)``
+    returns ``(metadata, error)``, ``policy_probe(context, source, params)`` runs a policy-owned script,
+    ``activate(context, address)`` brings a context to the front, ``semantic_tracker()`` makes the surface's semantic
+    state tracker and ``worker_prompt(screenshot_subdir, artifacts_subdir, *, tool_names=None, driver_name)`` renders
+    the worker's system prompt; a surface driven through ``build_agent`` alone leaves them ``None``.
     """
 
     name: str
@@ -119,6 +138,13 @@ class SurfaceProfile:
     messages: Mapping[str, str] = field(default_factory=dict, hash=False)
     settings: Any = field(default=None, hash=False)
     scene: Scene | None = None
+    capabilities: tuple[Capability, ...] = ()
+    custom_actions: Callable[[Any, Any], None] | None = None
+    page_metadata: Callable[[Any], Awaitable[tuple[Mapping[str, Any], str | None]]] | None = None
+    policy_probe: Callable[[Any, str, Mapping[str, Any]], Awaitable[Mapping[str, Any]]] | None = None
+    activate: Callable[[Any, str], Awaitable[bool]] | None = None
+    semantic_tracker: Callable[[], Any] | None = None
+    worker_prompt: Callable[..., str] | None = None
 
 
 @dataclass(frozen=True)

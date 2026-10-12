@@ -47,6 +47,7 @@ from .registry import (
 )
 from .results import ActionResult
 from .surface import (
+    Capability,
     ContentBlock,
     PolicyRule,
     Renderer,
@@ -69,6 +70,7 @@ __all__ = [
     "ActionResult",
     "ActionTimeout",
     "AmbiguousElement",
+    "Capability",
     "Click",
     "CloseContext",
     "ConnectionLost",

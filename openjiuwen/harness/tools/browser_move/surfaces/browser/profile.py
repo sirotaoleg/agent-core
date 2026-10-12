@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from ...contract import Effect
 from ...contract.surface import SurfaceBundle, SurfaceProfile
-from .capabilities import CAPABILITY_CATALOG, CAPABILITY_TOOLS
+from .capabilities import CAPABILITY_CATALOG, CAPABILITY_TOOLS, DEFAULT_BROWSER_CAPABILITIES
 from .commands import (
     Back,
     Drop,
@@ -24,9 +24,10 @@ from .commands import (
     UploadFile,
 )
 from .config import BrowserSettings
-from .helpers import EXTRA_TOOLS
+from .helpers import EXTRA_TOOLS, activate_page, page_metadata, probe_for_policy, register_custom_actions
 from .renderer import BrowserRenderer
-from .tools import BROWSER_TOOL_SPECS
+from .semantic.state import SemanticStateTracker
+from .tools import BROWSER_TOOL_SPECS, build_browser_worker_system_prompt
 
 if TYPE_CHECKING:
     from ...runtime.config import BrowserInstanceConfig
@@ -59,5 +60,12 @@ def create_browser_surface(
         timeouts={effect: _EFFECT_TIMEOUT_S for effect in Effect},
         messages=MESSAGES,
         settings=settings,
+        capabilities=DEFAULT_BROWSER_CAPABILITIES,
+        custom_actions=register_custom_actions,
+        page_metadata=page_metadata,
+        policy_probe=probe_for_policy,
+        activate=activate_page,
+        semantic_tracker=SemanticStateTracker,
+        worker_prompt=build_browser_worker_system_prompt,
     )
     return SurfaceBundle(settings=settings, profile=profile)

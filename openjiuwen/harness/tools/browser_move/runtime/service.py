@@ -20,7 +20,6 @@ from openjiuwen.core.foundation.store.kv.in_memory_kv_store import InMemoryKVSto
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.single_agent.agents.react_agent import ReActAgent
 
-from ..surfaces.browser.capabilities import CORE_BROWSER_TOOL_NAMES, capabilities_of
 from .assembly import open_session
 from .config import (
     BrowserInstanceConfig,
@@ -68,9 +67,6 @@ class BrowserService(_WorkerLoop):
             None
             if allowed_tool_names is None
             else tuple(dict.fromkeys(allowed_tool_names))
-        )
-        self._capabilities = capabilities_of(
-            CORE_BROWSER_TOOL_NAMES if self._allowed_tool_names is None else self._allowed_tool_names
         )
         self._cancel_store: BaseKVStore = cancel_store or InMemoryKVStore()
         self._page_state = page_state or BrowserPageState()

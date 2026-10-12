@@ -18,7 +18,6 @@ from openjiuwen.core.single_agent.agents.react_agent import ReActAgent, ReActAge
 from openjiuwen.core.single_agent.schema.agent_card import AgentCard
 
 from ..contract import DriverInfo, SurfaceBundle
-from ..surfaces.browser.tools import _BROWSER_WORKER_HELPER_TOOL_NAMES, build_browser_worker_system_prompt
 from .assembly import build_agent_parts, core_rails
 from .browser_logging import configure_browser_agent_logging
 from .config import CoreSettings
@@ -183,9 +182,10 @@ def build_browser_worker_agent(
     artifacts_subdir: str = "artifacts",
     tool_result_observer: ToolResultObserver | None = None,
     settings: CoreSettings | None = None,
+    worker_prompt: Callable[..., str],
     driver_name: str,
 ) -> ReActAgent:
-    """The worker ReActAgent with ``tools`` as its abilities (the factory's command tools and helpers)."""
+    """The worker ReActAgent with ``tools`` as its abilities; ``worker_prompt`` renders its system prompt."""
     screenshot_subdir = _normalize_output_subdir(screenshot_subdir, "screenshots")
     artifacts_subdir = _normalize_output_subdir(artifacts_subdir, "artifacts")
     card = AgentCard(
@@ -207,9 +207,7 @@ def build_browser_worker_agent(
             [
                 {
                     "role": "system",
-                    "content": build_browser_worker_system_prompt(
-                        screenshot_subdir, artifacts_subdir, driver_name=driver_name
-                    ),
+                    "content": worker_prompt(screenshot_subdir, artifacts_subdir, driver_name=driver_name),
                 }
             ]
         )
@@ -258,6 +256,7 @@ async def build_worker(
         artifacts_subdir=artifacts_subdir,
         tool_result_observer=tool_result_observer,
         settings=core,
+        worker_prompt=bundle.profile.worker_prompt,
         driver_name=worker_driver_name(session.assembly.stack.info),
     )
     rails = core_rails(bundle.profile, parts.builders, session.page_state)
@@ -269,17 +268,15 @@ async def build_worker(
 async def refresh_browser_worker_system_prompt(
     agent: ReActAgent,
     *,
+    worker_prompt: Callable[..., str],
     screenshot_subdir: str = "screenshots",
     artifacts_subdir: str = "artifacts",
     driver_name: str,
 ) -> None:
     """Re-render the worker system prompt for the tools its next invoke sends to the model."""
     tool_names = tuple(tool.name for tool in await agent.ability_manager.list_tool_info())
-    logger.info(
-        "Playwright worker prompt rendered for helper tools: %s",
-        tuple(name for name in _BROWSER_WORKER_HELPER_TOOL_NAMES if name in tool_names),
-    )
-    prompt = build_browser_worker_system_prompt(
+    logger.info("Worker prompt rendered for tools: %s", tool_names)
+    prompt = worker_prompt(
         _normalize_output_subdir(screenshot_subdir, "screenshots"),
         _normalize_output_subdir(artifacts_subdir, "artifacts"),
         tool_names=tool_names,

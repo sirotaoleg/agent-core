@@ -32,6 +32,7 @@ from openjiuwen.harness.tools.browser_move.runtime.rails.repeated_call_guard imp
     _is_noop_script,
 )
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import command_record
+from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import build_browser_worker_system_prompt
 
 from .command_tools import HOME, command_tools, fake_driver, result, tool_message
 from .runtime_fixtures import make_runtime
@@ -426,6 +427,7 @@ def _build_worker(llm: Any, max_steps: int, driver: FakeDriver, *names: str) -> 
         api_base="https://example.invalid/v1",
         model_name="mock-model",
         max_steps=max_steps,
+        worker_prompt=build_browser_worker_system_prompt,
         driver_name="Playwright MCP",
     )
     worker.set_llm(llm)

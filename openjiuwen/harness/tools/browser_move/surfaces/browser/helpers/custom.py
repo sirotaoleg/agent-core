@@ -191,9 +191,9 @@ CUSTOM_ACTIONS: Mapping[str, Callable[..., Awaitable[dict[str, Any]]]] = {
 }
 
 
-def register_custom_actions(controller: ActionController, context: ToolContext, *, upload_root: Path | None) -> None:
+def register_custom_actions(controller: ActionController, context: ToolContext) -> None:
     """Register the custom actions on the controller as handlers over the context, with their specs."""
-    register_custom_action_specs(controller, upload_root=upload_root)
+    register_custom_action_specs(controller, upload_root=context.settings.upload_root)
     for name, handler in CUSTOM_ACTIONS.items():
         controller.register_action(name, functools.partial(handler, context))
 

@@ -605,6 +605,7 @@ class _WorkerLoop:
         if isinstance(agent, ReActAgent):
             await refresh_browser_worker_system_prompt(
                 agent,
+                worker_prompt=self._session.assembly.surface.profile.worker_prompt,
                 screenshot_subdir=self._screenshot_subdir,
                 artifacts_subdir=self._artifacts_subdir,
                 driver_name=worker_driver_name(self._session.assembly.stack.info),

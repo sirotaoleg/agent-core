@@ -19,9 +19,6 @@ from openjiuwen.core.runner import Runner
 from openjiuwen.core.single_agent.rail.base import AgentRail
 
 from ..contract import Action, DriverError, Effect, Health, Observe, SurfaceBundle
-from ..surfaces.browser.capabilities import CORE_BROWSER_TOOL_NAMES, capabilities_of
-from ..surfaces.browser.helpers import activate_page, page_metadata, probe_for_policy, register_custom_actions
-from ..surfaces.browser.semantic.state import SemanticStateTracker
 from .assembly import AgentParts, assemble_surface, build_agent_parts, core_rails
 from .browser_logging import write_browser_agent_audit_artifact
 from .config import (
@@ -99,10 +96,8 @@ class BrowserAgentRuntime:
         self._browser_settings = browser_settings or browser_surface_settings()
         self._workspace = workspace
         self._language = language
-        resolved_allowed_tool_names = (
-            CORE_BROWSER_TOOL_NAMES if allowed_tool_names is None else tuple(dict.fromkeys(allowed_tool_names))
-        )
-        self._capabilities = capabilities_of(resolved_allowed_tool_names)
+        self._allowed_tool_names = None if allowed_tool_names is None else tuple(dict.fromkeys(allowed_tool_names))
+        self._capabilities: tuple[str, ...] | None = None
         self._page_state = BrowserPageState()
         self._service = BrowserService(
             provider=provider,
@@ -112,7 +107,7 @@ class BrowserAgentRuntime:
             mcp_cfg=mcp_cfg,
             guardrails=guardrails,
             instance=instance,
-            allowed_tool_names=resolved_allowed_tool_names,
+            allowed_tool_names=self._allowed_tool_names,
             browser_settings=self._browser_settings,
             core_settings=core_settings,
             page_state=self._page_state,
@@ -129,7 +124,7 @@ class BrowserAgentRuntime:
         self._builders: dict[str, Builder] = {}
         self._fields: dict[str, frozenset[str]] = {}
         self._flags: dict[str, ToolFlags] = {}
-        self._semantic_state_tracker = SemanticStateTracker()
+        self._tracker: Any = None
         self.observations_reused = 0
         _ACTIVE_BROWSER_RUNTIMES.add(self)
 
@@ -156,7 +151,18 @@ class BrowserAgentRuntime:
 
     @property
     def capabilities(self) -> tuple[str, ...]:
+        """The catalog entries whose tools are all allowed; the default entry alone when no allowlist was given."""
+        if self._capabilities is None:
+            catalog = self.surface.profile.capabilities
+            allowed = set(catalog[0].tool_names if self._allowed_tool_names is None else self._allowed_tool_names)
+            self._capabilities = tuple(entry.name for entry in catalog if set(entry.tool_names) <= allowed)
         return self._capabilities
+
+    @property
+    def _semantic_state_tracker(self) -> Any:
+        if self._tracker is None:
+            self._tracker = self.surface.profile.semantic_tracker()
+        return self._tracker
 
     @property
     def surface(self) -> SurfaceBundle:
@@ -334,7 +340,7 @@ class BrowserAgentRuntime:
         )
         self._session = session
         self._controller.register_builtin_actions()
-        register_custom_actions(self._controller, self._context, upload_root=self._browser_settings.upload_root)
+        profile.custom_actions(self._controller, self._context)
 
     def agent_parts(self, *, image_support: bool, language: str) -> AgentParts:
         """The factory tools of the started session in the receiving agent's language, once per key."""
@@ -344,7 +350,7 @@ class BrowserAgentRuntime:
             parts = build_agent_parts(
                 session,
                 session.assembly.surface,
-                capabilities=self._capabilities,
+                capabilities=self.capabilities,
                 image_support=image_support,
                 language=language,
                 workspace=self._workspace,
@@ -383,7 +389,7 @@ class BrowserAgentRuntime:
         if observation is not None:
             snapshot_audit = write_browser_agent_audit_artifact("ax_snapshot", observation.native_text or "")
 
-        metadata, metadata_error = await page_metadata(self._context)
+        metadata, metadata_error = await self.surface.profile.page_metadata(self._context)
         exported = page_state.export()
 
         errors = [error for error in (dom_error, metadata_error) if error]
@@ -435,7 +441,7 @@ class BrowserAgentRuntime:
         """Reconcile an ambiguous mutation from the surface metadata alone, without observing."""
 
         await self.ensure_runtime_ready()
-        metadata, metadata_error = await page_metadata(self._context)
+        metadata, metadata_error = await self.surface.profile.page_metadata(self._context)
         page_state = self.export_page_state()
         semantic_state = metadata.get("semantic_state")
         if not isinstance(semantic_state, dict):
@@ -590,12 +596,12 @@ class BrowserAgentRuntime:
     async def probe_for_policy(self, source: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Run a policy-owned probe script and register its elements as PageState targets."""
         await self.ensure_runtime_ready()
-        return await probe_for_policy(self._context, source, params)
+        return await self.surface.profile.policy_probe(self._context, source, params)
 
     async def activate_page(self, url: str) -> bool:
         """Bring the context at ``url`` (else the current one) to the front so its timers run and its menus render."""
         await self.ensure_runtime_ready()
-        return await activate_page(self._context, url)
+        return await self.surface.profile.activate(self._context, url)
 
     async def list_actions(self) -> Dict[str, Any]:
         return {

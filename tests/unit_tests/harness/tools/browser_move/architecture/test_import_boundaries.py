@@ -20,20 +20,9 @@ REGISTRY_IMPORTERS: dict[str, frozenset[str]] = {
     "surfaces": frozenset({"runtime/assembly.py", "runtime/config.py"}),
 }
 
-# (file relative to the package, imported module relative to the package) -> count.
-KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {
-    # the --caps list and the core capability name; the catalog moves behind the profile
-    ("runtime/config.py", "surfaces.browser.capabilities"): 3,
-    # the facade's capability check, decision-policy hooks, page metadata, custom actions and semantic tracker;
-    # moved behind the profile once the surface carries them
-    ("runtime/session.py", "surfaces.browser.capabilities"): 2,
-    ("runtime/session.py", "surfaces.browser.helpers"): 4,
-    ("runtime/session.py", "surfaces.browser.semantic.state"): 1,
-    # the service's capability check
-    ("runtime/service.py", "surfaces.browser.capabilities"): 2,
-    # the worker prompt; moved behind the profile once the surface carries it
-    ("runtime/agents.py", "surfaces.browser.tools"): 2,
-}
+# (file relative to the package, imported module relative to the package) -> count. Empty: the profile carries
+# the hooks, the catalog and the worker prompt, and the core reaches surfaces/ through the registry alone.
+KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {}
 
 # (file relative to openjiuwen/core, imported module) -> count.
 KNOWN_CORE_TO_HARNESS_IMPORTS: dict[tuple[str, str], int] = {

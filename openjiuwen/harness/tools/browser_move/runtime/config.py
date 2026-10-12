@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, Mapping, Optional
 
 from openjiuwen.core.foundation.tool import McpServerConfig
 
-from ..contract import SurfaceSettings
+from ..contract import SurfaceBundle, SurfaceSettings
 from ..surfaces import SURFACES
 from . import REPO_ROOT
 from .utils.env import (
@@ -462,8 +462,12 @@ def runtime_server_child_env(environ: Mapping[str, str]) -> dict[str, str]:
     return env
 
 
+def browser_surface(environ: Mapping[str, str] | None = None, settings: Any = None) -> SurfaceBundle:
+    return SURFACES.create("browser", os.environ if environ is None else environ, None, settings)
+
+
 def browser_surface_settings(environ: Mapping[str, str] | None = None) -> SurfaceSettings:
-    return SURFACES.create("browser", os.environ if environ is None else environ).settings
+    return browser_surface(environ).settings
 
 
 def resolve_playwright_mcp_cwd() -> str:
@@ -518,19 +522,9 @@ def playwright_mcp_config(
     required_capability: Optional[list[str]] = None,
 ) -> McpServerConfig:
     """The ``@playwright/mcp`` server config from the surface settings; ``instance.cdp_url`` wins over them."""
-    # Imported here so that importing the package loads no surface module.
-    from ..surfaces.browser.capabilities import (
-        CORE_BROWSER_CAPABILITY_NAME,
-        DEFAULT_BROWSER_CAPABILITIES,
-        POLICY_ONLY_BROWSER_CAPABILITY_NAMES,
-    )
-
+    catalog = browser_surface({}, settings).profile.capabilities
     capabilities_to_enable = (
-        *(
-            spec.name
-            for spec in DEFAULT_BROWSER_CAPABILITIES
-            if spec.name != CORE_BROWSER_CAPABILITY_NAME and spec.name not in POLICY_ONLY_BROWSER_CAPABILITY_NAMES
-        ),
+        *(entry.name for entry in catalog[1:] if not entry.policy_only),
         *(required_capability or ()),
     )
     launch_args = (

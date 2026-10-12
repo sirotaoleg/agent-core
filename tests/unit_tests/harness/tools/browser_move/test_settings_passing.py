@@ -43,6 +43,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import creat
 from openjiuwen.harness.tools.browser_move.surfaces.browser.status_logging import (
     is_browser_subagent_status_log_enabled,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import build_browser_worker_system_prompt
 
 
 def _mcp_cfg() -> McpServerConfig:
@@ -247,6 +248,7 @@ class TestValuesFromSettings:
                 model_name="model",
                 max_steps=3,
                 settings=CoreSettings(worker_temperature=0.7, worker_top_p=0.3),
+                worker_prompt=build_browser_worker_system_prompt,
                 driver_name="Playwright MCP",
             )
         model_config = worker.configure.call_args.args[0].model_config_obj

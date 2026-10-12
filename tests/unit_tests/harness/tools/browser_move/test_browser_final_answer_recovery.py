@@ -26,6 +26,7 @@ from openjiuwen.harness.tools.browser_move.runtime.rails.final_answer_recovery i
     FinalAnswerRecoveryRail,
 )
 from openjiuwen.harness.tools.browser_move.runtime.service import BrowserService
+from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import build_browser_worker_system_prompt
 
 from .command_tools import HOME, command_tools
 from .runtime_fixtures import fake_assembly, make_runtime
@@ -99,6 +100,7 @@ def _service(
         api_base="https://example.invalid/v1",
         model_name="mock-model",
         max_steps=max_steps,
+        worker_prompt=build_browser_worker_system_prompt,
         driver_name="Playwright MCP",
     )
     llm = _ScriptedLLM(respond)

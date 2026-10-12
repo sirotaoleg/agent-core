@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Iterable
 
-from openjiuwen.harness.tools.browser_move.contract import Action, DriverRef, Locator, PointRef
+from openjiuwen.harness.tools.browser_move.contract import Action, Capability, DriverRef, Locator, PointRef
 from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import BROWSER_TOOL_SPECS
 
 CORE_BROWSER_CAPABILITY_NAME = "core"
@@ -43,12 +43,6 @@ ADVANCED_CODE_BROWSER_TOOL_NAMES: tuple[str, ...] = ("browser_run_code",)
 UNSAFE_DEV_BROWSER_TOOL_NAMES: tuple[str, ...] = ("browser_run_code_unsafe",)
 
 # These are model-facing policy categories, not Playwright MCP --caps values.
-POLICY_ONLY_BROWSER_CAPABILITY_NAMES: tuple[str, ...] = (
-    "advanced_code",
-    "extended_interaction",
-    "unsafe_dev",
-)
-
 PDF_BROWSER_TOOL_NAMES: tuple[str, ...] = ("browser_pdf_save",)
 
 VISION_BROWSER_TOOL_NAMES: tuple[str, ...] = (
@@ -117,13 +111,7 @@ TESTING_BROWSER_TOOL_NAMES: tuple[str, ...] = (
 )
 
 
-@dataclass(frozen=True)
-class BrowserCapability:
-    """An approved browser capability exposed to the main agent."""
-
-    name: str
-    description: str
-    tool_names: tuple[str, ...]
+BrowserCapability = Capability
 
 
 @dataclass(frozen=True)
@@ -149,11 +137,13 @@ DEFAULT_BROWSER_CAPABILITIES: tuple[BrowserCapability, ...] = (
             "compact probes, evaluate, snapshot, and batch are insufficient."
         ),
         tool_names=ADVANCED_CODE_BROWSER_TOOL_NAMES,
+        policy_only=True,
     ),
     BrowserCapability(
         name="extended_interaction",
         description="Close pages or perform uncommon drag-and-drop interactions.",
         tool_names=EXTENDED_INTERACTION_BROWSER_TOOL_NAMES,
+        policy_only=True,
     ),
     BrowserCapability(
         name="unsafe_dev",
@@ -162,6 +152,7 @@ DEFAULT_BROWSER_CAPABILITIES: tuple[BrowserCapability, ...] = (
             "development or debugging; this replaces advanced_code when both are requested."
         ),
         tool_names=UNSAFE_DEV_BROWSER_TOOL_NAMES,
+        policy_only=True,
     ),
     BrowserCapability(
         name="pdf",
@@ -200,6 +191,10 @@ DEFAULT_BROWSER_CAPABILITIES: tuple[BrowserCapability, ...] = (
         description="Generate Playwright locators and verify expected elements, lists, text, or values.",
         tool_names=TESTING_BROWSER_TOOL_NAMES,
     ),
+)
+
+POLICY_ONLY_BROWSER_CAPABILITY_NAMES: tuple[str, ...] = tuple(
+    entry.name for entry in DEFAULT_BROWSER_CAPABILITIES if entry.policy_only
 )
 
 
