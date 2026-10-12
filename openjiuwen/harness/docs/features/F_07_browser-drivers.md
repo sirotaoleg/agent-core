@@ -4441,3 +4441,30 @@ and an unregistered name fails at build with the registered names and a released
 `test_settings_facades.py`'s `BROWSER_DRIVER=cua` builds the runtime settings and fails at `assemble_driver` with
 `unknown driver 'cua'; registered: browser_use, playwright_mcp`; `test_core_settings.py` keeps any name as given.
 Unit suite: 2506 passed, 122 skipped.
+
+### Extra tools follow the driver (M5)
+
+Spec tools were offered only when the driver handles their commands (`_handled_kinds`), but `profile.extra_tools` were
+always offered: a point-only driver on the browser surface would get two probe tools whose every call fails
+`Unsupported`.
+
+Decisions:
+1. **`ToolFlags.requires`, a tuple of command types.** The tool declares what it sends; the factory checks the types
+   against `DriverInfo.actions`, the same declaration the spec tools use, and logs the skip with the missing names.
+   Ref kinds are not checked: the probes and the batch send `RunScript` and refs they read from the page state.
+2. **The batch requires every command its steps build.** A driver without one of them drops the whole tool rather
+   than offering a batch whose some steps fail; a per-step schema would change the tool card the goldens pin.
+3. **Find and recall require nothing**: find only observes (every driver observes), recall reads files.
+4. **Custom actions are not covered.** They are not extra tools: the facade registers them on its action controller
+   through `profile.custom_actions`; the step on optional hooks (M4) makes that hook optional instead.
+
+Rejected options:
+- Deriving the requirement by calling the tool with a recording driver: tools build commands from page content, so a
+  dry run cannot see every path.
+- Requiring commands on the tool instance after construction: the factory would build tools it then throws away, and
+  the constructor of some reads the workspace.
+
+Verification: a toy extra tool requiring `RunScript` is left out for a driver without it (fails before: offered); on
+the browser profile a driver without `RunScript` gets only find and recall, with it all five extra tools. The flag
+tests list each helper's requirements. Both built-in drivers handle every required command: goldens unchanged.
+Unit suite: 2508 passed, 122 skipped.

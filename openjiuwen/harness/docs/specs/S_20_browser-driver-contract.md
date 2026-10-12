@@ -808,7 +808,7 @@ drivers.
 | `capability_catalog`, `capability_tools` | `capabilities.py` |
 | `timeouts` | 240 s for every `Effect` |
 | `messages` | `driver_restarted`: "the browser restarted; take a fresh observation"; `driver_lost`: "the browser connection was lost again; the task cannot continue"; `context_changed`: "Call browser_snapshot again and use refs from generation {generation}." (a format string); `retry`: "Then retry the action (take a fresh browser_snapshot if the page changed)." (the last line of the intercepted-action hint) |
-| `extra_tools` | `helpers.EXTRA_TOOLS`: `ProbeInteractivesTool`, `ProbeCardsTool`, `FindTool` (see "Helpers") |
+| `extra_tools` | `helpers.EXTRA_TOOLS`: `ProbeInteractivesTool`, `ProbeCardsTool`, `BatchTool`, `FindTool`, `RecallOffloadTool` (see "Helpers") |
 | `capabilities` | `DEFAULT_BROWSER_CAPABILITIES` (`capabilities.py`) |
 | `custom_actions`, `page_metadata`, `policy_probe`, `activate` | `helpers.register_custom_actions`, `helpers.page_metadata`, `helpers.probe_for_policy`, `helpers.activate_page` |
 | `semantic_tracker` | `SemanticStateTracker` (`semantic/state.py`) |
@@ -909,9 +909,10 @@ configured), then the three handlers bound to the context. The server entry regi
 controller the same way, with no upload root, after the builtin actions. The builtin actions (`ping`, `echo`,
 `browser_task`, `run_browser_task`) stay in `runtime/controllers/action.py`, which names no browser spec.
 
-Each helper tool declares `flags: ToolFlags` (class attribute): the probes and find `ToolFlags()` (`READ`, not exempt
-from budgets, progress, offered to a worker), the batch `ToolFlags(effect=ACT)`, the recall tool
-`ToolFlags(exempt_from_budget=True, worker=False)`. A probe or find result is
+Each helper tool declares `flags: ToolFlags` (class attribute): the probes `ToolFlags(requires=(RunScript,))` (`READ`,
+not exempt from budgets, progress, offered to a worker), find `ToolFlags()` (it only observes), the batch
+`ToolFlags(effect=ACT, requires=(Click, TypeText, PressKey, SelectOption, FillForm, Navigate, Wait, SwitchContext,
+RunScript))` (every command its steps build), the recall tool `ToolFlags(exempt_from_budget=True, worker=False)`. A probe or find result is
 `ToolOutput(success, data={"content": <payload>, "command": CommandRecord}, error)`: the model reads `content` as
 before (a probe's payload dict is rendered as JSON, find's text as is), and `command_record` finds the record. The
 record's `effect` is the declared one (`READ`), not the command's: a probe runs `RunScript` but changes nothing the
@@ -1112,9 +1113,11 @@ The tool name is `driver_info.tool_name_prefix + spec.name`. Without `image_supp
 `Observe` and whose decoder, called with no arguments, asks for a screenshot is not emitted (today's rule for
 `browser_take_screenshot`, without a tool name in the core); with image support that spec is a screenshot-only
 tool. Each emitted spec's `prompt_section` is collected. Then
-each `profile.extra_tools` factory is called with the `ToolContext` and its tool appended. An entry that selects no
-tool, a skipped spec, and a selected name with no spec that no extra tool serves (under its name or the prefixed
-one) are logged once per factory on `tool_logger`.
+each `profile.extra_tools` factory is called with the `ToolContext` and its tool appended, unless its
+`flags.requires` names a command missing from `DriverInfo.actions` (rule: the model is offered only tools the driver
+can execute, for extra tools as for specs). An entry that selects no tool, a skipped spec, a skipped extra tool
+(logged under the factory's name with the missing commands), and a selected name with no spec that no extra tool
+serves (under its name or the prefixed one) are logged once per factory on `tool_logger`.
 
 `AgentTools(tools, prompt_sections, builders)`: `builders` maps each command tool's model-facing name to its
 decoder; it is the map `ActionPolicy` takes.
@@ -1186,9 +1189,10 @@ it from its arguments, `profile.renderer` and `profile.settings`.
   a command (the batch tool too).
 - `await context.observe(command)`: `driver.observe`, then `page_state.record`.
 
-`ToolFlags(effect=READ, exempt_from_budget=False, progress=True, worker=True)`: what an extra tool declares, as its
-`flags` attribute, for the rails that today decide by tool name (state change, replan budgets, progress) and for the
-factory (`worker`: offered to a delegated worker too).
+`ToolFlags(effect=READ, exempt_from_budget=False, progress=True, worker=True, requires=())`: what an extra tool
+declares, as its `flags` attribute, for the rails that today decide by tool name (state change, replan budgets,
+progress) and for the factory (`worker`: offered to a delegated worker too; `requires`: the command types the tool
+sends, all of which the driver must handle for the tool to be offered).
 
 ## Rails on command records
 
