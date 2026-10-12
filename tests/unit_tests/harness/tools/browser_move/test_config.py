@@ -29,9 +29,11 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
     DEFAULT_GUARDRAIL_MAX_STEPS,
     DEFAULT_MODEL_NAME,
     BrowserInstanceConfig,
+    browser_surface_settings,
     build_playwright_mcp_config,
     build_runtime_settings,
     parse_command_args,
+    playwright_mcp_config,
 )
 from openjiuwen.harness.tools.browser_move.runtime.utils.parsing import extract_json_object
 
@@ -111,6 +113,13 @@ def test_build_runtime_settings_respects_env_overrides() -> None:
 def test_build_playwright_mcp_config_enables_all_optional_capabilities_by_default() -> None:
     with patch.dict(os.environ, {}, clear=True):
         cfg = build_playwright_mcp_config()
+
+    assert cfg.params["args"][-1] == "--caps=pdf,vision,devtools,config,network,storage,testing"
+
+
+def test_playwright_mcp_config_enables_the_catalog_capabilities_in_catalog_order() -> None:
+    with patch.dict(os.environ, {}, clear=True):
+        cfg = playwright_mcp_config(browser_surface_settings())
 
     assert cfg.params["args"][-1] == "--caps=pdf,vision,devtools,config,network,storage,testing"
 
