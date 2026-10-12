@@ -156,6 +156,44 @@ async def test_start_passes_max_line_bytes_as_stream_limit() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.level0
+async def test_terminate_cancels_the_stderr_drain_it_keeps_while_the_sidecar_runs() -> None:
+    hello = wire.make_hello(browser_use_version="0.13.10", python_version="3.12.0", pid=1)
+    stdout = _feed_reader((json.dumps(hello) + "\n").encode("utf-8"), limit=wire.MAX_LINE_BYTES)
+    stderr = asyncio.StreamReader(limit=wire.MAX_LINE_BYTES)
+    fake_proc = SimpleNamespace(
+        stdout=stdout,
+        stderr=stderr,
+        stdin=AsyncMock(),
+        returncode=None,
+        terminate=lambda: None,
+        kill=lambda: None,
+        wait=AsyncMock(return_value=0),
+    )
+    with (
+        patch(
+            "openjiuwen.harness.tools.browser_move.drivers.browser_use.transport.discover_sidecar_python",
+            return_value=Path("/fake/browser-use-python"),
+        ),
+        patch(
+            "openjiuwen.harness.tools.browser_move.drivers.browser_use.transport.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=fake_proc,
+        ),
+    ):
+        transport = SidecarTransport()
+        await transport.start(timeout_s=1.0)
+    drain = transport._stderr_task
+    assert drain is not None and not drain.done()
+
+    await transport._terminate()
+    await asyncio.sleep(0)
+
+    assert drain.cancelled()
+    assert transport._stderr_task is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.level0
 async def test_cancelled_request_sends_cancel_for_its_id_and_reraises() -> None:
     written: list[dict] = []
     stdin = AsyncMock()
