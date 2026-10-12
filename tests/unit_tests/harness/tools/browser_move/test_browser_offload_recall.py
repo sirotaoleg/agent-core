@@ -16,8 +16,7 @@ from openjiuwen.core.context_engine.processor.offloader.tool_result_window_proce
 from openjiuwen.core.foundation.llm import AssistantMessage, ToolCall, ToolMessage, UserMessage
 from openjiuwen.core.sys_operation import OperationMode, SysOperation, SysOperationCard
 from openjiuwen.core.sys_operation.config import LocalWorkConfig
-from openjiuwen.harness.tools.browser_move.offload_recall import BrowserOffloadRecallTool
-
+from openjiuwen.harness.tools.browser_move.surfaces.browser.offload_recall import BrowserOffloadRecallTool
 
 _HANDLE = "0123456789abcdef0123456789abcdef"
 

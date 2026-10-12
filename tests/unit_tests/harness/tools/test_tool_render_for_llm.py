@@ -12,7 +12,7 @@ import pytest
 from openjiuwen.core.foundation.tool import ToolCard
 from openjiuwen.harness.tools.agent_mode_tools import SwitchModeTool
 from openjiuwen.harness.tools.base_tool import ToolOutput, render_fields
-from openjiuwen.harness.tools.browser_move.offload_recall import BrowserOffloadRecallTool
+from openjiuwen.harness.tools.browser_move.surfaces.browser.offload_recall import BrowserOffloadRecallTool
 from openjiuwen.harness.tools.code import CodeTool
 from openjiuwen.harness.tools.coding_memory import CodingMemoryEditTool, CodingMemoryWriteTool
 from openjiuwen.harness.tools.filesystem import (

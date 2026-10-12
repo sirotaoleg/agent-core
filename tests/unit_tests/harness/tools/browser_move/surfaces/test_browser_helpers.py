@@ -26,7 +26,6 @@ from openjiuwen.harness.tools.browser_move.contract import (
     SwitchContext,
 )
 from openjiuwen.harness.tools.browser_move.contract.testing.fake import DEFAULT_ACTIONS, FakeDriver
-from openjiuwen.harness.tools.browser_move.offload_recall import BrowserOffloadRecallTool
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.runtime.driver_session import DriverSession
@@ -46,6 +45,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import (
     page_metadata,
     probe_for_policy,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.offload_recall import BrowserOffloadRecallTool
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import MESSAGES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.renderer import BrowserRenderer
 
