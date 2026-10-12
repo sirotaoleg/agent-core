@@ -9,8 +9,8 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/runtime/session.py`, `openjiuwen/harness/tools/browser_move/runtime/topology.py`, `openjiuwen/harness/tools/browser_move/runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/action_policy.py`, `openjiuwen/harness/tools/browser_move/runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/final_answer_recovery.py`, `openjiuwen/harness/tools/browser_move/runtime/config.py`, `openjiuwen/harness/tools/browser_move/runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/runtime/service.py`, `openjiuwen/harness/tools/browser_move/runtime/worker.py`, `openjiuwen/harness/tools/browser_move/runtime/utils/env.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/__init__.py` (alias), `openjiuwen/harness/tools/browser_move/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py` / `profiles.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `policy.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `site_profiles.py` / `state_processor.py` / `status_logging.py` / `helpers/` / `probes/` / `semantic/` / `working_context/` / `rails/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/context_engine/context/context_utils.py` (`offload_session_dir_name`) |
-| Last revised | 2026-10-12 |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `device.py` / `masking.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/config.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/runtime/session.py`, `openjiuwen/harness/tools/browser_move/runtime/topology.py`, `openjiuwen/harness/tools/browser_move/runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/action_policy.py`, `openjiuwen/harness/tools/browser_move/runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/final_answer_recovery.py`, `openjiuwen/harness/tools/browser_move/runtime/config.py`, `openjiuwen/harness/tools/browser_move/runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/runtime/service.py`, `openjiuwen/harness/tools/browser_move/runtime/worker.py`, `openjiuwen/harness/tools/browser_move/runtime/utils/env.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/__init__.py` (alias), `openjiuwen/harness/tools/browser_move/offload_recall.py` (alias), `openjiuwen/harness/tools/browser_move/surfaces/browser/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py` / `profiles.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `policy.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `site_profiles.py` / `state_processor.py` / `status_logging.py` / `helpers/` / `probes/` / `semantic/` / `working_context/` / `rails/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/context_engine/context/context_utils.py` (`offload_session_dir_name`) |
+| Last revised | 2026-10-13 |
 | Related feature | [[F_07_browser-drivers]] |
 
 ## Scope
@@ -52,6 +52,30 @@ context-processor and rail names `runtime` no longer exports, and it emits one `
 The browser surface profile (tool specs, renderer, capability catalog) is specified under "Browser surface
 profile"; the tool factory that turns it and the driver's native tools into model-facing tools under "Tool
 factory".
+
+### Dependency rules
+
+Each layer imports only what it needs, and the architecture tests (`architecture/test_import_boundaries.py`) hold
+every rule with an allowlist that may only shrink:
+
+- `contract/` imports the standard library and itself. It holds every type more than one layer shares: the
+  commands, refs, results and errors, the `Driver` base, the registries, the surface types, `ProvisionedDevice`
+  (`device.py`, the argument of every driver factory) and `masked` (`masking.py`, the masking rule of `Tracing`,
+  `CommandRecord.action` and the batch helper).
+- A driver package `drivers/<name>/` imports the contract, its own package, `drivers/middleware.py`, the `commands`
+  and `context` modules of the surfaces it serves (it implements their commands and fills their context type), the
+  standard library, third-party packages and `openjiuwen.core`; never `runtime/`, `provisioning/` or any other
+  surface module. A driver's own configuration lives in its package (`drivers/playwright_mcp/config.py`); it logs
+  through the core logger, which the browser log context routes to the browser agent log. One edge is still
+  allowlisted: the browser-use driver resolves upload paths with `runtime/utils/upload_paths.py`.
+- `provisioning/` imports the contract only (plus the standard library, third-party packages and
+  `openjiuwen.core`); a provisioner types the settings it reads with its own `Protocol`.
+- `runtime/` and `surfaces/` import nothing under `drivers/`, except the composition root `runtime/assembly.py`
+  (it wraps the built driver with the middleware) and, inside function bodies only, `runtime/config.py`, whose
+  public `playwright_mcp_config` / `build_playwright_mcp_config` / `RuntimeSettings.mcp_cfg` call the driver's
+  config builder.
+- The package root holds `__init__.py`, the `playwright_runtime/` alias package, the `offload_recall.py` alias
+  module and the runtime server entry point `playwright_runtime_mcp_server.py`; every other module lives in a layer.
 
 A surface, driver or provisioner is added with new code and registry entries only. The fake-surface test
 (`tests/unit_tests/harness/tools/browser_move/architecture/fake_surface/`) holds this: a screen surface with its own
@@ -154,7 +178,7 @@ where a command class is defined, and a new surface adds its commands (`Tap`, `S
 
 `sensitive=True` on `TypeText`, `RunScript` and a `FormField` means its text, code or value must never reach traces
 or logs. Each of the three names its fields in a class-level `__sensitive_fields__` (`("text",)`,
-`("code", "args")`, `("value",)`); `masked` (`drivers/middleware.py`) replaces the listed fields of any dataclass
+`("code", "args")`, `("value",)`); `masked` (`contract/masking.py`) replaces the listed fields of any dataclass
 whose `sensitive` is true, for `Tracing` and for `CommandRecord.action` alike, so a new surface command opts in by
 declaring the attribute and a `sensitive` field.
 
@@ -388,7 +412,8 @@ finally produced, and the re-observe of `RetryOnStale` runs under the READ bound
 
   `ActionResult.value` and observation contents are never traced. Other exceptions (cancellation included) pass
   through without a record.
-- **`masked(value)`** returns a copy of a command (or any value) with `MASK` = `"***"` in place of each
+- **`masked(value)`** (`contract/masking.py`, re-exported here with `MASK`) returns a copy of a command (or any
+  value) with `MASK` = `"***"` in place of each
   `__sensitive_fields__` field of every dataclass in it whose `sensitive` is true (a `FormField` inside a
   `FillForm` included); other values are copied unchanged. It is the one masking rule: `Tracing` traces its
   output and `CommandTool` stores it as `CommandRecord.action`.
@@ -463,10 +488,11 @@ Public facades; their signatures do not change:
   browser_settings=None)` builds it from the given objects: `None` core settings are `CoreSettings.from_process_env()`,
   `None` browser settings are `browser_surface_settings()`. `build_playwright_mcp_config`,
   `build_browser_guardrails` and `resolve_playwright_mcp_cwd` read the same two objects. `playwright_mcp_config`
-  builds the `--caps` list when it is called: every entry of the surface profile's catalog after the first (the
-  default one) that is not `policy_only`, in catalog order, then the caller's `required_capability`; the catalog
-  is read through the registry (`browser_surface({}, settings).profile.capabilities`), so `config.py` imports no
-  `surfaces/browser/` module and the core keeps no copy of the names.
+  (`runtime/config.py`) maps the instance (`cdp_url`, `launch_args`, the sanitized key) onto the driver's builder
+  `drivers/playwright_mcp/config.playwright_mcp_config(settings, *, cdp_url, launch_args, key,
+  required_capability)`, imported when it is called. The builder's `--caps` list is the driver's
+  `SERVER_CAPABILITIES` (the server's capability groups, equal to the catalog's entries after the first that are
+  not `policy_only`, in catalog order; a test compares the two), then the caller's `required_capability`.
 - `browser_surface(environ=None, settings=None)` is `SURFACES.create("browser", environ, None, settings)` and
   `browser_surface_settings(environ=None)` its `.settings`, with the process
   environment when `environ` is `None`. The core modules (`config.py`, `service.py`, `session.py`) and the entry
@@ -504,8 +530,9 @@ value from one.
   `runtime_server_child_env(environ)` (the runtime MCP server child: the whole mapping, API key and base copied to
   the provider names, blocked proxies removed) and `runtime_server_environ(environ)` (the server's tool timeout
   defaults, 600 s) in `runtime/config.py`; the browser-use sidecar's minimal environment in
-  `drivers/browser_use/transport.py`, built from OS and `BROWSER_USE_*` names of the given mapping plus
-  `BrowserSettings.upload_root`.
+  `drivers/browser_use/transport.py`, built from OS and `BROWSER_USE_*` names of `BrowserSettings.process_env` (the
+  mapping the settings were parsed from, hidden from `repr` and equality) plus `BrowserSettings.upload_root`; the
+  driver factory passes both through `BrowserUseConfig`.
 - Entry points build settings once: `runtime/main.py` from `process_environ()` (its own inputs through
   `read_demo_inputs(environ)`), `playwright_runtime_mcp_server.py` from `runtime_server_environ(process_environ())`.
   They pass `core_settings` / `browser_settings` to `BrowserAgentRuntime`, which hands them to `BrowserService` and
@@ -553,14 +580,17 @@ value from one.
   runner's Direct agent runs with `dedicated_log=False`, so its model-call lines reach the captured process log as the
   worker's do; its tool-call lines still reach the browser log through the hook, and no raw audit artifact is written
   for it.
+- Drivers and their clients import nothing from `runtime/`: they log through the core logger, so inside the browser
+  log context their lines (the MCP clients' call lines, the browser-use sidecar's log and stderr lines) land in the
+  browser agent log, and outside it in the process log.
 
 ## Provisioning (`provisioning/`)
 
 A provisioner makes one device ready for a driver. It is picked by name, so the code that builds the agent never
 handles a CDP url or a Chrome process itself.
 
-- `ProvisionedDevice(kind, endpoint, extras, cleanup=None)`: frozen; `cleanup` is a no-argument callable, `None`
-  when there is nothing to stop.
+- `ProvisionedDevice(kind, endpoint, extras, cleanup=None)` (`contract/device.py`, re-exported by
+  `provisioning/`): frozen; `cleanup` is a no-argument callable, `None` when there is nothing to stop.
 - `Provisioner` (protocol): `provision(surface_settings) -> ProvisionedDevice`, `release(device)`, which runs
   `device.cleanup` if there is one, and `is_alive(device) -> bool`, whether the device still answers (the driver
   session re-provisions a dead one). All three are synchronous; async callers run them in a worker thread.
@@ -570,7 +600,9 @@ handles a CDP url or a Chrome process itself.
 
 ### `ManagedBrowserProvisioner` (`provisioning/managed_browser.py`)
 
-All three names resolve to this class; `provision` branches on `settings.provisioning`. `kind` is `"chrome"`.
+All three names resolve to this class; `provision` branches on `settings.provisioning`. `kind` is `"chrome"`. Its
+input is typed `ManagedBrowserSettings`, a `Protocol` in the same module listing the fields it reads;
+`BrowserSettings` satisfies it structurally, so provisioning imports no surface module.
 
 | `provisioning` | Starts Chrome | `endpoint` | `extras` | `cleanup` |
 |---|---|---|---|---|
@@ -886,7 +918,7 @@ rails count.
 | `ProbeCardsTool` (`browser_probe_cards`) | same | card equals the runtime helper's; `max_cards` 1–12 (default 12); the page function of `probes/cards.py` (its script is the resource `cards.js`, the parameters inlined at build time); selector cache records go in and out as before; primary links registered in `selector_primary_links` |
 | `BatchTool` (`browser_batch_interact`) | one command for a step that maps to one; otherwise page scripts and one command per step | see below |
 | `FindTool` (`browser_find`) | none, or one `Observe` when the page state has no fresh observation | see below |
-| `RecallOffloadTool` (`browser_recall_offload`) | none | `BrowserOffloadRecallTool(context.workspace, language=context.language)`: card and behaviour of `offload_recall.py`; it reads `<workspace>/context/<ContextUtils.offload_session_dir_name(session id)>_context/offload/`, the directory the core's tool-result offloader writes (a path-safe id is its own name; any other id maps to one safe component plus a digest); no record |
+| `RecallOffloadTool` (`browser_recall_offload`) | none | `BrowserOffloadRecallTool(context.workspace, language=context.language)`: card and behaviour of `surfaces/browser/offload_recall.py` (the old `browser_move.offload_recall` path is a deprecated alias of the same module); it reads `<workspace>/context/<ContextUtils.offload_session_dir_name(session id)>_context/offload/`, the directory the core's tool-result offloader writes (a path-safe id is its own name; any other id maps to one safe component plus a digest); no record |
 | `probe_for_policy(context, source, params)` | `RunScript(code=source, args=params)`, up to two | the F_05 result: elements become targets, `generation_id` added; failure envelope `{"ok": False, "error", "elements": [], "page_state"}` on a `DriverError`, a refused script or a result with `ok: false` |
 | `activate_page(context, url) -> bool` | `Observe` when no context is known, then `SwitchContext(<tab whose URL is url, else the current context>)` | `False` on a `DriverError` or no context; the switch is recorded, so the generation advances |
 | `CUSTOM_ACTIONS["browser_get_element_coordinates"]` | `Navigate` when `url` is given; one `RunScript` unless only the four coordinates are given | the controller's parameters and aliases; `querySelector` and the bounding box, else the element whose text matches (a Playwright `:has-text("...")` contributes its text); `{ok, source, target, error}` with the controller's error texts |
@@ -1594,8 +1626,8 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
 #### The driver (`drivers/playwright_mcp/driver.py`)
 
 - `create_playwright_mcp_driver(device, surface_settings)` builds the `@playwright/mcp` server config with
-  `runtime.config.playwright_mcp_config` (the same builder `build_playwright_mcp_config` uses), with
-  `device.endpoint` as the CDP endpoint. A config in `surface_settings.mcp_server` keeps its `params` (command,
+  `drivers/playwright_mcp/config.playwright_mcp_config` (the builder `runtime/config.py`'s public functions call),
+  with `device.endpoint` as the CDP endpoint. A config in `surface_settings.mcp_server` keeps its `params` (command,
   args, cwd, timeout, env) and `client_type`; the factory's server name and id win, so the tool prefix never depends
   on the caller. In the given env `PLAYWRIGHT_MCP_DEVICE` is dropped (no device emulation over CDP) and, when the
   device has an endpoint, `PLAYWRIGHT_MCP_CDP_ENDPOINT` is set and `PLAYWRIGHT_MCP_BROWSER` defaults to `chrome`, as
@@ -1604,7 +1636,7 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   `streamable-http`) and calls it directly, never through `ToolMgr`; it reads `tools/list` once and keeps each
   mapped tool's description as `DriverInfo.tool_hints`, and every listed tool that has a decoder (`tools.py`) as
   `DriverInfo.native_tools[name] = NativeTool(description, schema, build)`: the description verbatim, the schema
-  as the client lists it (`inputSchema` through `runtime/utils/parsing.sanitize_json_schema`, so without `$schema`);
+  as the client lists it (`inputSchema` through the stdio client's `sanitize_json_schema`, so without `$schema`);
   `browser_find` is listed the same way with `build=None` (no command backs it; the surface's `FindTool` takes its
   description and schema). Before
   `start()` `native_tools` is empty. `tool_name_prefix` is `mcp_model_tool_prefix(server_name)`
@@ -1624,8 +1656,11 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   and the elements of the subtree have no bounds.
 - **One attempt per tool call.** The driver calls `call_tool_once` on its client, never the retrying `call_tool`
   the runtime path uses: a call that fails is not sent again. A transport timeout (`mcp_timeout_s`) is
-  `ActionTimeout(dispatched=True)`; no connection is `ConnectionLost(dispatched=False)`; any other transport failure
-  is `ConnectionLost(dispatched=True)`.
+  `ActionTimeout(dispatched=True)`; no connection is `ConnectionLost(dispatched=False)`; a transport failure (the
+  client's `is_transport_error`: closed or broken streams, a closed connection, read/write and broken-pipe errors,
+  a terminated session) is `ConnectionLost(dispatched=True)`. Any other client exception (a JSON-RPC error, a
+  serialization error) is `DriverError(dispatched=False)` with the exception type and message, so one bad argument
+  never restarts the browser.
 - **Sensitive commands.** `TypeText(sensitive=True)`, `RunScript(sensitive=True)` and a `FillForm` with a sensitive
   field are decoded with `sensitive=True`, so their `detail` has no echoed code; the error message of a failed
   sensitive call can still quote it, and `Tracing` does not record that message.

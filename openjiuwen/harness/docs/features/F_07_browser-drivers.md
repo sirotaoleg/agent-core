@@ -5,7 +5,7 @@
 | Item | Value |
 |---|---|
 | Type | feature |
-| Date | 2026-10-12 |
+| Date | 2026-10-13 |
 | Scope | `openjiuwen/harness/tools/browser_move/` (`contract/`, `drivers/`, `provisioning/`, `surfaces/browser/`, `runtime/`, `runtime/controllers/action.py`, `runtime/utils/`, `playwright_runtime_mcp_server.py`), `openjiuwen/harness/subagents/browser_agent.py`, `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/single_agent/agents/react_agent.py`, `openjiuwen/core/context_engine/` (offload directory name), `tests/unit_tests/harness/tools/browser_move/` |
 | Test baseline | see "Verification" in each section |
 | Related spec | [[S_20_browser-driver-contract]] |
@@ -4313,3 +4313,96 @@ Known leftovers:
 6. After a first navigation that lands on another host (the consent page), the refund leaves no attempts, and
    the next action is denied once with "Navigate to it directly" (call 2 of Google Flights--6/7, Google Map--40,
    ArXiv--11). One wasted call per task; unchanged here.
+
+## Phase 11: dependency direction
+
+Two reviews of 2026-10-12 and an import scan of the package found edges that point the wrong way: drivers importing
+`runtime/` and `provisioning/`, the core and a surface helper importing `drivers/middleware.py` for a helper that
+only masks contract types, provisioning importing the browser surface's settings, and a module at the package root
+that belonged to no layer. Seven `refactor` commits move types and helpers to the layer that owns them; one `fix`
+triple narrows the MCP driver's lost-connection mapping. The browser-use driver's upload path resolution is the one
+edge left (leftover 1).
+
+### Cross-layer imports
+
+| edge | before | after |
+|---|---|---|
+| drivers → `runtime/` | 5 files: the MCP driver (`runtime.config`), both MCP clients (`browser_logging`, `utils.parsing`), the browser-use driver (`browser_logging`, `utils.upload_paths`) and transport (`browser_logging`, `config.process_environ`, `utils.env`) | 1: the browser-use driver → `runtime.utils.upload_paths` |
+| drivers → `provisioning/` (`ProvisionedDevice`) | 2 | 0: `contract/device.py` |
+| `runtime/` → `drivers/middleware.py` (`masked`) | `tool_factory.py` | 0: `contract/masking.py` |
+| `surfaces/` → `drivers/middleware.py` (`masked`) | `helpers/batch.py` | 0 |
+| `provisioning/` → `surfaces/browser/config.py` | `managed_browser.py` | 0: `ManagedBrowserSettings` protocol |
+| `surfaces/` → package root (`offload_recall`) | `helpers/recall.py` | 0: `surfaces/browser/offload_recall.py` |
+| `runtime/` → `drivers/` | `assembly.py` (registry, middleware) | `assembly.py`; `config.py` inside a function (the settings facade) |
+| drivers → surface `commands` / `context` | 6 | 6 (allowed) |
+
+### Decisions
+
+1. **The Playwright MCP server config is the driver's.** `drivers/playwright_mcp/config.py` builds it from the
+   browser settings and keyword values (`cdp_url`, `launch_args`, `key`, `required_capability`); it does not know
+   `BrowserInstanceConfig`. `runtime/config.py` keeps `playwright_mcp_config`, `build_playwright_mcp_config` and
+   `RuntimeSettings.mcp_cfg` for their callers (the WebVoyager runner, the subagent builder) and maps the instance
+   onto the builder, importing it at call time; the import-time probe of `test_assembly.py` stays green.
+2. **The server's `--caps` groups are a driver tuple.** The builder read them from the browser surface's catalog
+   through the registry; a driver may not import the catalog, and building the whole surface bundle from a driver
+   factory to read seven names is the wrong direction. `SERVER_CAPABILITIES` lists the seven groups in catalog
+   order; the existing test that compares the `--caps` argument with the catalog's non-policy entries holds the two
+   together. The settings-facade test no longer asserts that the builder calls the registry.
+3. **The settings facade is the second named importer of `drivers/`.** The task names `assembly.py` as the only
+   exception and asks `config.py` to call the driver lazily; the rule lists both by name, `config.py` for imports
+   inside function bodies only.
+4. **Drivers log through the core logger.** The core logger already sends every line written inside the browser
+   log context to `openjiuwen.browser_agent` (`default_impl._emit`), which is how the model client's lines reach the
+   browser agent log; the drivers' lines take the same route instead of a second one. Outside the context (the
+   WebVoyager Direct agent runs with `dedicated_log=False`) they go to the process log, which that runner captures;
+   with the log file off they no longer go to both.
+5. **The sidecar environment comes from the settings.** `BrowserSettings.process_env` is the mapping the settings
+   were parsed from (hidden from `repr` and equality, so it never prints with the settings), passed by the factory
+   through `BrowserUseConfig.environ`; the transport still keeps only OS and `BROWSER_USE_*` names. The transport
+   has its own two-line case-insensitive lookup; `env_value` stays in `runtime/utils/env.py` for its one other user,
+   the surface settings.
+6. **`sanitize_json_schema` lives in the stdio client**, its only caller; tests import it from there.
+7. **`offload_recall.py` moves to `surfaces/browser/`** (its only user is the browser recall helper) as a pure
+   rename; the old path is a module alias that replaces itself in `sys.modules` with the moved module and warns
+   once, like `playwright_runtime/`.
+8. **The MCP driver asks its client what a transport failure is.** Both clients already retry on the same markers;
+   the predicate is public as `is_transport_error`, and every other exception is
+   `DriverError(dispatched=False)`. The reviews ask for "not dispatched"; a result that fails to validate after the
+   server ran the tool would also land there, and nothing re-sends a command, so the flag only keeps the session
+   from restarting.
+
+### Rejected options
+
+- Building the browser surface bundle in the MCP driver factory to read the catalog: a driver → surface edge the
+  rules forbid, and a full profile build per driver.
+- Routing driver logging through `get_browser_agent_logger()` passed in by the factory, or a child of the stdlib
+  logger `openjiuwen.browser_agent`: the first changes the factory signature, the second bypasses core logging
+  (`logging.getLogger` is not allowed in library code).
+- A pre-filtered sidecar environment in the surface settings: the credential filter would move out of the
+  transport that owns the rule, or exist twice.
+- Narrowing `ConnectionLost` by exception type (anyio, httpx, `McpError(CONNECTION_CLOSED)`): a third definition
+  next to the two the clients already retry on.
+
+### Verification
+
+New architecture rules in `architecture/test_import_boundaries.py`: drivers import only the contract, their own
+package, the middleware and surface `commands`/`context` (allowlist: the one upload-path edge); provisioning imports
+only the contract; `runtime/` and `surfaces/` import `drivers/` only from `assembly.py` (and `config.py` lazily);
+the package root holds only the four known modules. MCP driver: a `ValueError` from the client is a
+`DriverError(dispatched=False)` (fails before the fix: `ConnectionLost`), a "broken pipe" is still `ConnectionLost`.
+The old offload path resolves to the moved module and warns. Browser_move unit suite and the terminal stream test:
+2504 passed, 122 skipped. Goldens unchanged against `77091ac9e`. Live sets not run in this step (one gate run at
+the end of the phase).
+
+### Known leftovers
+
+1. **Upload paths.** The task moves `runtime/utils/upload_paths.py` to the browser surface and has the surface
+   resolve `UploadFile`/`Drop` paths before the driver. On Playwright MCP the command is built by the driver's native
+   decoder (`drivers/playwright_mcp/tools.py`) and reaches the driver without passing any surface code (the policy
+   rail only checks); there is no contract point where a surface rewrites a command. Open: a contract hook (for
+   example a profile function applied to each command before the page-state check), a surface rail that rewrites the
+   tool arguments before the decoder, or resolution staying in the browser-use driver with the helper in its
+   package. Until decided, the browser-use driver keeps importing the helper (the one allowlisted edge) and the MCP
+   driver passes paths to the server as before.
+2. The browser log context decides where driver lines go; a driver used outside an agent invoke logs to the process
+   log.
