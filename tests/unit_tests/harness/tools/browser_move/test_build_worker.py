@@ -13,7 +13,7 @@ import pytest
 
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.runtime import agents as agents_module
-from openjiuwen.harness.tools.browser_move.runtime.agents import WORKER_LANGUAGE, build_worker
+from openjiuwen.harness.tools.browser_move.runtime.agents import WORKER_LANGUAGE, build_worker, default_worker_prompt
 from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
 from openjiuwen.harness.tools.browser_move.runtime.driver_session import DriverSession
 from openjiuwen.harness.tools.browser_move.runtime.page_state import BrowserPageState
@@ -125,3 +125,29 @@ def test_the_worker_gets_the_screenshot_tool_only_with_image_support(image_suppo
     assert parts.call_args.kwargs["image_support"] is image_support
     names = {tool.name for tool in asyncio.run(worker.ability_manager.list_tool_info())}
     assert (MCP_PREFIX + "browser_take_screenshot" in names) is image_support
+
+
+def test_a_surface_without_a_worker_prompt_gets_the_neutral_one() -> None:
+    session = _session("Playwright MCP")
+    profile = dataclasses.replace(session.assembly.surface.profile, worker_prompt=None)
+    bundle = dataclasses.replace(session.assembly.surface, profile=profile)
+    worker = asyncio.run(
+        build_worker(
+            session,
+            bundle,
+            provider="openai",
+            api_key="test-key",
+            api_base="https://example.invalid/v1",
+            model_name="test-model",
+            max_steps=3,
+            core=CORE,
+            capabilities=("core",),
+            tool_result_observer=_observer,
+            screenshot_subdir="shots",
+            artifacts_subdir="out",
+        )
+    )
+
+    prompt = worker.config.prompt_template[0]["content"]
+    assert prompt == default_worker_prompt("shots", "out", driver_name="Playwright MCP")
+    assert "browser" not in prompt.lower()

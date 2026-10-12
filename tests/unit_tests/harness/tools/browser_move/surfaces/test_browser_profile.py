@@ -67,7 +67,7 @@ def test_profile_fields_are_filled(profile: SurfaceProfile) -> None:
     assert set(profile.capability_catalog) == set(profile.capability_tools)
     assert profile.policy_rules == POLICY_RULES and profile.rails == ()
     assert profile.extra_tools == EXTRA_TOOLS
-    assert profile.native_tools == ()
+    assert not hasattr(profile, "native_tools")
 
 
 def test_profile_lists_every_browser_owned_command(profile: SurfaceProfile) -> None:

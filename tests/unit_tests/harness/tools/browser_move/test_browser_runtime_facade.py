@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -202,3 +203,64 @@ def test_capabilities_are_the_catalog_entries_the_allowlist_covers() -> None:
     vision = make_runtime(allowed_tool_names=CORE_BROWSER_TOOL_NAMES + VISION_BROWSER_TOOL_NAMES)
     assert vision.capabilities == ("core", "vision")
     assert vision.service.allowed_tool_names == CORE_BROWSER_TOOL_NAMES + VISION_BROWSER_TOOL_NAMES
+
+
+_HOOKS = ("custom_actions", "page_metadata", "policy_probe", "activate", "semantic_tracker", "worker_prompt")
+
+
+def _runtime_without_hooks() -> BrowserAgentRuntime:
+    assembly = fake_assembly(mcp_fake_driver([observation()]))
+    profile = dataclasses.replace(assembly.surface.profile, **dict.fromkeys(_HOOKS))
+    assembly = dataclasses.replace(assembly, surface=dataclasses.replace(assembly.surface, profile=profile))
+    runtime = BrowserAgentRuntime(
+        provider="openai",
+        api_key="test-key",
+        api_base="https://example.invalid/v1",
+        model_name="test-model",
+        mcp_cfg=McpServerConfig(
+            server_id="playwright_official_stdio",
+            server_name="playwright-official",
+            server_path="stdio://playwright",
+            client_type="stdio",
+            params={"cwd": str(Path.cwd())},
+        ),
+        guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
+        language="en",
+    )
+    with (
+        patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=assembly)),
+        patch.object(runtime_module, "assemble_surface", return_value=assembly.surface),
+    ):
+        run(runtime.ensure_runtime_ready())
+        assert runtime.surface is assembly.surface
+    return runtime
+
+
+def test_a_surface_without_hooks_registers_no_custom_actions() -> None:
+    runtime = _runtime_without_hooks()
+
+    assert all(getattr(runtime.surface.profile, name) is None for name in _HOOKS)
+    assert not {name for name in runtime._controller.list_actions() if name.startswith("browser_get_element")}
+
+
+def test_a_surface_without_a_policy_probe_or_activate_answers_without_the_driver() -> None:
+    runtime = _runtime_without_hooks()
+
+    probe = run(runtime.probe_for_policy("return 1", {}))
+    activated = run(runtime.activate_page("https://a.test/"))
+
+    assert (probe["ok"], probe["error"], probe["elements"]) == (False, "surface 'browser' has no policy probe", [])
+    assert activated is False
+    assert runtime.service.session.assembly.stack.kinds() == []
+
+
+def test_a_surface_without_metadata_or_semantic_state_still_captures_the_observation() -> None:
+    runtime = _runtime_without_hooks()
+
+    state = run(runtime.capture_browser_state(action_group_id="g1"))
+
+    assert state["ok"] is True and state["error"] is None
+    assert state["semantic_progress"]["observable_progress"] is False
+    assert runtime.semantic_progress == {}
+    runtime.acknowledge_semantic_replan()
+    runtime.reset_semantic_task()
