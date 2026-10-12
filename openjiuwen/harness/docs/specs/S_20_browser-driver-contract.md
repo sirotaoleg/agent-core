@@ -110,7 +110,7 @@ state never takes it for the page's observation (see "Page state"); a driver tha
 | `Element` | `ref: DriverRef`, `role`, `name`, `value`, `bounds` (`(x, y, width, height)` in viewport pixels), `enabled`, `focused`, `extra`. |
 | `Screenshot` | `png`, `width`, `height`, `scale` (image pixels per viewport pixel). `PointRef` coordinates are always in the screenshot's pixels. |
 | `Viewport` | `width`, `height`. |
-| `SurfaceContext` | Empty frozen base. The core passes it through to the surface's renderer and rails and never reads a field of it. |
+| `SurfaceContext` | Frozen base with one neutral member, `identity` (a property, `""` on the base): where the surface is, as the surface names it (`BrowserContext.identity` is its `url`; a phone context would give its package and activity). The core reads only `identity`, to detect a move; it passes the rest through to the surface's renderer, rails and page state. |
 
 ### Refs (`refs.py`)
 
@@ -1011,20 +1011,44 @@ text; a `DriverError` while observing is the same error text with `CommandRecord
 Three pieces sit between the model-facing tools and the driver stack; the runtime facade (below) wires them into
 the main agent.
 
-### Page state (`page_state.py`, `BrowserPageState`)
+### Page state (`runtime/page_state.py`, `PageState`; `surfaces/browser/page_state.py`, `BrowserPageState`)
 
-The existing generation and target registry, extended for contract types. Generations keep the `g<n>` format and
-one counter; the text-snapshot methods (`register_ax_snapshot`, `replace_ax_snapshot`, probes) are unchanged.
+The core's `PageState` is the surface-neutral generation and target registry; it names no browser field. Generations
+keep the `g<n>` format and one counter. A surface that keeps more state subclasses it and hands the class to the
+core as `SurfaceProfile.page_state`; `assembly.new_page_state(profile)` builds the profile's (the core's own when
+`None`), for `build_agent` and, at first use, for `BrowserService.page_state`, which the facade reads. No core
+module imports a surface's page state.
+
+The core keeps: `page_id` (prefix `state-`), `generation` / `generation_id`, `identity`, `last_observation` /
+`fresh_observation` / `note_dispatched`, `free_observations`, `screenshot_generation`, `surface_context`,
+`contexts`, `current_context`, the ref and selector target registry (`Target`: id, generation, source, locator, ref,
+selector, role, name, text, visibility and action flags), `record`, `check`, `generation_of`, `resolve`,
+`resolve_target`, `get_target`, `validate_generation`, `advance`, `reset`, and `export()` (`page_id`,
+`generation_id`, `interactives`). Hooks a subclass overrides: `_note_surface(surface)` (after each recorded surface
+context), `_on_advance()`, `_on_observation(observation)` (after each registered observation, partial ones
+included), `_forget_target(target)` (a target trimmed from the history); class attributes `target_type`,
+`id_prefix`, and the two hints of the stale-generation and unknown-ref messages (`observe_again`, `snapshot_again`).
+
+`BrowserPageState(PageState)` adds what only the browser has: `url` (the core's `identity` under its browser name)
+and `title`, the tab list (`contexts` from `BrowserContext.tabs`), probe and card targets (`BrowserTarget` adds
+`href`, `region`, `kind`, `field_name`, `extractable`, `selected`), `register_interactives`, `register_cards`,
+`CARD_EVIDENCE_FIELDS` and the field coverage, the requested fields, the captcha/login/access blockers, the primary
+links, target refresh and rebind (`refresh_target_id`, `rebind_target`, `recovery_candidates`,
+`update_target_locator`), the Playwright text-snapshot registration (`register_ax_snapshot`,
+`replace_ax_snapshot`), `observe(url=, title=)`, `advance(url=, title=)`, and `export()` / `export_summary()` with
+`url`, `title`, `cards`, `field_coverage`, `blockers` in their former key order. Its messages are the ones the model
+read before the split.
 
 - `record(action, outcome) -> outcome`: `outcome` is an `ActionResult`, or the `Observation` of an `observe()`. A new
   generation starts when `result.context_changed`, when the observation's context id differs from the current one,
   when the Jaccard distance between the `(ref, role)` sets of the last and the new observation is above
-  `element_change_threshold` (constructor parameter, default `0.5`), or when the surface context's address differs
-  from the known one without the flag (backstop). A new generation drops `last_observation`, `surface_context`,
+  `element_change_threshold` (constructor parameter, default `0.5`), or when the surface context's non-empty
+  `identity` differs from the known non-empty one without the flag (backstop; for the browser, the URL). A new generation drops `last_observation`, `surface_context`,
   `contexts` and `current_context`: context ids are valid only until the next context change. The returned value is
   stamped: `ActionResult.generation`, `Observation.generation` and every `Element.ref.generation`. Observation
-  elements replace the current generation's AX targets (same targets as a complete text snapshot). The surface
-  context's `tabs` become `contexts`; `observation.context` becomes `current_context`.
+  elements replace the current generation's AX targets (same targets as a complete text snapshot). A non-empty
+  `identity` becomes the known one; the browser page state takes the context's `tabs` as `contexts` and its title;
+  `observation.context` becomes `current_context`.
 - A scoped `Observe` (`action.scoped`) with an `Observation` outcome is partial: no generation check, no change to
   `last_observation`, `current_context`, `contexts`, the address or `fresh_observation`. The refs it shows join the
   current generation (new AX targets; existing ones are kept), the refs it does not show stay valid, as a model

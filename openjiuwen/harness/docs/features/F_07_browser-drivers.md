@@ -4515,3 +4515,50 @@ Known leftovers:
    tools from the profile. `main_agent_answer` reads `surface.url` / `surface.title` (P11-T3 territory).
 3. Custom actions are registered through the facade's controller, not the tool factory, so M5's `requires` does not
    reach them.
+
+## Phase 11: surface-neutral page state
+
+`runtime/page_state.py` (`BrowserPageState`) mixed the generation and reference registry the core needs with browser
+logic: card evidence fields (price, rating, shop, temperature...), captcha/login blocker patterns, card and probe
+targets, URL/title tracking, and a move detected through `getattr(surface, "url" / "title" / "tabs")`. A `refactor`
+commit splits it; one `fix` triple moves navigation detection onto a neutral contract member. The member map is in
+the step report; S_20 "Page state" lists the result.
+
+Decisions:
+1. **Subclass, chosen by the profile.** `PageState` (core) and `BrowserPageState(PageState)` (surface), with four
+   hooks and three class attributes. A component the core would call would need the same hooks and an extra object
+   per call site; the browser helpers already take a page state and keep their type.
+2. **`SurfaceProfile.page_state`, a zero-argument factory.** The task names the profile or the registry as the way;
+   the profile is where the rest of the surface's choices live. `assembly.new_page_state` builds it; `BrowserService`
+   makes it at first use from the surface bundle (it was made in the facade's constructor, before any surface),
+   and the facade reads the service's.
+3. **`SurfaceContext.identity` is the one contract change** (confirmed proposal): a property, `""` on the base;
+   `BrowserContext.identity` is `url`. The core compares two non-empty identities, today's URL rule. The tab list and
+   the title are not contract members: the browser page state reads them from its own context type in
+   `_note_surface`.
+4. **The browser keeps its messages and key order.** The core's stale-generation and unknown-ref hints are neutral
+   ("Observe again."); the browser subclass sets the old texts, and its `export()` builds the old dict, so tool
+   outputs and goldens do not move.
+5. **`runtime.page_state.BrowserPageState` is not aliased.** It was not exported from `runtime`, a lazy alias in the
+   core module would import the surface, and every package and test import moved to
+   `surfaces/browser/page_state.py`. `CARD_EVIDENCE_FIELDS` moved with it.
+
+Rejected options:
+- A second contract member for the context list (`SurfaceContext.contexts`): the core uses the list only as the
+  `RefResolver.contexts` a decoder reads, which only the surface's own decoders need; the subclass fills it.
+- Keeping the URL in the core under a neutral name only: the move rule needs a value the surface defines, which is
+  what `identity` is.
+
+Verification: `test_page_state_identity.py`: a non-browser context with its own identity advances the core
+generation on a change (fails before), not on the same or an empty identity, also through an observation; the
+browser context's identity is its URL. The fake screen surface gets `ScreenContext` with its own identity and runs
+on the core `PageState`. A guard keeps `url`, `title`, `tabs` and card field names out of `runtime/page_state.py`;
+its browser-word allowlist entry is gone. Every existing page-state, batch, probe and facade test passes with the
+import moved. Unit suite: 2519 passed, 122 skipped. Goldens unchanged against `77091ac9e`.
+
+Known leftovers:
+1. The facade (`runtime/session.py`) still calls browser members on its page state (`set_requested_fields`,
+   `field_coverage`, `selector_primary_links`, `refresh_target_id`, `recovery_candidates`) and reads
+   `surface.url` / `surface.title` in `main_agent_answer`; with option (c) of the hook step the facade stays
+   browser-shaped.
+2. The core `Target` still carries `selector` (a CSS locator, a contract `Locator` kind) and the source name `ax`.
