@@ -1411,12 +1411,22 @@ facade (`main_agent_answer`).
   `runtime.ensure_runtime_ready()` (the session opens here), then, when `service.browser_agent` is `None`,
   `service.browser_agent = await build_worker(session, session.assembly.surface, provider=, api_key=, api_base=,
   model_name=, max_steps=guardrails.max_steps, core=service.core, capabilities=runtime.capabilities,
-  tool_result_observer=service.observe_worker_tool_result, screenshot_subdir=, artifacts_subdir=)` with no image
-  support and no probe (the images it would send are rejected by the providers, F_07), then
-  `runtime.register_runtime_tools()`. `run` is `service.run_task(task=, session_id=, request_id=, timeout_s=,
-  worker=)` with `worker` an async callable that runs `start(runtime)` and returns `service.browser_agent`: after
-  a `reset()` the slot is empty and the next attempt rebuilds the worker on a fresh session. `drop` does nothing:
+  tool_result_observer=service.observe_worker_tool_result, screenshot_subdir=, artifacts_subdir=,
+  image_support=<the strategy's verdict, False until a probe said yes>)`, records the tool names the worker was built
+  with, then `runtime.register_runtime_tools()`. `run` first awaits `probe_image_support` (as `Direct.run` does);
+  on the first yes it sets image support and empties the slot, remembering the tools the caller removed from the
+  started worker (the runner drops the helpers between `ensure_started()` and the task), so the worker is rebuilt
+  with the screenshot tool and image results and without those tools. Then `service.run_task(task=, session_id=,
+  request_id=, timeout_s=, worker=)` with `worker` an async callable that runs `start(runtime)` and returns
+  `service.browser_agent`: after a `reset()` the slot is empty and the next attempt rebuilds the worker on a fresh
+  session. `drop` does nothing:
   the worker lives in the service's slot, which the service clears on reset and shutdown.
+
+The worker's answer carries `screenshot` only as something a vision model reads as an image: an http(s) link, a
+data URL whose bytes are an image, or a local file (resolved under the runtime working directory, then the process
+cwd) that is a PNG, JPEG, GIF or WebP, turned into a data URL with the MIME type its bytes show
+(`service._normalize_screenshot_value`). Anything else, a path that names no file included, becomes `None`: callers
+(the WebVoyager judge) send the value to a model as an image.
 
 Invariant (image probe): `start` makes no model call on either strategy. The runner calls `ensure_started()` before it
 redirects stdout into the task log, and the first model call binds the model logger to the stdout of that moment, so a

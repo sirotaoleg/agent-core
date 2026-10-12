@@ -4618,3 +4618,37 @@ old module had. `playwright_runtime.page_state` stays the core module (the shim'
 `runtime/`), so `BrowserPageState` under that path is a documented break for the release notes.
 Verification: the shim test lists the nine (fail before: `ModuleNotFoundError`). Unit suite: 2540 passed, 123
 skipped.
+
+### Screenshots the providers rejected (C5)
+
+The 109f6fccf Playwright MCP run lost 9 of 51 tasks to "You uploaded an unsupported image" (OpenAI/Azure) and
+"Invalid base64 image_url"; worker images were switched off as a precaution. The errors are in the judge's
+verdict (`verifier_result.judge`), not in the agent's run, and in all nine the worker's answer had
+`"screenshot": "screenshots/<name>.png"`, a relative path that named no file (the model wrote the path; the
+server saves a named screenshot under its working directory, where the service looks, and nothing was there). The
+service passed an unloadable path through unchanged, and the runner sent that string to the judge model as an
+image. The worker's own tool images were never at fault: `@playwright/mcp@0.0.78` returns the screenshot as a
+base64 PNG block with `mimeType: image/png` (scaled to fit 1568 px, still PNG), `result._screenshot` keeps the bytes
+in `Screenshot.png`, and the worker sends them as a `data:image/png` URL that decodes to the same PNG (checked with
+the recorded fixture).
+
+Decisions:
+1. **The answer's screenshot is an image or nothing**: http(s) links pass, data URLs pass when their bytes are an
+   image, local files become data URLs with the MIME type sniffed from the bytes (not the extension), everything
+   else is `None`.
+2. **Worker images are on again, probed at the first run** like `Direct`: `start` still makes no model call; on a
+   yes the first run rebuilds the worker with image support.
+3. **The rebuild keeps the caller's removals.** The runner removes the helper tools from the worker that
+   `ensure_started` builds; the strategy records the tools it built and removes from the rebuilt worker whatever
+   the caller removed (a follow-up fix after the first version restored the helpers).
+
+Rejected options:
+- Building the worker with images at `start` from a cached verdict: each WebVoyager task runs in a fresh
+  process, so the cache is empty at `start`.
+- Teaching the runner to check the screenshot: the runner is outside this repository, and our answer should not
+  carry a value it cannot load.
+
+Verification: `test_answer_screenshot.py` (the runs' missing paths are dropped; fail before), the fixture-based
+worker image test in `test_build_worker.py`, the first-run probe and rebuild cases and the kept removals in
+`test_topology.py`. Unit suite: 2557 passed, 123 skipped. Goldens unchanged. Live: the gate run at the end of the
+phase; whether judge errors disappear is for the next WebVoyager run.
