@@ -3257,3 +3257,148 @@ runner, the alias's real consumer, and is green unchanged.
    displaces a real top-level `runtime` module, but a later bare `import runtime` in the same process gets this
    package.
 6. The alias package and its test: remove in the next release (decision 5).
+
+## Phase 9: PR a, the standalone browser modules leave the core
+
+Everything under `runtime/` that reads pages, tabs or URLs on its own (the probes, the semantic state, the site
+profiles, the working context, the state context processor, the status log, the capability catalog) moves to
+`surfaces/browser/`; the record rails move to `runtime/rails/`; the browser profile store moves to `provisioning/`.
+Every move is a `git mv` with its import fixes in the same commit, proved by goldens and by AST identity. Two things
+are not moves and are recorded as such: the catalog merge, and the `--caps` list built at call time.
+
+### What moved
+
+| from `runtime/` | to |
+|---|---|
+| `probes.py` | `surfaces/browser/probes/cards.py` (`probes/__init__.py` re-exports the three builders) |
+| `probe_semantics.py` | `surfaces/browser/probes/semantics.py` |
+| `semantic_state.py` | `surfaces/browser/semantic/state.py` |
+| `site_profiles.py`, `status_logging.py` | `surfaces/browser/` (same names) |
+| `browser_working_context.py`, `…_processor.py`, `…_rail.py` | `surfaces/browser/working_context/store.py`, `working_context/processor.py`, `rails/working_context.py` |
+| `browser_state_context_processor.py` | `surfaces/browser/state_processor.py` |
+| `browser_capabilities.py` | `surfaces/browser/capabilities.py` (merge, below) |
+| `profiles.py` | `provisioning/profiles.py` |
+| `action_policy.py`, `intercepted_action.py`, `repeated_call_guard.py`, `final_answer_recovery.py` | `runtime/rails/` |
+
+15 modules: 14 renames (`git show -M --name-status`: six at 100 % similarity, the rest differ by their imports only)
+and the merge. Import fixes: `runtime/{runtime,service,config,assembly,agents,__init__}.py`,
+`surfaces/browser/helpers/{page,probes}.py`, `provisioning/managed_browser.py`, the moved files' own relative imports,
+`subagents/browser_agent.py`, `rails/subagent/subagent_rail.py`, 37 test files, the two API docs that named
+`runtime.browser_capabilities`. `runtime.__all__` loses the five browser names (the two processors with their
+settings classes, the working-context rail); the alias package serves them (below).
+
+**The catalog merge.** `surfaces/browser/capabilities.py` was a 53-line surface module (`_SPECS`, `_REF_KINDS`,
+`CAPABILITY_TOOLS`, `_pairs`, `CAPABILITY_CATALOG`); `runtime/browser_capabilities.py` was the catalog. The catalog
+file moves onto the surface module's path and the five surface definitions are appended verbatim before `__all__`,
+which now also lists `CAPABILITY_TOOLS` and `CAPABILITY_CATALOG` (`profile.py` imports them by name). Git shows it
+as a rename only under `-M -B` (a modified path is never a rename candidate for `-M` alone); `git log --follow` on
+the new path follows the surface module's history, the catalog's is behind `--follow -M -B` or the old path.
+
+### The Phase 8 leftovers
+
+The runtime server imports the package by its full name (`from openjiuwen.harness.tools.browser_move.runtime…`);
+the `sys.path` block, the `SRC_ROOT` append in `runtime/__init__.py` and the three bare-name `sys.modules` aliases
+(`runtime`, `runtime.controllers`, `runtime.controllers.action`) are gone, and so is the scanner's bare-name branch
+that existed for them. `python -m …playwright_runtime_mcp_server --help` runs (Phase 8 leftover 1 closed, with 2, 3
+and 4: the `browser_custom_action` description names `runtime.controllers.action.register_action`, the server
+docstring's usage line names the module, `test_runtime.py`'s function is `test_runtime_end_to_end`).
+
+### The alias package
+
+`_MOVED = {"browser_capabilities": "surfaces.browser.capabilities", "profiles": "provisioning.profiles"}` is aliased
+eagerly after the walk, so `playwright_runtime.browser_capabilities` (the WebVoyager runner's import) is the
+catalog module object. A second, name-keyed map `_MOVED_NAMES` serves the five names `runtime.__all__` dropped
+through the alias's `__getattr__`. The runner-contract mirror is green unchanged.
+
+### The `--caps` list, built at call time
+
+`config.py` used to build `PLAYWRIGHT_MCP_CAPABILITY_NAMES` at import from the catalog. With the catalog under
+`surfaces/browser/`, that import broke the composition-root invariant of S_20 ("importing the package … imports no
+concrete driver, surface or provisioner"), checked at runtime by `test_assembly.py`: `openjiuwen.harness.tools`
+reaches `config.py` through `subagent/task_tool.py` and `browser_logging.py`. Decision (head, checkpoint 1 review):
+pull the PR e rewrite of `config.py` forward. `playwright_mcp_config` imports the catalog inside the function and
+builds the names there (same filter, same order: every catalog entry except `core` and the policy-only ones); the
+module constant goes (its one caller was that function). The same probe then showed a second edge the checkpoint
+had not seen: `rails/subagent/subagent_rail.py`, reached from `openjiuwen.harness.tools` through `worktree/rails.py`
+and `rails/__init__.py`, imported `DEFAULT_BROWSER_CAPABILITIES` at module level for the one method that lists the
+browser agent's capabilities in the available-agents description. It imports the catalog inside that method, by
+the same decision; no test patches the name on the module. The rest of PR e (the profile fields) still follows PR d.
+
+### Browser words: import statements no longer count
+
+A `from ..surfaces.browser.x import` line carries the word `browser` in the package path, and the three core
+modules that import surface modules (`runtime.py`, `service.py`, `config.py`) grew by one hit per import line after
+the move. Decision (head): that edge is the import-boundary rule's business; the browser-word rule blanks the lines
+of every import node (`ast`, `lineno..end_lineno`) before counting. The three bumps revert and the recount tightens
+two stale values (`controllers/action.py` 129 → 13, `runtime_tools.py` 33 → 5, both below their allowlist value
+since earlier phases; the ratchet only fails on growth) and `browser_logging.py` (8 → 6, an import line).
+
+### Decisions
+
+1. **The move is proved, not reviewed.** Goldens byte for byte, and an AST identity check: every top-level
+   definition and every method of the old files has exactly one new node with an equal `ast.dump` (positions are
+   not in the dump) in the new tree; the merge and `runtime/__init__.py` (expected changes: `__all__`,
+   `__getattr__`) are checked the same way.
+2. **The registration mechanism of the two context processors is unchanged.** The `@ContextEngine.register_processor()`
+   decorators stay on the classes in `state_processor.py` and `working_context/processor.py`; the registration point
+   is the import of those modules, which `browser_agent.py` performs. `surfaces/browser/__init__.py` stays
+   side-effect free: importing the processors there would pull `openjiuwen.core.context_engine` and the
+   working-context store into every `SURFACES.create("browser")`, `browser_surface_settings()` included.
+3. **`status_logging.py` goes to the surface** although the design's inventory listed it under the core: only the
+   rail imports it, and it reads `url`/`page` result fields.
+4. **`profiles.py` goes to `provisioning/`**, not to the surface (head decision Q6): the store serves the
+   provisioner, and `surfaces/` may not import `provisioning/`.
+5. **The call-time catalog import is counted by the import-boundary scan.** Lazy imports count everywhere except in
+   `assembly.py` (S_20, the architecture tests), so the key `config.py → surfaces.browser.capabilities` stays at 3;
+   the allowlist neither grew nor shrank for it. Whether `config.py` joins the lazy-allowed set is a PR d question.
+6. **A new rule**: `surfaces/` never imports a concrete driver or a provisioner (`drivers/middleware.py`, `contract/`
+   and `runtime/` are allowed). Zero violations today.
+
+### Rejected options
+
+- **Loosening the composition-root probe** to accept `surfaces.browser` and the catalog until PR e: the probe is
+  the runtime check of an S_20 invariant; the call-time import keeps it whole at the cost of one body edit the
+  design had scheduled anyway.
+- **Leaving the catalog under `runtime/`**: keeps 69 MCP tool names and 12 browser words in the core and
+  contradicts the plan's tree.
+- **A forwarding module `runtime/browser_capabilities.py`**: a `runtime → surfaces` import; the alias map covers
+  the one consumer outside the repo.
+- **Counting import lines and bumping the three allowlist values**: an allowlist may not grow for arithmetic the
+  design itself lists; the edge is already a counted key of the import-boundary rule.
+
+### Verification
+
+- `uv run pytest tests/unit_tests/harness/tools/browser_move tests/unit_tests/harness/test_deep_agent_terminal_stream.py -q`:
+  **2398 passed, 122 skipped in 48.54s** (2393 / 122 at the Phase 8 close, plus four tests for the server entry,
+  the alias map and the surfaces rule, plus the `playwright_mcp_config` names test).
+- AST identity (a scratch script, not committed; the old files at the Phase 8 close against the new tree): the 14
+  renamed modules **382 old definitions accounted for, 0 problems**; the merge **35 / 35**; `runtime/__init__.py` 7
+  accounted for with the two expected changes.
+- Goldens: `git diff a632b30f9 --stat -- tests/unit_tests/harness/tools/browser_move/snapshots/golden/` is empty.
+- `uv run python -m openjiuwen.harness.tools.browser_move.playwright_runtime_mcp_server --help`: exit 0, the
+  argparse help.
+- `uv run python -W always -c "import …playwright_runtime.browser_capabilities, …playwright_runtime.runtime"`: one
+  `DeprecationWarning` from the alias; both resolve; `runtime` and `runtime.controllers` are no longer in
+  `sys.modules`.
+- `ruff check --select I` over the package, the harness callers and the tests: 18 `I001` at the Phase 8 close → 10
+  (the blocks the move touched were re-sorted; the ten left are pre-existing in files PR a did not edit). The
+  touched files are clean; the server's three `E402` are gone with the `sys.path` block.
+- Allowlists, Phase 8 close → PR a:
+
+| list | before | after |
+|---|---|---|
+| browser words | 24 keys / 569 | 13 keys / 280: eleven keys gone with their files (−169); `final_answer_recovery` 2 and `repeated_call_guard` 8 under `runtime/rails/`; `runtime.py` 96 → 95, `service.py` 82, `config.py` 9, `browser_logging.py` 8 → 6, `controllers/action.py` 129 → 13, `runtime_tools.py` 33 → 5 (the recount without import lines) |
+| MCP tool names | 3 keys / 89 | 2 keys / 20 (`browser_capabilities.py` 69 gone) |
+| driver names | 4 keys / 7 | 4 keys / 7 (the catalog key follows the file) |
+| core imports of concrete modules | 1 key / 4 | 8 keys / 19: `runtime.py → helpers` 4 (unchanged), `→ capabilities` 2, `→ semantic.state` 2, `→ site_profiles` 1, `→ status_logging` 2, `→ working_context.store` 3 (the last three are the rail's and leave with it in PR b); `service.py → capabilities` 2; `config.py → capabilities` 3 (call time, decision 5) |
+| module size | 3 keys | 3 keys (`runtime/probes.py` 3010 → `surfaces/browser/probes/cards.py` 3010) |
+| env reads | unchanged | unchanged |
+
+### Known leftovers
+
+1. `config.py → surfaces.browser.capabilities` stays a counted key (decision 5) until PR d decides whether a
+   call-time import in a config module is allowed, or PR e hands the catalog to the core through the profile.
+2. The import allowlist has eight keys where the design predicted four: the three `runtime.py` keys for the rail's
+   imports and `semantic.state` at 2 (the rail still imports `price_interval_signature`) leave with the rail in PR b.
+3. The pre-existing compile-time warning `invalid escape sequence '\s'` now names `surfaces/browser/probes/cards.py:265`.
+4. The alias package, its test and the two map entries: remove in the next release (Phase 8 decision 5).
