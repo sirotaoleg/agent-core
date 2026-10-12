@@ -5,11 +5,12 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import hashlib
 import json
 import re
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -19,6 +20,7 @@ from openjiuwen.harness.tools.browser_move.runtime.runtime_tools import (
     BrowserCustomActionTool,
     BrowserListActionsTool,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser import tools as tools_module
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
     CORE_BROWSER_TOOL_NAMES,
 )
@@ -36,7 +38,7 @@ HELPER_TOOLS = (*RUNTIME_WORKER_HELPERS, *RUNTIME_TOOLS)
 # Only mentioned in conditional wording ("only when it is present").
 CONDITIONAL_MENTIONS = {"browser_run_code", "browser_take_screenshot"}
 # Prompt with the full tool surface at 18b840cf; it must stay byte-identical.
-FULL_SURFACE_PROMPT_SHA256 = "a814c53b1b2571d807ff0bba21411541397f281390bdb82497a31554fdeb9f89"
+FULL_SURFACE_PROMPT_SHA256 = "9844390e08d1a03d1b1b7eaafd6c64421dadf2d499ebefb3d38b9f824f577e22"
 
 _FINAL_JSON = json.dumps(
     {"ok": True, "final": "done", "page": {"url": "", "title": ""}, "screenshot": None, "error": None}
@@ -144,11 +146,14 @@ class TestWorkerRequestPromptMatchesTools:
 class TestWorkerPromptRendering:
     def test_full_surface_prompt_is_unchanged(self) -> None:
         full_surface = CORE_BROWSER_TOOL_NAMES + tuple(HELPER_TOOLS)
+        fixed = type("FixedDate", (datetime.date,), {"today": classmethod(lambda cls: cls(2026, 10, 12))})
 
-        prompt = _render(full_surface)
+        with patch.object(tools_module.datetime, "date", fixed):
+            prompt = _render(full_surface)
+            same = _render(None) == build_browser_worker_system_prompt(driver_name="Playwright MCP") == prompt
 
         assert hashlib.sha256(prompt.encode("utf-8")).hexdigest() == FULL_SURFACE_PROMPT_SHA256
-        assert prompt == _render(None) == build_browser_worker_system_prompt(driver_name="Playwright MCP")
+        assert same
         assert (
             "browser_batch_interact is a standalone runtime helper like browser_probe_interactives and "
             "browser_probe_cards, not a browser_custom_action wrapper. Use it directly. "

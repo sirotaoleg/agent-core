@@ -57,6 +57,8 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import (
     _BROWSER_DATE_PICKER_SECTION_NAME,
     _BROWSER_IMAGE_CAPABILITY_GUIDANCE,
     _BROWSER_IMAGE_CAPABILITY_SECTION_NAME,
+    _BROWSER_TASK_RULES_SECTION_NAME,
+    browser_task_rules,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.working_context.store import latest_browser_user_request
 
@@ -212,6 +214,9 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
                 content=_BROWSER_DATE_PICKER_GUIDANCE,
                 priority=85,
             )
+        )
+        builder.add_section(
+            PromptSection(name=_BROWSER_TASK_RULES_SECTION_NAME, content=browser_task_rules(), priority=85)
         )
 
     async def after_model_call(self, ctx: AgentCallbackContext) -> None:

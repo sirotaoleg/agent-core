@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import datetime
 from collections.abc import Mapping
 from typing import Any, Iterable, Optional
 
@@ -687,6 +688,40 @@ _BROWSER_DATE_PICKER_GUIDANCE = {
         "确认选中后再继续。"
     ),
 }
+_BROWSER_TASK_RULES_SECTION_NAME = "browser_task_rules"
+_BROWSER_TASK_RULES = {
+    "en": (
+        "Task rules:\n"
+        "- Today's date is {today}. A date without a year means its next occurrence on or after today.\n"
+        "- Apply every filter, category and option the task names (a property type, a class year, a price range) "
+        "before reading results.\n"
+        "- Check on the page what is today's, the latest or the newest; never answer that from memory.\n"
+        "- When the task names a source, open that source and read the answer there.\n"
+        "- Perform every UI step the task names, even when the answer is reachable another way.\n"
+        "- When the question has two readings, answer both.\n"
+        "- When the site misreads an entity, query it again disambiguated (full name, kind or unit).\n"
+        "- When the page shows the answer, state it plainly, without caveats that undermine it.\n"
+        "- Do not retry a hand-built search URL more than twice; open a candidate result instead."
+    ),
+    "cn": (
+        "任务规则：\n"
+        "- 今天的日期是 {today}。未写年份的日期指今天或之后最近的那一天。\n"
+        "- 读取结果前，应用任务点名的每一个筛选、类别和选项（如住宿类型、年级、价格区间）。\n"
+        "- “今天”“最新”“最近”的内容要在页面上核实，不要凭记忆回答。\n"
+        "- 任务点名了来源时，打开该来源并在那里读取答案。\n"
+        "- 任务点名的每个界面操作都要执行，即使答案可以通过别的途径得到。\n"
+        "- 问题有两种理解时，两种都回答。\n"
+        "- 网站误解了某个实体时，用消歧后的写法重新查询（全名、类别或单位）。\n"
+        "- 页面上已有答案时直接给出，不要附加削弱答案的保留说明。\n"
+        "- 手工拼接的搜索 URL 最多重试两次，之后改为打开一个候选结果。"
+    ),
+}
+
+
+def browser_task_rules() -> dict[str, str]:
+    """The task rules per language, with today's date."""
+    today = datetime.date.today().isoformat()
+    return {language: text.format(today=today) for language, text in _BROWSER_TASK_RULES.items()}
 
 
 _BROWSER_IMAGE_CAPABILITY_GUIDANCE = {
@@ -858,6 +893,7 @@ def build_browser_worker_system_prompt(
         f"If you produce any output files (reports, notes, summaries, markdown, text files, etc.), "
         f"write them to the '{artifacts_subdir}/' directory relative to the working directory. "
         "Never write output files to the project root or any other location.\n"
+        f"{browser_task_rules()['en']}\n"
         "Final output MUST be a single JSON object with keys:\n"
         "ok (boolean), final (string), page (object with url and title), "
         "screenshot (string|null), error (string|null).\n"
