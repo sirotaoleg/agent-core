@@ -66,7 +66,7 @@ async def _run_live_check(query: str, session_id: str, cancel_after_s: float = 0
         await runtime.shutdown()
 
 
-def test_playwright_runtime_end_to_end() -> None:
+def test_runtime_end_to_end() -> None:
     load_repo_dotenv(override=True)
     result = asyncio.run(
         _run_live_check(

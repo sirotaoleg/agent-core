@@ -85,11 +85,6 @@ def module_parts(relpath: str) -> tuple[str, ...]:
     return tuple(parts)
 
 
-@lru_cache(maxsize=None)
-def _top_level_names() -> frozenset[str]:
-    return frozenset(p.name[:-3] if p.suffix == ".py" else p.name for p in PKG_DIR.iterdir() if p.name != "__pycache__")
-
-
 def resolve_import(relpath: str, module: str | None, level: int) -> tuple[str, ...] | None:
     """Package-relative module path of an import, or ``None`` for a module outside the package."""
     if level:
@@ -104,10 +99,6 @@ def resolve_import(relpath: str, module: str | None, level: int) -> tuple[str, .
         return None
     if module == PKG_DOTTED or module.startswith(PKG_DOTTED + "."):
         return tuple(module[len(PKG_DOTTED) + 1 :].split(".")) if module != PKG_DOTTED else ()
-    # The stand-alone MCP server puts the package directory on sys.path (``from runtime.config import ...``).
-    first = module.split(".")[0]
-    if first in _top_level_names():
-        return tuple(module.split("."))
     return None
 
 

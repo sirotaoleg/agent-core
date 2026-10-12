@@ -10,8 +10,9 @@ import warnings
 
 import pytest
 
-OLD = "openjiuwen.harness.tools.browser_move.playwright_runtime"
-NEW = "openjiuwen.harness.tools.browser_move.runtime"
+PKG = "openjiuwen.harness.tools.browser_move"
+OLD = f"{PKG}.playwright_runtime"
+NEW = f"{PKG}.runtime"
 
 
 def _import_fresh() -> tuple[object, list[warnings.WarningMessage]]:
@@ -41,6 +42,23 @@ def test_every_module_under_runtime_is_aliased() -> None:
     aliased = {n.replace(OLD, NEW, 1) for n in sys.modules if n.startswith(OLD + ".")}
     assert aliased - {f"{NEW}.{old}" for old in shim._MOVED} == new_modules
     assert {f"{NEW}.controllers.action", f"{NEW}.utils.parsing", f"{NEW}.main"} <= aliased
+
+
+@pytest.mark.parametrize(
+    "suffix, target",
+    [("browser_capabilities", "surfaces.browser.capabilities"), ("profiles", "provisioning.profiles")],
+)
+def test_moved_module_keeps_its_old_name(suffix: str, target: str) -> None:
+    assert importlib.import_module(f"{OLD}.{suffix}") is importlib.import_module(f"{PKG}.{target}")
+
+
+def test_moved_names_are_served() -> None:
+    old = importlib.import_module(OLD)
+    rail = importlib.import_module(f"{PKG}.surfaces.browser.rails.working_context")
+    processor = importlib.import_module(f"{PKG}.surfaces.browser.state_processor")
+    assert old.BrowserWorkingContextRail is rail.BrowserWorkingContextRail
+    assert old.BrowserStateContextProcessorConfig is processor.BrowserStateContextProcessorConfig
+    assert "BrowserWorkingContextRail" not in old.__all__
 
 
 def test_classes_are_identical() -> None:

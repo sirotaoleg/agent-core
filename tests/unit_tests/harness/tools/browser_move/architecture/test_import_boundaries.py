@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Import boundaries of browser_move, and ``openjiuwen/core`` never importing ``openjiuwen.harness``."""
+"""Import boundaries of browser_move (the core and ``surfaces/`` never reach a concrete driver or provisioner),
+and ``openjiuwen/core`` never importing ``openjiuwen.harness``."""
 
 from __future__ import annotations
 
@@ -87,6 +88,16 @@ def _collect_core_concrete_imports() -> Counter:
     return found
 
 
+def _collect_surface_imports_of_drivers_or_provisioners() -> list[str]:
+    bad = []
+    for relpath in _scan.files_where(_scan.is_surface):
+        for node, _lazy in _scan.iter_imports(_scan.parse(relpath)):
+            for target in _import_targets(relpath, node):
+                if _concrete_kind(target) in ("driver", "provisioning"):
+                    bad.append(f"{relpath}:{node.lineno} imports {'.'.join(target)}")
+    return bad
+
+
 def _collect_contract_imports() -> list[str]:
     bad = []
     for relpath in _scan.files_where(_scan.is_contract):
@@ -144,6 +155,10 @@ class TestImportBoundaries:
             "core import of a concrete driver/surface/provisioner",
         )
         assert not problems, "\n".join(problems)
+
+    def test_surfaces_never_import_a_driver_or_provisioner(self):
+        bad = _collect_surface_imports_of_drivers_or_provisioners()
+        assert not bad, "surfaces/ may import contract/, runtime/ and drivers/middleware.py only:\n" + "\n".join(bad)
 
     def test_openjiuwen_core_never_imports_harness(self):
         problems = _scan.compare_with_allowlist(
