@@ -15,21 +15,18 @@ BROWSER_WORD_RE = re.compile(r"\b(?:browser|page|tab|url)\b", re.IGNORECASE)
 
 # file relative to the package -> number of browser-word matches.
 KNOWN_BROWSER_WORDS: dict[str, int] = {
-    # browser code that moves to surfaces/browser/
+    # the documented residual (F_07, Phase 9 PR d): data keys and attributes (page, url), the surface name,
+    # identifiers and the text the model reads; each hit is listed there with its reason
+    "runtime/agents.py": 1,
+    "runtime/config.py": 3,
     "runtime/controllers/action.py": 4,
-    "runtime/controllers/base.py": 1,
-    "runtime/agents.py": 2,
-    "runtime/browser_logging.py": 6,
-    "runtime/config.py": 9,
-    "runtime/main.py": 3,
-    "runtime/page_state.py": 29,
-    "runtime/rails/final_answer_recovery.py": 2,
-    "runtime/rails/repeated_call_guard.py": 8,
-    "runtime/session.py": 39,
-    "runtime/runtime_tools.py": 5,
-    "runtime/service.py": 10,
-    "runtime/worker.py": 72,
-    "runtime/service_registry.py": 4,
+    "runtime/page_state.py": 24,
+    "runtime/rails/final_answer_recovery.py": 1,
+    "runtime/rails/repeated_call_guard.py": 4,
+    "runtime/runtime_tools.py": 3,
+    "runtime/service.py": 1,
+    "runtime/session.py": 25,
+    "runtime/worker.py": 48,
 }
 
 

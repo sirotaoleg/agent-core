@@ -47,19 +47,19 @@ class BrowserRunGuardrails:
 
 @dataclass(frozen=True)
 class BrowserInstanceConfig:
-    """Per-instance browser identity, used to isolate one browser per agent.
+    """Per-instance identity, used to isolate one device per agent.
 
     All fields default to empty/0, which reproduces the legacy process-global
-    (env-driven) behavior. When ``key`` is non-empty the browser is isolated:
+    (env-driven) behavior. When ``key`` is non-empty the device is isolated:
     the Playwright MCP ``server_id`` is suffixed with the key and the managed
     profile / port / user-data-dir are derived from it instead of shared env.
-    Agents sharing the same ``key`` intentionally share one browser.
+    Agents sharing the same ``key`` intentionally share one device.
     """
 
     key: str = ""
     driver_mode: str = ""  # alias of provisioning
     managed_port: int = 0  # 0 -> auto-allocate (keyed) or env/default (legacy)
-    user_data_dir: str = ""  # "" -> derived from key under mcp_cwd/.browser-profiles
+    user_data_dir: str = ""  # "" -> derived from key under the profiles directory in mcp_cwd
     profile_name: str = ""  # "" -> key, then env BROWSER_PROFILE_NAME
     cdp_url: str = ""  # remote mode: explicit CDP endpoint
     browser_binary: str = ""  # optional Chrome path override
@@ -575,7 +575,7 @@ def playwright_mcp_config(
     if env_map:
         params["env"] = env_map
 
-    # Isolate the MCP registration per browser identity. Same key -> same
+    # Isolate the MCP registration per instance identity. Same key -> same
     # server_id (intentional sharing); different key -> isolated server.
     server_id = "playwright_official_stdio"
     server_name = "playwright-official"

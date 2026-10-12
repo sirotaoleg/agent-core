@@ -1,6 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Process-level ownership registry for browser service resources."""
+"""Process-level ownership registry for service resources."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any
 
 @dataclass(frozen=True)
 class BrowserServiceIdentity:
-    """Stable process-level identity for one logical browser instance."""
+    """Stable process-level identity for one logical service instance."""
 
     browser_key: str
     profile_name: str
@@ -45,7 +45,7 @@ class BrowserServiceRegistry:
 
     BrowserService objects remain task-scoped. Registry entries only coordinate
     the task bindings and the managed Chrome process handles of the services
-    that address the same browser identity.
+    that address the same lifecycle identity.
     """
 
     def __init__(self) -> None:
@@ -165,7 +165,7 @@ class BrowserServiceRegistry:
         display_mode: str,
         browser_binary: str,
     ) -> tuple[BrowserServiceIdentity, ...]:
-        """Find preserved drivers for one exact logical browser identity."""
+        """Find preserved drivers for one exact logical identity."""
         with self._lock:
             matches: list[BrowserServiceIdentity] = []
             for identity, entry in self._entries.items():

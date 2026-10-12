@@ -1,6 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""CLI entrypoint for Playwright browser runtime."""
+"""CLI entrypoint for the runtime demo."""
 
 from __future__ import annotations
 
@@ -49,13 +49,13 @@ async def main() -> None:
         tools = runtime.agent_parts(image_support=False, language=WORKER_LANGUAGE).tools
 
         logger.info("=" * 72)
-        logger.info("Playwright Browser Runtime")
+        logger.info("Playwright Runtime")
         logger.info("=" * 72)
         logger.info(f"Model provider: {settings.provider}")
         logger.info(f"Model: {settings.model_name}")
         logger.info(f"Server command: {settings.mcp_cfg.params.get('command')}")
         logger.info(f"Server args: {settings.mcp_cfg.params.get('args')}")
-        logger.info(f"Browser tools: {len(tools)}")
+        logger.info(f"Tools: {len(tools)}")
         for tool in tools:
             logger.info(f"  - {tool.card.name}")
         logger.info("=" * 72)

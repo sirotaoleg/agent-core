@@ -309,10 +309,10 @@ class _WorkerLoop:
     def _extract_page_snapshot(cls, value: Any) -> tuple[str, str]:
         if not isinstance(value, dict):
             return "", ""
-        page = value.get("page") if isinstance(value.get("page"), dict) else {}
-        url = str(value.get("url") or page.get("url") or "").strip()
-        title = str(value.get("title") or page.get("title") or "").strip()
-        return cls._trim_text(url, 240), cls._trim_text(title, 120)
+        location = value.get("page") if isinstance(value.get("page"), dict) else {}
+        address = str(value.get("url") or location.get("url") or "").strip()
+        title = str(value.get("title") or location.get("title") or "").strip()
+        return cls._trim_text(address, 240), cls._trim_text(title, 120)
 
     @staticmethod
     def _extract_screenshot_snapshot(value: Any) -> Any:
@@ -336,9 +336,9 @@ class _WorkerLoop:
                     continue
                 parts.append(cls._trim_text(str(candidate), 160))
                 break
-            url, title = cls._extract_page_snapshot(value)
-            if url:
-                parts.append(f"url={url}")
+            address, title = cls._extract_page_snapshot(value)
+            if address:
+                parts.append(f"url={address}")
             if title:
                 parts.append(f"title={title}")
             ok_value = value.get("ok")
@@ -382,9 +382,9 @@ class _WorkerLoop:
             progress_state.recent_tool_steps,
             self._summarize_tool_result(tool_name, tool_result),
         )
-        url, title = self._extract_page_snapshot(tool_result)
-        if url:
-            progress_state.last_page_url = url
+        address, title = self._extract_page_snapshot(tool_result)
+        if address:
+            progress_state.last_page_url = address
         if title:
             progress_state.last_page_title = title
         screenshot = self._extract_screenshot_snapshot(tool_result)
@@ -481,9 +481,9 @@ class _WorkerLoop:
         if missing_requirements:
             progress_state.missing_requirements = missing_requirements
 
-        url, title = self._extract_page_snapshot(parsed)
-        if url:
-            progress_state.last_page_url = url
+        address, title = self._extract_page_snapshot(parsed)
+        if address:
+            progress_state.last_page_url = address
         if title:
             progress_state.last_page_title = title
         screenshot = self._extract_screenshot_snapshot(parsed)
@@ -637,7 +637,7 @@ class _WorkerLoop:
         recovery_text = await self._recover_final_answer(agent, worker_conversation_id, request_id, reason)
         recovered = extract_json_object(recovery_text)
         logger.info(
-            "Browser worker final-answer recovery: reason=%s produced_json=%s output_chars=%d",
+            "Worker final-answer recovery: reason=%s produced_json=%s output_chars=%d",
             reason,
             bool(recovered),
             len(recovery_text),
@@ -699,7 +699,7 @@ class _WorkerLoop:
                     },
                 )
         except Exception:  # noqa: BLE001 - recovery is best effort
-            logger.warning("Browser worker final-answer recovery failed: reason=%s", reason, exc_info=True)
+            logger.warning("Worker final-answer recovery failed: reason=%s", reason, exc_info=True)
             return ""
         output = result.get("output") if isinstance(result, dict) else result
         return str(output) if output is not None else ""
@@ -902,12 +902,12 @@ class _WorkerLoop:
                             continue
 
                         if not parsed_ok and attempt_idx < attempts and self._is_retryable_runtime_result(parsed):
-                            page = parsed.get("page") if isinstance(parsed.get("page"), dict) else {}
+                            location = parsed.get("page") if isinstance(parsed.get("page"), dict) else {}
                             failure_summary = self._build_failure_summary(
                                 task=base_task,
                                 error=str(parsed.get("error") or ""),
-                                page_url=str(page.get("url", "")),
-                                page_title=str(page.get("title", "")),
+                                page_url=str(location.get("url", "")),
+                                page_title=str(location.get("title", "")),
                                 final=str(parsed.get("final", "")),
                                 screenshot=parsed.get("screenshot"),
                                 attempt=attempt_idx,
@@ -925,7 +925,7 @@ class _WorkerLoop:
                             next_task = self._build_task_with_failure_context(base_task, failure_summary)
                             continue
 
-                        page = parsed.get("page") if isinstance(parsed.get("page"), dict) else {}
+                        location = parsed.get("page") if isinstance(parsed.get("page"), dict) else {}
                         screenshot = self._normalize_screenshot_value(parsed.get("screenshot"))
                         response = {
                             "ok": parsed_ok,
@@ -933,8 +933,8 @@ class _WorkerLoop:
                             "request_id": rid,
                             "final": str(parsed.get("final", "")),
                             "page": {
-                                "url": str(page.get("url", "")),
-                                "title": str(page.get("title", "")),
+                                "url": str(location.get("url", "")),
+                                "title": str(location.get("title", "")),
                             },
                             "screenshot": screenshot,
                             "error": parsed.get("error"),
@@ -952,8 +952,8 @@ class _WorkerLoop:
                         failure_summary = self._build_failure_summary(
                             task=base_task,
                             error=str(parsed.get("error") or ""),
-                            page_url=str(page.get("url", "")),
-                            page_title=str(page.get("title", "")),
+                            page_url=str(location.get("url", "")),
+                            page_title=str(location.get("title", "")),
                             final=str(parsed.get("final", "")),
                             screenshot=parsed.get("screenshot"),
                             attempt=attempt_idx,

@@ -1,7 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Stop the browser worker from looping on tool calls that make no progress."""
+"""Stop the worker from looping on tool calls that make no progress."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ _NOTE_HEADER = "### Repeated call"
 _WHITESPACE = re.compile(r"\s+")
 _DIGITS = re.compile(r"\d+")
 
-# A whitespace-free evaluate function that only returns literals or the page title/URL.
+# A whitespace-free evaluate function that only returns literals or the document title/location.
 _NOOP_ATOM = (
     r"(?:-?\d+(?:\.\d+)?|'[^'\\]*'|\"[^\"\\]*\"|`[^`$\\]*`|true|false|null|undefined"
     r"|document\.title|document\.URL|(?:window\.)?location\.href)"
@@ -146,7 +146,7 @@ class RepeatedCallGuardRail(AgentRail):
             return
         count = max(state.repeat_count, state.noop_count)
         logger.info(
-            "Browser worker repeated the same tool call %d times; withholding tools for this model call.",
+            "Worker repeated the same tool call %d times; withholding tools for this model call.",
             count,
         )
         ctx.inputs.tools = []

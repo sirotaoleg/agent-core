@@ -1,7 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Browser backend service with sticky sessions and guardrails."""
+"""The backend service: the driver session's lifecycle, with sticky sessions and guardrails."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ from .worker import BrowserTaskProgressState, _WorkerLoop
 
 
 class BrowserService(_WorkerLoop):
-    """Backend browser service with sticky logical sessions; holds the driver session the worker runs on."""
+    """Backend service with sticky logical sessions; holds the driver session the worker runs on."""
 
     def __init__(
         self,
@@ -131,7 +131,7 @@ class BrowserService(_WorkerLoop):
     def _resolve_profile_name(self) -> str:
         """Resolve the active profile name (per-instance key wins over env).
 
-        Distinct browser keys map to distinct profile names so the managed
+        Distinct instance keys map to distinct profile names so the managed
         user-data-dir and persisted port never collide across agents.
         """
         instance = self._instance
@@ -152,7 +152,7 @@ class BrowserService(_WorkerLoop):
         return explicit
 
     def _build_lifecycle_identity(self) -> BrowserServiceIdentity:
-        """Build the process resource identity for this browser instance."""
+        """Build the process resource identity for this instance."""
         instance = self._instance
         browser_key = instance.sanitized_key() if instance else ""
         managed_args = self._settings.managed_args
@@ -201,7 +201,7 @@ class BrowserService(_WorkerLoop):
         self._registry_acquired = True
 
     def acquire_task_binding(self) -> None:
-        """Acquire one task reference to the shared browser process resources."""
+        """Acquire one task reference to the shared process resources."""
         self._task_binding_ref_count += 1
         self._acquire_registry_lease()
         if self._session is not None:
@@ -408,7 +408,7 @@ class BrowserService(_WorkerLoop):
         BROWSER_SERVICE_REGISTRY.activate_binding(self._lifecycle_identity, self)
 
     async def _restart(self) -> None:
-        """Release the browser after a dead transport; the next task's worker call rebuilds on a fresh session."""
+        """Release the session after a dead transport; the next task's worker call rebuilds on a fresh one."""
         await self.reset()
 
     def _clear_task_scoped_state(self) -> None:
@@ -455,7 +455,7 @@ class BrowserService(_WorkerLoop):
         identity: BrowserServiceIdentity,
         fallback_service: Optional["BrowserService"] = None,
     ) -> bool:
-        """Stop all process resources associated with one browser identity."""
+        """Stop all process resources associated with one lifecycle identity."""
         snapshot = BROWSER_SERVICE_REGISTRY.begin_reset(identity)
         services = snapshot.services
         if not services and fallback_service is not None:
@@ -479,7 +479,7 @@ class BrowserService(_WorkerLoop):
         return bool(services or drivers)
 
     async def reset(self) -> None:
-        """Reset one shared browser identity and restart lazily on next use."""
+        """Reset one shared lifecycle identity and restart lazily on next use."""
         await self._reset_lifecycle_resources(
             self._lifecycle_identity,
             fallback_service=self,
@@ -494,7 +494,7 @@ class BrowserService(_WorkerLoop):
         display_mode: str,
         browser_binary: str,
     ) -> int:
-        """Stop a preserved managed browser matching one logical identity."""
+        """Stop a preserved managed device matching one logical identity."""
         identities = BROWSER_SERVICE_REGISTRY.find_managed_driver_identities(
             browser_key=str(browser_key or "").strip(),
             profile_name=str(profile_name or "").strip(),

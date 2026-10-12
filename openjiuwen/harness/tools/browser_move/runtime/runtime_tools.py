@@ -56,7 +56,7 @@ _LIST_ACTIONS_PARAMS: Dict[str, Any] = {
 }
 
 class BrowserCustomActionTool(Tool):
-    """Run a registered custom browser action."""
+    """Run a registered custom action."""
 
     def __init__(self, runtime: "BrowserAgentRuntime") -> None:
         super().__init__(
@@ -96,7 +96,7 @@ class BrowserCustomActionTool(Tool):
 
 
 class BrowserListActionsTool(Tool):
-    """List available custom browser actions."""
+    """List the registered custom actions."""
 
     def __init__(self, runtime: "BrowserAgentRuntime") -> None:
         super().__init__(

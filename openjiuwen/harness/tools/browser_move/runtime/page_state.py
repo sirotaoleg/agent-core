@@ -2,7 +2,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Compact browser page state and generation-scoped target registry."""
+"""Compact surface state and generation-scoped target registry."""
 
 from __future__ import annotations
 
@@ -124,7 +124,7 @@ def _stale_message(ref: Ref, current: str) -> str:
 
 @dataclass
 class BrowserTarget:
-    """One model-visible target bound to a single page generation."""
+    """One model-visible target bound to a single state generation."""
 
     target_id: str
     page_id: str
@@ -188,7 +188,7 @@ class BrowserTarget:
 
 
 class BrowserPageState:
-    """Own page identity, compact representation, and target generations."""
+    """Own identity, compact representation, and target generations."""
 
     def __init__(
         self,
@@ -751,7 +751,7 @@ class BrowserPageState:
             self._selector_targets[(self.generation, selector)] = target.target_id
 
     def export(self) -> Dict[str, Any]:
-        """Return a bounded PageState index suitable for every browser result."""
+        """Return a bounded PageState index suitable for every result."""
         interactives = self._export_targets(
             self._interactive_target_ids,
             _MAX_PUBLIC_INTERACTIVES,

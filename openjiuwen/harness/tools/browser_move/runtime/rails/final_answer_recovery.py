@@ -1,7 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""One tool-free model call that asks the browser worker for its final JSON after it ended without one."""
+"""One tool-free model call that asks the worker for its final JSON after it ended without one."""
 
 from __future__ import annotations
 

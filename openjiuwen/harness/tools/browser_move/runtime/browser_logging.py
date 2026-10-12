@@ -21,7 +21,7 @@ from .config import CoreSettings
 _BROWSER_LOGGER_NAME = "openjiuwen.browser_agent"
 _BROWSER_HANDLER_MARKER = "_openjiuwen_browser_agent_file_handler"
 _BROWSER_LOG_ANNOUNCED_MARKER = "_openjiuwen_browser_agent_file_announced"
-# The browser logger is process-wide (stdlib registry), so the settings it was configured with live on it.
+# The logger is process-wide (stdlib registry), so the settings it was configured with live on it.
 _AUDIT_RAW_ATTR = "_openjiuwen_browser_agent_audit_raw"
 _LOCK = Lock()
 _AUDIT_LOCK = Lock()
@@ -33,14 +33,14 @@ def _is_browser_tool_name(tool_name: str) -> bool:
 
 
 def configure_browser_agent_logging(settings: CoreSettings) -> logging.Logger:
-    """Apply the logging part of ``settings`` and send browser tool-call lines to the browser-agent log."""
+    """Apply the logging part of ``settings`` and send the tool-call lines to the dedicated agent log."""
     browser_logger = _apply_settings(settings)
     register_tool_call_logger(_is_browser_tool_name, browser_agent_log_info)
     return browser_logger
 
 
 def get_browser_agent_logger() -> logging.Logger:
-    """Return the dedicated browser-agent logger, configured from the process settings until configured explicitly."""
+    """Return the dedicated agent logger, configured from the process settings until configured explicitly."""
     browser_logger = logging.getLogger(_BROWSER_LOGGER_NAME)
     if not hasattr(browser_logger, _AUDIT_RAW_ATTR):
         _apply_settings(CoreSettings.logging_from_process_env())
@@ -71,7 +71,7 @@ def _apply_settings(settings: CoreSettings) -> logging.Logger:
             file_handler.setFormatter(logging.Formatter("%(asctime)s | browser_agent | %(levelname)s | %(message)s"))
             browser_logger.addHandler(file_handler)
             if not getattr(browser_logger, _BROWSER_LOG_ANNOUNCED_MARKER, False):
-                common_logger.info("[BROWSER_AGENT_LOG] dedicated browser log file enabled: %s", str(log_path))
+                common_logger.info("[BROWSER_AGENT_LOG] dedicated agent log file enabled: %s", str(log_path))
                 setattr(browser_logger, _BROWSER_LOG_ANNOUNCED_MARKER, True)
         setattr(browser_logger, _AUDIT_RAW_ATTR, settings.log_audit_raw)
     return browser_logger
@@ -109,7 +109,7 @@ def browser_agent_log_error(message: str, *args: Any) -> None:
 
 
 def write_browser_agent_audit_artifact(kind: str, raw: Any) -> dict[str, Any]:
-    """Persist an opted-in, content-addressed raw browser observation."""
+    """Persist an opted-in, content-addressed raw observation."""
     if isinstance(raw, str):
         raw_text = raw
     else:

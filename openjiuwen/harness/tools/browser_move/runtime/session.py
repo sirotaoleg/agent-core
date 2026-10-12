@@ -2,7 +2,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
 
-"""The browser agent's runtime: the driver session and the factory tools."""
+"""The agent's runtime facade: the driver session and the factory tools."""
 
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ def _tool_args(value: Any) -> Dict[str, Any]:
 
 
 class BrowserAgentRuntime:
-    """Runtime kernel for browser lifecycle and deterministic helper actions."""
+    """Runtime kernel for the session lifecycle and deterministic helper actions."""
 
     def __init__(
         self,
@@ -377,7 +377,7 @@ class BrowserAgentRuntime:
                 observation = await self._context.observe(Observe())
             except DriverError as exc:
                 dom_error = f"page observation failed: {exc}"
-                logger.warning("[BrowserAgentRuntime] page observation failed: %s", exc, exc_info=True)
+                logger.warning("[BrowserAgentRuntime] observation failed: %s", exc, exc_info=True)
         else:
             self.observations_reused += 1
         if observation is not None:
@@ -432,7 +432,7 @@ class BrowserAgentRuntime:
         }
 
     async def capture_reconciliation_browser_state(self, *, action_group_id: str) -> Dict[str, Any]:
-        """Reconcile an ambiguous mutation from the page metadata alone, without observing."""
+        """Reconcile an ambiguous mutation from the surface metadata alone, without observing."""
 
         await self.ensure_runtime_ready()
         metadata, metadata_error = await page_metadata(self._context)
@@ -479,7 +479,7 @@ class BrowserAgentRuntime:
         }
 
     async def capture_compact_browser_state(self, *, action_group_id: str) -> Dict[str, Any]:
-        """Merge completed read-only observations without another browser round trip."""
+        """Merge completed read-only observations without another driver round trip."""
         page_state = self.export_page_state()
         semantic_tracker = self._semantic_state_tracker
         semantic_state = semantic_tracker.current_state
@@ -548,7 +548,7 @@ class BrowserAgentRuntime:
     def main_agent_answer(
         self, session_id: str, request_id: str, *, result: Optional[Dict[str, Any]] = None, error: Optional[str] = None
     ) -> Dict[str, Any]:
-        """The runner's answer dict from a main-agent run: the page from the page state, status when reported."""
+        """The runner's answer dict from a main-agent run: the location from the state, status when reported."""
         result = result or {}
         surface = self._page_state.surface_context
         payload = result.get("authoritative_browser_result")
@@ -588,12 +588,12 @@ class BrowserAgentRuntime:
         )
 
     async def probe_for_policy(self, source: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Run a policy-owned page function and register its elements as PageState targets."""
+        """Run a policy-owned probe script and register its elements as PageState targets."""
         await self.ensure_runtime_ready()
         return await probe_for_policy(self._context, source, params)
 
     async def activate_page(self, url: str) -> bool:
-        """Bring the page at ``url`` (else the current one) to the front so its timers run and its menus render."""
+        """Bring the context at ``url`` (else the current one) to the front so its timers run and its menus render."""
         await self.ensure_runtime_ready()
         return await activate_page(self._context, url)
 
@@ -639,7 +639,7 @@ class BrowserAgentRuntime:
             self._semantic_state_tracker.reset()
 
     async def reset(self) -> None:
-        """Release the current browser and restart lazily on the next task."""
+        """Release the current session and restart lazily on the next task."""
         try:
             await self._service.reset()
         finally:
@@ -662,7 +662,7 @@ class BrowserAgentRuntime:
 
 
 async def reset_active_browser_runtimes() -> int:
-    """Reset every live browser runtime owned by this process."""
+    """Reset every live runtime owned by this process."""
     runtimes = list(_ACTIVE_BROWSER_RUNTIMES)
     if not runtimes:
         return 0
@@ -675,7 +675,7 @@ async def reset_active_browser_runtimes() -> int:
     for runtime, result in zip(runtimes, results):
         if isinstance(result, BaseException):
             logger.warning(
-                "Failed to reset active browser runtime %s: %s",
+                "Failed to reset active runtime %s: %s",
                 id(runtime),
                 result,
             )
@@ -691,7 +691,7 @@ async def reset_managed_browser_runtime(
     display_mode: str,
     browser_binary: str = "",
 ) -> int:
-    """Reset only the configured managed browser, including its idle handle."""
+    """Reset only the configured managed device, including its idle handle."""
     normalized_binary = BrowserService.normalize_browser_binary(browser_binary)
     normalized_key = str(browser_key or "").strip()
     normalized_profile = str(profile_name or "").strip()
@@ -714,7 +714,7 @@ async def reset_managed_browser_runtime(
             await runtime.reset()
         except Exception as exc:
             logger.warning(
-                "Failed to reset managed browser runtime %s: %s",
+                "Failed to reset the managed runtime %s: %s",
                 id(runtime),
                 exc,
             )

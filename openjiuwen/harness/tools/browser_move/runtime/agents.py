@@ -1,7 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Agent builders for runtime and browser worker."""
+"""Agent builders for the runtime and the worker."""
 
 from __future__ import annotations
 
