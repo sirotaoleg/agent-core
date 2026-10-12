@@ -21,6 +21,8 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import 
     CORE_BROWSER_TOOL_NAMES,
     VISION_BROWSER_TOOL_NAMES,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import UploadFile
+from openjiuwen.harness.tools.browser_move.surfaces.browser.policy import policy_denial
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     DEVICE,
     MCP_PREFIX,
@@ -264,3 +266,19 @@ def test_a_surface_without_metadata_or_semantic_state_still_captures_the_observa
     assert runtime.semantic_progress == {}
     runtime.acknowledge_semantic_replan()
     runtime.reset_semantic_task()
+
+
+def test_the_facade_lets_uploads_come_from_its_workspace(tmp_path: Path) -> None:
+    runtime = BrowserAgentRuntime(
+        provider="openai",
+        api_key="test-key",
+        api_base="https://example.invalid/v1",
+        model_name="test-model",
+        mcp_cfg=McpServerConfig(server_id="s", server_name="s", server_path="stdio://s"),
+        guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
+        workspace=str(tmp_path),
+    )
+    rules = runtime.surface.profile.policy_rules
+
+    assert policy_denial(UploadFile(None, (str(tmp_path / "notes.txt"),)), None, rules) is None
+    assert policy_denial(UploadFile(None, (str(tmp_path.parent / "other.txt"),)), None, rules) is not None

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -16,8 +18,9 @@ from openjiuwen.core.single_agent.rail.base import AgentCallbackContext, ToolCal
 from openjiuwen.harness.tools.browser_move.contract import PolicyDenied, PressKey, RunScript
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import DECODERS
 from openjiuwen.harness.tools.browser_move.runtime.rails.action_policy import ActionPolicy
+from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Drop, UploadFile
 from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
-from openjiuwen.harness.tools.browser_move.surfaces.browser.policy import CLIPBOARD_DENIED, policy_denial
+from openjiuwen.harness.tools.browser_move.surfaces.browser.policy import CLIPBOARD_DENIED, policy_denial, upload_rules
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
 from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import BROWSER_TOOL_SPECS
 from tests.unit_tests.harness.tools.browser_move.surfaces.test_browser_batch import DONE, _batch, _context, _sent
@@ -70,8 +73,10 @@ def test_the_denial_tells_the_model_to_read_the_value_from_the_page() -> None:
     assert "clipboard" in CLIPBOARD_DENIED and "Read the value from the page instead" in CLIPBOARD_DENIED
 
 
-def _rail_verdict(builders: dict[str, Any], tool: str, args: dict[str, Any]) -> AgentCallbackContext:
-    profile = create_browser_surface({}).profile
+def _rail_verdict(
+    builders: dict[str, Any], tool: str, args: dict[str, Any], environ: dict[str, str] | None = None
+) -> AgentCallbackContext:
+    profile = create_browser_surface(environ or {}).profile
     policy = ActionPolicy(builders, profile.policy_rules, BrowserPageState())
     tool_call = ToolCall(id="call-1", type="function", name=tool, arguments=json.dumps(args))
     ctx = AgentCallbackContext(
@@ -128,3 +133,100 @@ def test_a_batch_stops_at_a_paste_chord_after_the_steps_before_it() -> None:
     assert _sent(context) == [PressKey("Tab")]
     assert [step["ok"] for step in payload["steps"]] == [True, False]
     assert payload["steps"][1]["error"] == CLIPBOARD_DENIED
+
+
+# --- upload confinement ------------------------------------------------------------------------------------------
+
+
+def _upload_denial(path: str, upload_root: Path | None = None, workspace_root: Path | None = None) -> str | None:
+    return policy_denial(UploadFile(None, (path,)), None, upload_rules(upload_root, workspace_root))
+
+
+def test_an_upload_inside_the_upload_root_or_the_workspace_passes(tmp_path: Path) -> None:
+    uploads, workspace = tmp_path / "uploads", tmp_path / "workspace"
+
+    assert _upload_denial(str(uploads / "cv.pdf"), uploads, workspace) is None
+    assert _upload_denial(str(workspace / "notes" / "a.txt"), uploads, workspace) is None
+    assert _upload_denial("cv.pdf", uploads, workspace) is None
+    assert _upload_denial(f'"{uploads / "cv.pdf"}"', uploads) is None
+
+
+def test_an_upload_outside_the_configured_folders_is_denied(tmp_path: Path) -> None:
+    uploads = tmp_path / "uploads"
+    secret = tmp_path / ".ssh" / "id_rsa"
+
+    denial = _upload_denial(str(secret), uploads)
+
+    assert denial is not None and repr(str(secret)) in denial and str(uploads.resolve()) in denial
+    assert _upload_denial("../.ssh/id_rsa", uploads) is not None
+    assert _upload_denial("~/.ssh/id_rsa", uploads) is not None
+
+
+def test_without_configured_folders_an_upload_must_stay_under_the_process_cwd(tmp_path: Path) -> None:
+    assert _upload_denial("data/cv.pdf") is None
+    assert _upload_denial(str(Path.cwd() / "cv.pdf")) is None
+    assert _upload_denial(str(tmp_path / "cv.pdf")) is not None
+    assert _upload_denial("../outside.txt") is not None
+
+
+def test_a_symlink_out_of_the_upload_root_is_denied(tmp_path: Path) -> None:
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    (tmp_path / "secret.txt").write_text("k", encoding="utf-8")
+    link = uploads / "innocent.txt"
+    try:
+        os.symlink(tmp_path / "secret.txt", link)
+    except OSError:
+        pytest.skip("this account cannot create symlinks")
+
+    assert _upload_denial(str(link), uploads) is not None
+
+
+def test_a_drop_is_confined_like_an_upload_and_one_without_files_passes(tmp_path: Path) -> None:
+    rules = upload_rules(tmp_path / "uploads", None)
+
+    assert policy_denial(Drop(None, paths=(str(tmp_path / "x.txt"),)), None, rules) is not None
+    assert policy_denial(Drop(None, data=(("text/plain", "hi"),)), None, rules) is None
+
+
+@pytest.mark.parametrize(("builders", "prefix"), DIALECTS)
+def test_the_policy_rail_denies_an_upload_outside_the_upload_root_on_both_dialects(
+    builders: dict[str, Any], prefix: str, tmp_path: Path
+) -> None:
+    uploads = tmp_path / "uploads"
+    environ = {"BROWSER_UPLOAD_ROOT": str(uploads)}
+
+    tool = prefix + "browser_file_upload"
+    target = {"ref": "e1", "generation_id": "g0"}
+    denied = _rail_verdict(builders, tool, {"paths": [str(tmp_path / "key")], **target}, environ)
+    allowed = _rail_verdict(builders, tool, {"paths": [str(uploads / "cv.pdf")], **target}, environ)
+
+    assert isinstance(denied.inputs.tool_result, PolicyDenied)
+    assert "outside the folders files may be uploaded from" in denied.inputs.tool_msg.content
+    assert allowed.inputs.tool_msg is None
+
+
+@pytest.mark.parametrize(
+    ("builders", "tool", "args"),
+    [
+        (MCP_BUILDERS, "mcp_playwright-official_browser_drop", {"target": "e1"}),
+        (BROWSER_BUILDERS, "browser_drop", {"ref": "e1", "generation_id": "g0"}),
+    ],
+    ids=["playwright_mcp", "browser_use"],
+)
+def test_the_policy_rail_denies_a_drop_outside_the_upload_root_on_both_dialects(
+    builders: dict[str, Any], tool: str, args: dict[str, Any], tmp_path: Path
+) -> None:
+    environ = {"BROWSER_UPLOAD_ROOT": str(tmp_path / "uploads")}
+
+    ctx = _rail_verdict(builders, tool, {**args, "paths": [str(tmp_path / "key")]}, environ)
+
+    assert isinstance(ctx.inputs.tool_result, PolicyDenied)
+    assert "outside the folders files may be uploaded from" in ctx.inputs.tool_msg.content
+
+
+def test_the_profile_confines_uploads_to_its_settings_folders(tmp_path: Path) -> None:
+    rules = create_browser_surface({"BROWSER_UPLOAD_ROOT": str(tmp_path)}).profile.policy_rules
+
+    assert [rule.command_type for rule in rules[-2:]] == [UploadFile, Drop]
+    assert policy_denial(UploadFile(None, (str(tmp_path / "a.txt"),)), None, rules) is None

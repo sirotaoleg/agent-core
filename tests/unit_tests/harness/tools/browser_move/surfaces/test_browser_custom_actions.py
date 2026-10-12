@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 from openjiuwen.harness.tools.browser_move.contract import (
@@ -53,7 +54,7 @@ def _context(*results: ActionResult, actions: dict[type, frozenset] = ON_ELEMENT
     session = DriverSession(
         DriverAssembly(stack=driver, device=None, provisioner=None), page_state, MESSAGES
     )
-    return ToolContext(session, page_state, BrowserRenderer(), info, BrowserSettings(), False)
+    return ToolContext(session, page_state, BrowserRenderer(), info, BrowserSettings(upload_root=Path("/tmp")), False)
 
 
 def _sent(context: ToolContext) -> list[Any]:
@@ -236,6 +237,15 @@ def test_set_input_files_defaults_selector_to_file_input() -> None:
     _run(set_input_files(context, paths=["/tmp/f.txt"]))
 
     assert _sent(context)[0].target == FILE_INPUT
+
+
+def test_set_input_files_outside_the_upload_folders_never_reaches_the_driver() -> None:
+    context = _context(DONE)
+
+    result = _run(set_input_files(context, paths=["/etc/passwd"]))
+
+    assert _sent(context) == []
+    assert result["ok"] is False and "outside the folders files may be uploaded from" in result["error"]
 
 
 def test_set_input_files_on_a_driver_with_a_chooser_clicks_the_input_then_answers_the_chooser() -> None:

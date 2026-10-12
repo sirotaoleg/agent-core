@@ -29,7 +29,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import 
     DEFAULT_BROWSER_CAPABILITIES,
     POLICY_ONLY_BROWSER_CAPABILITY_NAMES,
 )
-from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import GetPdf, OpenContext, UploadFile
+from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Drop, GetPdf, OpenContext, UploadFile
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import (
     EXTRA_TOOLS,
@@ -65,7 +65,8 @@ def test_profile_fields_are_filled(profile: SurfaceProfile) -> None:
     assert isinstance(profile.renderer, BrowserRenderer)
     assert profile.tool_specs == BROWSER_TOOL_SPECS
     assert set(profile.capability_catalog) == set(profile.capability_tools)
-    assert profile.policy_rules == POLICY_RULES and profile.rails == ()
+    assert profile.policy_rules[: len(POLICY_RULES)] == POLICY_RULES and profile.rails == ()
+    assert [rule.command_type for rule in profile.policy_rules[len(POLICY_RULES) :]] == [UploadFile, Drop]
     assert profile.extra_tools == EXTRA_TOOLS
     assert not hasattr(profile, "native_tools")
 
