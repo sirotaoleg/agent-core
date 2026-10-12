@@ -173,7 +173,7 @@ class PageState:
         if observation is not None and not isinstance(action, Observe):
             self.free_observations += 1
         surface = (observation.surface if observation is not None else None) or result.surface
-        identity = self._identity_of(surface) if surface is not None else ""
+        identity = surface.identity if surface is not None else ""
         moved = bool(identity) and self.identity not in ("", identity)
         if moved or self._changes_context(result):
             self.advance()
@@ -291,9 +291,6 @@ class PageState:
             "generation_id": self.generation_id,
             "interactives": self._export_targets(self._interactive_target_ids, _MAX_PUBLIC_INTERACTIVES),
         }
-
-    def _identity_of(self, surface: SurfaceContext) -> str:
-        return ""
 
     def _note_surface(self, surface: SurfaceContext) -> None:
         """A surface subclass reads its own context type here."""

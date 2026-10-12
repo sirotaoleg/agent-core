@@ -507,9 +507,6 @@ class BrowserPageState(PageState):
             "blockers": sorted(self.blockers),
         }
 
-    def _identity_of(self, surface: SurfaceContext) -> str:
-        return str(getattr(surface, "url", "") or "")
-
     def _note_surface(self, surface: SurfaceContext) -> None:
         self.observe(title=getattr(surface, "title", ""))
         self.contexts = tuple(getattr(surface, "tabs", ())) or self.contexts

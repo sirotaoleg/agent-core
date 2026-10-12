@@ -27,3 +27,7 @@ class BrowserContext(SurfaceContext):
     pixels_below: int = 0
     last_status: int | None = None
     dialog: str | None = None
+
+    @property
+    def identity(self) -> str:
+        return self.url

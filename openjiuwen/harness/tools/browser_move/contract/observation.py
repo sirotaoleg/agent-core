@@ -16,7 +16,12 @@ from .refs import ContextRef, DriverRef
 
 @dataclass(frozen=True)
 class SurfaceContext:
-    """Empty base for the per-surface context; only the surface's own renderer and rails read its fields."""
+    """Base of the per-surface context; the core reads only ``identity``, the surface's own code reads the rest."""
+
+    @property
+    def identity(self) -> str:
+        """Where the surface is, as the surface names it; a change between two non-empty values is a new generation."""
+        return ""
 
 
 @dataclass(frozen=True)
