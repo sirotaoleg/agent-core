@@ -705,7 +705,8 @@ the main agent and the worker share.
    `BrowserInstanceConfig` for the browser) to the settings, so provisioning, the driver factory and the tool
    context all see it. The composition root never touches the settings. `assemble_surface` is public so a caller
    can hold the profile (its policy rules and messages) before any driver exists; a bundle built that way and the
-   session's bundle agree on `policy_rules` and `messages`, which are constants of the surface factory.
+   session's bundle agree on `messages` (constants of the surface factory) and on what their `policy_rules`
+   decide (built from the same settings).
 2. (merged into step 1.)
 3. `provisioner = registries.provisioners.create(surface.settings.provisioning)`.
 4. `device = provisioner.provision(surface.settings)`, run in a worker thread.
@@ -821,7 +822,7 @@ drivers.
 | `custom_actions`, `page_metadata`, `policy_probe`, `activate` | `helpers.register_custom_actions`, `helpers.page_metadata`, `helpers.probe_for_policy`, `helpers.activate_page` |
 | `semantic_tracker` | `SemanticStateTracker` (`semantic/state.py`) |
 | `worker_prompt` | `tools.build_browser_worker_system_prompt` |
-| `policy_rules` | `policy.POLICY_RULES`: the clipboard rules (see "Policy rail") |
+| `policy_rules` | `policy.policy_rules(settings)`: the clipboard rules (`POLICY_RULES`) and the upload confinement to the settings' folders (see "Policy rail") |
 | `rails` | empty |
 | `scene` | `None` (the conformance suite takes `browser_scene()` directly) |
 
@@ -1114,9 +1115,25 @@ the managed Chrome shares the OS clipboard. Invariants: a `PressKey` whose last 
 control/ctrl/meta/cmd/command/ControlOrMeta modifier, or `Insert` with shift, is denied; a `RunScript` whose code
 reads the clipboard (`clipboard.read`/`readText`, dotted or bracketed, or `execCommand('paste')`) is denied; the
 reason is `CLIPBOARD_DENIED`, which tells the model to read the value from the page and type it. `TypeText` has no
-rule: both drivers insert its text literally. Helpers that execute commands without the rail check the same rules:
-the batch calls `policy_denial(action, page_state.surface_context)` before every command and fails the step with the
-reason, so the command never reaches the driver.
+rule: both drivers insert its text literally.
+
+`upload_rules(upload_root, workspace_root)` confine the files a page receives: an `UploadFile` or a `Drop` with any
+path outside `BrowserSettings.upload_root` (`BROWSER_UPLOAD_ROOT`) and `BrowserSettings.workspace_root` is denied;
+with neither set, any path outside the process cwd is. Wrapping quotes are stripped and `~` expanded; an absolute
+path is resolved (symlinks followed) and must lie inside a root; a relative name is joined to each root and must stay
+inside it after resolution, so `..` cannot climb out. A `Drop` without paths passes. The reason names the paths and
+the allowed folders and points the model at `list_upload_files`. `workspace_root` is the agent's workspace: the
+runtime facade sets it on its settings (`dataclasses.replace`) when it has a workspace and the settings have the
+field, so the main agent, the worker, the batch and the custom actions judge with the same folders; an agent built
+through `build_agent` alone has none. `policy_rules(settings)` is `POLICY_RULES` plus these two. Relative names are
+resolved under the upload root by the browser-use driver only; Playwright MCP resolves them against its own working
+directory, and its staging copy only ever sees paths the rule allowed.
+
+Helpers that execute commands without the rail check the same rules: the batch calls
+`policy_denial(action, page_state.surface_context, policy_rules(context.settings))` before every command and fails
+the step with the reason, so the command never reaches the driver (it has no upload or drop step today);
+`set_input_files` checks its `UploadFile` the same way and answers `{"ok": False, "error": <reason>}` without a
+command.
 
 ## Tool factory (`runtime/tool_factory.py`)
 
@@ -1297,8 +1314,8 @@ lifetime, hands it to its `BrowserService`, and from `ensure_runtime_ready()` on
   the worker in `service.browser_agent`, `Direct` keeps the main agent itself.
 - `surface -> SurfaceBundle`: `assemble_surface(service.core, process_environ(), instance=, settings=<the browser
   settings>)`, built once at first use, before any driver, so the rails' profile constants exist at the main agent's
-  construction. Invariant: it agrees with the session's bundle on `policy_rules` and `messages` (both come from the
-  surface factory's constants); the session's bundle, which also carries the MCP config, is what the worker and the
+  construction. Invariant: it agrees with the session's bundle on `messages` and on what `policy_rules` decide
+  (both come from the surface factory and the same settings, the workspace included); the session's bundle, which also carries the MCP config, is what the worker and the
   parts are built from.
 - `builders -> Mapping[str, Builder]`: the decoders of every factory tool built so far, one live mapping updated by
   `agent_parts`; `ActionPolicy` reads it per call ("Policy rail"), `tool_kind` too.

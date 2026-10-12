@@ -4562,3 +4562,35 @@ Known leftovers:
    `surface.url` / `surface.title` in `main_agent_answer`; with option (c) of the hook step the facade stays
    browser-shaped.
 2. The core `Target` still carries `selector` (a CSS locator, a contract `Locator` kind) and the source name `ax`.
+
+## Phase 11: safety and hygiene
+
+The safety and compatibility items of the reviews (C2–C5, S1, S2), one triple per logic change.
+
+### Upload confinement (C2)
+
+Any readable host file could reach a page: the model chose the paths, browser-use accepted any absolute path, and the
+Playwright MCP driver copied files from anywhere into the server's folder, past the server's own root check.
+
+Decisions:
+1. **A browser `PolicyRule` on `UploadFile` and `Drop`**, the mechanism the clipboard rules use: it runs before the
+   middleware on both dialects, and the batch and the custom upload action call the same rules, so a denied path
+   reaches neither driver nor the MCP staging copy.
+2. **Allowed folders: the upload root and the agent workspace; with neither, the process cwd.** Absolute paths are
+   resolved with symlinks; a relative name must stay inside every root it is joined to.
+3. **The workspace reaches the rule through the settings.** A `PolicyRule` sees only the command and the context;
+   the profile builds its rules from its settings, and `BrowserSettings.workspace_root` is filled by the runtime
+   facade, the one place that knows both the workspace and the settings. The facade checks for the field by name,
+   so other settings pass unchanged.
+4. **Relative names resolve on browser-use only** (decision 9 of the dependency step): the rule judges them under
+   the configured roots for both dialects; Playwright MCP keeps resolving them against its working directory.
+
+Rejected options:
+- A surface rail with the `ToolContext` (it has the workspace): the policy rail exists for exactly this check, and
+  a second deny path would differ in messages and in the batch.
+- Leaving the staging copy as the boundary: it runs after the decision to upload.
+
+Verification: the rule's cases (inside, outside, relative climbing out, `~`, quoted, no folders → cwd, a symlink
+out of the root, skipped here because the account cannot create symlinks), the policy rail on both dialects for
+upload and drop, `set_input_files` with an outside path (no command sent), the profile and the facade's workspace.
+Unit suite: 2530 passed, 123 skipped.
