@@ -1,7 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""One tool-free model call that asks the worker for its final JSON after it ended without one."""
+"""One model call that asks the worker for its final JSON after it ended without one; no tool runs."""
 
 from __future__ import annotations
 
@@ -16,11 +16,19 @@ NON_JSON_OUTPUT = "non_json_output"
 MAX_ITERATIONS_REACHED = "max_iterations_reached"
 
 STEP_LIMIT_SENTENCE = "The step limit has been reached."
+_JSON_REPLY = (
+    "the final JSON object required by your instructions (ok, final, page, screenshot, error, and the progress "
+    "fields) and nothing else.\n"
+)
 RECOVERY_MESSAGE = (
-    "Tools are disabled now. Using only what you have already seen in this conversation, reply with the final "
-    "JSON object required by your instructions (ok, final, page, screenshot, error, and the progress fields) "
-    "and nothing else.\n"
+    "Tools are disabled now. Using only what you have already seen in this conversation, reply with "
+    f"{_JSON_REPLY}"
     "If the task is not fully complete, set ok=false and say in final what you found and what is missing."
+)
+RESTATE_MESSAGE = (
+    f"Tools are disabled now. Your previous reply already answered the task. Restate that answer as {_JSON_REPLY}"
+    "Put the answer in final as you gave it: do not re-check it, change it or add caveats. Set ok=false only if your "
+    "previous reply said the task could not be completed."
 )
 
 _RECOVERY_ACTIVE: contextvars.ContextVar[bool] = contextvars.ContextVar("browser_final_answer_recovery", default=False)
@@ -35,7 +43,7 @@ def recovery_reason(output: str, *, max_iterations_reached: bool) -> str:
 def recovery_message(reason: str) -> str:
     if reason == MAX_ITERATIONS_REACHED:
         return f"{STEP_LIMIT_SENTENCE} {RECOVERY_MESSAGE}"
-    return RECOVERY_MESSAGE
+    return RESTATE_MESSAGE if reason == NON_JSON_OUTPUT else RECOVERY_MESSAGE
 
 
 @contextmanager
@@ -49,12 +57,9 @@ def final_answer_recovery() -> Iterator[None]:
 
 
 class FinalAnswerRecoveryRail(AgentRail):
-    """During recovery: no tools, and stop after one model call."""
+    """During recovery: stop after one model call and run none of its tool calls."""
 
-    async def before_model_call(self, ctx: AgentCallbackContext) -> None:
-        if _RECOVERY_ACTIVE.get():
-            ctx.inputs.tools = []
-
+    # The tools stay in the request: dropping them changes the prompt prefix and misses the whole conversation's cache.
     async def after_model_call(self, ctx: AgentCallbackContext) -> None:
         if not _RECOVERY_ACTIVE.get():
             return
