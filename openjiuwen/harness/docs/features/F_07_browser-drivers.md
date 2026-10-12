@@ -4319,15 +4319,14 @@ Known leftovers:
 Two reviews of 2026-10-12 and an import scan of the package found edges that point the wrong way: drivers importing
 `runtime/` and `provisioning/`, the core and a surface helper importing `drivers/middleware.py` for a helper that
 only masks contract types, provisioning importing the browser surface's settings, and a module at the package root
-that belonged to no layer. Seven `refactor` commits move types and helpers to the layer that owns them; one `fix`
-triple narrows the MCP driver's lost-connection mapping. The browser-use driver's upload path resolution is the one
-edge left (leftover 1).
+that belonged to no layer. Eight `refactor` commits move types and helpers to the layer that owns them; one `fix`
+triple narrows the MCP driver's lost-connection mapping. No driver → `runtime/` edge is left.
 
 ### Cross-layer imports
 
 | edge | before | after |
 |---|---|---|
-| drivers → `runtime/` | 5 files: the MCP driver (`runtime.config`), both MCP clients (`browser_logging`, `utils.parsing`), the browser-use driver (`browser_logging`, `utils.upload_paths`) and transport (`browser_logging`, `config.process_environ`, `utils.env`) | 1: the browser-use driver → `runtime.utils.upload_paths` |
+| drivers → `runtime/` | 5 files: the MCP driver (`runtime.config`), both MCP clients (`browser_logging`, `utils.parsing`), the browser-use driver (`browser_logging`, `utils.upload_paths`) and transport (`browser_logging`, `config.process_environ`, `utils.env`) | 0: the upload path helper is `drivers/browser_use/upload_paths.py` |
 | drivers → `provisioning/` (`ProvisionedDevice`) | 2 | 0: `contract/device.py` |
 | `runtime/` → `drivers/middleware.py` (`masked`) | `tool_factory.py` | 0: `contract/masking.py` |
 | `surfaces/` → `drivers/middleware.py` (`masked`) | `helpers/batch.py` | 0 |
@@ -4371,8 +4370,18 @@ edge left (leftover 1).
    server ran the tool would also land there, and nothing re-sends a command, so the flag only keeps the session
    from restarting.
 
+9. **Upload paths stay a driver concern (Aleh, option c).** The task moved the resolution to the browser surface,
+   but on Playwright MCP the upload and drop commands come from the driver's native decoder and reach the driver
+   without passing surface code; the policy rail can only deny. `runtime/utils/upload_paths.py` moves to
+   `drivers/browser_use/upload_paths.py`, its only package user, by a pure rename. Relative upload names are
+   resolved under the upload root on browser-use only; on Playwright MCP the server resolves against its own roots,
+   as before. Confinement of upload paths is the surface policy rule planned with the safety fixes.
+
 ### Rejected options
 
+- A contract hook that lets a surface replace a command before the page-state check, or a surface rail that
+  rewrites the `paths` argument before the decoder: both put path rewriting in the surface for one rule that a
+  policy check can enforce; Aleh chose to keep resolution in the driver.
 - Building the browser surface bundle in the MCP driver factory to read the catalog: a driver → surface edge the
   rules forbid, and a full profile build per driver.
 - Routing driver logging through `get_browser_agent_logger()` passed in by the factory, or a child of the stdlib
@@ -4386,23 +4395,17 @@ edge left (leftover 1).
 ### Verification
 
 New architecture rules in `architecture/test_import_boundaries.py`: drivers import only the contract, their own
-package, the middleware and surface `commands`/`context` (allowlist: the one upload-path edge); provisioning imports
+package, the middleware and surface `commands`/`context` (empty allowlist); provisioning imports
 only the contract; `runtime/` and `surfaces/` import `drivers/` only from `assembly.py` (and `config.py` lazily);
 the package root holds only the four known modules. MCP driver: a `ValueError` from the client is a
 `DriverError(dispatched=False)` (fails before the fix: `ConnectionLost`), a "broken pipe" is still `ConnectionLost`.
 The old offload path resolves to the moved module and warns. Browser_move unit suite and the terminal stream test:
-2504 passed, 122 skipped. Goldens unchanged against `77091ac9e`. Live sets not run in this step (one gate run at
+2504 passed, 122 skipped (also after the upload-path move). Goldens unchanged against `77091ac9e`. Live sets not run in this step (one gate run at
 the end of the phase).
 
 ### Known leftovers
 
-1. **Upload paths.** The task moves `runtime/utils/upload_paths.py` to the browser surface and has the surface
-   resolve `UploadFile`/`Drop` paths before the driver. On Playwright MCP the command is built by the driver's native
-   decoder (`drivers/playwright_mcp/tools.py`) and reaches the driver without passing any surface code (the policy
-   rail only checks); there is no contract point where a surface rewrites a command. Open: a contract hook (for
-   example a profile function applied to each command before the page-state check), a surface rail that rewrites the
-   tool arguments before the decoder, or resolution staying in the browser-use driver with the helper in its
-   package. Until decided, the browser-use driver keeps importing the helper (the one allowlisted edge) and the MCP
-   driver passes paths to the server as before.
+1. Relative upload names resolve under the upload root on browser-use only; the same name on Playwright MCP is
+   resolved by the server against its working directory.
 2. The browser log context decides where driver lines go; a driver used outside an agent invoke logs to the process
    log.

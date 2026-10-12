@@ -66,8 +66,8 @@ every rule with an allowlist that may only shrink:
   and `context` modules of the surfaces it serves (it implements their commands and fills their context type), the
   standard library, third-party packages and `openjiuwen.core`; never `runtime/`, `provisioning/` or any other
   surface module. A driver's own configuration lives in its package (`drivers/playwright_mcp/config.py`); it logs
-  through the core logger, which the browser log context routes to the browser agent log. One edge is still
-  allowlisted: the browser-use driver resolves upload paths with `runtime/utils/upload_paths.py`.
+  through the core logger, which the browser log context routes to the browser agent log. The driver allowlist
+  is empty.
 - `provisioning/` imports the contract only (plus the standard library, third-party packages and
   `openjiuwen.core`); a provisioner types the settings it reads with its own `Protocol`.
 - `runtime/` and `surfaces/` import nothing under `drivers/`, except the composition root `runtime/assembly.py`
@@ -1479,7 +1479,9 @@ no elements, no screenshot) instead of raising. Outside a dialog `dialog` is `No
   sidecar_python=..., upload_root=...)`, the last two from the `BrowserSettings` (`None` settings: neither);
   `start(config=None)` spawns the sidecar with that interpreter (`None`: `.venvs/browser-use` in the repo) and
   attaches to that CDP endpoint (an explicit config overrides). `UploadFile` and `Drop` resolve relative paths
-  against `upload_root`.
+  against `upload_root` with `drivers/browser_use/upload_paths.resolve_upload_file_paths`; the Playwright MCP
+  driver does not (its server resolves against its own roots), so relative upload names resolve on browser-use
+  only. No surface code rewrites upload paths; confining them is a surface policy rule's job.
 - Handlers with `refs={DriverRef, Locator}`: `Click`, `TypeText` (target required, no `slowly`), `Hover`, `Drag`,
   `SelectOption` (exactly one value), `UploadFile` (target required), `Drop`, `FillForm` (each field's
   `sensitive` goes to the sidecar's `type_text`). With `refs={DriverRef}`: `Scroll` (one axis per command),
