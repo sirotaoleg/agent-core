@@ -4087,3 +4087,48 @@ Known leftovers:
 1. After the restart the managed Chrome is the same process; a tab that hangs the whole browser needs the
    provisioner's dead-device path, which only `is_alive` decides.
 2. The timeout count is per driver, reset by any reply or `start()`, not by task boundaries the driver cannot see.
+
+### Screenshot on browser-use (not done)
+
+Wolfram Alpha--18 needed an image (an equation). Stopped with questions for the head: the browser dialect already
+has `browser_take_screenshot`, offered through `vision` and only with image support; in the Phase 10 runs neither
+driver offered a screenshot tool, and the browser-use main agent ran with image input off ("Image input is
+unavailable or unverified for this run"). Adding the tool to the browser dialect changes nothing until image input
+is on for that agent, and the catalog is shared by both drivers (a `core` entry would reach MCP too). Open: whether
+the browser-use agent runs with image input, and whether the tool is browser-use only (a per-dialect selection rule)
+or `core` for both.
+
+### Task rules in the prompt (both topologies)
+
+Eleven failures came from the model's choices, not from the harness: a date without a year read as this year
+(Booking--9), a filter the task named left out (Booking--17 property type, ESPN--43 class year), "today/latest"
+answered from memory (BBC--6, Apple--8, ESPN--19/25, Huggingface--19), the named source not opened (Google
+Search--16, Reddit), a UI step the task named skipped (Google Search--33), one reading of an ambiguous question
+(Wolfram Alpha--13), a misread entity not re-queried (Wolfram Alpha--30), answers hedged into failures, and 50
+calls of hand-built search URLs (Coursera--8).
+
+Decisions:
+1. **One block, nine rules, today's date**, in `surfaces/browser/tools.py` with the other prompt text, en and cn.
+   No prompt gave the model a date before; the block gives the local date at render time.
+2. **Both agents read the same block**: the worker prompt renders it (per task, as the prompt is re-rendered per
+   task), the main agent gets it as a rail prompt section like the image and date-picker guidance (per model call).
+3. **Before the output contract** in the worker prompt, so the JSON instructions stay last.
+4. **Goldens show `<DATE>`**: the snapshot builder already replaces ISO dates; the worker-prompt hash pin freezes the
+   date instead.
+
+Rejected options:
+- Putting the date in the task text by the runner: the rule must hold for every caller, not the benchmark only.
+- A rail that rewrites year-less dates in the task: guesses the user's intent; the rule lets the model decide with
+  the date in hand.
+- Separate blocks per topology: the same failures happened on both.
+
+Golden diff: every Playwright MCP view (`core`, the ten capability views, `runner`, `runner_direct`) and the
+browser-use `runner_worker` view gain exactly the block in the system prompt, nothing else (one changed line per
+file: the system prompt string). The worker-prompt hash pin moves to the new prompt with a fixed date.
+
+Verification: 13 new cases; full unit suite green after the regeneration (see the report); goldens regenerated with
+`uv run python -m tests.unit_tests.harness.tools.browser_move.snapshots.regenerate`.
+
+Known leftovers:
+1. The main agent is built once per process; the date in its section is fresh per model call, the worker's per task.
+2. Whether the rules change outcomes is for the rerun; they add about 230 tokens to every request.

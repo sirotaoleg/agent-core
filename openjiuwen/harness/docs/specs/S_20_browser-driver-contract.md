@@ -30,7 +30,7 @@ the probe scripts (`probes/`), the semantic state (`semantic/`), the working con
 context processor, the status log and the browser-only rails (`rails/`): the main agent's rail is
 `rails/runtime_rail.py`, its mixins beside it (`rails/terminal.py`, `rails/results.py`, `probes/results.py`,
 `semantic/phases.py`, `semantic/evidence.py`, the shared keys in `rails/keys.py`), and the prompt text (the
-worker prompt, the image and date-picker sections) is in `tools.py`; the facade stays in `runtime/session.py`, the
+worker prompt, the image, date-picker and task-rules sections) is in `tools.py`; the facade stays in `runtime/session.py`, the
 worker loop and its progress state are `runtime/worker.py`, the service's lifecycle `runtime/service.py`. The probe
 scripts are one module each (`probes/metadata.py`, `probes/interactives.py`, `probes/cards.py` with its template in
 the resource file `probes/cards.js`); the browser action specs and the upload listing are `helpers/custom.py`.
@@ -738,6 +738,13 @@ session.page_state)`, the parts' rails and `FinalAnswerRecoveryRail()`, in that 
 `max_steps` are the service's own values, not `core`'s: `core` gives the worker temperature, top-p, tool timeout
 and logging. `WORKER_LANGUAGE` (`"en"`, written once in `agents.py`, re-exported by `topology.py`) is the language of
 every agent the facade's entry points build: the worker, and the main agent in the `Direct` topology.
+
+The task rules (`browser_task_rules()` in `surfaces/browser/tools.py`: `{"en": ..., "cn": ...}`, nine rules under
+"Task rules:", the first giving today's local date as `YYYY-MM-DD`) are one block both agents read: the worker
+prompt renders the English block before its final-output contract, and the main agent's runtime rail adds it as the
+`browser_task_rules` prompt section (priority 85, after the date-picker section) on every model call. Invariants: the
+date is the one at render time (per task for the worker, per model call for the main agent); the block stays under
+15 lines; the prompt goldens show the date as `<DATE>`.
 
 The worker prompt (the profile's `worker_prompt`, `build_browser_worker_system_prompt(..., driver_name)` in
 `surfaces/browser/tools.py`; `build_worker` hands it to `build_browser_worker_agent(..., worker_prompt=)` and the
