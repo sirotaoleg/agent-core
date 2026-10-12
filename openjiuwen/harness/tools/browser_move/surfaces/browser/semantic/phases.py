@@ -779,6 +779,12 @@ class _PhaseMixin:
         return action_class
 
     @staticmethod
+    def _phase_attempts(session: Any) -> int:
+        state = session.get_state(_BROWSER_PHASE_STATE_KEY) if session is not None else None
+        phases = state.get("phases") if isinstance(state, dict) else None
+        return sum(int(item.get("attempts") or 0) for item in (phases or {}).values() if isinstance(item, dict))
+
+    @staticmethod
     def _repeated_script(details: Dict[str, Any], phase: str, kind: ToolKind) -> bool:
         """A page script read in this phase before; each distinct script costs one attempt."""
         if phase != "extraction" or not isinstance(kind.action, RunScript):
@@ -1041,6 +1047,7 @@ class _PhaseMixin:
         tool_result: Any,
         *,
         progressed: bool = False,
+        charged: bool = True,
     ) -> Dict[str, Any]:
         state = session.get_state(_BROWSER_PHASE_STATE_KEY)
         if not isinstance(state, dict):
@@ -1081,11 +1088,11 @@ class _PhaseMixin:
 
         details["successes"] = int(details.get("successes") or 0) + 1
         details["last_error"] = ""
-        # An action that changed the context or the observation was work, not a retry: only stalled actions count.
-        if progressed and phase != "extraction":
-            details["attempts"] = max(0, int(details.get("attempts") or 0) - 1)
         cls._record_price_interval(details, phase, kind, args)
         evidence_delta = cls._record_tool_evidence(state, result, kind=kind, tool_name=tool_name, tool_args=args)
+        # An action that changed the page or a read that added evidence was work, not a retry: only stalls count.
+        if charged and (evidence_delta["recovered"] if phase == "extraction" else progressed):
+            details["attempts"] = max(0, int(details.get("attempts") or 0) - 1)
         if evidence_delta.get("recovered"):
             BrowserWorkingContextStore.mark_replan_recovered(state)
         completion_evidence = cls._phase_completion_evidence(phase, kind, result, state)

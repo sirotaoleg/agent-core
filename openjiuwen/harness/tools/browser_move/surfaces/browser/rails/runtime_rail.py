@@ -391,6 +391,7 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
         session = getattr(ctx, "session", None)
         self._sync_semantic_progress(session)
         group = self._tool_action_group(ctx)
+        attempts = self._phase_attempts(session)
         action_class = self._consume_phase_budget(
             session,
             kind,
@@ -411,6 +412,7 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
                 "action_class": action_class,
                 "evidence_fields": evidence_fields,
                 "generation": self._runtime.generation_id,
+                "charged": self._phase_attempts(session) > attempts,
             }
 
     async def _add_agent_parts(self, ctx: AgentCallbackContext) -> None:
@@ -534,7 +536,13 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
             return
         evidence_args = self._tool_evidence_args(ctx, inputs)
         progress_delta = self._record_phase_result(
-            session, kind, tool_name, evidence_args, result, progressed=self._progressed(ctx, inputs, record)
+            session,
+            kind,
+            tool_name,
+            evidence_args,
+            result,
+            progressed=self._progressed(ctx, inputs, record),
+            charged=self._charged(ctx, inputs),
         )
         progress_delta.update(
             {
@@ -582,6 +590,14 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
         call_state = states.get(cls._tool_call_id(inputs)) if isinstance(states, dict) else None
         before = call_state.get("generation") if isinstance(call_state, dict) else None
         return record.context_changed or (before is not None and record.generation != before)
+
+    @classmethod
+    def _charged(cls, ctx: AgentCallbackContext, inputs: Any) -> bool:
+        """Whether the call cost a phase attempt; a repeated page script does not."""
+        extra = getattr(ctx, "extra", None)
+        states = extra.get(_BROWSER_TOOL_RUNTIME_STATE_KEY) if isinstance(extra, dict) else None
+        call_state = states.get(cls._tool_call_id(inputs)) if isinstance(states, dict) else None
+        return call_state.get("charged", True) if isinstance(call_state, dict) else True
 
     @staticmethod
     def _kind_after(kind: ToolKind, record: CommandRecord | None) -> ToolKind:
