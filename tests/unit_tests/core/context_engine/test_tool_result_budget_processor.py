@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import List
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from openjiuwen.core.context_engine import ContextEngine, ContextEngineConfig
+from openjiuwen.core.context_engine.context.context_utils import ContextUtils
 from openjiuwen.core.context_engine.processor.offloader.tool_result_budget_processor import (
     ToolResultBudgetProcessor,
     ToolResultBudgetProcessorConfig,
@@ -694,6 +696,48 @@ class TestToolResultBudgetProcessorReload:
         assert "_END_MARKER" in reloaded_messages[0].content
 
     @pytest.mark.asyncio
+    async def test_session_id_with_colons_offloads_to_a_path_safe_dir_and_reloads(self, tmp_path):
+        from openjiuwen.core.sys_operation import OperationMode, SysOperation, SysOperationCard
+        from openjiuwen.core.sys_operation.config import LocalWorkConfig
+
+        workspace_root = tmp_path / "workspace"
+        card = SysOperationCard(id="test_real_sys_op", mode=OperationMode.LOCAL, work_config=LocalWorkConfig())
+        engine = ContextEngine(
+            ContextEngineConfig(default_window_message_num=100),
+            workspace=MockWorkspace(root_path=str(workspace_root)),
+            sys_operation=SysOperation(card=card),
+        )
+        session_id = "wv-task:direct:req-1:0123abcd"
+        context = await engine.create_context(
+            context_id="test_ctx",
+            session=create_mock_session(session_id),
+            history_messages=[],
+            processors=[
+                (
+                    "ToolResultBudgetProcessor",
+                    ToolResultBudgetProcessorConfig(tokens_threshold=50, large_message_threshold=50, trim_size=20),
+                )
+            ],
+        )
+        original_content = "ORIGINAL_" + "x" * 500
+        await context.add_messages(
+            [
+                UserMessage(content="Get detailed output"),
+                AssistantMessage(content="", tool_calls=create_tool_call_list(["tc-colon"])),
+                ToolMessage(content=original_content, tool_call_id="tc-colon", name="grep"),
+                AssistantMessage(content="Done."),
+            ]
+        )
+
+        tool_msg = context.get_messages()[2]
+        assert getattr(tool_msg, "offload_type", None) == "filesystem"
+        session_dirs = [path.name for path in (workspace_root / "context").iterdir()]
+        assert len(session_dirs) == 1 and ":" not in session_dirs[0]
+        assert session_dirs[0].startswith("wv-task-direct-req-1-0123abcd-")
+        reloaded = await context._offload_message_buffer.reload(tool_msg.offload_handle, "filesystem")
+        assert [message.content for message in reloaded] == [original_content]
+
+    @pytest.mark.asyncio
     async def test_reload_from_in_memory(self, tmp_path):
         """测试从内存 reload 已 offload 的消息 (workspace=None, sys_operation=None 场景)"""
         engine = ContextEngine(
@@ -864,3 +908,18 @@ class TestToolResultBudgetProcessorReload:
         )
 
         assert reloaded_messages == []
+
+
+class TestOffloadSessionDirName:
+    @pytest.mark.parametrize("session_id", ["browser-session", "wv-Amazon--1__b0f215c.direct.r1.abc", "a_b.c-d"])
+    def test_path_safe_ids_are_kept(self, session_id):
+        assert ContextUtils.offload_session_dir_name(session_id) == session_id
+
+    @pytest.mark.parametrize("session_id", ["a:b", "a:b:c", "../x", "..", ".", "", "C:/x", "a b", "日本"])
+    def test_other_ids_become_one_path_safe_component(self, session_id):
+        name = ContextUtils.offload_session_dir_name(session_id)
+        assert re.fullmatch(r"[A-Za-z0-9_.-]+", name) and name not in {".", ".."} and not name.startswith(".")
+
+    def test_ids_that_read_alike_stay_distinct(self):
+        names = {ContextUtils.offload_session_dir_name(value) for value in ("a:b", "a/b", "a b", "a-b")}
+        assert len(names) == 4

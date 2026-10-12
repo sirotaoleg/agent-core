@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from openjiuwen.core.common.logging.browser_context import is_browser_agent_log_context
+from openjiuwen.core.context_engine.context.context_utils import ContextUtils
 from openjiuwen.core.foundation.llm.model_clients.openai_model_client import OpenAIModelClient
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext
@@ -154,7 +155,8 @@ class TestDirect:
         assert (model.model_config.temperature, model.model_config.top_p) == (0.3, 0.9)
         assert run_agent.await_args.args[0] is agent
         inputs = run_agent.await_args.args[1]
-        assert inputs["query"] == "Report the heading" and inputs["conversation_id"].startswith("wv-agent:direct:")
+        assert inputs["query"] == "Report the heading" and inputs["conversation_id"].startswith("wv-agent.direct.")
+        assert ContextUtils.offload_session_dir_name(inputs["conversation_id"]) == inputs["conversation_id"]
         assert answer == {
             "ok": True,
             "session_id": "wv-agent",

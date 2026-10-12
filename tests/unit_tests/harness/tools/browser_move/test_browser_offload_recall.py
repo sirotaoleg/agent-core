@@ -9,6 +9,13 @@ from types import SimpleNamespace
 
 import pytest
 
+from openjiuwen.core.context_engine import ContextEngine, ContextEngineConfig
+from openjiuwen.core.context_engine.processor.offloader.tool_result_window_processor import (
+    ToolResultWindowProcessorConfig,
+)
+from openjiuwen.core.foundation.llm import AssistantMessage, ToolCall, ToolMessage, UserMessage
+from openjiuwen.core.sys_operation import OperationMode, SysOperation, SysOperationCard
+from openjiuwen.core.sys_operation.config import LocalWorkConfig
 from openjiuwen.harness.tools.browser_move.offload_recall import BrowserOffloadRecallTool
 
 
@@ -138,3 +145,44 @@ async def test_requires_runtime_session(tmp_path):
 
     assert result.success is False
     assert "runtime session" in result.error
+
+
+@pytest.mark.asyncio
+async def test_recalls_what_the_window_processor_offloaded_for_a_session_id_with_colons(tmp_path):
+    session_id = "wv-task:direct:req-1:0123abcd"
+    card = SysOperationCard(id="recall_real_sys_op", mode=OperationMode.LOCAL, work_config=LocalWorkConfig())
+    engine = ContextEngine(
+        ContextEngineConfig(default_window_message_num=100),
+        workspace=SimpleNamespace(root_path=str(tmp_path)),
+        sys_operation=SysOperation(card=card),
+    )
+    context = await engine.create_context(
+        context_id="recall_ctx",
+        session=SimpleNamespace(get_session_id=lambda: session_id, get_state=lambda *_: None),
+        history_messages=[],
+        processors=[
+            (
+                "ToolResultWindowProcessor",
+                ToolResultWindowProcessorConfig(tool_names=["browser_snapshot"], keep_last_k=1),
+            )
+        ],
+    )
+    original = "HEADING " + "x" * 3000 + " UNIQUE TARGET"
+    messages = [UserMessage(content="read the page")]
+    for index, content in enumerate([original, "newer snapshot"]):
+        call = ToolCall(id=f"tc-{index}", name="browser_snapshot", type="function", arguments="")
+        messages += [
+            AssistantMessage(content="", tool_calls=[call]),
+            ToolMessage(content=content, tool_call_id=call.id, name="browser_snapshot"),
+        ]
+    await context.add_messages(messages)
+    offloaded = context.get_messages()[2]
+    tool = BrowserOffloadRecallTool(tmp_path, language="en")
+
+    result = await tool.invoke(
+        {"handle": offloaded.offload_handle, "query": "UNIQUE TARGET"}, session=_session(session_id)
+    )
+
+    assert offloaded.offload_type == "filesystem"
+    assert result.success is True, result.error
+    assert result.data["content"].endswith("UNIQUE TARGET")
