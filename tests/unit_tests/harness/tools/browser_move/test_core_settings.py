@@ -84,9 +84,8 @@ def test_legacy_browser_driver_values_leave_the_default_driver_without_a_warning
 
 
 @pytest.mark.parametrize("raw", ["cua", "browser-use", "BROWSER_DRIVER_BACKEND"])
-def test_unknown_browser_driver_is_a_clear_error(raw: str) -> None:
-    with pytest.raises(ValueError, match="BROWSER_DRIVER must be one of: playwright_mcp, browser_use"):
-        _core(BROWSER_DRIVER=raw)
+def test_any_browser_driver_name_is_kept_for_the_registry_to_check(raw: str) -> None:
+    assert _core(BROWSER_DRIVER=raw).driver == raw.lower()
 
 
 def test_browser_driver_backend_is_not_read() -> None:

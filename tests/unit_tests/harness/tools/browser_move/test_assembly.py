@@ -169,6 +169,24 @@ class World:
 
 
 class TestAssembleDriver:
+    def test_a_driver_registered_from_test_code_is_selected_by_browser_driver(self) -> None:
+        world = World()
+        core = dataclasses.replace(CoreSettings.from_env({"BROWSER_DRIVER": "fake_driver"}), surface="fake")
+
+        world.assemble(core)
+
+        assert ("driver", DEVICE, world.settings) in world.log
+        assert world.driver.kinds() == ["start"]
+
+    def test_an_unregistered_browser_driver_fails_at_build_and_releases_the_device(self) -> None:
+        world = World()
+        core = dataclasses.replace(CoreSettings.from_env({"BROWSER_DRIVER": "cua"}), surface="fake")
+
+        with pytest.raises(KeyError, match="unknown driver 'cua'; registered: fake_driver"):
+            world.assemble(core)
+
+        assert world.log[-1] == ("release", DEVICE)
+
     def test_builds_surface_provisioner_device_and_driver_in_order_then_starts(self) -> None:
         world = World()
 

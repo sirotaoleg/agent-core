@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import os
 import warnings
@@ -15,6 +16,7 @@ import pytest
 
 from openjiuwen.harness.tools.browser_move.contract import Registry, SurfaceBundle
 from openjiuwen.harness.tools.browser_move.runtime import config as config_module
+from openjiuwen.harness.tools.browser_move.runtime.assembly import assemble_driver
 from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserInstanceConfig,
     CoreSettings,
@@ -122,10 +124,13 @@ def test_extension_provisioning_reaches_the_playwright_mcp_config(environ: dict[
     assert [w.category for w in record] == ([DeprecationWarning] if warns else [])
 
 
-def test_unknown_browser_driver_fails_when_the_runtime_settings_are_built() -> None:
+def test_unknown_browser_driver_fails_when_the_driver_is_built_with_the_registered_names() -> None:
     with patch.dict(os.environ, {"BROWSER_DRIVER": "cua"}, clear=True):
-        with pytest.raises(ValueError, match="BROWSER_DRIVER must be one of"):
-            build_runtime_settings()
+        assert build_runtime_settings().provider == "openai"
+        core = CoreSettings.from_process_env()
+
+    with pytest.raises(KeyError, match=r"unknown driver 'cua'; registered: browser_use, playwright_mcp"):
+        asyncio.run(assemble_driver(core, {}))
 
 
 def test_resolve_playwright_mcp_cwd_comes_from_the_browser_settings(tmp_path: Path) -> None:
