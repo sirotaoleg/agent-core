@@ -322,7 +322,8 @@ class _BrowserScene:
 
     def _run_script(self, kind: type | None, actions: Actions) -> SceneCase | str:
         if kind is None:
-            code = "() => { document.title = 'script:ran'; return 'ran'; }"
+            # A bare expression: the contract takes one as well as a function.
+            code = "document.title = 'script:ran'"
             return SceneCase(steps=(lambda seen: RunScript(code=code),), check=_title_is("script:ran"))
         code = "(element) => { document.title = 'script:' + element.id; return element.id; }"
 

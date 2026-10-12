@@ -113,13 +113,14 @@ async def evaluate_expression(
     await_promise: bool = True,
     return_by_value: bool = True,
 ) -> Any:
-    """Evaluate a page-scoped JS function expression invoked with ``args``.
-
-    ``function_source`` must be a JS function expression taking one
-    argument, e.g. ``"(x) => x + 1"``. Raises ``exceptions.EvaluateError``
-    on a JS-side exception.
+    """Evaluate ``function_source`` in the page: a function expression is called with ``args``, any other expression
+    gives its value (as Playwright MCP's evaluate). Raises ``exceptions.EvaluateError`` on a JS-side exception.
     """
-    expression = f"({function_source})({json.dumps(args)})"
+    # The newline keeps a trailing line comment in the source from swallowing the closing parenthesis.
+    expression = (
+        f"(() => {{ const value = ({function_source}\n); "
+        f"return typeof value === 'function' ? value({json.dumps(args)}) : value; }})()"
+    )
     result = await cdp_client.send.Runtime.evaluate(
         params={
             "expression": expression,
@@ -607,9 +608,10 @@ def _unwrap_js_result(result: dict[str, Any]) -> Any:
     """Raise ``exceptions.EvaluateError`` on a JS exception, else return the value."""
     exception_details = result.get("exceptionDetails")
     if exception_details:
-        js_message = str(exception_details.get("text", "unknown JS error"))
         exception = exception_details.get("exception") or {}
         js_description = str(exception.get("description", ""))
+        # CDP's ``text`` is only "Uncaught"; the description's first line names the error.
+        js_message = js_description.split("\n", 1)[0] or str(exception_details.get("text", "unknown JS error"))
         raise exceptions.EvaluateError(js_message, js_message=js_message, js_stack=js_description)
     return (result.get("result") or {}).get("value")
 

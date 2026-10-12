@@ -73,7 +73,7 @@ _TARGET_ATTRIBUTE = "data-openjiuwen-target-id"
 _SCOPED_SCRIPT = (
     "(input) => {{ const element = document.querySelector(input.selector); "
     "if (!element) {{ throw new Error('target element not found: ' + input.selector); }} "
-    "return ({code})(element, input.args); }}"
+    "const value = ({code}\n); return typeof value === 'function' ? value(element, input.args) : value; }}"
 )
 _HAS_TEXT_JS = """(text) => {
   const body = (document.body && document.body.innerText) ? document.body.innerText : '';
@@ -109,6 +109,15 @@ _DISCONNECTED = re.compile(
 )
 
 
+_HUNG_AFTER_TIMEOUTS = 2
+# Selector syntax only Playwright's engines understand; the browser's querySelector rejects it.
+_PLAYWRIGHT_SELECTOR = re.compile(
+    r":(?:has-text|text|text-is|text-matches|visible|nth-match|left-of|right-of|above|below|near)\b|>>"
+    r"|^\s*(?:text|xpath|css|id|role|data-testid|internal:[a-z-]+)\s*=",
+    re.IGNORECASE,
+)
+
+
 @dataclass(frozen=True)
 class BrowserUseConfig:
     """What ``start()`` needs: the CDP endpoint of the browser and the connect timeout."""
@@ -137,6 +146,13 @@ def _ref_to_wire(ref: DriverRef | Locator, driver_generation: int) -> dict[str, 
     if isinstance(ref, Locator):
         if ref.text is not None or not ref.css:
             raise Unsupported("BrowserUseDriver addresses a Locator by css only", dispatched=False)
+        if _PLAYWRIGHT_SELECTOR.search(ref.css):
+            raise Unsupported(
+                f"BrowserUseDriver takes plain CSS selectors only, not Playwright selectors ({ref.css!r}): use a ref "
+                "or target_id from a snapshot or probe, or CSS such as #id, .class, tag[attr='value'], "
+                "a:nth-of-type(2); match text with a find or probe instead of :has-text() or text=",
+                dispatched=False,
+            )
         return {"kind": "selector", "css": ref.css, "nth": 0}
     return {"kind": "driver", "handle": ref.ref, "driver_generation": driver_generation}
 
@@ -228,6 +244,7 @@ class BrowserUseDriver(HandlerDriver):
         self._transport: SidecarTransport | None = None
         self._driver_generation = 0
         self._versions: dict[str, str] = {}
+        self._timeouts = 0
 
     def describe(self) -> DriverInfo:
         return DriverInfo(
@@ -255,6 +272,7 @@ class BrowserUseDriver(HandlerDriver):
             raise _translate_error("connect", exc) from exc
         self._config = config
         self._transport = transport
+        self._timeouts = 0
         self._versions = {
             "browser": str(result.get("browser_version", "")),
             "protocol": str(result.get("protocol_version", "")),
@@ -479,9 +497,17 @@ class BrowserUseDriver(HandlerDriver):
         if self._transport is None:
             raise ConnectionLost("BrowserUseDriver is not started", dispatched=False)
         try:
-            return await self._transport.request(method, params)
+            result = await self._transport.request(method, params)
         except Exception as exc:
-            raise _translate_error(method, exc) from exc
+            error = _translate_error(method, exc)
+            self._timeouts = self._timeouts + 1 if isinstance(error, ActionTimeout) else 0
+            # A page that lets two requests in a row run out of time is hung: only a restart frees the target.
+            if self._timeouts >= _HUNG_AFTER_TIMEOUTS:
+                self._timeouts = 0
+                raise ConnectionLost(f"{method}: {exc}; the page stopped answering", dispatched=True) from exc
+            raise error from exc
+        self._timeouts = 0
+        return result
 
     async def _evaluate(self, source: str, args: Any) -> Any:
         return await self._request(
