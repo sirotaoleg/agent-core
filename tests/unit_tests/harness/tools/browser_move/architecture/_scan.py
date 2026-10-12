@@ -26,6 +26,8 @@ SURFACES_FOLDER = "surfaces"
 CONFIG_MODULE_RE = re.compile(r"^(?:runtime/config\.py|surfaces/[^/]+/config\.py)$")
 # The composition root, under its current and its future folder.
 ASSEMBLY_MODULES = frozenset({"runtime/assembly.py"})
+# Keeps the public RuntimeSettings.mcp_cfg names; builds that one server config through a lazy driver import.
+SETTINGS_FACADE_MODULES = frozenset({"runtime/config.py"})
 
 
 def rel(path: Path) -> str:

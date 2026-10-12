@@ -153,5 +153,3 @@ def test_the_facades_take_the_browser_settings_from_the_surface_registry(
         assert build_runtime_settings(core_settings=CoreSettings()).mcp_cfg.params["cwd"] == str(tmp_path)
 
     assert [environ for environ, settings in seen if settings is None] == [{"PLAYWRIGHT_MCP_COMMAND": "from-env"}] * 3
-    # the server config reads the catalog through the registry with the settings it was given
-    assert [settings.mcp_cwd for _environ, settings in seen if settings is not None] == [tmp_path] * 2

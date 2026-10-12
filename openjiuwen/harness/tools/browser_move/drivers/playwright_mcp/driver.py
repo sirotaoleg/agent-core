@@ -55,6 +55,7 @@ from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.clients import
     BrowserMoveStdioClient,
     BrowserMoveStreamableHttpClient,
 )
+from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.config import playwright_mcp_config
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.result import decode, result_text
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.snapshot import (
     parse_snapshot,
@@ -63,7 +64,6 @@ from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.snapshot impor
     without_boxes,
 )
 from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import DECODERS
-from openjiuwen.harness.tools.browser_move.runtime.config import BrowserInstanceConfig, playwright_mcp_config
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     Back,
     Drop,
@@ -502,7 +502,7 @@ def create_playwright_mcp_driver(device: ProvisionedDevice, surface_settings: An
     A server config in ``surface_settings.mcp_server`` keeps its command line and environment; the factory's name
     and id win, so the tool prefix never changes with the caller, and the device endpoint replaces the config's.
     """
-    server = playwright_mcp_config(surface_settings, BrowserInstanceConfig(cdp_url=device.endpoint))
+    server = playwright_mcp_config(surface_settings, cdp_url=device.endpoint)
     given = getattr(surface_settings, "mcp_server", None)
     if given is not None:
         # A device emulation cannot drive a CDP-attached browser; CDP mode is Chromium-only.

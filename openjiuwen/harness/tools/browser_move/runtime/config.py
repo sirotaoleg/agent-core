@@ -10,7 +10,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any, Mapping, Optional
 
 from openjiuwen.core.foundation.tool import McpServerConfig
 
@@ -475,36 +475,6 @@ def resolve_playwright_mcp_cwd() -> str:
     return str(browser_surface_settings().mcp_cwd)
 
 
-def _ensure_capabilities(
-    args: list[str],
-    required_capabilities: Iterable[str],
-) -> list[str]:
-    """Return Playwright MCP args with the specified capabilities enabled."""
-    normalized_args: list[str] = []
-    capabilities: list[str] = []
-    index = 0
-    while index < len(args):
-        arg = args[index]
-        if arg == "--caps":
-            if index + 1 < len(args) and not args[index + 1].startswith("--"):
-                capabilities.extend(args[index + 1].split(","))
-                index += 2
-                continue
-        elif arg.startswith("--caps="):
-            capabilities.extend(arg.removeprefix("--caps=").split(","))
-            index += 1
-            continue
-        normalized_args.append(arg)
-        index += 1
-
-    capabilities = list(dict.fromkeys(capability.strip() for capability in capabilities if capability.strip()))
-    for capability in required_capabilities:
-        if capability not in capabilities:
-            capabilities.append(capability)
-    normalized_args.append(f"--caps={','.join(capabilities)}")
-    return normalized_args
-
-
 def build_browser_guardrails() -> BrowserRunGuardrails:
     return CoreSettings.from_process_env().guardrails
 
@@ -522,68 +492,16 @@ def playwright_mcp_config(
     required_capability: Optional[list[str]] = None,
 ) -> McpServerConfig:
     """The ``@playwright/mcp`` server config from the surface settings; ``instance.cdp_url`` wins over them."""
-    catalog = browser_surface({}, settings).profile.capabilities
-    capabilities_to_enable = (
-        *(entry.name for entry in catalog[1:] if not entry.policy_only),
-        *(required_capability or ()),
-    )
-    launch_args = (
-        parse_command_args(instance.launch_args)
-        if instance is not None and instance.launch_args.strip()
-        else list(settings.launch_args)
-    )
-    args = _ensure_capabilities(launch_args, capabilities_to_enable)
-    extension_mode = settings.provisioning == "extension" or settings.mcp_extension
+    from ..drivers.playwright_mcp.config import playwright_mcp_config as server_config
 
-    env_map: Dict[str, str] = dict(settings.mcp_env)
-    if extension_mode:
-        env_map["PLAYWRIGHT_MCP_EXTENSION"] = "true"
-        if settings.mcp_extension_token:
-            env_map["PLAYWRIGHT_MCP_EXTENSION_TOKEN"] = settings.mcp_extension_token
-        if "--extension" not in args:
-            args.append("--extension")
-    else:
-        # CDP support for official Playwright MCP server. An explicit per-instance
-        # cdp_url (remote mode) wins over the shared env endpoint.
-        instance_cdp = instance.cdp_url.strip() if instance and instance.cdp_url else ""
-        cdp_endpoint = instance_cdp or settings.cdp_url
-        if cdp_endpoint:
-            if settings.mcp_device:
-                raise ValueError("PLAYWRIGHT_MCP_DEVICE is not supported with CDP endpoint mode.")
-            env_map["PLAYWRIGHT_MCP_CDP_ENDPOINT"] = cdp_endpoint
-            if not settings.mcp_browser:
-                # CDP mode is Chromium-only.
-                env_map["PLAYWRIGHT_MCP_BROWSER"] = "chrome"
-        if settings.cdp_headers:
-            env_map["PLAYWRIGHT_MCP_CDP_HEADERS"] = settings.cdp_headers
-        if settings.cdp_timeout:
-            env_map["PLAYWRIGHT_MCP_CDP_TIMEOUT"] = settings.cdp_timeout
-
-    params: Dict[str, Any] = {
-        "command": settings.mcp_command,
-        "args": args,
-        "cwd": str(settings.mcp_cwd),
-    }
-    if settings.mcp_timeout_s > 0:
-        params["timeout_s"] = settings.mcp_timeout_s
-    if env_map:
-        params["env"] = env_map
-
-    # Isolate the MCP registration per instance identity. Same key -> same
-    # server_id (intentional sharing); different key -> isolated server.
-    server_id = "playwright_official_stdio"
-    server_name = "playwright-official"
-    instance_key = instance.sanitized_key() if instance else ""
-    if instance_key:
-        server_id = f"{server_id}__{instance_key}"
-        server_name = f"{server_name}-{instance_key}"
-
-    return McpServerConfig(
-        server_id=server_id,
-        server_name=server_name,
-        server_path="stdio://playwright",
-        client_type="stdio",
-        params=params,
+    if instance is None:
+        return server_config(settings, required_capability=required_capability or ())
+    return server_config(
+        settings,
+        cdp_url=instance.cdp_url.strip(),
+        launch_args=parse_command_args(instance.launch_args) if instance.launch_args.strip() else None,
+        key=instance.sanitized_key(),
+        required_capability=required_capability or (),
     )
 
 

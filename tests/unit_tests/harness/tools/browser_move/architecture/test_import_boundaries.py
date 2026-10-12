@@ -75,7 +75,7 @@ def _import_targets(relpath: str, node: ast.stmt) -> list[tuple[str, ...]]:
 def _collect_core_concrete_imports() -> Counter:
     found: Counter = Counter()
     for relpath in _scan.files_where(_scan.is_core):
-        lazy_allowed = relpath in _scan.ASSEMBLY_MODULES
+        lazy_allowed = relpath in _scan.ASSEMBLY_MODULES | _scan.SETTINGS_FACADE_MODULES
         for node, lazy in _scan.iter_imports(_scan.parse(relpath)):
             for target in _import_targets(relpath, node):
                 if _concrete_kind(target) and not (lazy_allowed and lazy):
