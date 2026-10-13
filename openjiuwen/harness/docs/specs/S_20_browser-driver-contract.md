@@ -5,7 +5,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `device.py` / `masking.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/config.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/runtime/session.py`, `openjiuwen/harness/tools/browser_move/runtime/topology.py`, `openjiuwen/harness/tools/browser_move/runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/action_policy.py`, `openjiuwen/harness/tools/browser_move/runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/final_answer_recovery.py`, `openjiuwen/harness/tools/browser_move/runtime/config.py`, `openjiuwen/harness/tools/browser_move/runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/runtime/service.py`, `openjiuwen/harness/tools/browser_move/runtime/worker.py`, `openjiuwen/harness/tools/browser_move/runtime/utils/env.py`, `openjiuwen/harness/tools/browser_move/playwright_runtime/__init__.py` (alias), `openjiuwen/harness/tools/browser_move/offload_recall.py` (alias), `openjiuwen/harness/tools/browser_move/surfaces/browser/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py` / `profiles.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `policy.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `site_profiles.py` / `state_processor.py` / `status_logging.py` / `helpers/` / `probes/` / `semantic/` / `working_context/` / `rails/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/context_engine/context/context_utils.py` (`offload_session_dir_name`) |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `device.py` / `masking.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/config.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/runtime/session.py`, `openjiuwen/harness/tools/browser_move/runtime/topology.py`, `openjiuwen/harness/tools/browser_move/runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/action_policy.py`, `openjiuwen/harness/tools/browser_move/runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/final_answer_recovery.py`, `openjiuwen/harness/tools/browser_move/runtime/config.py`, `openjiuwen/harness/tools/browser_move/runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/runtime/service.py`, `openjiuwen/harness/tools/browser_move/runtime/worker.py`, `openjiuwen/harness/tools/browser_move/runtime/utils/env.py`, `openjiuwen/harness/tools/browser_move/surfaces/browser/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py` / `profiles.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `policy.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `site_profiles.py` / `state_processor.py` / `status_logging.py` / `helpers/` / `probes/` / `semantic/` / `working_context/` / `rails/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/context_engine/context/context_utils.py` (`offload_session_dir_name`) |
 | Last revised | 2026-10-13 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -40,16 +40,10 @@ from `runtime/config.py` (the surface settings); the core imports no module of `
 hooks, the worker prompt and the capability catalog from the surface profile, and the registry is the only way
 from the core to a surface. The browser words left in the core are data keys and attributes (`page`, `url`), the
 surface name, identifiers and text the model reads, listed one by one in F_07 ("Phase 9: PR d").
-The browser profile store is `provisioning/profiles.py`. `playwright_runtime/` is an alias package for one release: importing it or any
-`playwright_runtime.<module>` yields the same module objects as `runtime.<module>`; every module that left
-`runtime/` keeps its old name there as the moved module: `browser_capabilities` (`surfaces/browser/capabilities.py`),
-`profiles` (`provisioning/profiles.py`), `runtime` (`runtime/session.py`), `probes` (the `surfaces/browser/probes/`
-package, which re-exports the three script builders), `probe_semantics`, `semantic_state`, `browser_working_context`
-(`working_context/store.py`), `browser_working_context_processor`, `browser_working_context_rail`,
-`browser_state_context_processor` (`state_processor.py`), `site_profiles` and `status_logging`. Not served:
-`runtime.page_state.BrowserPageState` and `CARD_EVIDENCE_FIELDS`, which moved with the browser page state to
-`surfaces/browser/page_state.py` while `runtime/page_state.py` stayed (its alias is the core module); it re-exports `runtime.__all__` plus the five
-context-processor and rail names `runtime` no longer exports, and it emits one `DeprecationWarning` per process.
+The browser profile store is `provisioning/profiles.py`. The old `playwright_runtime` package and the root module
+`offload_recall.py` are removed; callers import `runtime.<module>`, `surfaces.browser.<module>` or
+`provisioning.profiles`. The WebVoyager runner uses `runtime.config.build_runtime_settings`,
+`runtime.session.BrowserAgentRuntime` and `surfaces.browser.capabilities.CORE_BROWSER_TOOL_NAMES`.
 
 The browser surface profile (tool specs, renderer, capability catalog) is specified under "Browser surface
 profile"; the tool factory that turns it and the driver's native tools into model-facing tools under "Tool
@@ -81,8 +75,8 @@ every rule with an allowlist that may only shrink:
   `runtime/topology.py` imports `openjiuwen.harness.subagents.browser_agent` (inside `Direct.start`), whose
   `create_browser_agent` builds the main agent with the browser surface's rails, capability catalog and context
   processors.
-- The package root holds `__init__.py`, the `playwright_runtime/` alias package, the `offload_recall.py` alias
-  module and the runtime server entry point `playwright_runtime_mcp_server.py`; every other module lives in a layer.
+- The package root holds `__init__.py` and the runtime server entry point `playwright_runtime_mcp_server.py`;
+  every other module lives in a layer.
 
 A surface, driver or provisioner is added with new code and registry entries only. The fake-surface test
 (`tests/unit_tests/harness/tools/browser_move/architecture/fake_surface/`) holds this: a screen surface with its own

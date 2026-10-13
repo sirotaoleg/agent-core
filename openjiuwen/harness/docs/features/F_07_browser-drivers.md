@@ -4715,3 +4715,20 @@ imports `surfaces.browser.capabilities`, `rails.runtime_rail`, `state_processor`
 Both live sets once, at the end of the phase (`BROWSER_MOVE_LIVE_MCP=1`, `BROWSER_USE_SIDECAR_PYTHON` set):
 `test_conformance_playwright_mcp_live.py`, `test_conformance_browser_use_live.py` and `test_topology_live.py`:
 100 passed, none skipped, in 284 s.
+
+## Removal of the old import paths
+
+Decision (Aleh, 2026-10-13): the `playwright_runtime` alias package and the root module `offload_recall.py` are removed
+now instead of after one release. Callers import the new modules: `runtime.<module>`, `surfaces.browser.<module>`,
+`provisioning.profiles`.
+
+Known effect: agent-eval's WebVoyager runner (`bench/webvoyager/run.py`, outside this repository) imports
+`playwright_runtime.config`, `playwright_runtime.runtime` and `playwright_runtime.browser_capabilities`; it has to move
+to `runtime.config`, `runtime.session` and `surfaces.browser.capabilities` before its next run. The runner contract test
+now pins the new paths. No module in this repository imported the old paths.
+
+Rejected: keeping the alias for one more release (the runner is the only known caller and its owner updates it with
+this change).
+
+Verification: the shim tests and the offload alias test are removed; the root-module rule lists `__init__.py` and
+`playwright_runtime_mcp_server.py`. Unit suite: 2536 passed, 123 skipped.
