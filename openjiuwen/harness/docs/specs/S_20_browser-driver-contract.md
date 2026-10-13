@@ -76,6 +76,11 @@ every rule with an allowlist that may only shrink:
   (it wraps the built driver with the middleware) and, inside function bodies only, `runtime/config.py`, whose
   public `playwright_mcp_config` / `build_playwright_mcp_config` / `RuntimeSettings.mcp_cfg` call the driver's
   config builder.
+- The core does not reach a concrete driver, surface or provisioner through a module outside the package either:
+  a core import of an `openjiuwen` module that itself imports one of them is a finding. One is allowlisted:
+  `runtime/topology.py` imports `openjiuwen.harness.subagents.browser_agent` (inside `Direct.start`), whose
+  `create_browser_agent` builds the main agent with the browser surface's rails, capability catalog and context
+  processors.
 - The package root holds `__init__.py`, the `playwright_runtime/` alias package, the `offload_recall.py` alias
   module and the runtime server entry point `playwright_runtime_mcp_server.py`; every other module lives in a layer.
 

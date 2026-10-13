@@ -4689,6 +4689,27 @@ to a root lies inside that same root.
 Verification: a test with the workspace nested in the upload root denies `../x.txt` and allows `notes/../x.txt`; the
 old rule allowed the first. Policy tests: 44 passed, 1 skipped (the symlink case).
 
+### Core imports that lead back into a surface
+
+The import-boundary rules looked only at imports inside the package. `Direct.start` in `runtime/topology.py` imports
+`create_browser_agent` from `openjiuwen/harness/subagents/browser_agent.py`, and that module imports the browser
+surface's runtime rail, capability catalog, state processor and working-context processor. The core thus depended on
+the browser surface through a module the rules never read.
+
+Decision: a new rule reads every module outside the package that a core module imports and reports the import when
+that module itself imports a concrete driver, surface or provisioner. The one hit is allowlisted with its reason; the
+allowlist may only shrink, so a second such path fails the test. The edge stays until a surface-neutral runner exists
+(the facade, the service and `Direct` are the browser runner, decision of step 2).
+
+Rejected: following the outside modules transitively. `openjiuwen.harness.deep_agent` imports `create_browser_agent`
+inside its factory for named subagents (`browser_agent`, `browser_runtime`), so a transitive scan reports
+`assembly.py` and every other core module that builds a deep agent, although none of them asks for the browser
+agent.
+
+Verification: the rule finds exactly `("runtime/topology.py", "openjiuwen.harness.subagents.browser_agent")`, which
+imports `surfaces.browser.capabilities`, `rails.runtime_rail`, `state_processor` and
+`working_context.processor`; `deep_agent` and `factory` import none. Architecture tests: 24 passed.
+
 ### Phase 11 live gate
 
 Both live sets once, at the end of the phase (`BROWSER_MOVE_LIVE_MCP=1`, `BROWSER_USE_SIDECAR_PYTHON` set):
