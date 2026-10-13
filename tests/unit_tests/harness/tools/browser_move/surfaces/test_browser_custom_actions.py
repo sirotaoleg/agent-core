@@ -51,9 +51,7 @@ def _context(*results: ActionResult, actions: dict[type, frozenset] = ON_ELEMENT
     info = DriverInfo(name="fake", surfaces=frozenset({"browser"}), actions=actions)
     page_state = BrowserPageState()
     driver = FakeDriver(results=results, info=info)
-    session = DriverSession(
-        DriverAssembly(stack=driver, device=None, provisioner=None), page_state, MESSAGES
-    )
+    session = DriverSession(DriverAssembly(stack=driver, device=None, provisioner=None), page_state, MESSAGES)
     return ToolContext(session, page_state, BrowserRenderer(), info, BrowserSettings(upload_root=Path("/tmp")), False)
 
 

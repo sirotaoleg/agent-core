@@ -62,9 +62,7 @@ def _file_handlers(browser_logger: logging.Logger) -> list[str]:
 def test_settings_choose_file_level_and_mirroring(browser_logger, tmp_path: Path):
     log_file = tmp_path / "browser.log"
 
-    configure_browser_agent_logging(
-        CoreSettings(log_file=log_file, log_level=logging.WARNING, log_mirror_common=True)
-    )
+    configure_browser_agent_logging(CoreSettings(log_file=log_file, log_level=logging.WARNING, log_mirror_common=True))
     browser_agent_log_info("quiet %s", 1)
     browser_agent_log_warning("loud %s", 2)
 

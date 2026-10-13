@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 """Tests for file-upload helpers and built-in upload actions."""
+
 # pylint: disable=protected-access
 from __future__ import annotations
 
@@ -78,4 +79,3 @@ def test_list_upload_files_returns_file_list_when_dir_exists() -> None:
 
     assert result["ok"] is True
     assert any(f["name"] == "report.xlsx" for f in result["files"])
-

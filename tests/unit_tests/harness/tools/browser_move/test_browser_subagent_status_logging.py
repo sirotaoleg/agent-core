@@ -170,7 +170,9 @@ def test_status_logger_keys_the_args_summary_by_the_decoded_command(caplog: Any)
         name = "browser_navigate"
 
     ctx = SimpleNamespace(
-        inputs=SimpleNamespace(tool_call=FakeCall(), tool_name="browser_navigate", tool_args={"url": "https://a.test/p?token=1"}),
+        inputs=SimpleNamespace(
+            tool_call=FakeCall(), tool_name="browser_navigate", tool_args={"url": "https://a.test/p?token=1"}
+        ),
         extra={},
         session=None,
         agent=object(),
@@ -236,7 +238,6 @@ def test_env_toggle_for_status_logging(monkeypatch: Any) -> None:
     assert is_browser_subagent_status_log_enabled() is True
 
 
-
 def test_direct_browser_runtime_rail_wires_status_logger() -> None:
     runtime_path = (
         Path(__file__).resolve().parents[5]
@@ -281,13 +282,17 @@ def test_status_logger_accumulates_task_end_totals(caplog: Any) -> None:
         name = "browser_batch_interact"
 
     ctx = SimpleNamespace(
-        inputs=SimpleNamespace(query="Go to https://demoqa.com/automation-practice-form", conversation_id="sess-aggregate"),
+        inputs=SimpleNamespace(
+            query="Go to https://demoqa.com/automation-practice-form", conversation_id="sess-aggregate"
+        ),
         extra={},
         session=FakeSession(),
         agent=object(),
     )
     model_ctx = SimpleNamespace(
-        inputs=SimpleNamespace(messages=["m1"], tools=["t1"], response=SimpleNamespace(content="", reasoning_content="", tool_calls=[])),
+        inputs=SimpleNamespace(
+            messages=["m1"], tools=["t1"], response=SimpleNamespace(content="", reasoning_content="", tool_calls=[])
+        ),
         extra=ctx.extra,
         session=ctx.session,
         agent=ctx.agent,
@@ -354,12 +359,7 @@ def test_status_logger_partial_batch_result_flags() -> None:
 
 def test_react_agent_redacts_browser_tool_arguments() -> None:
     react_agent_path = (
-        Path(__file__).resolve().parents[5]
-        / "openjiuwen"
-        / "core"
-        / "single_agent"
-        / "agents"
-        / "react_agent.py"
+        Path(__file__).resolve().parents[5] / "openjiuwen" / "core" / "single_agent" / "agents" / "react_agent.py"
     )
     source = react_agent_path.read_text(encoding="utf-8")
 
@@ -389,13 +389,17 @@ def test_status_logger_uses_same_run_key_for_conversation_and_session_without_sh
         agent=object(),
     )
     model_ctx = SimpleNamespace(
-        inputs=SimpleNamespace(messages=["m"], tools=["t"], response=SimpleNamespace(content="", reasoning_content="", tool_calls=[])),
+        inputs=SimpleNamespace(
+            messages=["m"], tools=["t"], response=SimpleNamespace(content="", reasoning_content="", tool_calls=[])
+        ),
         extra={},
         session=FakeSession(),
         agent=start_ctx.agent,
     )
     tool_ctx = SimpleNamespace(
-        inputs=SimpleNamespace(tool_call=FakeCall(), tool_name="browser_snapshot", tool_args={}, tool_result={"ok": True}),
+        inputs=SimpleNamespace(
+            tool_call=FakeCall(), tool_name="browser_snapshot", tool_args={}, tool_result={"ok": True}
+        ),
         extra={},
         session=FakeSession(),
         agent=start_ctx.agent,
@@ -442,12 +446,7 @@ def test_status_logger_failed_batch_call_without_step_list_is_error() -> None:
 
 def test_react_agent_redacts_task_tool_description() -> None:
     react_agent_path = (
-        Path(__file__).resolve().parents[5]
-        / "openjiuwen"
-        / "core"
-        / "single_agent"
-        / "agents"
-        / "react_agent.py"
+        Path(__file__).resolve().parents[5] / "openjiuwen" / "core" / "single_agent" / "agents" / "react_agent.py"
     )
     source = react_agent_path.read_text(encoding="utf-8")
 

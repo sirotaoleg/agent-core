@@ -56,9 +56,7 @@ def test_advanced_code_exposes_only_safe_run_code_variant() -> None:
     resolved = resolve_browser_capabilities(["advanced_code"])
 
     assert resolved.selected_names == ("core", "advanced_code")
-    assert resolved.allowed_tool_names == (
-        CORE_BROWSER_TOOL_NAMES + ADVANCED_CODE_BROWSER_TOOL_NAMES
-    )
+    assert resolved.allowed_tool_names == (CORE_BROWSER_TOOL_NAMES + ADVANCED_CODE_BROWSER_TOOL_NAMES)
     assert "browser_run_code" in resolved.allowed_tool_names
     assert "browser_run_code_unsafe" not in resolved.allowed_tool_names
 
@@ -68,9 +66,7 @@ def test_unsafe_dev_replaces_advanced_code_when_both_are_requested() -> None:
 
     assert resolved.requested_names == ("advanced_code", "unsafe_dev")
     assert resolved.selected_names == ("core", "unsafe_dev")
-    assert resolved.allowed_tool_names == (
-        CORE_BROWSER_TOOL_NAMES + UNSAFE_DEV_BROWSER_TOOL_NAMES
-    )
+    assert resolved.allowed_tool_names == (CORE_BROWSER_TOOL_NAMES + UNSAFE_DEV_BROWSER_TOOL_NAMES)
     assert "browser_run_code" not in resolved.allowed_tool_names
     assert "browser_run_code_unsafe" in resolved.allowed_tool_names
 
@@ -88,9 +84,7 @@ def test_multiple_categories_preserve_requested_order() -> None:
 
     assert resolved.requested_names == ("vision", "pdf")
     assert resolved.selected_names == ("core", "vision", "pdf")
-    assert resolved.allowed_tool_names == (
-        CORE_BROWSER_TOOL_NAMES + VISION_BROWSER_TOOL_NAMES + PDF_BROWSER_TOOL_NAMES
-    )
+    assert resolved.allowed_tool_names == (CORE_BROWSER_TOOL_NAMES + VISION_BROWSER_TOOL_NAMES + PDF_BROWSER_TOOL_NAMES)
 
 
 def test_duplicate_categories_are_deduplicated_stably() -> None:

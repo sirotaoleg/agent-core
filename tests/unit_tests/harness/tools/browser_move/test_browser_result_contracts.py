@@ -54,7 +54,8 @@ def test_search_results_word_does_not_invent_title_requirement():
         "low_temperature"
     ]
     assert BrowserRuntimeRail._infer_required_fields("Report high_temperature and low_temperature") == [
-        "high_temperature", "low_temperature"
+        "high_temperature",
+        "low_temperature",
     ]
 
 
@@ -111,13 +112,19 @@ def test_raw_observations_do_not_override_hard_requirements(case):
 
 def test_progress_alias_with_complete_typed_evidence_remains_completed():
     state = BrowserRuntimeRail._build_phase_state("Return title")
-    BrowserRuntimeRail._record_tool_evidence(state, {"extracted": {"title": "Weather"}},
-                                            kind=BATCH, tool_name="browser_batch_interact", tool_args={})
+    BrowserRuntimeRail._record_tool_evidence(
+        state, {"extracted": {"title": "Weather"}}, kind=BATCH, tool_name="browser_batch_interact", tool_args={}
+    )
     session = _FakeSession()
     session.update_state({STATE_KEY: state})
-    ctx = AgentCallbackContext(agent=MagicMock(), session=session, inputs=ToolCallInputs(
-        tool_name="browser_progress", tool_args={"status": "completed"},
-    ))
+    ctx = AgentCallbackContext(
+        agent=MagicMock(),
+        session=session,
+        inputs=ToolCallInputs(
+            tool_name="browser_progress",
+            tool_args={"status": "completed"},
+        ),
+    )
     runtime = MagicMock(spec=BrowserAgentRuntime)
     runtime.tool_kind.return_value = UNKNOWN
     _run(BrowserRuntimeRail(runtime).before_tool_call(ctx))
@@ -181,17 +188,11 @@ def test_card_probe_completes_extraction_for_a_requested_count_but_not_for_one_i
 
     one_item_state = BrowserRuntimeRail._build_phase_state("Find a vegetarian lasagna rated 4.5 or higher")
     assert one_item_state["requested_result_count"] == 0
-    assert (
-        BrowserRuntimeRail._phase_completion_evidence("extraction", PROBE, cards_result, one_item_state)
-        == ""
-    )
+    assert BrowserRuntimeRail._phase_completion_evidence("extraction", PROBE, cards_result, one_item_state) == ""
 
     list_state = BrowserRuntimeRail._build_phase_state("Find the top 3 vegetarian lasagna recipes")
     assert list_state["requested_result_count"] == 3
-    assert (
-        BrowserRuntimeRail._phase_completion_evidence("extraction", PROBE, cards_result, list_state)
-        != ""
-    )
+    assert BrowserRuntimeRail._phase_completion_evidence("extraction", PROBE, cards_result, list_state) != ""
 
 
 def _admission_context(calls):
@@ -203,7 +204,8 @@ def _admission_context(calls):
     session = _FakeSession()
     session.update_state({STATE_KEY: state})
     ctx = AgentCallbackContext(
-        agent=MagicMock(), session=session,
+        agent=MagicMock(),
+        session=session,
         inputs=ModelCallInputs(response=SimpleNamespace(content="", tool_calls=calls)),
     )
     _run(rail.after_model_call(ctx))
@@ -217,8 +219,15 @@ def _admit(rail, ctx, call):
 
 
 def test_same_group_parallel_reads_use_one_replan_trial():
-    calls = [ToolCall(id=str(index), type="function", name="mcp_playwright-official_browser_find",
-                      arguments=json.dumps({"query": query})) for index, query in enumerate(("humidity", "wind"))]
+    calls = [
+        ToolCall(
+            id=str(index),
+            type="function",
+            name="mcp_playwright-official_browser_find",
+            arguments=json.dumps({"query": query}),
+        )
+        for index, query in enumerate(("humidity", "wind"))
+    ]
     rail, ctx, state = _admission_context(calls)
     assert _admit(rail, ctx, calls[0]) is None
     assert _admit(rail, ctx, calls[1]) is None
@@ -229,8 +238,9 @@ def test_same_group_parallel_reads_use_one_replan_trial():
 def test_read_trial_does_not_admit_a_mutating_action_in_same_group():
     calls = [
         ToolCall(id="find", type="function", name="mcp_playwright-official_browser_find", arguments='{"query":"wind"}'),
-        ToolCall(id="key", type="function", name="mcp_playwright-official_browser_press_key",
-                 arguments='{"key":"End"}'),
+        ToolCall(
+            id="key", type="function", name="mcp_playwright-official_browser_press_key", arguments='{"key":"End"}'
+        ),
     ]
     rail, ctx, _ = _admission_context(calls)
     assert _admit(rail, ctx, calls[0]) is None
@@ -265,9 +275,20 @@ def test_unknown_tool_does_not_consume_semantic_budget():
 
 def test_typed_run_context_reaches_runtime_deadline_and_resume_contract():
     normalizer = DeepAgent.__new__(DeepAgent)
-    inputs = normalizer._normalize_inputs({"query": "only missing fields", "run": {"context": {"extra": {
-        "browser_resume": True, "browser_query_id": "q-1", "browser_query_budget_s": 600,
-    }}}})
+    inputs = normalizer._normalize_inputs(
+        {
+            "query": "only missing fields",
+            "run": {
+                "context": {
+                    "extra": {
+                        "browser_resume": True,
+                        "browser_query_id": "q-1",
+                        "browser_query_budget_s": 600,
+                    }
+                }
+            },
+        }
+    )
     ctx = AgentCallbackContext(agent=MagicMock(), inputs=inputs)
     assert BrowserRuntimeRail._browser_run_context(ctx)["browser_resume"] is True
     ctx.extra["run_context"] = inputs.run_context

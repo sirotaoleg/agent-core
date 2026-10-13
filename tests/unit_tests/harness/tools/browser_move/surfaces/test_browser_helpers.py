@@ -93,9 +93,7 @@ def _run(coro: Any) -> Any:
 
 def _context(driver: FakeDriver, info: DriverInfo | None = None, tmp_path: Path | None = None) -> ToolContext:
     page_state = BrowserPageState()
-    session = DriverSession(
-        DriverAssembly(stack=driver, device=DEVICE, provisioner=None), page_state, MESSAGES
-    )
+    session = DriverSession(DriverAssembly(stack=driver, device=DEVICE, provisioner=None), page_state, MESSAGES)
     settings = BrowserSettings(selector_cache_path=(tmp_path / "selectors.json") if tmp_path else None)
     return ToolContext(session, page_state, BrowserRenderer(), info or driver.info, settings, False)
 

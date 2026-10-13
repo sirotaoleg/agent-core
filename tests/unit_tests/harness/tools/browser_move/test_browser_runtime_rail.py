@@ -1103,9 +1103,7 @@ def test_evaluate_result_becomes_compact_evidence_before_action_windowing() -> N
 
 
 def test_targeted_evaluate_maps_only_requested_fields_with_provenance() -> None:
-    state = BrowserRuntimeRail._build_phase_state(
-        "返回文章作者、评论数和当前排序状态"
-    )
+    state = BrowserRuntimeRail._build_phase_state("返回文章作者、评论数和当前排序状态")
 
     BrowserRuntimeRail._record_structured_evidence(
         state,
@@ -1267,9 +1265,7 @@ def test_probe_contract_exposes_result_count_and_bounds_conflict_fallback() -> N
     assert second["diagnostics"]["recommended_fallback"] == "one_precise_probe"
     assert second["diagnostics"]["precise_fallback_remaining"] == 0
     assert second["page_state"]["classification_conflict"] is True
-    assert session.get_state("__browser_phase_budget_state__")[
-        "probe_classification_fallback_count"
-    ] == 1
+    assert session.get_state("__browser_phase_budget_state__")["probe_classification_fallback_count"] == 1
 
 
 def test_generation_or_selector_changes_do_not_create_new_semantic_evidence() -> None:
@@ -1694,19 +1690,25 @@ def test_partial_batch_keeps_successful_extraction_without_marking_batch_success
 
 
 def test_price_interval_ignores_evaluate_script_numbers() -> None:
-    assert BrowserRuntimeRail._price_interval_signature(
-        command_kind(RunScript("() => [...document.querySelectorAll('.price')].slice(1, 2)")),
-        {"function": "() => [...document.querySelectorAll('.price')].slice(1, 2)"},
-    ) == ""
-    assert BrowserRuntimeRail._price_interval_signature(
-        BATCH,
-        {
-            "steps": [
-                {"op": "fill", "field": "minimum price", "value": "100"},
-                {"op": "fill", "field": "maximum price", "value": "200"},
-            ]
-        },
-    ) == "100:200"
+    assert (
+        BrowserRuntimeRail._price_interval_signature(
+            command_kind(RunScript("() => [...document.querySelectorAll('.price')].slice(1, 2)")),
+            {"function": "() => [...document.querySelectorAll('.price')].slice(1, 2)"},
+        )
+        == ""
+    )
+    assert (
+        BrowserRuntimeRail._price_interval_signature(
+            BATCH,
+            {
+                "steps": [
+                    {"op": "fill", "field": "minimum price", "value": "100"},
+                    {"op": "fill", "field": "maximum price", "value": "200"},
+                ]
+            },
+        )
+        == "100:200"
+    )
 
 
 def test_required_field_ontology_and_generic_evidence_slots_keep_provenance() -> None:
@@ -1766,9 +1768,10 @@ def test_required_field_ontology_and_generic_evidence_slots_keep_provenance() ->
 def test_required_fields_use_requested_output_clause_not_operation_preconditions() -> None:
     task = "打开淘宝搜索机械键盘，可以按价格或销量排序，返回第一条商品标题"
     assert BrowserRuntimeRail._infer_required_fields(task) == ["title"]
-    assert BrowserRuntimeRail._infer_required_fields(
-        "打开百度查看天气，返回最高温和最低温"
-    ) == ["high_temperature", "low_temperature"]
+    assert BrowserRuntimeRail._infer_required_fields("打开百度查看天气，返回最高温和最低温") == [
+        "high_temperature",
+        "low_temperature",
+    ]
     assert BrowserRuntimeRail._infer_required_fields("查询美元兑人民币并返回汇率") == ["exchange_rate"]
     assert BrowserRuntimeRail._infer_required_fields("搜索 Python 视频，返回播放量") == ["views"]
     assert BrowserRuntimeRail._infer_required_fields("打开淘宝把蓝牙耳机加入购物车") == []
@@ -1824,9 +1827,7 @@ def test_large_evaluate_observation_is_bounded() -> None:
 
 
 def test_comprehensive_and_latest_create_distinct_title_slots_without_compare_word() -> None:
-    slots = BrowserRuntimeRail._infer_required_evidence_slots(
-        "在B站分别切换综合排序和最新发布，返回两个标题"
-    )
+    slots = BrowserRuntimeRail._infer_required_evidence_slots("在B站分别切换综合排序和最新发布，返回两个标题")
     assert slots == [
         {"entity": "bilibili_search_result", "variant": "comprehensive", "field": "title"},
         {"entity": "bilibili_search_result", "variant": "latest", "field": "title"},
@@ -2143,9 +2144,7 @@ def test_after_tool_call_does_not_advance_state_for_string_mcp_error() -> None:
     driver.fail_next(DriverError("Element is not actionable", dispatched=True))
     runtime = make_runtime(driver)
     session = _FakeSession()
-    session.update_state(
-        {"__browser_phase_budget_state__": BrowserRuntimeRail._build_phase_state("Open the result")}
-    )
+    session.update_state({"__browser_phase_budget_state__": BrowserRuntimeRail._build_phase_state("Open the result")})
     output = _invoke(runtime, CLICK, {"target": "e4"})
     ctx = _tool_ctx(runtime, CLICK, {"target": "e4"}, output, session=session)
     tool_message = ctx.inputs.tool_msg
@@ -2168,9 +2167,7 @@ def test_after_tool_call_marks_mutating_timeout_as_ambiguous_for_reconciliation(
     driver.fail_next(ActionTimeout("click timed out after 2500ms", dispatched=True))
     runtime = make_runtime(driver)
     session = _FakeSession()
-    session.update_state(
-        {"__browser_phase_budget_state__": BrowserRuntimeRail._build_phase_state("Open the result")}
-    )
+    session.update_state({"__browser_phase_budget_state__": BrowserRuntimeRail._build_phase_state("Open the result")})
     output = _invoke(runtime, CLICK, {"target": "e4"})
     ctx = _tool_ctx(runtime, CLICK, {"target": "e4"}, output, session=session)
     tool_message = ctx.inputs.tool_msg
@@ -2254,9 +2251,7 @@ def test_after_invoke_renders_authoritative_max_iteration_result() -> None:
     session = _FakeSession()
     state = BrowserRuntimeRail._build_phase_state("Return the product title and price")
     state["field_coverage"] = ["title"]
-    state["structured_evidence"] = [
-        {"fields": ["title"], "values": {"title": "Keyboard"}}
-    ]
+    state["structured_evidence"] = [{"fields": ["title"], "values": {"title": "Keyboard"}}]
     session.update_state({"__browser_phase_budget_state__": state})
     result = {"output": MAX_ITERATION_MESSAGE, "result_type": "error"}
     ctx = AgentCallbackContext(

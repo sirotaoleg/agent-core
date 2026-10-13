@@ -571,8 +571,9 @@ def test_the_core_rails_come_from_the_runtime_at_construction() -> None:
 def test_a_given_runtime_is_used_instead_of_a_new_facade() -> None:
     calls, fake_create = _capture_create_deep_agent()
     given = MagicMock(spec=BrowserAgentRuntime)
-    with patch("openjiuwen.harness.subagents.browser_agent.BrowserAgentRuntime") as runtime_cls, patch(
-        "openjiuwen.harness.subagents.browser_agent.create_deep_agent", side_effect=fake_create
+    with (
+        patch("openjiuwen.harness.subagents.browser_agent.BrowserAgentRuntime") as runtime_cls,
+        patch("openjiuwen.harness.subagents.browser_agent.create_deep_agent", side_effect=fake_create),
     ):
         create_browser_agent(_fake_model(), runtime=given)
 

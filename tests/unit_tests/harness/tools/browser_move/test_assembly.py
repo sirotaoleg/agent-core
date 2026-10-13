@@ -357,7 +357,10 @@ class TestAssembleSurface:
         given = FakeSettings(provisioning="other_provisioning", owner="given")
 
         bundle = assemble_surface(
-            CORE, ENVIRON, instance={"provisioning": "other_provisioning", "owner": "agent-a"}, settings=given,
+            CORE,
+            ENVIRON,
+            instance={"provisioning": "other_provisioning", "owner": "agent-a"},
+            settings=given,
             registries=world.registries,
         )
 
@@ -386,7 +389,15 @@ class TestOpenSession:
         session, page_state = self._open(world)
 
         assert [entry[0] for entry in world.log] == [
-            "surface", "provisioner", "provision", "driver", "release", "surface", "provisioner", "provision", "driver"
+            "surface",
+            "provisioner",
+            "provision",
+            "driver",
+            "release",
+            "surface",
+            "provisioner",
+            "provision",
+            "driver",
         ]
         assert (first.kinds(), second.kinds()) == (["start", "stop"], ["start"])
         assert session.assembly.stack.inner.inner.inner is second

@@ -200,9 +200,7 @@ def test_missing_model_update_does_not_erase_last_valid_state() -> None:
     rail = BrowserWorkingContextRail(config)
     session = _FakeSession()
     context = _FakeContext(session)
-    valid_response = _response(
-        _memory("Keep this confirmed task", status="completed", key_facts=["Confirmed fact"])
-    )
+    valid_response = _response(_memory("Keep this confirmed task", status="completed", key_facts=["Confirmed fact"]))
     _run(rail.after_model_call(_model_ctx(rail, session, context, valid_response)))
 
     missing_update = AssistantMessage(content="Visible answer without internal state")
@@ -553,12 +551,8 @@ def test_context_engine_injection_does_not_persist_as_execution_history() -> Non
     assert len(second_window.context_messages) == 2
     assert first_window.context_messages[-1].metadata["browser_working_context"] is True
     assert second_window.context_messages[-1].metadata["browser_working_context"] is True
-    assert first_window.context_messages[-1].metadata["context_message_id"] == (
-        "openjiuwen:browser-working-context"
-    )
-    assert second_window.context_messages[-1].metadata["context_message_id"] == (
-        "openjiuwen:browser-working-context"
-    )
+    assert first_window.context_messages[-1].metadata["context_message_id"] == ("openjiuwen:browser-working-context")
+    assert second_window.context_messages[-1].metadata["context_message_id"] == ("openjiuwen:browser-working-context")
 
 
 def test_processor_guidance_defines_each_working_memory_field() -> None:
@@ -955,9 +949,7 @@ def test_processor_replaces_only_its_own_ephemeral_message() -> None:
 
 
 def test_processor_runtime_projection_ignores_legacy_model_memory() -> None:
-    processor = BrowserWorkingContextProcessor(
-        BrowserWorkingContextProcessorConfig(runtime_projection_only=True)
-    )
+    processor = BrowserWorkingContextProcessor(BrowserWorkingContextProcessorConfig(runtime_projection_only=True))
     session = _FakeSession()
     session.update_state(
         {
@@ -1078,9 +1070,7 @@ def test_semantic_observation_closes_sort_evidence_before_replan_gate() -> None:
                     "extraction": {"status": "pending", "attempts": 0, "budget": 20},
                 },
                 "required_fields": ["sort_state", "title"],
-                "required_evidence_slots": [
-                    {"entity": "product", "variant": "default", "field": "sort_state"}
-                ],
+                "required_evidence_slots": [{"entity": "product", "variant": "default", "field": "sort_state"}],
                 "field_coverage": [],
                 "structured_evidence": [],
                 "evidence_slots": [],

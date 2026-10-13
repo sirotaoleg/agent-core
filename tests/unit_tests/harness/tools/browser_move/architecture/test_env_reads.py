@@ -51,9 +51,7 @@ def _env_functions() -> frozenset[str]:
     """``runtime/utils/env.py`` functions reading the process environment; pure helpers over a mapping do not count."""
     tree = _scan.parse(_module_file(ENV_MODULE))
     return frozenset(
-        n.name
-        for n in tree.body
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and _reads_process_env(n)
+        n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and _reads_process_env(n)
     )
 
 

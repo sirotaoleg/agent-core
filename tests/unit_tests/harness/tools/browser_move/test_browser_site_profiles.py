@@ -41,18 +41,21 @@ def test_site_profiles_own_marketplace_and_hotel_semantics() -> None:
 
     assert taobao is not None and taobao["id"] == "taobao_marketplace"
     assert ctrip is not None and ctrip["id"] == "ctrip_hotels"
-    assert profile_detail_link_key(
-        taobao,
-        "https://item.taobao.com/item.htm?id=42",
-    ) == "product:42"
-    assert profile_detail_link_key(
-        ctrip,
-        "https://hotels.ctrip.com/hotels/detail/?hotelId=99",
-    ) == "hotel:99"
-    assert [
-        profile["id"]
-        for profile in site_profiles_for_url("https://hotels.ctrip.com/list")
-    ] == ["ctrip_hotels"]
+    assert (
+        profile_detail_link_key(
+            taobao,
+            "https://item.taobao.com/item.htm?id=42",
+        )
+        == "product:42"
+    )
+    assert (
+        profile_detail_link_key(
+            ctrip,
+            "https://hotels.ctrip.com/hotels/detail/?hotelId=99",
+        )
+        == "hotel:99"
+    )
+    assert [profile["id"] for profile in site_profiles_for_url("https://hotels.ctrip.com/list")] == ["ctrip_hotels"]
 
 
 def test_site_profiles_normalize_semantics_and_fields() -> None:
@@ -95,9 +98,7 @@ def test_site_profiles_deduplicate_detail_entities_and_infer_task_entity() -> No
 
 def test_normalize_route_signature_generalizes_numeric_paths() -> None:
     assert (
-        normalize_route_signature(
-            "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html"
-        )
+        normalize_route_signature("https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html")
         == "/catalogue/a-light-in-the-attic_*/index.html"
     )
 
@@ -126,8 +127,7 @@ def test_selector_cache_records_card_probe_result(tmp_path: Path) -> None:
                     "primary_link": "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
                     "text_preview": "A Light in the Attic Three stars 51.77 In stock Add to basket",
                     "selector_hint": (
-                        "ol:nth-of-type(1) > li.col-xs-6:nth-of-type(1) > "
-                        "article.product_pod:nth-of-type(1)"
+                        "ol:nth-of-type(1) > li.col-xs-6:nth-of-type(1) > article.product_pod:nth-of-type(1)"
                     ),
                     "title_selector_hint": "article.product_pod:nth-of-type(1) > h3:nth-of-type(1) > a:nth-of-type(1)",
                     "price_selector_hint": "article.product_pod:nth-of-type(1) > div.product_price:nth-of-type(2) > p.price_color:nth-of-type(1)",
@@ -158,8 +158,7 @@ def test_selector_cache_records_card_probe_result(tmp_path: Path) -> None:
                     "primary_link": "https://books.toscrape.com/catalogue/tipping-the-velvet_999/index.html",
                     "text_preview": "Tipping the Velvet One star 53.74 In stock Add to basket",
                     "selector_hint": (
-                        "ol:nth-of-type(1) > li.col-xs-6:nth-of-type(2) > "
-                        "article.product_pod:nth-of-type(1)"
+                        "ol:nth-of-type(1) > li.col-xs-6:nth-of-type(2) > article.product_pod:nth-of-type(1)"
                     ),
                     "title_selector_hint": "article.product_pod:nth-of-type(1) > h3:nth-of-type(1) > a:nth-of-type(1)",
                     "price_selector_hint": "article.product_pod:nth-of-type(1) > div.product_price:nth-of-type(2) > p.price_color:nth-of-type(1)",
@@ -295,22 +294,16 @@ def test_selector_cache_loads_utf8_bom_file(tmp_path: Path) -> None:
             }
         ],
     }
-    cache_path.write_bytes(
-        b"\xef\xbb\xbf" + json.dumps(cache_data).encode("utf-8")
-    )
+    cache_path.write_bytes(b"\xef\xbb\xbf" + json.dumps(cache_data).encode("utf-8"))
 
     exported = BrowserSelectorCache(cache_path).export_for_probe()
 
     assert len(exported) == 1
     assert exported[0]["domain"] == "books.toscrape.com"
-    assert exported[0]["selectors"]["card_container_selectors"] == [
-        "article.product_pod"
-    ]
+    assert exported[0]["selectors"]["card_container_selectors"] == ["article.product_pod"]
 
 
-def test_selector_cache_logs_warning_for_invalid_json(
-    tmp_path: Path, caplog
-) -> None:
+def test_selector_cache_logs_warning_for_invalid_json(tmp_path: Path, caplog) -> None:
     cache_path = tmp_path / "selector_cache.json"
     cache_path.write_text("{not valid json", encoding="utf-8")
 
@@ -498,11 +491,7 @@ def test_selector_cache_demotes_csdn_author_links_from_title_and_primary_link(
                     "primary_link": f"https://blog.csdn.net/user{index}",
                     "primary_link_selector_hint": "div.btm-rt > a.user",
                     "text_preview": "FastAPI article result summary author metadata article link",
-                    "buttons": [
-                        {
-                            "selector_hint": "h3.title.substr > a.block-title.so-item-report"
-                        }
-                    ],
+                    "buttons": [{"selector_hint": "h3.title.substr > a.block-title.so-item-report"}],
                 }
                 for index in range(1, 4)
             ],

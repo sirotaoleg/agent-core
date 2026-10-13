@@ -54,7 +54,16 @@ HOME = ContextRef("0", "tab", "Home")
 HOME_URL = "https://example.com/"
 _REFS = next(iter(DEFAULT_ACTIONS.values()))
 _SURFACE_COMMANDS = (
-    Navigate, Back, OpenContext, SelectOption, UploadFile, FillForm, Drop, GetPdf, GetConsole, GetNetwork
+    Navigate,
+    Back,
+    OpenContext,
+    SelectOption,
+    UploadFile,
+    FillForm,
+    Drop,
+    GetPdf,
+    GetConsole,
+    GetNetwork,
 )
 
 

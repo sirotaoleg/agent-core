@@ -81,9 +81,7 @@ def _context(*answers: Any, observations: Iterable[Observation] = ()) -> ToolCon
     driver = ScriptedDriver(observations, answers, info=INFO)
     page_state = BrowserPageState()
     alive = SimpleNamespace(is_alive=lambda device: True)
-    session = DriverSession(
-        DriverAssembly(stack=driver, device=None, provisioner=alive), page_state, MESSAGES
-    )
+    session = DriverSession(DriverAssembly(stack=driver, device=None, provisioner=alive), page_state, MESSAGES)
     return ToolContext(session, page_state, BrowserRenderer(), INFO, BrowserSettings(), False)
 
 

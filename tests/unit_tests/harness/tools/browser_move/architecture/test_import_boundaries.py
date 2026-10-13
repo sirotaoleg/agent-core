@@ -180,9 +180,7 @@ def _driver_may_import(driver: str, target: tuple[str, ...]) -> bool:
     if target == ("drivers", "middleware"):
         return True
     return (
-        target[:1] == (_scan.SURFACES_FOLDER,)
-        and len(target) >= 3
-        and target[2] in SURFACE_MODULES_A_DRIVER_MAY_IMPORT
+        target[:1] == (_scan.SURFACES_FOLDER,) and len(target) >= 3 and target[2] in SURFACE_MODULES_A_DRIVER_MAY_IMPORT
     )
 
 

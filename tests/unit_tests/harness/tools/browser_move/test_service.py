@@ -118,9 +118,7 @@ def test_failure_summary_is_reused_then_cleared() -> None:
         observed_tasks.append(task)
         return responses[len(observed_tasks) - 1]
 
-    with patch.object(
-        service, "run_task_once", fake_run_task_once
-    ):
+    with patch.object(service, "run_task_once", fake_run_task_once):
         first = _run(
             service.run_task(worker=_worker, task="Submit onboarding form", session_id="session-1", request_id="req-1")
         )
@@ -164,9 +162,7 @@ def test_timeout_failure_generates_summary() -> None:
             "error": None,
         }
 
-    with patch.object(
-        service, "run_task_once", fake_run_task_once
-    ):
+    with patch.object(service, "run_task_once", fake_run_task_once):
         failed = _run(
             service.run_task(
                 worker=_worker,
@@ -218,9 +214,7 @@ def test_retryable_runtime_error_retries_once() -> None:
         restart_calls["count"] += 1
         return None
 
-    with patch.object(
-        service, "run_task_once", fake_run_task_once
-    ), patch.object(service, "_restart", fake_restart):
+    with patch.object(service, "run_task_once", fake_run_task_once), patch.object(service, "_restart", fake_restart):
         result = _run(
             service.run_task(
                 worker=_worker,
@@ -266,10 +260,10 @@ def test_retry_attempts_share_one_task_timeout_budget() -> None:
         observed_timeouts.append(float(timeout))
         return await awaitable
 
-    with patch.object(
-        service, "run_task_once", fake_run_task_once
-    ), patch.object(service, "_restart", AsyncMock()), patch.object(
-        asyncio, "wait_for", fake_wait_for
+    with (
+        patch.object(service, "run_task_once", fake_run_task_once),
+        patch.object(service, "_restart", AsyncMock()),
+        patch.object(asyncio, "wait_for", fake_wait_for),
     ):
         result = _run(
             service.run_task(
@@ -301,9 +295,7 @@ def test_max_iteration_failure_preserves_worker_output_without_progress_summary(
             "error": "max_iterations_reached",
         }
 
-    with patch.object(
-        service, "run_task_once", fake_run_task_once
-    ):
+    with patch.object(service, "run_task_once", fake_run_task_once):
         result = _run(
             service.run_task(
                 worker=_worker,
@@ -345,9 +337,7 @@ def test_max_iteration_resume_requires_opt_in_guardrail() -> None:
             "error": None,
         }
 
-    with patch.object(
-        service, "run_task_once", fake_run_task_once
-    ):
+    with patch.object(service, "run_task_once", fake_run_task_once):
         result = _run(
             service.run_task(
                 worker=_worker,
@@ -362,8 +352,6 @@ def test_max_iteration_resume_requires_opt_in_guardrail() -> None:
     assert call_count["count"] == 2
     assert len(observed_tasks) == 2
     assert "Continuation context:" in observed_tasks[1]
-
-
 
 
 def test_max_iteration_failure_includes_observed_tool_progress() -> None:
@@ -388,9 +376,7 @@ def test_max_iteration_failure_includes_observed_tool_progress() -> None:
             "error": "max_iterations_reached",
         }
 
-    with patch.object(
-        service, "run_task_once", fake_run_task_once
-    ):
+    with patch.object(service, "run_task_once", fake_run_task_once):
         result = _run(
             service.run_task(
                 worker=_worker,
@@ -438,9 +424,7 @@ def test_structured_progress_is_reused_on_next_invocation() -> None:
         observed_tasks.append(task)
         return responses[len(observed_tasks) - 1]
 
-    with patch.object(
-        service, "run_task_once", fake_run_task_once
-    ):
+    with patch.object(service, "run_task_once", fake_run_task_once):
         first = _run(
             service.run_task(worker=_worker, task="Checkout cart", session_id="session-reuse", request_id="req-1")
         )
@@ -477,9 +461,7 @@ def test_completed_status_overrides_false_ok_when_evidence_is_present() -> None:
             },
         }
 
-    with patch.object(
-        service, "run_task_once", fake_run_task_once
-    ):
+    with patch.object(service, "run_task_once", fake_run_task_once):
         result = _run(
             service.run_task(
                 worker=_worker,
@@ -493,6 +475,7 @@ def test_completed_status_overrides_false_ok_when_evidence_is_present() -> None:
     assert result["error"] is None
     assert result["failure_summary"] is None
 
+
 def test_run_task_once_uses_fresh_worker_conversation_ids() -> None:
     service = _make_service()
     service.browser_agent = object()
@@ -505,8 +488,7 @@ def test_run_task_once_uses_fresh_worker_conversation_ids() -> None:
         seen_request_ids.append(str(inputs["request_id"]))
         return {
             "output": (
-                '{"ok": true, "final": "done", "page": {"url": "", "title": ""},'
-                ' "screenshot": null, "error": null}'
+                '{"ok": true, "final": "done", "page": {"url": "", "title": ""}, "screenshot": null, "error": null}'
             )
         }
 
@@ -665,9 +647,10 @@ def test_run_task_does_not_reset_browser_runtime_after_completion() -> None:
     async def fake_reset_browser_runtime() -> None:
         reset_calls["count"] += 1
 
-    with patch.object(
-        service, "run_task_once", fake_run_task_once
-    ), patch.object(service, "reset", fake_reset_browser_runtime):
+    with (
+        patch.object(service, "run_task_once", fake_run_task_once),
+        patch.object(service, "reset", fake_reset_browser_runtime),
+    ):
         result = _run(
             service.run_task(worker=_worker, task="Open Baidu", session_id="keep-after-task", request_id="req-keep")
         )

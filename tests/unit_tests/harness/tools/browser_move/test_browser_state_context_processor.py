@@ -123,9 +123,7 @@ def test_rendered_browser_state_is_valid_json_within_configured_limit() -> None:
 
 
 def test_rendered_browser_state_omits_task_progress_duplicates() -> None:
-    processor = BrowserStateContextProcessor(
-        BrowserStateContextProcessorConfig(provider=AsyncMock())
-    )
+    processor = BrowserStateContextProcessor(BrowserStateContextProcessorConfig(provider=AsyncMock()))
     state = _state("https://shop.example/search")
     state["semantic_state"] = {
         "result_count": 10,

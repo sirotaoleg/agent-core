@@ -64,7 +64,9 @@ class _FakeInputSend:
             and not self._client._intercept_emitted
         ):
             self._client._intercept_emitted = True
-            self._client.emit_drag_intercepted({"items": [{"mimeType": "text/plain", "data": "A"}], "files": [], "dragOperationsMask": 1})
+            self._client.emit_drag_intercepted(
+                {"items": [{"mimeType": "text/plain", "data": "A"}], "files": [], "dragOperationsMask": 1}
+            )
         return {}
 
     async def setInterceptDrags(self, params: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
@@ -187,7 +189,9 @@ def test_perform_drag_html5_cdp_emits_intercept_then_drag_events() -> None:
     assert "Input.dispatchDragEvent" in names
     drag_types = [params["type"] for name, params in client.calls if name == "Input.dispatchDragEvent"]
     assert drag_types == ["dragEnter", "dragOver", "drop"]
-    mouse_moves = [params for name, params in client.calls if name == "Input.dispatchMouseEvent" and params["type"] == "mouseMoved"]
+    mouse_moves = [
+        params for name, params in client.calls if name == "Input.dispatchMouseEvent" and params["type"] == "mouseMoved"
+    ]
     assert any(int(m.get("buttons") or 0) & 1 for m in mouse_moves)
     # intercept disabled in finally
     intercept_flags = [params.get("enabled") for name, params in client.calls if name == "Input.setInterceptDrags"]
@@ -234,7 +238,11 @@ def test_perform_drag_html5_no_intercept_js_noop_fails_closed() -> None:
     )
     assert result["ok"] is False
     assert result["mode"] == "html5_failed"
-    assert "js drag" in str(result["detail"]).lower() or "no-op" in str(result["detail"]).lower() or "html5" in str(result["detail"]).lower()
+    assert (
+        "js drag" in str(result["detail"]).lower()
+        or "no-op" in str(result["detail"]).lower()
+        or "html5" in str(result["detail"]).lower()
+    )
 
 
 def test_perform_drag_html5_missing_node_ids_fails_closed() -> None:

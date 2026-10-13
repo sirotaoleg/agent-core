@@ -86,9 +86,7 @@ class _FakePageSend:
         self._client.calls.append(("Page.enable", {}))
         return {}
 
-    async def handleJavaScriptDialog(
-        self, params: dict[str, Any], session_id: str | None = None
-    ) -> dict[str, Any]:
+    async def handleJavaScriptDialog(self, params: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
         del session_id
         self._client.calls.append(("Page.handleJavaScriptDialog", dict(params)))
         return {}
@@ -109,8 +107,7 @@ def test_cdp_hover_move_dispatches_mouse_moved() -> None:
 
     _run(_go())
     assert any(
-        name == "Input.dispatchMouseEvent" and params.get("type") == "mouseMoved"
-        for name, params in client.calls
+        name == "Input.dispatchMouseEvent" and params.get("type") == "mouseMoved" for name, params in client.calls
     )
 
 

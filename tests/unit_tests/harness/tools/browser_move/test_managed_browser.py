@@ -31,9 +31,10 @@ def _make_driver() -> ManagedBrowserProvisioner:
 
 def test_start_reuses_existing_endpoint_without_spawning() -> None:
     driver = _make_driver()
-    with patch.object(driver, "_is_endpoint_ready", return_value=True), patch(
-        "openjiuwen.harness.tools.browser_move.provisioning.managed_browser.subprocess.Popen"
-    ) as mock_popen:
+    with (
+        patch.object(driver, "_is_endpoint_ready", return_value=True),
+        patch("openjiuwen.harness.tools.browser_move.provisioning.managed_browser.subprocess.Popen") as mock_popen,
+    ):
         endpoint = driver.start()
 
     assert endpoint == "http://127.0.0.1:9333"
@@ -78,8 +79,11 @@ def test_resolve_binary_does_not_fallback_for_invalid_explicit_path() -> None:
     driver = _make_driver()
     driver.profile.browser_binary = "C:/missing/chrome.exe"
 
-    with patch(
-        "openjiuwen.harness.tools.browser_move.provisioning.managed_browser._candidate_chrome_binaries",
-        return_value=["detected-chrome"],
-    ), pytest.raises(RuntimeError, match="Configured Chrome binary not found"):
+    with (
+        patch(
+            "openjiuwen.harness.tools.browser_move.provisioning.managed_browser._candidate_chrome_binaries",
+            return_value=["detected-chrome"],
+        ),
+        pytest.raises(RuntimeError, match="Configured Chrome binary not found"),
+    ):
         driver._resolve_binary()
