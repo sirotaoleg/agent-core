@@ -77,7 +77,6 @@ class Timeouts(_Wrapper):
             async with asyncio.timeout(seconds):
                 return await call
         except TimeoutError as error:
-            # The inner call was cancelled mid-flight, so whether it took effect is unknown.
             raise ActionTimeout(f"{type(command).__name__} took longer than {seconds}s", dispatched=True) from error
 
 
@@ -118,7 +117,6 @@ class Tracing(_Wrapper):
         except DriverError as error:
             self._sink(record | self._error_record(error, command))
             raise
-        # Elements and native text may show what a sensitive command typed, so only their shape is traced.
         self._sink(record | {"context": observation.context.id, "elements": len(observation.elements)})
         return observation
 
@@ -139,7 +137,6 @@ class Tracing(_Wrapper):
     @staticmethod
     def _error_record(error: DriverError, command: Action) -> dict[str, Any]:
         record = {"error": type(error).__name__, "dispatched": error.dispatched}
-        # Driver errors may quote the typed text or the script, e.g. a JS exception message.
         if not is_sensitive(command):
             record["message"] = str(error)
         return record

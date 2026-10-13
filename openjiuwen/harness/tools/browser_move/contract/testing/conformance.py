@@ -119,7 +119,6 @@ async def _prepare(driver: Driver, case: SceneCase, *, skip_unhandled_last: bool
 async def _cleanup(driver: Driver, case: SceneCase, seen: tuple[Observation, ...]) -> None:
     if not case.cleanup:
         return
-    # A cleanup failure must not hide the outcome of the case.
     with contextlib.suppress(DriverError, LookupError):
         if case.observe_between:
             seen = seen + (await driver.observe(Observe()),)
@@ -313,7 +312,6 @@ class _ListHandler(logging.Handler):
 
 @contextlib.contextmanager
 def _captured_logs() -> Iterator[_ListHandler]:
-    # Loggers that do not propagate to the root get the handler too.
     root = logging.getLogger()
     loggers = [root] + [lg for lg in logging.Logger.manager.loggerDict.values() if isinstance(lg, logging.Logger)]
     handler = _ListHandler()

@@ -140,11 +140,7 @@ class BrowserService(_WorkerLoop):
         return self._core
 
     def _resolve_profile_name(self) -> str:
-        """Resolve the active profile name (per-instance key wins over env).
-
-        Distinct instance keys map to distinct profile names so the managed
-        user-data-dir and persisted port never collide across agents.
-        """
+        """The active profile name; a per-instance key wins over the environment."""
         instance = self._instance
         name = ""
         if instance:
@@ -309,10 +305,7 @@ class BrowserService(_WorkerLoop):
             return source_path
 
     def _normalize_screenshot_value(self, screenshot: Any) -> str | None:
-        """The answer's screenshot as an http(s) link or an image data link; ``None`` when it is neither.
-
-        Callers send it to a vision model as an image, so a path that names no image file must not pass through.
-        """
+        """The answer's screenshot as an http(s) link or an image data link, else ``None``."""
         if not isinstance(screenshot, str) or not screenshot.strip():
             return None
         raw = screenshot.strip()
@@ -393,7 +386,6 @@ class BrowserService(_WorkerLoop):
     async def ensure_runtime_ready(self) -> None:
         """Open the driver session once; after a task release, start its stack again on the kept device."""
         if self._task_binding_ref_count <= 0:
-            # Standalone BrowserAgentRuntime usage has no outer TaskTool hook.
             self.acquire_task_binding()
         self._acquire_registry_lease()
         if self.started:

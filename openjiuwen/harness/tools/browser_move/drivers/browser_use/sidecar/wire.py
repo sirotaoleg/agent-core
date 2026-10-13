@@ -1,25 +1,12 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Wire protocol constants, shared verbatim by both sides of the sidecar boundary.
-
-This module is STDLIB ONLY. It is imported by the agent-core process as
-``openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar.wire``
-and by the sidecar process as a flat sibling module ``wire`` (the sidecar
-runs outside the ``openjiuwen`` package and must not import it). Keeping the
-method-name and error-code constants in one file that both sides load is
-what lets a unit test catch sidecar drift without spawning a sidecar.
-"""
+"""Wire protocol constants shared verbatim by the driver and the sidecar; stdlib only."""
 
 from __future__ import annotations
 
-# 2: act replies add ``dialog_opened`` and ``new_targets``; new error code ``ActionIntercepted`` with ``data.by``.
-# 3: ``observe`` while a dialog is open returns the page with ``dialog`` and no elements instead of ``ObserveError``;
-#    act replies add ``url`` and ``dialog`` (the dialog open when the reply is built).
-# 4: navigation replies (``navigate``, ``go_back``, ``go_forward``, ``reload``) add ``dialog`` too.
 WIRE_VERSION = 4
 
-# SessionAdapter method names (main.py dispatches requests to them by name), then the two control methods.
 DRIVER_METHOD_NAMES: tuple[str, ...] = (
     "connect",
     "health",
@@ -54,9 +41,6 @@ CONTROL_METHOD_NAMES: tuple[str, ...] = ("cancel", "shutdown")
 
 WIRE_METHOD_NAMES: frozenset[str] = frozenset(DRIVER_METHOD_NAMES) | frozenset(CONTROL_METHOD_NAMES)
 
-# Error codes accepted on the wire, mapped by transport.py to exception
-# classes of the same name in sidecar/exceptions.py. Kept as plain strings here
-# so this file stays free of any import.
 ERROR_CODES: tuple[str, ...] = (
     "DriverError",
     "DriverNotConnected",

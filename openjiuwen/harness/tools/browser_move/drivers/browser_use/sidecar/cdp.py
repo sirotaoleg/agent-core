@@ -1,24 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Raw CDP helpers for operations browser-use has no high-level API for.
-
-STDLIB ONLY. browser-use's ``ExecuteJavaScriptEvent`` is commented out in
-0.13.10, so ``evaluate``, ``stamp``, ``resolve(SelectorRef)``, ``drag``,
-and ``upload_files`` go through ``cdp_session.cdp_client.send.Runtime.evaluate`` /
-``DOM.querySelector`` / ``Runtime.callFunctionOn`` /
-``Input.dispatchMouseEvent`` / ``Input.setInterceptDrags`` /
-``Input.dispatchDragEvent`` / ``DOM.setFileInputFiles`` directly.
-
-Every function here takes a duck-typed ``cdp_client`` (whatever object
-exposes ``.send.<Domain>.<method>(params, session_id=...)``, matching
-cdp-use's ``CDPClient``) plus a ``session_id``. This module never imports
-``browser_use`` or ``cdp_use`` itself, so it stays importable and testable
-from the main agent-core environment where neither package is installed.
-
-Runs as a flat sibling module inside the sidecar process (``import cdp``),
-mirroring every other file in this subtree except ``wire.py``.
-"""
+"""Raw CDP helpers for operations browser-use has no high-level API for; stdlib only."""
 
 from __future__ import annotations
 
@@ -51,16 +34,11 @@ async def describe_node_backend_id(cdp_client: Any, session_id: str, node_id: in
     return int(result["node"]["backendNodeId"])
 
 
-# CDP errors of DOM.resolveNode for a backend node id that is not in the current document (any more).
 _STALE_NODE_MESSAGES = ("does not belong to the document", "No node with given id")
 
 
 async def resolve_object_id_by_backend_node(cdp_client: Any, session_id: str, backend_node_id: int) -> str:
-    """Resolve a backendNodeId to a Runtime remote objectId.
-
-    Raises ``exceptions.StaleNodeError`` when the backend node no longer
-    resolves (page navigated, node detached, etc.).
-    """
+    """Resolve a backendNodeId to a Runtime objectId; raises ``StaleNodeError`` when it is gone."""
     try:
         result = await cdp_client.send.DOM.resolveNode(params={"backendNodeId": backend_node_id}, session_id=session_id)
     except Exception as exc:
@@ -84,12 +62,7 @@ async def call_function_on_backend_node(
     await_promise: bool = True,
     return_by_value: bool = True,
 ) -> Any:
-    """Call ``function_declaration`` bound to ``this`` = the resolved node.
-
-    ``function_declaration`` is a JS function expression whose ``this`` is
-    the target DOM node, e.g. ``"function(v){ this.value = v; }"``.
-    Raises ``exceptions.EvaluateError`` on a JS-side exception.
-    """
+    """Call ``function_declaration`` with ``this`` bound to the resolved node."""
     object_id = await resolve_object_id_by_backend_node(cdp_client, session_id, backend_node_id)
     result = await cdp_client.send.Runtime.callFunctionOn(
         params={
@@ -113,10 +86,7 @@ async def evaluate_expression(
     await_promise: bool = True,
     return_by_value: bool = True,
 ) -> Any:
-    """Evaluate ``function_source`` in the page: a function expression is called with ``args``, any other expression
-    gives its value (as Playwright MCP's evaluate). Raises ``exceptions.EvaluateError`` on a JS-side exception.
-    """
-    # The newline keeps a trailing line comment in the source from swallowing the closing parenthesis.
+    """Call a function expression with ``args``, or return any other expression's value."""
     expression = (
         f"(() => {{ const value = ({function_source}\n); "
         f"return typeof value === 'function' ? value({json.dumps(args)}) : value; }})()"
@@ -155,11 +125,7 @@ async def dispatch_mouse_move(
     y: float,
     buttons: int = 0,
 ) -> None:
-    """Dispatch a synthetic mouse move to page coordinates (used by drag).
-
-    Pass ``buttons=1`` while the primary button is held so Chromium treats the
-    move as part of an active drag gesture (required for HTML5 ``dragstart``).
-    """
+    """Dispatch a synthetic mouse move; ``buttons=1`` keeps an HTML5 drag active."""
     button = "left" if buttons & 1 else "none"
     await cdp_client.send.Input.dispatchMouseEvent(
         params={
@@ -267,11 +233,7 @@ async def html5_drag_drop_via_js(
     source_backend_node_id: int,
     target_backend_node_id: int,
 ) -> dict[str, Any]:
-    """Fire HTML5 ``dragstart``/``dragenter``/``dragover``/``drop``/``dragend`` in-page.
-
-    Used when CDP intercept did not yield ``dragIntercepted`` but the source is
-    HTML5-draggable. Returns the JS result dict (``ok`` / ``dropped`` / ``error``).
-    """
+    """Fire the HTML5 drag events in the page when CDP drag interception did not happen."""
     target_object_id = await resolve_object_id_by_backend_node(cdp_client, session_id, target_backend_node_id)
     result = await call_function_on_backend_node(
         cdp_client,
@@ -299,18 +261,7 @@ async def perform_drag(
     source_backend_node_id: int | None = None,
     target_backend_node_id: int | None = None,
 ) -> dict[str, Any]:
-    """Drag from ``(sx,sy)`` to ``(tx,ty)`` with HTML5 DnD support when needed.
-
-    Sequence (Playwright / Puppeteer style):
-      1. ``Input.setInterceptDrags(true)`` + listen for ``Input.dragIntercepted``
-      2. mousePressed at source, mouseMoved (with ``buttons=1``) toward target
-      3. if intercept fires → ``dragEnter`` / ``dragOver`` / ``drop`` + mouseReleased
-      4. else if source is HTML5-draggable → JS ``DragEvent`` fallback between nodes
-      5. else plain pointer mouseReleased (non-HTML5 UIs)
-
-    Never reports success for an HTML5-draggable source when neither CDP intercept
-    nor the JS fallback could complete a drop.
-    """
+    """Drag from ``(sx, sy)`` to ``(tx, ty)``; an HTML5-draggable source succeeds only if a drop completed."""
     steps = max(1, int(steps))
     intercepted: asyncio.Future = asyncio.get_running_loop().create_future()
 
@@ -416,11 +367,11 @@ async def perform_drag(
     finally:
         try:
             await set_intercept_drags(cdp_client, session_id, False)
-        except Exception:  # noqa: BLE001 - best-effort cleanup
+        except Exception:  # noqa: BLE001
             pass
         try:
             unregister()
-        except Exception:  # noqa: BLE001 - best-effort cleanup
+        except Exception:  # noqa: BLE001
             pass
 
 
@@ -447,13 +398,7 @@ async def set_file_input_files(
     backend_node_id: int,
     files: list[str],
 ) -> None:
-    """Attach local file path(s) to an ``<input type=file>`` via CDP.
-
-    Uses ``backendNodeId`` (not ``nodeId``): ``nodeId`` can fail to grant the
-    renderer file access and leave a fakepath that later submits as
-    ``ERR_FILE_NOT_FOUND``. Paths must be absolute and readable by the Chrome
-    process that owns the CDP session.
-    """
+    """Attach files to ``<input type=file>`` by ``backendNodeId`` (``nodeId`` leaves a fakepath)."""
     await cdp_client.send.DOM.setFileInputFiles(
         params={"files": list(files), "backendNodeId": int(backend_node_id)},
         session_id=session_id,
@@ -474,12 +419,7 @@ def build_external_drag_data(
     paths: list[str] | None = None,
     items: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Build a CDP ``DragData`` payload for an external (out-of-page) drop.
-
-    ``paths`` become ``files`` (absolute paths Chrome can open). ``items`` are
-    MIME payloads; only :data:`SUPPORTED_DROP_MIME_TYPES` are accepted — any
-    other mime raises ``DriverUnsupported``.
-    """
+    """Build a CDP ``DragData`` payload for an out-of-page drop; unsupported MIME types raise."""
     file_paths = [str(path) for path in (paths or []) if str(path or "").strip()]
     mime_items: list[dict[str, str]] = []
     for raw in items or []:
@@ -497,7 +437,7 @@ def build_external_drag_data(
     return {
         "items": mime_items,
         "files": file_paths,
-        "dragOperationsMask": 1,  # copy
+        "dragOperationsMask": 1,
     }
 
 
@@ -510,11 +450,7 @@ async def perform_external_drop(
     paths: list[str] | None = None,
     items: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Drop external files and/or MIME data onto page coordinates via CDP.
-
-    Distinct from element→element ``perform_drag``: this synthesizes an
-    out-of-page DataTransfer using ``Input.dispatchDragEvent`` only.
-    """
+    """Drop external files or MIME data onto page coordinates with ``Input.dispatchDragEvent``."""
     data = build_external_drag_data(paths=paths, items=items)
     await dispatch_drag_event(cdp_client, session_id, event_type="dragEnter", x=x, y=y, data=data)
     await dispatch_drag_event(cdp_client, session_id, event_type="dragOver", x=x, y=y, data=data)
@@ -608,7 +544,6 @@ def _unwrap_js_result(result: dict[str, Any]) -> Any:
     if exception_details:
         exception = exception_details.get("exception") or {}
         js_description = str(exception.get("description", ""))
-        # CDP's ``text`` is only "Uncaught"; the description's first line names the error.
         js_message = js_description.split("\n", 1)[0] or str(exception_details.get("text", "unknown JS error"))
         raise exceptions.EvaluateError(js_message, js_message=js_message, js_stack=js_description)
     return (result.get("result") or {}).get("value")

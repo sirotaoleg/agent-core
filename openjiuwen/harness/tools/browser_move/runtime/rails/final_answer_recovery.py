@@ -59,7 +59,6 @@ def final_answer_recovery() -> Iterator[None]:
 class FinalAnswerRecoveryRail(AgentRail):
     """During recovery: stop after one model call and run none of its tool calls."""
 
-    # The tools stay in the request: dropping them changes the prompt prefix and misses the whole conversation's cache.
     async def after_model_call(self, ctx: AgentCallbackContext) -> None:
         if not _RECOVERY_ACTIVE.get():
             return

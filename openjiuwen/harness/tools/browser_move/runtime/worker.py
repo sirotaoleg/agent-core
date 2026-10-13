@@ -697,7 +697,7 @@ class _WorkerLoop:
                         "request_id": request_id,
                     },
                 )
-        except Exception:  # noqa: BLE001 - recovery is best effort
+        except Exception:  # noqa: BLE001
             logger.warning("Worker final-answer recovery failed: reason=%s", reason, exc_info=True)
             return ""
         output = result.get("output") if isinstance(result, dict) else result
@@ -984,7 +984,6 @@ class _WorkerLoop:
                         last_error = str(exc) or repr(exc)
                         if attempt_idx >= attempts:
                             break
-                        # Restart before retry on known transport/session failures.
                         if (not str(exc)) or self._is_retryable_transport_error(exc):
                             try:
                                 await self._restart()

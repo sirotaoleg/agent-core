@@ -25,11 +25,7 @@ class BaseController(ABC):
 
     @abstractmethod
     def bind_code_executor(self, executor: Any | None) -> None:
-        """Bind a direct code executor callable: async (js_code: str) -> Any.
-
-        When bound, custom actions that execute pre-built JS (drag-and-drop,
-        coordinate resolution) call this instead of going through an LLM worker.
-        """
+        """Bind ``async (js_code: str) -> Any`` for custom actions that run prebuilt scripts."""
 
     @abstractmethod
     def clear_code_executor(self) -> None:

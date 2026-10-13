@@ -8,10 +8,8 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
-# SRC_ROOT is the browser_move/ directory.
 _HERE = Path(__file__).resolve().parent
 SRC_ROOT = _HERE.parent
-# Walk up four levels (browser_move -> tools -> harness -> openjiuwen -> repo root)
 REPO_ROOT = SRC_ROOT.parent.parent.parent.parent
 
 __all__ = [

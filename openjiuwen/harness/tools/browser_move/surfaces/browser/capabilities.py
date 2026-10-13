@@ -13,8 +13,6 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import BROWSER
 
 CORE_BROWSER_CAPABILITY_NAME = "core"
 
-# Keep this list explicit. Prefix-based matching could accidentally expose a
-# newly introduced Playwright tool before its capability policy is reviewed.
 CORE_BROWSER_TOOL_NAMES: tuple[str, ...] = (
     "browser_click",
     "browser_evaluate",
@@ -43,7 +41,6 @@ ADVANCED_CODE_BROWSER_TOOL_NAMES: tuple[str, ...] = ("browser_run_code",)
 
 UNSAFE_DEV_BROWSER_TOOL_NAMES: tuple[str, ...] = ("browser_run_code_unsafe",)
 
-# These are model-facing policy categories, not Playwright MCP --caps values.
 PDF_BROWSER_TOOL_NAMES: tuple[str, ...] = ("browser_pdf_save",)
 
 VISION_BROWSER_TOOL_NAMES: tuple[str, ...] = (
@@ -232,13 +229,7 @@ def resolve_browser_capabilities(
     requested_names: Iterable[str] | None,
     available_capabilities: Iterable[BrowserCapability] = DEFAULT_BROWSER_CAPABILITIES,
 ) -> ResolvedBrowserCapabilities:
-    """Validate a main-agent selection and expand it to allowed tool names.
-
-    The main agent is responsible for selecting capabilities from their
-    descriptions. This resolver performs no task interpretation: it always adds
-    the core capability, rejects unknown names, and expands approved capability
-    names into a deterministic task-scoped tool allowlist.
-    """
+    """Validate a capability selection and expand it, with ``core``, to the allowed tool names."""
     catalog = _build_capability_index(available_capabilities)
     requested = _stable_unique(requested_names or ())
 
@@ -275,11 +266,9 @@ def capabilities_of(
 
 
 _SPECS = {spec.name: spec for spec in BROWSER_TOOL_SPECS}
-# An extra tool over the last observation, so it has no spec but stays in the catalog.
 _FIND = "browser_find"
 _ELEMENT = (DriverRef, Locator)
 
-# None: the tool may run without an element ref; a tool not listed takes none.
 _REF_KINDS: Mapping[str, tuple[type | None, ...]] = {
     "browser_click": _ELEMENT,
     "browser_type": _ELEMENT,

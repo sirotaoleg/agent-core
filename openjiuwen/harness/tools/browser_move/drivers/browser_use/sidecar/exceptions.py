@@ -1,20 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Sidecar-local exception classes.
-
-STDLIB ONLY. The sidecar cannot import the ``openjiuwen`` package (that would
-pull the main env's dependencies, transitively ``anthropic>=0.120.2``, back into
-the sidecar closure -- exactly the conflict the sidecar exists to avoid).
-
-These classes are named IDENTICALLY to the wire error codes in
-``wire.ERROR_CODES``. ``main.py`` maps a raised exception to a wire error
-code purely by ``type(exc).__name__``; in the agent-core process,
-``transport.py`` raises the same classes for the codes it receives, and the
-driver maps them to the contract's typed errors by name. ``wire.py`` is the
-source of truth for the code strings; a unit test in the main env asserts
-every code has a class here.
-"""
+"""Sidecar exceptions, named exactly as the wire error codes; stdlib only."""
 
 from __future__ import annotations
 

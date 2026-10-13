@@ -67,9 +67,6 @@ class BrowserStateContextProcessor(ContextProcessor):
         **kwargs: Any,
     ) -> bool:
         del context, context_window, kwargs
-        # The hook must run for every model call because this processor's state
-        # message is ephemeral. The expensive browser capture inside the hook is
-        # gated on the initial call and completed browser-mutating tool calls.
         return True
 
     async def on_get_context_window(

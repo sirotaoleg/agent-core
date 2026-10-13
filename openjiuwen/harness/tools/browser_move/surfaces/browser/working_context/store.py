@@ -248,9 +248,6 @@ class BrowserWorkingContextStore:
 
         sanitized_memory = self.sanitize_memory(memory) if memory is not None else None
         if sanitized_memory is None and state.current.task_list:
-            # A missing/malformed update must not erase the last valid state.
-            # The explicit model_update_error remains in the step record so
-            # the next model call can repair the omission.
             sanitized_memory = self.sanitize_memory(state.current)
         sanitized_error = _bounded_text(
             model_update_error,
@@ -555,11 +552,7 @@ class BrowserWorkingContextStore:
 
     @classmethod
     def sync_semantic_progress(cls, session: Any, progress: Any) -> bool:
-        """Merge one browser observation into authoritative task state.
-
-        Returns ``True`` only when a permitted replan trial produced observable
-        semantic progress and the runtime gate may be cleared.
-        """
+        """Merge one observation into the task state; ``True`` when a replan trial made progress."""
 
         if session is None or not isinstance(progress, dict) or not progress:
             return False

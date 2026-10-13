@@ -664,7 +664,6 @@ BROWSER_TOOL_SPECS: tuple[ToolSpec, ...] = (
         schema=_SNAPSHOT_PARAMS,
         build=build_snapshot,
     ),
-    # No dialect of their own: only a driver's native tool (or a generated schema) serves these.
     ToolSpec("browser_mouse_click_xy", (Click,)),
     ToolSpec("browser_mouse_move_xy", (Hover,)),
     ToolSpec("browser_mouse_drag_xy", (Drag,)),

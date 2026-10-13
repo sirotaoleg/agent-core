@@ -52,7 +52,6 @@ class ContextRef:
     title: str | None = None
 
 
-# ``ContextRef`` is not an element ref kind: no handler accepts it.
 Ref = Union[DriverRef, PointRef, IndexRef, Locator]
 REF_KINDS: tuple[type, ...] = (DriverRef, PointRef, IndexRef, Locator)
 

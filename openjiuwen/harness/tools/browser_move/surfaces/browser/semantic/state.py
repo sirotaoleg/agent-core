@@ -338,8 +338,6 @@ class SemanticStateTracker:
 
         if not self._history:
             progress = "initial"
-        # A group that changed the context or the observation progressed even when the digest reads the same: the
-        # semantic state has no field for a dialog, a cart or a size picker.
         elif repeated_state and changed:
             progress = "progress"
             self._consecutive_no_progress = 0

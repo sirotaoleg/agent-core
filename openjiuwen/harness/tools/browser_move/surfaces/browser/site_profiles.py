@@ -647,7 +647,6 @@ def normalize_route_signature(url: str) -> str:
     parsed = urlparse(str(url or ""))
     path = parsed.path or "/"
 
-    # Avoid caching selectors against item-specific IDs too narrowly.
     path = re.sub(r"\d+", "*", path)
     path = re.sub(r"/+", "/", path)
 
@@ -827,7 +826,6 @@ def _generalize_selector(selector: str) -> List[str]:
     if len(parts) >= 3:
         candidates.append(" > ".join(parts[-3:]))
 
-    # Keep full non-nth selector as a fallback, but not first.
     if no_nth and no_nth not in candidates:
         candidates.append(no_nth)
 
@@ -1039,18 +1037,11 @@ class BrowserSelectorCache:
                 len(cards),
             )
 
-        # Keep file small.
         data["records"] = records[-200:]
         self._save(data)
 
     def record_card_probe_cache_rejection(self, result: Dict[str, Any]) -> None:
-        """Record that cached card-probe selectors were tried but rejected.
-
-        A card probe can still succeed through a site profile or generic discovery
-        after cached selectors failed validation. Track that separately so stale
-        cache records are deprioritized on later exports instead of being retried
-        indefinitely.
-        """
+        """Record that cached card-probe selectors were tried and rejected."""
         if not isinstance(result, dict):
             return
 

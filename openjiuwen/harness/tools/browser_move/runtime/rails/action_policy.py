@@ -25,10 +25,7 @@ Builder = Callable[[Mapping[str, Any], RefResolver], Action]
 
 
 class ActionPolicy(BaseSecurityRail):
-    """Denies a tool call whose arguments do not decode, or that a matching ``PolicyRule`` rejects.
-
-    ``builders`` is read per call, so decoders added to the mapping after construction are enforced too.
-    """
+    """Denies a tool call whose arguments do not decode or that a ``PolicyRule`` rejects."""
 
     supported_events = {AgentCallbackEvent.BEFORE_TOOL_CALL}
 
@@ -56,7 +53,6 @@ class ActionPolicy(BaseSecurityRail):
         return self.allow()
 
     def _apply_reject(self, security_ctx: SecurityCheckContext, decision: SecurityReject) -> None:
-        # Per call: parallel tool calls share ctx.extra.
         ctx = security_ctx.callback_ctx
         call_id = security_ctx.subject_id
         ctx.inputs.tool_result = decision.result

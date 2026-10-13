@@ -77,7 +77,6 @@ def _target(value: Any, resolver: RefResolver) -> DriverRef | Locator:
     target = str(value or "")
     if not target:
         raise ValueError("'target' is required")
-    # The server resolves aria refs and css against the live page, so it, not the page state, judges staleness.
     if ARIA_REF.fullmatch(target):
         return DriverRef(target, "")
     return Locator(css=target, text=None, generation="")
@@ -245,7 +244,6 @@ def build_network_requests(args: Mapping[str, Any], resolver: RefResolver) -> Ac
     return GetNetwork(static=bool(args.get("static")), filter=None if url_filter is None else str(url_filter))
 
 
-# Arguments not decoded here (element, filename, boxes, type, scale, delay) do not change the command.
 DECODERS: Mapping[str, Builder] = MappingProxyType(
     {
         "browser_click": build_click,

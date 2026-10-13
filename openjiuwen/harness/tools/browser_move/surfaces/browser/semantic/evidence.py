@@ -149,7 +149,6 @@ class _EvidenceMixin:
         if isinstance(value, dict) and (value.get("ok") is False or value.get("error")):
             return {}
         raw_text = value if isinstance(value, str) else cls._evidence_signature(value)
-        # AX references and selector spelling are identity metadata, not new facts.
         normalized = re.sub(r"\s*\[(?:ref|target_id|generation_id)=[^\]]+\]", "", raw_text)
         normalized = " ".join(normalized.split())
         if len(normalized) < 16:

@@ -68,14 +68,12 @@ _OBSERVED_KEYS = ("url", "text", "value", "count", "stable", "tabs")
 _EFFECT_ORDER = (Effect.READ, Effect.SCRIPT, Effect.ACT, Effect.NAVIGATE)
 _ERROR_HEADING = "### Error\n"
 _POLL_S = 0.1
-# The retry the Playwright script made: these failures happen before the click reaches the page.
 _TRANSIENT = re.compile(r"detached|not attached|intercept|not stable|outside of the viewport", re.IGNORECASE)
 _MARK = "data-openjiuwen-target-id"
 _NOTHING = object()
 
 _STAMP_JS = "(element, mark) => { element.setAttribute('data-openjiuwen-target-id', mark); return true; }"
 
-# Page-side stand-ins for Playwright's getByRole/Label/Placeholder/TestId/Text with its strict single match.
 _LOCATE_JS = """(input) => {
   const SKIPPED = new Set(['HTML', 'HEAD', 'SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'TITLE']);
   const BUTTON_INPUTS = new Set(['button', 'submit', 'reset', 'image']);
@@ -411,7 +409,6 @@ class _Run:
         return surface
 
     def _ran(self, action: Action) -> None:
-        # The batch's own page scripts only find, mark and read elements.
         effect = Effect.READ if isinstance(action, RunScript) else action.effect
         self._effect = max(self._effect, effect, key=_EFFECT_ORDER.index)
         self._dispatched = True
@@ -425,8 +422,6 @@ class _Run:
             except ValueError:
                 return value
         return value
-
-    # --- targets -----------------------------------------------------------------------------------------------------
 
     async def _refreshed(self, steps: list[Any], generation_id: str) -> tuple[list[dict[str, Any]], str]:
         specs = [dict(step) for step in steps]
@@ -562,10 +557,7 @@ class _Run:
         self._page_state.update_target_locator(aim.target_id, {"selector": selector})
         return _Aim({"css": selector}, aim.ref, aim.target_id)
 
-    # --- one step: one command ---------------------------------------------------------------------------------------
-
     async def _typed(self, action: TypeText) -> ActionResult:
-        # A driver that cannot type key by key refuses before sending anything; the value then goes in at once.
         try:
             return await self._execute(action)
         except Unsupported as error:
@@ -605,8 +597,6 @@ class _Run:
             "conditions": conditions,
             "metrics": {"command": type(command).__name__, "executor_elapsed_ms": elapsed_ms},
         }
-
-    # --- several steps -----------------------------------------------------------------------------------------------
 
     async def _steps(self, steps: list[_Step]) -> dict[str, Any]:
         timing = _Timing.of(self._inputs, steps)
@@ -779,7 +769,6 @@ class _Run:
             await asyncio.sleep(min(_POLL_S, max(0.0, deadline - loop.time())))
 
     async def _type_slowly(self, locator: Locator, value: str) -> None:
-        # Typing key by key does not clear the field, so it is emptied first, as select-all and Backspace did.
         await self._execute(Click(locator))
         await self._execute(TypeText(locator, ""))
         await self._typed(TypeText(locator, value, clear=False, slowly=True))
@@ -1066,7 +1055,6 @@ def _url_matcher(spec: Mapping[str, Any]) -> Callable[[str], bool]:
 
 
 def _tab_candidates(surface: BrowserContext) -> list[tuple[int | None, str]]:
-    # The focused tab first, then the others from the newest, as the Playwright script searched.
     others = [(index, _tab_url(surface, index)) for index in range(len(surface.tabs)) if index != surface.current_tab]
     return [(surface.current_tab, surface.url), *reversed(others)]
 

@@ -1,15 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Playwright-style key names normalized to browser-use's key-combo format.
-
-STDLIB ONLY. browser-use's ``SendKeysEvent.keys`` accepts combos like
-``"ctrl+a"`` or a bare named key like ``"Enter"``. Playwright-style callers
-(and this repo's existing tool schemas) use combos like ``"Control+A"``.
-This module normalizes the modifier tokens to what browser-use expects while
-leaving the final key token's casing alone, since browser-use's own examples
-keep named keys capitalized (``"Enter"``).
-"""
+"""Playwright-style key names normalized to browser-use's key-combo format; stdlib only."""
 
 from __future__ import annotations
 
@@ -26,11 +18,7 @@ _MODIFIER_ALIASES: dict[str, str] = {
 
 
 def normalize_key_combo(keys: str) -> str:
-    """Normalize a Playwright-style key combo to browser-use's expected format.
-
-    ``"Control+A"`` -> ``"ctrl+A"``; ``"Enter"`` -> ``"Enter"`` (unchanged);
-    unknown modifier tokens pass through lowercased, best effort.
-    """
+    """Normalize modifier tokens (``Control+A`` -> ``ctrl+A``); the final key keeps its case."""
     parts = [p for p in keys.split("+") if p]
     if not parts:
         return keys

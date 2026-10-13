@@ -1,13 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""MCP server wrapper for Playwright browser runtime.
-
-Usage (from repo root):
-  uv run python -m openjiuwen.harness.tools.browser_move.playwright_runtime_mcp_server
-  uv run python -m openjiuwen.harness.tools.browser_move.playwright_runtime_mcp_server --transport streamable-http \
-      --host 127.0.0.1 --port 8940
-"""
+"""MCP server entry point for the browser runtime; run it with ``python -m`` and this module path."""
 
 from __future__ import annotations
 
@@ -45,7 +39,6 @@ if TYPE_CHECKING:
 
 _runtime: Optional["BrowserAgentRuntime"] = None
 _runtime_lock = asyncio.Lock()
-# Set by main(); without it (module imported, not run) the runtime reads the process environment.
 _core_settings: Optional[CoreSettings] = None
 _browser_settings: Optional[SurfaceSettings] = None
 
@@ -165,8 +158,6 @@ async def browser_run_task(
         request_id=effective_request_id or None,
         timeout_s=timeout_s if timeout_s > 0 else None,
     )
-    # Strip base64 screenshot from MCP response — it becomes a ToolMessage in
-    # calling agent context and can exceed the LLM context window on its own.
     screenshot = result.get("screenshot")
     if isinstance(screenshot, str) and screenshot.startswith("data:"):
         result = {**result, "screenshot": "[screenshot saved]"}
@@ -327,7 +318,6 @@ def _resolve_stateless_http(args: argparse.Namespace, settings: RuntimeServerSet
     if settings.stateless_http is not None:
         return settings.stateless_http
 
-    # Default to stateless for streamable/http to avoid stateful session crashes.
     return args.transport in {"streamable-http", "http"}
 
 

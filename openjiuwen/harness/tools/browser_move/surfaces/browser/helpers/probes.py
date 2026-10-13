@@ -101,7 +101,6 @@ _PROBE_CARDS_PARAMS: dict[str, Any] = {
     "required": [],
 }
 
-# The probe builders wrap the page function for a code runner that hands over the page; the driver runs page JS.
 _WRAPPED_PROBE = re.compile(
     r"\Aasync \(page\) => \{\n  const params = (?P<params>.*?);\n\n"
     r"  return await page\.evaluate\((?P<function>\(params\) => \{.*\}), params\);\n\}\Z",
@@ -294,7 +293,6 @@ class ProbeCardsTool(Tool):
 
 
 def _follow_address(page_state: BrowserPageState, payload: dict[str, Any]) -> None:
-    # Not every driver reports the address with a script result; the address the page reports moves the generation.
     address = str(payload.get("url") or "").strip()
     if address and page_state.url not in ("", address):
         page_state.reset()
@@ -326,7 +324,6 @@ def _register_primary_links(page_state: BrowserPageState, payload: dict[str, Any
 
 
 def _remember_selectors(selector_cache: Any, parsed: dict[str, Any]) -> None:
-    # The cache is an optimisation; a failure to record must not fail the probe.
     records = [selector_cache.record_card_probe_cache_rejection]
     if parsed.get("cards"):
         records.append(selector_cache.record_card_probe_result)

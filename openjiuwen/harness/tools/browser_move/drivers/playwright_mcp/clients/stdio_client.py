@@ -11,20 +11,14 @@ from openjiuwen.core.foundation.tool.mcp.client.stdio_client import StdioClient
 
 from .logging_utils import summarize_tool_arguments_for_log
 
-# Top-level schema keys that OpenAI-compatible APIs (including Dashscope) reject.
 _UNSUPPORTED_SCHEMA_KEYS = {"$schema", "$id", "$defs", "definitions", "$comment", "$anchor", "$vocabulary"}
 
 
 def sanitize_json_schema(schema: Any) -> Any:
-    """Recursively strip schema keywords unsupported by OpenAI-compatible APIs.
-
-    Converts ``anyOf: [{type: X}, {type: "null"}]`` nullable patterns to the
-    plain type so Dashscope doesn't reject the schema with error 181001.
-    """
+    """Strip schema keywords OpenAI-compatible APIs reject; a nullable ``anyOf`` becomes the plain type."""
     if not isinstance(schema, dict):
         return schema
 
-    # Collapse anyOf/oneOf nullable shorthands: [{type: X}, {type: "null"}] → type: X
     for kw in ("anyOf", "oneOf"):
         variants = schema.get(kw)
         if isinstance(variants, list) and len(variants) == 2:
@@ -37,8 +31,6 @@ def sanitize_json_schema(schema: Any) -> Any:
 
     cleaned = {k: v for k, v in schema.items() if k not in _UNSUPPORTED_SCHEMA_KEYS}
 
-    # Normalize null type to "object": some tool servers emit {"type": null}
-    # for tools with no parameters, but OpenAI-compatible APIs require type to be a string.
     if cleaned.get("type") is None and "type" in cleaned:
         cleaned["type"] = "object"
 
@@ -57,17 +49,7 @@ def sanitize_json_schema(schema: Any) -> Any:
 
 
 class BrowserMoveStdioClient(StdioClient):
-    """browser_move extension of StdioClient.
-
-    Adds timeout resolution, retryable-error detection, auto-reconnect, and
-    retry/timeout wrapping around list_tools and call_tool.  Also fixes the
-    missing exit-stack reset in connect/disconnect that would otherwise cause
-    failures on the second connection attempt.
-
-    Uses owner-task actor pattern to ensure async context manager enter/exit
-    occur in the same task, preventing anyio CancelScope cross-task exit
-    which causes CPU 100% usage.
-    """
+    """StdioClient with timeouts, retries and reconnect; one owner task enters and exits the context."""
 
     def __init__(self, config):
         super().__init__(config)
@@ -76,14 +58,7 @@ class BrowserMoveStdioClient(StdioClient):
         self._owner_close: asyncio.Event = asyncio.Event()
         self._connect_result: Optional[bool] = None
         self._connect_exception: Optional[Exception] = None
-        # Strong reference to an owner task that did not finish within
-        # _force_close's cancel grace period, kept so the task object and
-        # its exit stack are not GC'd while aclose() is still pending.
         self._leaked_owner_task: Optional[asyncio.Task] = None
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
 
     def _resolve_timeout(self, timeout: float = NO_TIMEOUT, *, default_s: float = 60.0) -> float:
         """Return an effective timeout in seconds for MCP operations."""
@@ -126,10 +101,6 @@ class BrowserMoveStdioClient(StdioClient):
     async def _reconnect(self, *, timeout: float = NO_TIMEOUT) -> bool:
         await self.disconnect(timeout=timeout)
         return await self.connect(timeout=timeout)
-
-    # ------------------------------------------------------------------
-    # Overrides — include exit-stack reset fix missing from base class
-    # ------------------------------------------------------------------
 
     async def _run_owner(self):
         from mcp import ClientSession, StdioServerParameters
@@ -193,7 +164,6 @@ class BrowserMoveStdioClient(StdioClient):
                 self._read = None
                 self._write = None
                 self._exit_stack = AsyncExitStack()
-                # Owner task completed its own aclose() — no leak for this run.
                 self._leaked_owner_task = None
 
     async def connect(self, *, timeout: float = NO_TIMEOUT) -> bool:
@@ -270,11 +240,6 @@ class BrowserMoveStdioClient(StdioClient):
                     logger.warning("Stdio client owner task was cancelled during graceful close")
                 except Exception as e:
                     logger.warning("Stdio client owner task close raised exception: %r", e)
-                # Owner task did not finish within cancel grace period — it may
-                # still be stuck inside _exit_stack.aclose() (e.g., subprocess
-                # stdin closure blocked). Keep a strong reference so the task
-                # object is not GC'd while we clear our handle, and surface a
-                # warning so operators can detect subprocess pipe leaks.
                 if not self._owner_task.done():
                     leaked_owner_task = self._owner_task
                     logger.warning(
@@ -288,9 +253,6 @@ class BrowserMoveStdioClient(StdioClient):
         self._client = None
         self._read = None
         self._write = None
-        # Reset the exit stack so a subsequent connect() starts fresh; the
-        # leaked owner task (if any) still holds the old stack and will run
-        # its own aclose() independently.
         self._exit_stack = AsyncExitStack()
         self._leaked_owner_task = leaked_owner_task
         self._is_disconnected = True

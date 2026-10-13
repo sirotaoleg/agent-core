@@ -1,30 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""The only module in this subtree that imports ``browser_use``.
-
-Wraps a single ``browser_use.browser.session.BrowserSession`` (attach-only,
-``is_local=False``) and exposes plain-dict-in/plain-dict-out async methods
-that ``main.py`` dispatches wire requests to. Everything here operates on
-wire-level dicts (JSON-safe), never on the driver contract's dataclasses --
-those live in the agent-core process, not here.
-
-Element refs cross the wire as plain dicts:
-    {"kind": "index", "index": <int>, "driver_generation": <int>}
-    {"kind": "selector", "css": <str>, "nth": <int>}
-    {"kind": "text", "text": <str>, "role": <str | None>}
-    {"kind": "node", "backend_node_id": <int>, "frame_id": <str | None>}
-    {"kind": "driver", "handle": <str>, "driver_generation": <int>}
-
-``"driver"`` is the opaque, backend-neutral durable ref (see
-``contract/refs.py:DriverRef``). This adapter is a CDP backend, so it
-mints handles of the form ``"bnid:<backend_node_id>"`` and parses that same
-prefix back on the way in; a non-CDP backend would mint and parse whatever
-scheme fits its own identity model instead.
-
-Runs as a flat sibling module inside the sidecar process (``import
-session_adapter``), importing sibling modules the same way.
-"""
+"""The only sidecar module that imports ``browser_use``: wire dicts in, wire dicts out."""
 
 from __future__ import annotations
 
@@ -60,13 +37,7 @@ def _upload_root() -> Path | None:
 
 
 def _normalize_upload_paths(paths: list[str]) -> tuple[list[str], str | None]:
-    """Return ``(existing_absolute_paths, error_or_none)``.
-
-    Mirrors runtime/driver ``resolve_upload_file_paths``: quote-strip,
-    ``expanduser().resolve()``, optional ``BROWSER_UPLOAD_ROOT`` for relative
-    names, and distinguish not-found vs open/read failure. CDP always gets
-    absolute paths Chrome can open.
-    """
+    """Return ``(existing_absolute_paths, error_or_none)``."""
     existing: list[str] = []
     missing: list[str] = []
     unreadable: list[str] = []
@@ -152,20 +123,17 @@ def browser_use_version() -> str:
         import importlib.metadata
 
         return importlib.metadata.version("browser-use")
-    except Exception:  # noqa: BLE001 - version string is best-effort, never fatal
+    except Exception:  # noqa: BLE001
         return "unknown"
 
 
 class _Act:
     def __init__(self, main_frame_id: str | None) -> None:
-        # Set by the action right before its first input event: errors after it count as dispatched.
         self.dispatched = False
-        # Chrome gives a page's main frame the page's target id.
         self.main_frame_id = main_frame_id
         self.navigation_requested = False
         self.navigation_committed = asyncio.Event()
         self.dialog: dict[str, str] | None = None
-        # Set when a dialog opened that nothing handles: the action's input now waits for ``handle_dialog``.
         self.dialog_blocking = asyncio.Event()
         self.new_targets: list[dict[str, Any]] = []
         self.target_created = asyncio.Event()
@@ -174,8 +142,6 @@ class _Act:
         self.dispatched = True
 
 
-# Which element a click at (x, y) would reach, when it is not ``this`` or inside it: "tag#id.class "name"".
-# A label whose control is ``this`` forwards the click, so it is not in the way.
 _HIT_TEST_JS = (
     "function(x, y) {"
     "  const root = this.getRootNode ? this.getRootNode() : this.ownerDocument;"
@@ -203,19 +169,15 @@ class SessionAdapter:
         self._cdp_session: Any = None
         self._driver_generation = 0
         self._index_cache: dict[int, Any] = {}
-        # Dialog arming: apply to the next JS dialog, or to a currently pending one.
         self._dialog_armed: dict[str, Any] | None = None
         self._dialog_pending: dict[str, Any] | None = None
         self._dialog_listener_registered = False
         self._dialog_unregister: Any = None
         self._dialog_handler: Any = None
         self._dialog_handle_tasks: set[asyncio.Task] = set()
-        # The action running now, and inputs left waiting on a dialog after their action returned.
         self._current_act: _Act | None = None
         self._waiting_inputs: set[asyncio.Task] = set()
         self._listening_client: Any = None
-
-    # -- lifecycle ---------------------------------------------------
 
     async def connect(self, *, cdp_url: str, timeout_s: float = 30.0) -> dict[str, Any]:
         from browser_use.browser.profile import BrowserProfile
@@ -230,7 +192,7 @@ class SessionAdapter:
         version_info: dict[str, Any] = {}
         try:
             version_info = await self._cdp_session.cdp_client.send.Browser.getVersion(session_id=None) or {}
-        except Exception:  # noqa: BLE001 - version info is best-effort
+        except Exception:  # noqa: BLE001
             version_info = {}
 
         try:
@@ -255,7 +217,7 @@ class SessionAdapter:
             tabs = await self._session.get_tabs()
             latency_ms = (time.monotonic() - started) * 1000.0
             return {"connected": True, "url": url, "tab_count": len(tabs), "latency_ms": latency_ms, "error": None}
-        except Exception as exc:  # noqa: BLE001 - health() must never raise
+        except Exception as exc:  # noqa: BLE001
             latency_ms = (time.monotonic() - started) * 1000.0
             return {"connected": False, "url": "", "tab_count": 0, "latency_ms": latency_ms, "error": str(exc)}
 
@@ -268,8 +230,6 @@ class SessionAdapter:
         self._session = None
         self._cdp_session = None
         self._index_cache = {}
-
-    # -- eyes ----------------------------------------------------------
 
     async def observe(
         self, *, include_dom: bool = True, include_screenshot: bool = False, cached: bool = False
@@ -301,8 +261,6 @@ class SessionAdapter:
             current_url = ""
         return [mapping.map_tab(tab, current_url) for tab in tabs]
 
-    # -- id bridge -------------------------------------------------------
-
     async def resolve(self, ref: dict[str, Any]) -> dict[str, Any]:
         backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
         box = await self._element_box(backend_node_id)
@@ -330,8 +288,6 @@ class SessionAdapter:
             return_by_value=True,
         )
         return f'[{attribute}="{value}"]'
-
-    # -- hands: navigation ------------------------------------------------
 
     async def navigate(
         self,
@@ -377,8 +333,6 @@ class SessionAdapter:
         await event
         await event.event_result(raise_if_any=True, raise_if_none=False)
         return await self._nav_result(before_url)
-
-    # -- hands: element actions -------------------------------------------
 
     async def click(
         self,
@@ -469,7 +423,6 @@ class SessionAdapter:
         async def body(act: _Act) -> tuple[bool, str]:
             backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
             cdp_session = await self._ensure_cdp_session()
-            # One call: the node is resolved before the function runs, so a stale node fails before any input.
             await cdp.call_function_on_backend_node(
                 cdp_session.cdp_client,
                 cdp_session.session_id,
@@ -589,7 +542,6 @@ class SessionAdapter:
             await self._ensure_not_intercepted("hover", backend_node_id, cx, cy)
             cdp_session = await self._ensure_cdp_session()
             act.dispatching()
-            # Approach stream then settle on center (tooltip / :hover menus).
             await cdp.dispatch_mouse_move(
                 cdp_session.cdp_client,
                 cdp_session.session_id,
@@ -602,12 +554,7 @@ class SessionAdapter:
         return await self._act(body)
 
     async def handle_dialog(self, *, accept: bool, prompt_text: str | None = None) -> dict[str, Any]:
-        """Handle the open dialog, or arm for the next one.
-
-        Call this *before* the click/type that opens a blocking dialog when the
-        dialog is not already pending. Success always means either
-        ``Page.handleJavaScriptDialog`` ran, or the next opening is armed to run it.
-        """
+        """Handle the open dialog, or arm the handler for the next one."""
 
         async def body(act: _Act) -> tuple[bool, str]:
             if self._dialog_pending is not None:
@@ -668,7 +615,6 @@ class SessionAdapter:
             except exceptions.DriverError as exc:
                 return False, str(exc)
             detail = str(result.get("detail") or "dropped")
-            # Best-effort verify: file inputs may receive files via the DataTransfer.
             if normalized:
                 attached = await cdp.call_function_on_backend_node(
                     cdp_session.cdp_client,
@@ -695,7 +641,7 @@ class SessionAdapter:
         event = self._session.event_bus.dispatch(SwitchTabEvent(target_id=tab["target_id"]))
         await event
         await event.event_result(raise_if_any=True, raise_if_none=False)
-        self._cdp_session = None  # invalidate cached CDP session across tab switch
+        self._cdp_session = None
         self._dialog_listener_registered = False
         self._dialog_unregister = None
         return await self._act_result(before_url, ok=True, detail="switched tab")
@@ -708,8 +654,6 @@ class SessionAdapter:
         await event
         await event.event_result(raise_if_any=True, raise_if_none=False)
         return await self._act_result(before_url, ok=True, detail="closed tab")
-
-    # -- evaluate and wait ------------------------------------------------
 
     async def evaluate(
         self,
@@ -735,16 +679,12 @@ class SessionAdapter:
         await asyncio.sleep(min(timeout_ms / 1000.0, 5.0))
         return await self._act_result(before_url, ok=True, detail=f"waited for {state}")
 
-    # -- internal helpers -------------------------------------------------
-
     async def _ensure_cdp_session(self) -> Any:
         if self._cdp_session is None:
             self._cdp_session = await self._session.get_or_create_cdp_session()
         return self._cdp_session
 
     async def _ensure_listeners(self) -> None:
-        # The CDP client keeps one handler per event, and browser-use's popups watchdog registers an auto-accepting
-        # dialog handler for every new tab: reclaiming ours on every call keeps dialogs for ``handle_dialog``.
         cdp_session = await self._ensure_cdp_session()
         if not self._dialog_listener_registered:
             await cdp.enable_page_domain(cdp_session.cdp_client, cdp_session.session_id)
@@ -765,7 +705,6 @@ class SessionAdapter:
         event = event or {}
         if act is None or event.get("frameId") != act.main_frame_id:
             return
-        # A new tab or window is a popup, not a navigation of this page.
         if event.get("disposition", "currentTab") == "currentTab":
             act.navigation_requested = True
 
@@ -821,7 +760,7 @@ class SessionAdapter:
                 accept=accept,
                 prompt_text=prompt_text,
             )
-        except Exception:  # noqa: BLE001 - dialog arming must not crash the session
+        except Exception:  # noqa: BLE001
             pass
 
     def _open_dialog(self) -> dict[str, str] | None:
@@ -829,7 +768,6 @@ class SessionAdapter:
         return None if pending is None else {"type": pending["type"], "message": pending["message"]}
 
     async def _dialog_observation(self) -> dict[str, Any]:
-        # Only browser-use's cached target info: anything sent to the page waits until the dialog is handled.
         tabs = await self.list_tabs()
         return {
             "url": await self._safe_current_url(),
@@ -841,13 +779,10 @@ class SessionAdapter:
         }
 
     def _refuse_while_dialog_open(self, method: str, error: type[exceptions.DriverError]) -> None:
-        # Page scripts and captures block while a JS dialog is open: fail at once instead of timing out.
         if self._dialog_pending is not None:
             raise error(f"{method}: {_dialog_note(self._dialog_pending)}")
 
     async def _act(self, body: Any, *, while_dialog: bool = False) -> dict[str, Any]:
-        # A dialog nothing handles stops the page answering input, so the action returns with ``dialog_opened`` and
-        # its input waits in the background. A page that opens a popup can wait for the debugger until resumed.
         before_url = await self._safe_current_url()
         if self._dialog_pending is not None and not while_dialog:
             return await self._act_result(before_url, ok=False, detail=_dialog_note(self._dialog_pending))
@@ -894,7 +829,7 @@ class SessionAdapter:
             try:
                 await asyncio.wait_for(act.navigation_committed.wait(), _NAVIGATION_COMMIT_WAIT_S)
             except asyncio.TimeoutError:
-                pass  # not committed (yet): the reply reports what the URL says
+                pass
 
     async def _resume_current_page(self) -> None:
         cdp_session = await self._ensure_cdp_session()
@@ -902,13 +837,13 @@ class SessionAdapter:
             await asyncio.wait_for(
                 cdp.run_if_waiting_for_debugger(cdp_session.cdp_client, cdp_session.session_id), _RESUME_TIMEOUT_S
             )
-        except Exception:  # noqa: BLE001 - a page that does not wait for the debugger is fine
+        except Exception:  # noqa: BLE001
             pass
 
     def _forget_waiting_input(self, task: asyncio.Task) -> None:
         self._waiting_inputs.discard(task)
         if not task.cancelled():
-            task.exception()  # retrieved: its action already returned
+            task.exception()
 
     async def _safe_current_url(self) -> str:
         try:
@@ -1012,20 +947,13 @@ class SessionAdapter:
         return await cdp.describe_node_backend_id(cdp_session.cdp_client, cdp_session.session_id, node_id)
 
     async def _node_for_event(self, ref: dict[str, Any] | None) -> Any:
-        """Return a real ``EnhancedDOMTreeNode`` for BU high-level events.
-
-        Only ``IndexRef`` carries a full cached node object; other ref kinds
-        are resolved to a backend node id and looked up freshly via
-        ``BrowserSession.get_dom_element_by_index`` when possible, else the
-        cached node keyed by backend id from the last observation.
-        """
+        """A real DOM node for browser-use's high-level events, fresh when possible."""
         if ref is None:
             return None
         if ref.get("kind") == "index":
             return self._node_from_index(int(ref["index"]), int(ref["driver_generation"]))
         backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
         cdp_session = await self._ensure_cdp_session()
-        # The cache keeps nodes of the last observed document; a node from an older one is stale.
         await cdp.resolve_object_id_by_backend_node(cdp_session.cdp_client, cdp_session.session_id, backend_node_id)
         for node in self._index_cache.values():
             if getattr(node, "backend_node_id", None) == backend_node_id:

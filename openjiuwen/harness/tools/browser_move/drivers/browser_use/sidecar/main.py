@@ -1,19 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Sidecar entrypoint: NDJSON read/dispatch/write loop over stdin/stdout.
-
-Spawned by ``drivers/browser_use/transport.py`` as ``python <this file>``
-(by path, not ``-m``, because ``openjiuwen`` is deliberately not installed
-in the sidecar venv). Imports only stdlib plus the flat sibling modules in
-this directory; ``session_adapter`` is the only one of those that reaches
-into ``browser_use``.
-
-Protocol: one JSON object per line, UTF-8, newline-delimited (wire.py). The
-first line out is an unsolicited ``hello``. Every subsequent request gets
-exactly one reply line (``ok`` or ``error``). ``cancel`` and ``shutdown`` are
-control methods handled directly by this loop, not forwarded to the adapter.
-"""
+"""Sidecar entry point: one JSON request per line on stdin, one reply per line on stdout."""
 
 from __future__ import annotations
 
@@ -45,7 +33,7 @@ def _stdin_reader_thread(line_queue: queue.Queue) -> None:
         for raw_line in sys.stdin:
             line_queue.put(raw_line)
     finally:
-        line_queue.put(None)  # EOF sentinel
+        line_queue.put(None)
 
 
 class _StdoutWriter:
@@ -95,7 +83,7 @@ async def _dispatch(
         raise
     except exceptions.DriverError as exc:
         await writer.write(wire.make_failure(request_id, _error_code_for(exc), str(exc), _error_data_for(exc)))
-    except Exception as exc:  # noqa: BLE001 - any adapter failure must produce a wire reply, not a crash
+    except Exception as exc:  # noqa: BLE001
         await writer.write(wire.make_failure(request_id, wire.DEFAULT_ERROR_CODE, str(exc)))
     else:
         await writer.write(wire.make_success(request_id, result))

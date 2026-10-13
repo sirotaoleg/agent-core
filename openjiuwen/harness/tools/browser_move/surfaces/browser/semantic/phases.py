@@ -55,7 +55,6 @@ _BATCH_EXPLICIT_SELECTOR_OPS = frozenset(
     }
 )
 _FORM_COMMAND_NAMES = frozenset({"TypeText", "PressKey", "SelectOption", "FillForm", "UploadFile"})
-# Inferred display fields are advisory; these distinctions require typed evidence.
 _BROWSER_STRICT_EVIDENCE_FIELDS = frozenset({"rating", "product_rating", "shop_rating", "sort_state"})
 _BROWSER_EVALUATE_FIELD_ALIASES = {
     "article_title": "title",
@@ -988,7 +987,6 @@ class _PhaseMixin:
         args = cls._coerce_tool_args(tool_args)
         if kind.read_only:
             return True
-        # Switching tabs changes nothing on any page, so it may recover a stalled plan like a read.
         if isinstance(kind.action, SwitchContext):
             return True
         if isinstance(kind.action, RunScript):
@@ -1095,7 +1093,6 @@ class _PhaseMixin:
         details["last_error"] = ""
         cls._record_price_interval(details, phase, kind, args)
         evidence_delta = cls._record_tool_evidence(state, result, kind=kind, tool_name=tool_name, tool_args=args)
-        # An action that changed the page or a read that added evidence was work, not a retry: only stalls count.
         if charged and (evidence_delta["recovered"] if phase == "extraction" else progressed):
             details["attempts"] = max(0, int(details.get("attempts") or 0) - 1)
         if evidence_delta.get("recovered"):
@@ -1136,7 +1133,6 @@ class _PhaseMixin:
         if state.get("requirements_source") != "inferred" or not cls._task_observations(state):
             return set()
         slots = state.get("required_evidence_slots") or []
-        # Comparison variants and typed rating/sort evidence remain strict.
         if any(isinstance(slot, dict) and slot.get("variant", "default") != "default" for slot in slots):
             return set()
         return set(cls._missing_required_fields(state)) - _BROWSER_STRICT_EVIDENCE_FIELDS
@@ -1265,10 +1261,6 @@ class _PhaseMixin:
             if isinstance(extracted, dict) and extracted:
                 return f"structured extraction returned {len(extracted)} field(s)"
             if isinstance(cards, list) and cards:
-                # A card probe reads a results list, not the entity the task is about. A task
-                # asking for one specific item (requested_result_count == 0) needs a real
-                # `extracted` result from opening it; _missing_completion_requirements already
-                # gates list tasks (requested_result_count >= 1) on having enough cards.
                 if int(state.get("requested_result_count") or 0) < 1:
                     return ""
                 excluded_regions = {"hot_search", "sidebar", "account", "chat"}

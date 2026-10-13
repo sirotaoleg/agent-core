@@ -31,24 +31,13 @@ def _candidates_for(text: str, upload_root: Path | None) -> list[Path]:
     if primary.is_absolute():
         return out
     if upload_root is not None:
-        # Bare names / relative paths listed by list_upload_files live under the root.
         out.append(upload_root / text)
         out.append(upload_root / primary.name)
     return out
 
 
 def resolve_upload_file_paths(paths: Sequence[str], *, upload_root: Path | None = None) -> tuple[list[str], str | None]:
-    """Return ``(absolute_existing_paths, error_or_none)``.
-
-    - Strips wrapping quotes (LLM/tool-arg footgun).
-    - ``expanduser().resolve()`` before existence checks.
-    - Relative / bare names also try ``upload_root`` (``BROWSER_UPLOAD_ROOT``)
-      when given (same catalog as ``list_upload_files``).
-    - Fail closed: any missing or unreadable path yields an error and an empty
-      existing list is still returned for the ones that passed (callers reject
-      the whole batch when error is set).
-    - Error text says \"not found\" unless an ``open``/read was attempted and failed.
-    """
+    """Return ``(absolute_existing_paths, error_or_none)``; relative names also try ``upload_root``."""
     existing: list[str] = []
     missing: list[str] = []
     unreadable: list[str] = []

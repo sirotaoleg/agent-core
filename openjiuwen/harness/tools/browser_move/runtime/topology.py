@@ -63,7 +63,6 @@ class Direct:
             return
         from openjiuwen.harness.subagents.browser_agent import create_browser_agent
 
-        # The runner reads model usage from the process log, where the worker's model calls land.
         runtime.dedicated_log = False
         service = runtime.service
         core = service.core
@@ -90,15 +89,12 @@ class Direct:
         rid = (request_id or "").strip() or uuid.uuid4().hex
         timeout = int(timeout_s) if timeout_s else service.guardrails.timeout_s
         inputs = {"query": task, "conversation_id": f"{sid}.direct.{rid}.{uuid.uuid4().hex}", "request_id": rid}
-        # Not in start: the runner sends stdout to the task log only after ensure_started, and the first model call
-        # binds the model logger to the stdout of that moment. Awaited because one asyncio.run per task would end a
-        # background probe; the rail reads the verdict per model call.
         await probe_image_support(_model(service))
         try:
             result = await asyncio.wait_for(Runner.run_agent(self._agent, inputs), timeout=float(timeout))
         except TimeoutError:
             return runtime.main_agent_answer(sid, rid, error=f"task_timeout: exceeded {timeout}s")
-        except Exception as exc:  # noqa: BLE001 - the runner reads the error from the answer
+        except Exception as exc:  # noqa: BLE001
             return runtime.main_agent_answer(sid, rid, error=str(exc) or repr(exc))
         return runtime.main_agent_answer(sid, rid, result=result if isinstance(result, dict) else {"output": result})
 
@@ -150,13 +146,10 @@ class DelegatedWorker:
         request_id: str | None,
         timeout_s: int | None,
     ) -> dict[str, Any]:
-        # As in Direct: not in start, so starting makes no model call. A worker built before the verdict is
-        # rebuilt once with the screenshot tool and image results.
         if await probe_image_support(_model(runtime.service)) and not self._image_support:
             self._image_support = True
             started = runtime.service.browser_agent
             if started is not None:
-                # The caller may have removed tools from the started worker (the runner drops the helpers).
                 self._dropped = self._offered - _tool_names(started)
                 runtime.service.browser_agent = None
 

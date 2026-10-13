@@ -656,7 +656,6 @@ class BrowserAgentRuntime:
             if self._topology is not None:
                 self._topology.drop()
                 self._topology = None
-            # The next asyncio.run loop must not find clients bound to this one (the runner runs one loop per task).
             await OpenAIModelClient.aclose()
 
     async def release_task_resources(self) -> None:
@@ -690,7 +689,6 @@ class BrowserAgentRuntime:
 
 
 def _with_workspace(settings: Any, workspace: Any) -> Any:
-    # Surface settings that confine file access to the agent's folders carry a workspace_root field.
     if workspace is None or not hasattr(settings, "workspace_root"):
         return settings
     root = getattr(workspace, "root_path", workspace)

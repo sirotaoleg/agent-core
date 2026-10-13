@@ -318,14 +318,12 @@ class PageState:
         )
 
     def _forget_contexts(self) -> None:
-        # Context ids may be positions, valid only until the next context change.
         self.last_observation = None
         self.surface_context = None
         self.contexts = ()
         self.current_context = None
 
     def _register_observation(self, observation: Observation, *, complete: bool = True) -> Observation:
-        # A partial observation (a scoped snapshot) adds the refs it shows; only a complete one drops the others.
         elements = tuple(
             dataclasses.replace(element, ref=DriverRef(element.ref.ref, self.generation_id))
             for element in observation.elements

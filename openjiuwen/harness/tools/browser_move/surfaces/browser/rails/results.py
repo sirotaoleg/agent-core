@@ -58,7 +58,6 @@ class _ResultsMixin:
         success = getattr(tool_result, "success", None)
         if success is None:
             success = result.get("ok", True) is not False and not result.get("error")
-        # A tool of this runtime answers without a record only when it decoded no command: nothing was sent.
         executed = not kind.known
         return bool(success), executed, bool(executed and success and not kind.read_only)
 

@@ -41,12 +41,7 @@ class _BrowserServiceEntry:
 
 
 class BrowserServiceRegistry:
-    """Coordinate process resources without sharing task/model state.
-
-    BrowserService objects remain task-scoped. Registry entries only coordinate
-    the task bindings and the managed Chrome process handles of the services
-    that address the same lifecycle identity.
-    """
+    """Shares Chrome process handles and task bindings between services of one lifecycle identity."""
 
     def __init__(self) -> None:
         self._entries: dict[BrowserServiceIdentity, _BrowserServiceEntry] = {}
@@ -76,9 +71,6 @@ class BrowserServiceRegistry:
                 return
             entry.binding_services.discard(service)
             entry.services.discard(service)
-            # Chrome intentionally outlives the last task binding. Retain
-            # only its process handle so an explicit identity-scoped
-            # configuration restart can stop it after task collection.
             if not entry.services and not entry.managed_drivers:
                 self._entries.pop(identity, None)
 
@@ -92,8 +84,6 @@ class BrowserServiceRegistry:
             entry = self._entries.setdefault(identity, _BrowserServiceEntry())
             entry.services.add(service)
             if getattr(driver, "owns_process", False):
-                # A new owner means prior handles for this exact identity are
-                # stale (for example, the user closed the previous window).
                 entry.managed_drivers = [driver]
                 return
             if any(getattr(existing, "owns_process", False) for existing in entry.managed_drivers):

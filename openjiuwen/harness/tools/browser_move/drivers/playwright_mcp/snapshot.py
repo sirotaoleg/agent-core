@@ -88,7 +88,6 @@ def parse_header(parts: dict[str, str]) -> PageHeader | None:
     listed = parse_tabs(parts.get("Open tabs", ""))
     if listed is not None:
         return PageHeader(url=url, title=title, tabs=listed.tabs, focused=listed.focused, tab_urls=listed.tab_urls)
-    # The server lists tabs only when more than one is open.
     only = ContextRef(id="0", kind=TAB_KIND, title=title)
     return PageHeader(url=url, title=title, tabs=(only,), focused=only, tab_urls=(url,))
 
@@ -146,7 +145,6 @@ def parse_elements(yaml: str) -> tuple[Element, ...]:
 
 
 def _unquote_key(body: str) -> str:
-    # YAML single-quotes a node whose text has characters like ": " in it.
     if not body.startswith("'"):
         return body
     match = re.fullmatch(r"'((?:[^']|'')*)'(:.*)?", body)

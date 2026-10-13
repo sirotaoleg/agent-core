@@ -22,10 +22,7 @@ if TYPE_CHECKING:
 
 
 class DriverSession:
-    """Forwards commands to the stack; restarts it once per task on ``ConnectionLost`` and never re-sends the call.
-
-    A live device gets the same stack restarted; a dead one is released, provisioned again and gets a new stack.
-    """
+    """Runs commands on the stack; on ``ConnectionLost`` it restarts once per task and never re-sends."""
 
     def __init__(self, assembly: DriverAssembly, page_state: PageState, messages: Mapping[str, str]) -> None:
         self.assembly = assembly
@@ -97,7 +94,6 @@ class DriverSession:
         try:
             with contextlib.suppress(DriverError):
                 await self.assembly.stack.stop()
-            # A driver may start without touching its device (lazy connect), so a clean start does not prove it alive.
             await self._start()
         except Exception as restart_error:
             raise build_error(StatusCode.DEEPAGENT_RUNTIME_ERROR, error_msg=self._lost, cause=restart_error) from error

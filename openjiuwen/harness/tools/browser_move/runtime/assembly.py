@@ -40,10 +40,7 @@ class Registries:
 
 @dataclass(frozen=True)
 class DriverAssembly:
-    """A started driver stack, the device under it and the surface it serves.
-
-    ``rebuild`` makes a new stack for another device of the same surface.
-    """
+    """A started driver stack, its device and surface; ``rebuild`` makes a stack for a new device."""
 
     stack: Driver
     device: ProvisionedDevice
@@ -76,7 +73,6 @@ def _stack_builder(core: CoreSettings, surface: SurfaceBundle, drivers: Registry
         if core.surface not in driver.info.surfaces:
             served = ", ".join(sorted(driver.info.surfaces)) or "none"
             raise ValueError(f"driver {core.driver!r} does not serve surface {core.surface!r} (it serves: {served})")
-        # The core's tool timeout (PLAYWRIGHT_TOOL_TIMEOUT_S / BROWSER_TIMEOUT_S) caps every bound the surface sets.
         per_effect = {effect: min(seconds, core.tool_timeout_s) for effect, seconds in surface.profile.timeouts.items()}
         return Tracing(RetryOnStale(Timeouts(driver, per_effect)), _log_trace)
 
@@ -104,11 +100,7 @@ async def assemble_driver(
     registries: Registries | None = None,
     settings: Any = None,
 ) -> DriverAssembly:
-    """Surface, provisioner, driver and middleware by name from ``core``; returns the started stack.
-
-    The surface factory gets ``instance`` (the surface's own per-agent identity) and ``settings`` (used instead of
-    parsing ``environ``), so both reach provisioning, the driver factory and the tool context.
-    """
+    """Build the surface, provisioner, driver and middleware named in ``core`` and start the stack."""
     registries = registries or Registries(DRIVERS, SURFACES, PROVISIONERS)
     surface = assemble_surface(core, environ, instance=instance, settings=settings, registries=registries)
     provisioner = registries.provisioners.create(surface.settings.provisioning)

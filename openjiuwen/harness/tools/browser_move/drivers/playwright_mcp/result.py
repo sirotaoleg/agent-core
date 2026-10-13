@@ -36,9 +36,7 @@ from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.snapshot impor
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
 
 _NAVIGATING_TOOLS = frozenset({"browser_navigate", "browser_navigate_back", "browser_tabs"})
-# Results go to value or surface, snapshots to observation; events are not reported.
 _DROPPED_SECTIONS = frozenset({"Result", "Snapshot", "Events"})
-# The server echoes the code it ran, typed text and scripts included; a sensitive call's detail leaves it out.
 _CODE_SECTION = "Ran Playwright code"
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
@@ -48,10 +46,8 @@ _DIALOG = re.compile(r'^- \["(?P<type>[^"]+)" dialog with message "(?P<message>.
 _MODAL_REFUSAL = re.compile(r'Tool "[\w-]+" does not handle the modal state')
 _STALE_REF = re.compile(r"Ref \S+ not found in the current page snapshot")
 _FILE_ACCESS_DENIED = re.compile(r"File access denied: .+ is outside allowed roots")
-# After the browser dies the server first fails to open a new tab, then reports the closed target.
 _CLOSED = re.compile(r"Target page, context or browser has been closed|Failed to open a new tab")
 _TIMEOUT = re.compile(r"TimeoutError:|Timeout \d+ms exceeded")
-# Playwright folds repeated call-log lines into "N × line".
 _LOG_PREFIX = re.compile(r"^\s*(?:\d+ × )?(?:- )?")
 _PERFORMED = re.compile(r"^performing \w+ action$|^\w+ action done$")
 _INTERCEPTED = re.compile(r"^(?P<by><.+?)(?: from (?P<within><.+?) subtree)? intercepts pointer events$")
@@ -88,7 +84,6 @@ def decode(
     dialog = _dialog(parts.get("Modal state", ""))
     if raw_result.get("isError") or "Error" in parts:
         if _MODAL_REFUSAL.search(parts.get("Error", "")):
-            # Nothing was sent, so the page is still the one before the call.
             blocked = None if before is None or dialog is None else dataclasses.replace(before, dialog=dialog)
             return ActionResult(ok=False, detail=_detail(parts), surface=blocked)
         raise _error(tool_name, _ANSI.sub("", parts.get("Error") or text))
@@ -174,7 +169,6 @@ def _observation(
 
 
 def _read_linked_snapshot(section: str, output_dir: Path) -> str | None:
-    # The server writes an empty file while a modal state blocks the snapshot; that reads as None too.
     link = _FILE_LINK.search(section)
     if link is None:
         return None
@@ -191,7 +185,6 @@ def _read_linked_snapshot(section: str, output_dir: Path) -> str | None:
 def _error(tool_name: str, message: str) -> DriverError:
     if _STALE_REF.search(message):
         return StaleRef(message, dispatched=False)
-    # The server checks file paths before it touches the page.
     if _FILE_ACCESS_DENIED.search(message):
         return DriverError(message, dispatched=False)
     if _CLOSED.search(message):
@@ -204,7 +197,6 @@ def _error(tool_name: str, message: str) -> DriverError:
     blockers = [match for match in map(_INTERCEPTED.match, lines) if match is not None]
     if blockers:
         return ActionIntercepted(message, by=_describe_blocker(blockers[-1]), dispatched=False)
-    # Waiting is the command itself, so its call log reads like an actionability wait but the command ran.
     if timeout and tool_name == "browser_wait_for":
         return ActionTimeout(message, dispatched=True)
     if timeout:

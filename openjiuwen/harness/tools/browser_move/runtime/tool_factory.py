@@ -78,11 +78,7 @@ class ToolContext:
 
 @dataclass(frozen=True)
 class ToolFlags:
-    """What an extra tool declares in place of its name.
-
-    ``worker``: offered to a delegated worker too; ``requires``: the commands the tool sends, all of which the driver
-    must handle for the tool to be offered.
-    """
+    """What an extra tool declares; ``requires`` lists the commands the driver must handle."""
 
     effect: Effect = Effect.READ
     exempt_from_budget: bool = False
@@ -144,9 +140,7 @@ class CommandRecord:
     @property
     def message_metadata(self) -> dict[str, bool]:
         """The tool message metadata the context processors read."""
-        # Of the failed commands only a timeout counts as a possible change, as the text classifier counted it.
         mutating = self.effect is not Effect.READ and (self.ok or self.error == ActionTimeout.__name__)
-        # A read that answered counts as run even when it reused an observation, as the server call always ran.
         return {
             "success": self.ok,
             "executed": self.ok if self.effect is Effect.READ else self.dispatched,
@@ -378,7 +372,6 @@ class ToolFactory:
 
     @staticmethod
     def _builds_screenshot(build: Builder) -> bool:
-        # Without image input a tool whose plain call takes a screenshot is not offered; the core names no tools.
         try:
             action = build({}, _NO_REFS)
         except ValueError:

@@ -83,13 +83,11 @@ COVERED = _Target("Covered button", "covered")
 LAST = _Target("Last button", "last")
 SECOND_LINK = _Target("Go to second", "second-link")
 
-# The intercept case covers the button only after observing it (some drivers do not list occluded elements).
 _COVER_SCRIPT = "() => { cover(); return true; }"
 _ABSENT_TEXT = "scene text that never appears"
 _CONFIRM_MESSAGE = "Proceed?"
 _TIMEOUT_S = 2.0
 
-# In order of preference.
 _ANY_KINDS = (DriverRef, Locator, PointRef)
 _ELEMENT_KINDS = (DriverRef, Locator)
 
@@ -322,7 +320,6 @@ class _BrowserScene:
 
     def _run_script(self, kind: type | None, actions: Actions) -> SceneCase | str:
         if kind is None:
-            # A bare expression: the contract takes one as well as a function.
             code = "document.title = 'script:ran'"
             return SceneCase(steps=(lambda seen: RunScript(code=code),), check=_title_is("script:ran"))
         code = "(element) => { document.title = 'script:' + element.id; return element.id; }"
@@ -439,7 +436,6 @@ class _BrowserScene:
             return kind
         if RunScript not in actions:
             return "the driver does not handle RunScript, which this case needs to cover the button"
-        # No observation between covering and clicking: the click uses the ref taken while the button was visible.
         return SceneCase(
             steps=(lambda seen: RunScript(code=_COVER_SCRIPT), lambda seen: Click(target=_ref(seen[0], COVERED, kind))),
             observe_between=False,

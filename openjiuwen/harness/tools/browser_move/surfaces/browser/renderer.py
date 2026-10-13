@@ -41,7 +41,6 @@ class BrowserRenderer:
             return _blocks(detail if detail.startswith(_ERROR) else f"{_ERROR}\n{detail}", image)
         if isinstance(action, RunScript):
             return _blocks(_join(f"### Result\n{_script_value(result.value)}", detail), image)
-        # The tab list answers a tab command; free observations stay out of the text.
         listing = isinstance(action, Observe) and not action.include_screenshot
         if listing or (isinstance(action, _TAB_COMMANDS) and not detail):
             tabs = _tab_list(result.surface or (result.observation.surface if result.observation else None))

@@ -1,19 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Map browser-use's ``BrowserStateSummary`` shape to wire ``Observation`` dicts.
-
-STDLIB ONLY, and deliberately duck-typed: every input is read through
-``getattr`` with a default rather than importing ``browser_use.dom.views`` /
-``browser_use.browser.views`` for isinstance checks. This lets a unit test
-in the main agent-core environment (where ``browser_use`` is never
-installed) exercise these functions against plain ``types.SimpleNamespace``
-fixtures that mimic the real dataclasses, while the real sidecar process
-feeds it actual ``BrowserStateSummary`` / ``EnhancedDOMTreeNode`` objects.
-
-Runs as a flat sibling module inside the sidecar process; has no
-cross-sibling imports so it needs no special import handling either side.
-"""
+"""Map browser-use's state summary to wire observation dicts, duck-typed and stdlib only."""
 
 from __future__ import annotations
 
@@ -33,13 +21,7 @@ def map_dom_rect(rect: Any) -> dict[str, float] | None:
 
 
 def map_enhanced_node(index: int, node: Any, *, driver_generation: int) -> dict[str, Any]:
-    """Map one ``EnhancedDOMTreeNode``-like object to a wire ``ObservedElement`` dict.
-
-    ``driver_generation`` is the generation this observation was captured at
-    (see ``map_browser_state_summary``); it is stamped into the minted
-    ``driver_ref`` so the runtime's durable fallback carries the same
-    bookkeeping an ``IndexRef`` would.
-    """
+    """Map one DOM node to a wire element dict stamped with ``driver_generation``."""
     ax_node = getattr(node, "ax_node", None)
     role = getattr(ax_node, "role", None) if ax_node is not None else None
     name = getattr(ax_node, "name", None) if ax_node is not None else None
@@ -62,12 +44,7 @@ def map_enhanced_node(index: int, node: Any, *, driver_generation: int) -> dict[
 
 
 def map_tab(tab: Any, current_url: str) -> dict[str, Any]:
-    """Map one ``TabInfo``-like object to a wire ``TabRef`` dict.
-
-    ``TabInfo`` carries no ``active`` flag; a tab is reported active when
-    its url matches the summary's current url (best-effort heuristic, only
-    used to populate ``list_tabs()``, never for id-bridge decisions).
-    """
+    """Map one tab to a wire tab dict; a tab is active when its url is the current url."""
     tab_url = str(getattr(tab, "url", "") or "")
     return {
         "target_id": str(getattr(tab, "target_id", "") or ""),
@@ -97,7 +74,7 @@ def map_browser_state_summary(
     if callable(llm_representation):
         try:
             ax_text = llm_representation()
-        except Exception:  # noqa: BLE001 - best-effort AX text, never fail observe() over it
+        except Exception:  # noqa: BLE001
             ax_text = None
 
     current_url = str(getattr(summary, "url", "") or "")

@@ -81,7 +81,6 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.context import Brows
 _PACKAGE_VERSION = re.compile(r"^@playwright/mcp@(?P<version>.+)$")
 _PING_TIMEOUT_S = 5.0
 
-# The server tool each command maps to; its description becomes the command's tool hint.
 _TOOL_OF: dict[type[Action], str] = {
     Click: "browser_click",
     TypeText: "browser_type",
@@ -105,7 +104,6 @@ _TOOL_OF: dict[type[Action], str] = {
     GetConsole: "browser_console_messages",
     GetNetwork: "browser_network_requests",
 }
-# Server tools no command backs; the surface offers its own tool under the server's description and schema.
 _UNBACKED_TOOLS = frozenset({"browser_find"})
 
 
@@ -142,7 +140,6 @@ def _aim(ref: DriverRef | Locator, what: str) -> dict[str, Any]:
 
 
 def _snapshot_args(command: Observe) -> dict[str, Any]:
-    # Boxes give elements their bounds; a scoped snapshot goes as the model asked, so its text stays the server's.
     if not command.scoped:
         return {"boxes": True}
     args: dict[str, Any] = {}
@@ -156,13 +153,10 @@ def _snapshot_args(command: Observe) -> dict[str, Any]:
 
 
 def _point(ref: PointRef) -> dict[str, int]:
-    # Screenshots are taken at CSS scale, so a screenshot pixel is a viewport pixel (Screenshot.scale is 1).
     return {"x": ref.x, "y": ref.y}
 
 
 def _staged(paths: Iterable[str], root: Path) -> tuple[list[str], list[Path]]:
-    # The server reads files only under its working directory: a file elsewhere is copied in first. Anything else
-    # (a missing file, a directory) goes as given and the server refuses it before touching the page.
     root = root.resolve()
     staged = []
     created = []
@@ -182,7 +176,6 @@ def _staged(paths: Iterable[str], root: Path) -> tuple[list[str], list[Path]]:
 def _unstaged(directories: list[Path]) -> None:
     for directory in directories:
         shutil.rmtree(directory, ignore_errors=True)
-    # The working directory may be the user's: an uploads folder goes only when nothing else is left in it.
     with contextlib.suppress(OSError):
         directories[0].parent.rmdir()
 
@@ -281,7 +274,6 @@ class PlaywrightMcpDriver(HandlerDriver):
         )
 
     async def _observe_modal_state(self, refused: dict[str, Any]) -> Observation:
-        # A dialog or file chooser refuses the snapshot and every other page tool; the tab list still answers.
         raw = await self._call("browser_tabs", {"action": "list"})
         listed = await self._decode("browser_tabs", raw)
         header = parse_tabs(split_sections(result_text(raw)).get("Result", ""))
@@ -431,7 +423,6 @@ class PlaywrightMcpDriver(HandlerDriver):
         if action.url is not None:
             args["url"] = action.url
         result = await self._run("browser_tabs", args)
-        # The server appends the new tab and focuses it.
         opened = result.surface.tabs[-1] if isinstance(result.surface, BrowserContext) else None
         return dataclasses.replace(result, value=opened)
 
@@ -499,15 +490,10 @@ class PlaywrightMcpDriver(HandlerDriver):
 
 
 def create_playwright_mcp_driver(device: ProvisionedDevice, surface_settings: Any) -> PlaywrightMcpDriver:
-    """Driver factory (registry signature): the server attaches to ``device.endpoint`` over CDP on ``start()``.
-
-    A server config in ``surface_settings.mcp_server`` keeps its command line and environment; the factory's name
-    and id win, so the tool prefix never changes with the caller, and the device endpoint replaces the config's.
-    """
+    """Registry factory; the server attaches to ``device.endpoint`` over CDP on ``start()``."""
     server = playwright_mcp_config(surface_settings, cdp_url=device.endpoint)
     given = getattr(surface_settings, "mcp_server", None)
     if given is not None:
-        # A device emulation cannot drive a CDP-attached browser; CDP mode is Chromium-only.
         env = {key: value for key, value in (given.params.get("env") or {}).items() if key != "PLAYWRIGHT_MCP_DEVICE"}
         if device.endpoint:
             env = {"PLAYWRIGHT_MCP_BROWSER": "chrome", **env, "PLAYWRIGHT_MCP_CDP_ENDPOINT": device.endpoint}

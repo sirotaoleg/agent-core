@@ -240,11 +240,7 @@ class BrowserOffloadRecallTool(Tool):
         }
 
     def render_for_llm(self, output: ToolOutput) -> str:
-        """Render the recalled fragment behind a one-line paging header.
-
-        ``next_offset`` is how the model reads the following chunk, so it must
-        stay visible next to the fragment.
-        """
+        """Render the recalled fragment behind a paging header that shows ``next_offset``."""
         if not output.success:
             return super().render_for_llm(output)
         data = output.data

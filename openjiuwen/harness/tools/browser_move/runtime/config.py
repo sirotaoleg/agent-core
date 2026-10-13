@@ -24,7 +24,7 @@ from .utils.env import (
     DEFAULT_GUARDRAIL_RETRY_ONCE,
     DEFAULT_MODEL_NAME,
     FALSY_ENV_VALUES,
-    MISSING_API_KEY_MESSAGE,  # noqa: F401  (re-exported for main.py / mcp_server)
+    MISSING_API_KEY_MESSAGE,  # noqa: F401
     SUPPORTED_MODEL_PROVIDERS,
     first_value,
     infer_provider_from_api_base,
@@ -47,25 +47,18 @@ class BrowserRunGuardrails:
 
 @dataclass(frozen=True)
 class BrowserInstanceConfig:
-    """Per-instance identity, used to isolate one device per agent.
-
-    All fields default to empty/0, which reproduces the legacy process-global
-    (env-driven) behavior. When ``key`` is non-empty the device is isolated:
-    the Playwright MCP ``server_id`` is suffixed with the key and the managed
-    profile / port / user-data-dir are derived from it instead of shared env.
-    Agents sharing the same ``key`` intentionally share one device.
-    """
+    """Per-agent device identity; agents with the same ``key`` share one device, an empty key shares the default."""
 
     key: str = ""
-    driver_mode: str = ""  # alias of provisioning
-    managed_port: int = 0  # 0 -> auto-allocate (keyed) or env/default (legacy)
-    user_data_dir: str = ""  # "" -> derived from key under the profiles directory in mcp_cwd
-    profile_name: str = ""  # "" -> key, then env BROWSER_PROFILE_NAME
-    cdp_url: str = ""  # remote mode: explicit CDP endpoint
-    browser_binary: str = ""  # optional Chrome path override
-    launch_args: str = ""  # Playwright MCP launch args in the PLAYWRIGHT_MCP_ARGS format; "" -> env/default
-    provisioning: str = ""  # "", "managed", "remote", "extension"; "" -> env/default
-    driver: str = ""  # a registered driver name; "" -> env/default
+    driver_mode: str = ""
+    managed_port: int = 0
+    user_data_dir: str = ""
+    profile_name: str = ""
+    cdp_url: str = ""
+    browser_binary: str = ""
+    launch_args: str = ""
+    provisioning: str = ""
+    driver: str = ""
 
     def __post_init__(self) -> None:
         if self.provisioning and self.driver_mode and self.provisioning != self.driver_mode:
@@ -112,7 +105,6 @@ _BASE_URL_KEYS = (
     "OPENAI_BASE_URL",
     "OPENAI_API_BASE",
 )
-# provider -> (api key env names, api base env names, default api base), read after API_KEY / API_BASE.
 _PROVIDER_ENDPOINTS: dict[str, tuple[tuple[str, ...], tuple[str, ...], str]] = {
     "openrouter": (
         ("OPENROUTER_API_KEY", "OPENAI_API_KEY"),
@@ -159,7 +151,6 @@ def _float(environ: Mapping[str, str], keys: tuple[str, ...], *, default: float,
 
 def _driver(environ: Mapping[str, str]) -> str:
     value = (environ.get("BROWSER_DRIVER") or "").strip().lower()
-    # Any name: the driver registry checks it when the driver is built, so a driver registered elsewhere is selectable.
     return DEFAULT_DRIVER if not value or value in _LEGACY_DRIVER_VALUES else value
 
 

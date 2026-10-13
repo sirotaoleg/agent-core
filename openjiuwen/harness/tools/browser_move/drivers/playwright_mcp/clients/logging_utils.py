@@ -1,10 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Safe logging helpers for browser-move MCP clients.
-
-These helpers keep low-level transport logs useful without dumping generated
-JavaScript, page snapshots, form values, credentials, or other user data.
-"""
+"""Logging helpers for the MCP clients that never write scripts, snapshots or form values."""
 
 from __future__ import annotations
 

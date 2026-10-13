@@ -62,11 +62,7 @@ class ManagedBrowserSettings(Protocol):
 
 
 def _default_chrome_user_data_dir(local_app_data: str) -> str:
-    """Return the platform-standard Chrome user data directory path.
-
-    Does not guarantee the directory exists 鈥?only that this is where Chrome
-    stores its default profile on the current OS.
-    """
+    """Return the platform's default Chrome user data directory (it may not exist)."""
     if os.name == "nt":
         local_app_data = local_app_data or str(Path.home() / "AppData" / "Local")
         return str(Path(local_app_data) / "Google" / "Chrome" / "User Data")
@@ -76,11 +72,7 @@ def _default_chrome_user_data_dir(local_app_data: str) -> str:
 
 
 def _kill_chrome_by_user_data_dir(user_data_dir: str) -> int:
-    """Kill Chrome processes whose command line references user_data_dir.
-
-    Returns the number of PIDs sent a kill signal. Failures are silently
-    swallowed so a misconfigured environment never blocks startup.
-    """
+    """Kill Chrome processes started with ``user_data_dir``; returns how many were signalled."""
     normalized = str(Path(user_data_dir).expanduser().resolve()).lower().replace("\\", "/")
     killed = 0
 
@@ -183,7 +175,6 @@ def _candidate_chrome_binaries(env_install_paths: tuple[str, ...]) -> list[str]:
         if Path(path).exists():
             binaries.append(path)
 
-    # Preserve order and remove duplicates.
     unique: list[str] = []
     seen: set[str] = set()
     for candidate in binaries:
@@ -195,8 +186,6 @@ def _candidate_chrome_binaries(env_install_paths: tuple[str, ...]) -> list[str]:
 
 
 def _allocate_free_port() -> int:
-    # bind-to-0 so concurrent instances never pick the same port; Chrome starts on it right away and
-    # the endpoint-ready check absorbs the small window between closing the socket and the launch.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
@@ -211,7 +200,7 @@ def _is_chrome_identifier(value: str) -> bool:
 
 def _answers_cdp(endpoint: str) -> bool:
     try:
-        with urlopen(f"{endpoint}/json/version", timeout=1.5) as response:  # nosec B310
+        with urlopen(f"{endpoint}/json/version", timeout=1.5) as response:  # nosec
             payload = json.loads(response.read().decode("utf-8", errors="ignore"))
             if isinstance(payload, dict):
                 return bool(payload.get("webSocketDebuggerUrl") or payload.get("Browser"))
@@ -300,8 +289,6 @@ class ManagedBrowserProvisioner:
             device.cleanup()
 
     def is_alive(self, device: ProvisionedDevice) -> bool:
-        # Without an endpoint (extension, or a driver that launches its own browser) there is nothing to probe or
-        # re-provision.
         return not device.endpoint or _answers_cdp(device.endpoint)
 
     @property
@@ -422,8 +409,6 @@ class ManagedBrowserProvisioner:
                 pass
 
     def clear(self):
-        # Reap a Chrome child that exited (e.g. user closed the window) but
-        # whose Popen handle still sits on the driver.
         if self._process is None:
             return
         process = self._process
@@ -438,7 +423,6 @@ class ManagedBrowserProvisioner:
 
 
 def _build_profile(settings: ManagedBrowserSettings) -> BrowserProfile:
-    # managed_port 0: pick a free port (an isolated instance must not share one fixed port).
     port = settings.managed_port or _allocate_free_port()
     if settings.user_data_dir:
         user_data_dir = settings.user_data_dir
@@ -460,7 +444,6 @@ def _build_profile(settings: ManagedBrowserSettings) -> BrowserProfile:
 
 
 def __getattr__(name: str):
-    # ManagedBrowserDriver is the old name; kept as a deprecated alias.
     if name == "ManagedBrowserDriver":
         warnings.warn(
             "ManagedBrowserDriver is deprecated; use ManagedBrowserProvisioner",

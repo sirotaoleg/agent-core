@@ -43,7 +43,6 @@ def parse_command_args(value: str) -> list[str]:
 
 
 def env_value(environ: Mapping[str, str], key: str) -> str | None:
-    # A dict copy of os.environ on Windows keeps only upper-case names (SystemRoot -> SYSTEMROOT).
     value = environ.get(key)
     return environ.get(key.upper()) if value is None else value
 

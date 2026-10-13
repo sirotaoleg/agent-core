@@ -348,12 +348,7 @@ class BrowserPageState(PageState):
         }
 
     def refresh_target_id(self, target_id: str) -> str:
-        """Map a stale Probe target to one unique equivalent current target.
-
-        Native AX refs intentionally remain generation-local. Probe targets may
-        be refreshed only from runtime-owned identity, never from model-authored
-        CSS reconstruction.
-        """
+        """Map a stale probe target to its one equivalent current target by runtime-owned identity."""
 
         normalized_target_id = str(target_id or "").strip()
         target = self._targets.get(normalized_target_id)
@@ -534,8 +529,6 @@ class BrowserPageState(PageState):
         if selector and (not selector_validated or match_count != 1):
             selector = ""
 
-        # Probe targets are executable only when the probe proved that its selector
-        # uniquely identifies the element. AX refs use their own native registry.
         locator: dict[str, str] = {"selector": selector} if selector else {}
 
         href = str(item.get("primary_link") or item.get("href") or "").strip()

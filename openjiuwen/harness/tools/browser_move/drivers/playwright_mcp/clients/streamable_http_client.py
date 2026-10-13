@@ -17,11 +17,7 @@ except ModuleNotFoundError:
 
 
 class BrowserMoveStreamableHttpClient(StreamableHttpClient):
-    """browser_move extension of StreamableHttpClient.
-
-    Adds reconnect lock, retryable transport error detection, auto-reconnect,
-    and one retry for list_tools/call_tool after reconnect.
-    """
+    """StreamableHttpClient with reconnect and one retry after it."""
 
     def __init__(
         self,

@@ -36,11 +36,7 @@ class NativeTool:
 
 @dataclass(frozen=True)
 class DriverInfo:
-    """``actions`` maps each handled command type to the element ref kinds it accepts (empty: no refs).
-
-    ``native_tools`` is keyed by the tool spec name; the model sees ``tool_name_prefix`` + name.
-    ``display_name`` is how a prompt names the driver to the model (empty: ``name``).
-    """
+    """Self-description: ``actions`` maps each handled command to the ref kinds it accepts."""
 
     name: str
     surfaces: frozenset[str]

@@ -71,7 +71,6 @@ def discover_sidecar_python(override: Path | None = None) -> Path:
 
 
 def _env_value(environ: Mapping[str, str], key: str) -> str | None:
-    # A dict copy of os.environ on Windows keeps only upper-case names (SystemRoot -> SYSTEMROOT).
     value = environ.get(key)
     return environ.get(key.upper()) if value is None else value
 
@@ -96,7 +95,6 @@ def _sidecar_env(environ: Mapping[str, str], upload_root: Path | None) -> dict[s
     for key, value in environ.items():
         if key.startswith("BROWSER_USE_") and key != "BROWSER_USE_SIDECAR_PYTHON":
             env[key] = value
-    # Same catalog root as list_upload_files / runtime path resolution.
     if upload_root is not None:
         env["BROWSER_UPLOAD_ROOT"] = str(upload_root)
     env.setdefault("ANONYMIZED_TELEMETRY", "false")
@@ -131,8 +129,6 @@ class SidecarTransport:
         """Spawn the sidecar and read its hello line."""
         python_path = discover_sidecar_python(self._sidecar_python)
         main_path = _sidecar_dir() / "main.py"
-        # asyncio StreamReader defaults to a 64 KiB line limit; screenshot
-        # NDJSON replies routinely exceed that. Align with wire.MAX_LINE_BYTES.
         self._process = await asyncio.create_subprocess_exec(
             str(python_path),
             str(main_path),
@@ -203,15 +199,12 @@ class SidecarTransport:
                 await self._cancel(request_id)
                 raise driver_errors.ActionTimeout(f"{method} timed out after {effective_timeout}s") from None
             except asyncio.CancelledError:
-                # A caller's timeout cancels us here; without the cancel the sidecar keeps running the action
-                # while the next one starts.
                 await self._cancel(request_id)
                 raise
 
             return self._unwrap_reply(reply)
 
     async def _readline_stdout(self) -> bytes:
-        # An over-limit line raises ValueError on Python 3.11+, LimitOverrunError on older paths.
         assert self._process is not None and self._process.stdout is not None
         try:
             raw_line = await self._process.stdout.readline()
@@ -244,7 +237,6 @@ class SidecarTransport:
                 continue
             if message.get("id") == request_id:
                 return message
-            # A reply for a different (already-timed-out/cancelled) id; drop it.
 
     async def _cancel(self, request_id: int) -> None:
         if self._process is None or self._process.stdin is None:

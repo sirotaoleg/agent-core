@@ -46,7 +46,6 @@ def _provisioning(environ: Mapping[str, str]) -> str:
         )
     else:
         legacy = ""
-    # Without an explicit choice the extension flag selects the provisioning, so device and MCP config agree.
     implied = "extension" if is_truthy_env(environ.get("PLAYWRIGHT_MCP_EXTENSION", "")) else "remote"
     value = explicit or legacy or implied
     if value not in PROVISIONINGS:
@@ -117,14 +116,11 @@ class BrowserSettings:
     mcp_extension: bool = False
     mcp_extension_token: str = ""
     mcp_env: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
-    # A server config given by the caller (the WebVoyager runner's): its command line wins over the fields above.
     mcp_server: McpServerConfig | None = None
     upload_root: Path | None = None
-    # The agent's workspace, set by the runtime facade; uploads may come from it as from upload_root.
     workspace_root: Path | None = None
     sidecar_python: Path | None = None
     selector_cache_path: Path | None = None
-    # Child processes start from it; the browser-use transport passes on only a credential-free subset.
     process_env: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}), repr=False, compare=False)
 
     @classmethod
@@ -184,7 +180,6 @@ class BrowserSettings:
         if instance.managed_port > 0:
             managed_port = instance.managed_port
         elif instance.key:
-            # 0 = a free port: one shared port cannot serve several keys without them landing on one browser.
             managed_port = 0
         else:
             managed_port = self.managed_port

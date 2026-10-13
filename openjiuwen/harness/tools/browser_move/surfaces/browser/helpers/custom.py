@@ -34,7 +34,6 @@ _STRICT_HINT = (
     "visible input."
 )
 
-# A selector the page cannot parse (Playwright syntax such as :has-text) falls back to the element with that text.
 _POINTS_JS = """(input) => {
   const shown = (element) => {
     const box = element.getBoundingClientRect();

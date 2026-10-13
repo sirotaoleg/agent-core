@@ -52,10 +52,7 @@ class Renderer(Protocol):
 
 @dataclass(frozen=True)
 class PolicyRule:
-    """Checked by the security rail before middleware; ``check(action, context)`` returns a deny reason or ``None``.
-
-    ``context`` is the current surface context, ``None`` before the first observation.
-    """
+    """Checked by the security rail before middleware; ``check`` returns a deny reason or ``None``."""
 
     command_type: type[Action]
     check: Callable[[Action, SurfaceContext | None], str | None]
@@ -132,10 +129,7 @@ class WorkerPrompt(Protocol):
 
 @dataclass(frozen=True)
 class Capability:
-    """One entry of a surface's capability catalog: a name an agent can be granted and the tools it selects.
-
-    ``policy_only``: granted by a policy rule alone; the driver has no feature to enable for it.
-    """
+    """One capability catalog entry: a grantable name and the tools it selects."""
 
     name: str
     description: str
@@ -145,18 +139,7 @@ class Capability:
 
 @dataclass(frozen=True)
 class SurfaceProfile:
-    """The contract between the core and one surface; the core uses nothing else from a surface.
-
-    ``capability_catalog`` maps a catalog entry to its (command, ref kind) pairs, ``None`` for a call without an element
-    ref; ``capability_tools`` maps the same entry to the names of the tools it selects; ``capabilities`` is the catalog
-    in order, its first entry the default one every agent gets. The agent runtime facade and the delegated worker use
-    the rest when a surface fills them, each optional: ``custom_actions(controller, context)`` registers the surface's
-    custom actions, ``page_metadata(context)`` returns ``(metadata, error)``, ``policy_probe(context, source, params)``
-    runs a policy-owned script, ``activate(context, address)`` brings a context to the front, ``semantic_tracker()``
-    makes the surface's semantic state tracker and ``worker_prompt`` renders the worker's system prompt (the core's
-    neutral one when ``None``). ``page_state()`` makes the surface's subclass of the core's ``PageState`` (the core's
-    own when ``None``).
-    """
+    """The contract between the core and one surface; every hook is optional."""
 
     name: str
     commands: tuple[type[Action], ...]

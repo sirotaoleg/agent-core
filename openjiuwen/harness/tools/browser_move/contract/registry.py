@@ -60,7 +60,6 @@ class Registry(Generic[T]):
         return factory
 
 
-# The only module-level state of the package; everything else is passed in by the composition root.
 DRIVERS: Registry[Driver] = Registry("driver")
 SURFACES: Registry[SurfaceBundle] = Registry("surface")
 PROVISIONERS: Registry[Any] = Registry("provisioner")
@@ -82,8 +81,7 @@ def default_topology(name: str) -> str:
 
 
 def register_surface(name: str, profile_factory: Callable[..., SurfaceBundle] | str) -> None:
-    """``profile_factory(environ, instance=None, settings=None) -> SurfaceBundle``: ``settings`` replaces parsing
-    ``environ``; ``instance`` (the surface's per-agent identity) is applied to the settings."""
+    """``profile_factory(environ, instance=None, settings=None)``; ``settings`` replaces ``environ``."""
     SURFACES.register(name, profile_factory)
 
 

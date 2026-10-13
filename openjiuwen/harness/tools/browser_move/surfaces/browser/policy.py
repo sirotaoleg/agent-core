@@ -14,8 +14,6 @@ from ...contract import Action, PolicyRule, PressKey, RunScript
 from ...contract.surface import SurfaceContext
 from .commands import Drop, UploadFile
 
-# The managed Chrome shares the host's OS clipboard: a paste or a clipboard read would hand whatever the user last
-# copied to the page.
 CLIPBOARD_DENIED = (
     "Blocked: the clipboard belongs to the host machine, not to this task, so pasting or reading it is not allowed. "
     "Read the value from the page instead (its text or an input's value) and type it."
@@ -49,7 +47,6 @@ def _confined(raw: str, roots: tuple[Path, ...]) -> bool:
     if len(text) >= 2 and text[0] == text[-1] and text[0] in "'\"":
         text = text[1:-1].strip()
     path = Path(text).expanduser()
-    # A relative name is read under a root by the driver, so it must not climb out of the one it is joined to.
     if path.is_absolute():
         return any(_inside(path.resolve(), root) for root in roots)
     return any(_inside((root / path).resolve(), root) for root in roots)

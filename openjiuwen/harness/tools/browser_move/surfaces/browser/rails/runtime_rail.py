@@ -93,9 +93,7 @@ _BROWSER_REF_ALIAS_KEYS = {
     "startRef": "startTarget",
     "endRef": "endTarget",
 }
-# The dialect whose schemas address elements by these keys; the other dialect has ``ref`` as a field of its own.
 _BROWSER_TARGET_FIELDS = frozenset(_BROWSER_REF_ALIAS_KEYS.values())
-# Evidence hints and element descriptions the model may add; a tool whose schema lacks them must not see them.
 _BROWSER_RUNTIME_ARG_KEYS = frozenset({"field", "fields", "element"})
 
 
@@ -136,8 +134,6 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
             browser_agent_log_warning("[BROWSER_SUBAGENT_ERROR] method=%s error=%s", method_name, exc)
 
     async def before_invoke(self, ctx: AgentCallbackContext) -> None:
-        # Only the invoke hooks fire on the DeepAgent; the model and tool hooks get its inner ReActAgent,
-        # which has no deep_config to resolve image support from.
         self._agent = ctx.agent
         if isinstance(getattr(ctx, "extra", None), dict):
             if self._runtime.dedicated_log:
@@ -365,7 +361,6 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
             )
         tool_args = getattr(inputs, "tool_args", None)
         kind = self._runtime.tool_kind(tool_name, tool_args)
-        # Only the dialect that addresses elements by ``target`` takes the runtime's target ids and ref aliases.
         if kind.known and not kind.helper and kind.fields & _BROWSER_TARGET_FIELDS:
             normalized_args = self._normalize_target_args(tool_args, kind.fields)
             if normalized_args is not tool_args:
@@ -936,7 +931,6 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
             target = self._runtime.resolve_model_target_id(value)
             executable_target = str(target.ref or target.selector or "").strip()
             if not executable_target:
-                # A card's primary link has no element to act on; the rail turns its click into a navigation.
                 continue
             parsed[key] = executable_target
             element_key = {

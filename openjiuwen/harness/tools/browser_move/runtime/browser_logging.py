@@ -21,7 +21,6 @@ from .config import CoreSettings
 _BROWSER_LOGGER_NAME = "openjiuwen.browser_agent"
 _BROWSER_HANDLER_MARKER = "_openjiuwen_browser_agent_file_handler"
 _BROWSER_LOG_ANNOUNCED_MARKER = "_openjiuwen_browser_agent_file_announced"
-# The logger is process-wide (stdlib registry), so the settings it was configured with live on it.
 _AUDIT_RAW_ATTR = "_openjiuwen_browser_agent_audit_raw"
 _LOCK = Lock()
 _AUDIT_LOCK = Lock()

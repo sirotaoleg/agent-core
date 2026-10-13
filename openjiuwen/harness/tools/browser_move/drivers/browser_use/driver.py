@@ -67,7 +67,6 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
 
 _CONTEXT_KIND = "tab"
-# Element-scoped scripts: the target is stamped with this attribute, then found by the returned selector.
 _TARGET_ATTRIBUTE = "data-openjiuwen-target-id"
 _SCOPED_SCRIPT = (
     "(input) => {{ const element = document.querySelector(input.selector); "
@@ -78,15 +77,12 @@ _HAS_TEXT_JS = """(text) => {
   const body = (document.body && document.body.innerText) ? document.body.innerText : '';
   return body.includes(String(text || ''));
 }"""
-# browser-use's state summary takes the title from its cached target info, which lags behind ``document.title``.
 _DOCUMENT_TITLE_JS = "() => document.title"
 _WAIT_TIMEOUT_S = 10.0
 _WAIT_POLL_S = 0.1
 _CHECKED_VALUES = frozenset({"1", "true", "yes", "on", "checked"})
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
-# dispatched=False only where the sidecar provably raises before any input reaches the page: refs are resolved
-# before the first input event and unsupported features are rejected up front. Unlisted codes are unclassified.
 _SIDECAR_ERRORS: dict[str, tuple[type[DriverError], bool]] = {
     "StaleIndexError": (StaleRef, False),
     "ElementNotFound": (ElementNotFound, False),
@@ -100,8 +96,6 @@ _SIDECAR_ERRORS: dict[str, tuple[type[DriverError], bool]] = {
     "DriverUnsupported": (Unsupported, False),
     "ActionIntercepted": (ActionIntercepted, False),
 }
-# A dead browser reaches the driver as a plain error once browser-use gives up reconnecting to it; a target that
-# detached under it fails the connect the same way.
 _DISCONNECTED = re.compile(
     r"\bnot connected\b|Reconnection wait timed out|No valid agent focus available|target may have detached",
     re.IGNORECASE,
@@ -109,7 +103,6 @@ _DISCONNECTED = re.compile(
 
 
 _HUNG_AFTER_TIMEOUTS = 2
-# Selector syntax only Playwright's engines understand; the browser's querySelector rejects it.
 _PLAYWRIGHT_SELECTOR = re.compile(
     r":(?:has-text|text|text-is|text-matches|visible|nth-match|left-of|right-of|above|below|near)\b|>>"
     r"|^\s*(?:text|xpath|css|id|role|data-testid|internal:[a-z-]+)\s*=",
@@ -197,7 +190,6 @@ def _screenshot_from_b64(data: str) -> Screenshot:
 
 
 def _tab_fields(raw_tabs: Sequence[dict[str, Any]]) -> dict[str, Any]:
-    # The sidecar marks a tab active when its URL equals the page URL; the first such tab is the focused one.
     active = [index for index, raw in enumerate(raw_tabs) if raw.get("active")]
     return {
         "tabs": tuple(_context_from_wire(tab) for tab in raw_tabs),
@@ -291,7 +283,7 @@ class BrowserUseDriver(HandlerDriver):
             return Health(ok=False, detail="not started")
         try:
             result = await self._transport.request("health", {})
-        except Exception as exc:  # noqa: BLE001 - health() never raises
+        except Exception as exc:  # noqa: BLE001
             return Health(ok=False, detail=str(exc))
         return Health(ok=bool(result.get("connected", False)), detail=result.get("error"))
 
@@ -304,12 +296,11 @@ class BrowserUseDriver(HandlerDriver):
         )
         self._driver_generation = int(data.get("driver_generation", self._driver_generation))
         screenshot_b64 = data.get("screenshot_b64")
-        # Scripts and captures wait while a dialog is open.
         if data.get("dialog") is None:
             try:
                 data = {**data, "title": str(await self._evaluate(_DOCUMENT_TITLE_JS, None))}
             except DriverError:
-                pass  # no script context (e.g. the PDF viewer): keep the sidecar's title
+                pass
             if command.include_screenshot and command.full_page:
                 screenshot_b64 = await self._request("screenshot", {"full_page": True, "clip": None})
         return _observation_from_wire(data, screenshot_b64)
@@ -406,7 +397,7 @@ class BrowserUseDriver(HandlerDriver):
     @handles(FillForm, refs={DriverRef, Locator})
     async def _fill_form(self, action: FillForm) -> ActionResult:
         context_changed = False
-        refs = [self._ref(field.target) for field in action.fields]  # an unsupported ref fails before any field
+        refs = [self._ref(field.target) for field in action.fields]
         for index, (field, ref) in enumerate(zip(action.fields, refs)):
             if field.kind in (FieldKind.CHECKBOX, FieldKind.RADIO):
                 method = "set_checked"
@@ -425,7 +416,6 @@ class BrowserUseDriver(HandlerDriver):
             try:
                 data = await self._request(method, params)
             except DriverError as exc:
-                # Earlier fields already reached the page.
                 if index:
                     exc.dispatched = True
                 raise
@@ -503,7 +493,6 @@ class BrowserUseDriver(HandlerDriver):
         except Exception as exc:
             error = _translate_error(method, exc)
             self._timeouts = self._timeouts + 1 if isinstance(error, ActionTimeout) else 0
-            # A page that lets two requests in a row run out of time is hung: only a restart frees the target.
             if self._timeouts >= _HUNG_AFTER_TIMEOUTS:
                 self._timeouts = 0
                 raise ConnectionLost(f"{method}: {exc}; the page stopped answering", dispatched=True) from exc
@@ -552,7 +541,7 @@ class BrowserUseDriver(HandlerDriver):
         try:
             raw_tabs = await self._request("list_tabs", {})
         except DriverError as exc:
-            exc.dispatched = True  # the tab command itself already ran
+            exc.dispatched = True
             raise
         title = next((str(tab.get("title", "")) for tab in raw_tabs if tab.get("active")), "")
         surface = BrowserContext(
@@ -566,7 +555,7 @@ class BrowserUseDriver(HandlerDriver):
         self._driver_generation = int(data.get("driver_generation", self._driver_generation))
         return ActionResult(
             ok=True,
-            context_changed=True,  # a navigation always loads a document, even at the same URL
+            context_changed=True,
             surface=BrowserContext(
                 url=str(data["url"]),
                 title=str(data.get("title", "")),

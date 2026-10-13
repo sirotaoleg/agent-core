@@ -28,7 +28,6 @@ _NOTE_HEADER = "### Repeated call"
 _WHITESPACE = re.compile(r"\s+")
 _DIGITS = re.compile(r"\d+")
 
-# A whitespace-free evaluate function that only returns literals or the document title/location.
 _NOOP_ATOM = (
     r"(?:-?\d+(?:\.\d+)?|'[^'\\]*'|\"[^\"\\]*\"|`[^`$\\]*`|true|false|null|undefined"
     r"|document\.title|document\.URL|(?:window\.)?location\.href)"
@@ -138,7 +137,6 @@ class RepeatedCallGuardRail(AgentRail):
             inputs.tool_msg = tool_msg.model_copy(update={"content": f"{tool_msg.content.rstrip()}\n{note}"})
 
     async def before_model_call(self, ctx: AgentCallbackContext) -> None:
-        # A deep agent fires before_invoke on an outer context; its inner agent's first model call starts the run.
         state = ctx.extra.get(_STATE_KEY)
         if not isinstance(state, _RepeatState):
             state = self._start(ctx)

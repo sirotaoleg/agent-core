@@ -8,7 +8,6 @@ from typing import Any
 
 from openjiuwen.core.foundation.tool import McpServerConfig
 
-# The server's --caps groups; the browser capability catalog names its non-policy entries after them.
 SERVER_CAPABILITIES = ("pdf", "vision", "devtools", "config", "network", "storage", "testing")
 
 
@@ -67,7 +66,6 @@ def playwright_mcp_config(
                 raise ValueError("PLAYWRIGHT_MCP_DEVICE is not supported with CDP endpoint mode.")
             env_map["PLAYWRIGHT_MCP_CDP_ENDPOINT"] = cdp_endpoint
             if not settings.mcp_browser:
-                # CDP mode is Chromium-only.
                 env_map["PLAYWRIGHT_MCP_BROWSER"] = "chrome"
         if settings.cdp_headers:
             env_map["PLAYWRIGHT_MCP_CDP_HEADERS"] = settings.cdp_headers
@@ -84,7 +82,6 @@ def playwright_mcp_config(
     if env_map:
         params["env"] = env_map
 
-    # Same key -> same server id (intentional sharing); different key -> isolated server.
     server_id = "playwright_official_stdio"
     server_name = "playwright-official"
     if key:
