@@ -49,8 +49,8 @@ KNOWN_DRIVER_IMPORTS_OUTSIDE_THEIR_LAYER: dict[tuple[str, str], int] = {}
 # The composition root wraps drivers; the settings facade builds one driver's server config lazily.
 DRIVER_LAYER_IMPORTERS = frozenset({"runtime/assembly.py"})
 LAZY_DRIVER_LAYER_IMPORTERS = frozenset({"runtime/config.py"})
-# The package, the deprecated module alias and the runtime server entry point; everything else lives in a layer.
-ROOT_MODULES = frozenset({"__init__.py", "offload_recall.py", "playwright_runtime_mcp_server.py"})
+# The package and the runtime server entry point; everything else lives in a layer.
+ROOT_MODULES = frozenset({"__init__.py", "playwright_runtime_mcp_server.py"})
 SURFACE_MODULES_A_DRIVER_MAY_IMPORT = frozenset({"commands", "context"})
 
 _STDLIB = frozenset(sys.stdlib_module_names) | {"__future__"}

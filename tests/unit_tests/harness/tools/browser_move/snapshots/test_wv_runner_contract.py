@@ -18,7 +18,7 @@ import pytest
 
 from tests.unit_tests.harness.tools.browser_move.snapshots import builder
 
-_PKG = "openjiuwen.harness.tools.browser_move.playwright_runtime"
+_PKG = "openjiuwen.harness.tools.browser_move"
 
 # Regexes copied verbatim from the scripts that parse agent logs.
 # runs/mcp/budget.py
@@ -81,9 +81,9 @@ def clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> pytest.MonkeyP
 @pytest.mark.parametrize(
     "module, name",
     [
-        (f"{_PKG}.config", "build_runtime_settings"),
-        (f"{_PKG}.runtime", "BrowserAgentRuntime"),
-        (f"{_PKG}.browser_capabilities", "CORE_BROWSER_TOOL_NAMES"),
+        (f"{_PKG}.runtime.config", "build_runtime_settings"),
+        (f"{_PKG}.runtime.session", "BrowserAgentRuntime"),
+        (f"{_PKG}.surfaces.browser.capabilities", "CORE_BROWSER_TOOL_NAMES"),
     ],
 )
 def test_runner_import_paths(module: str, name: str) -> None:
@@ -91,7 +91,7 @@ def test_runner_import_paths(module: str, name: str) -> None:
 
 
 def test_core_browser_tool_names() -> None:
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
+    from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
         CORE_BROWSER_TOOL_NAMES,
     )
 
@@ -115,7 +115,7 @@ def test_core_browser_tool_names() -> None:
 
 
 def test_runtime_signature() -> None:
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime
+    from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 
     params = inspect.signature(BrowserAgentRuntime).parameters
     for name in ("provider", "api_key", "api_base", "model_name", "mcp_cfg", "guardrails", "allowed_tool_names"):
@@ -128,7 +128,7 @@ def test_runtime_signature() -> None:
 
 
 def test_runtime_settings_fields() -> None:
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.config import RuntimeSettings
+    from openjiuwen.harness.tools.browser_move.runtime.config import RuntimeSettings
 
     fields = set(RuntimeSettings.__dataclass_fields__)
     assert {"provider", "api_key", "api_base", "model_name", "mcp_cfg", "guardrails"} <= fields
@@ -136,11 +136,11 @@ def test_runtime_settings_fields() -> None:
 
 async def _run_one_task(result: dict[str, Any]) -> None:
     # Mirrors run_one_task: same imports, constructor arguments, helper removal, call.
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.browser_capabilities import (
+    from openjiuwen.harness.tools.browser_move.runtime.config import build_runtime_settings
+    from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
+    from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
         CORE_BROWSER_TOOL_NAMES,
     )
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.config import build_runtime_settings
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.runtime import BrowserAgentRuntime
 
     settings = build_runtime_settings()
     result["settings"] = settings
@@ -251,7 +251,7 @@ def test_worker_tool_names_match_the_analyze_regex(runner_run: dict[str, Any]) -
     ],
 )
 def test_model_env_vars_keep_their_meaning(clean_env: pytest.MonkeyPatch, provider: str, expected_base: str) -> None:
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.config import build_runtime_settings
+    from openjiuwen.harness.tools.browser_move.runtime.config import build_runtime_settings
 
     clean_env.setenv("MODEL_NAME", "vendor/model-x")
     clean_env.setenv("MODEL_PROVIDER", provider)
@@ -267,7 +267,7 @@ def test_model_env_vars_keep_their_meaning(clean_env: pytest.MonkeyPatch, provid
 
 
 def test_playwright_mcp_args_keep_their_meaning(clean_env: pytest.MonkeyPatch) -> None:
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.config import build_runtime_settings
+    from openjiuwen.harness.tools.browser_move.runtime.config import build_runtime_settings
 
     clean_env.setenv("PLAYWRIGHT_MCP_ARGS", LAUNCHER_MCP_ARGS)
     args = build_runtime_settings().mcp_cfg.params["args"]
@@ -408,7 +408,7 @@ def test_run_py_tokens_line(openrouter_call: dict[str, Any]) -> None:
 def test_analyze_tool_error_signal_from_mcp_result() -> None:
     """A Playwright MCP ``### Error`` result reaches the agent unchanged."""
     from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.clients.stdio_client import BrowserMoveStdioClient
-    from openjiuwen.harness.tools.browser_move.playwright_runtime.config import build_playwright_mcp_config
+    from openjiuwen.harness.tools.browser_move.runtime.config import build_playwright_mcp_config
 
     error_text = "### Error\nError: locator.click: Timeout 5000ms exceeded."
     captured: list[dict[str, Any]] = []
