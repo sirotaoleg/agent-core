@@ -61,7 +61,6 @@ def _golden_tools() -> list[tuple[str, dict[str, Any]]]:
 def _expected(tool: dict[str, Any]) -> dict[str, Any]:
     expected = copy.deepcopy(tool)
     if tool["name"] == "browser_tabs":
-        # Approved difference: "new" opens a tab (OpenContext) on every driver.
         expected["parameters"]["properties"]["action"]["enum"].append("new")
     return expected
 
@@ -103,7 +102,6 @@ def test_dialect_spec_equals_its_golden_entry(golden: dict[str, Any]) -> None:
 
 def test_golden_tools_without_a_dialect_spec_are_the_approved_ones() -> None:
     golden_names = {tool["name"] for _key, tool in _golden_tools()}
-    # cancel/clear-cancel are not carried over; find and recall become extra tools.
     assert golden_names - set(DIALECT) == {
         "browser_cancel_run",
         "browser_clear_cancel",

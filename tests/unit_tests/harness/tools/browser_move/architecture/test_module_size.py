@@ -11,7 +11,6 @@ from . import _scan
 
 MAX_LINES = 1500
 
-# file relative to the package -> line count.
 KNOWN_OVERSIZED_MODULES: dict[str, int] = {}
 
 

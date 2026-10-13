@@ -151,7 +151,7 @@ class Page:
         if params["type"] == "mouseReleased" and self.dialog is not None:
             self.dialog_closed = asyncio.get_running_loop().create_future()
             self.client.emit("Page.javascriptDialogOpening", self.dialog)
-            await self.dialog_closed  # Chrome answers the release only after the dialog closes
+            await self.dialog_closed
         if params["type"] == "mouseReleased" and self.navigation is not None:
             self.client.emit("Page.frameRequestedNavigation", self.navigation)
             if self.commit_after is not None:
@@ -353,7 +353,7 @@ def test_navigation_replies_carry_the_dialog_the_loaded_page_opened(browser_use_
         client = FakeCdp()
         Page(client)
         adapter = _adapter(client)
-        await _quick(adapter.click(BUTTON))  # the dialog listener is ours from the first action on
+        await _quick(adapter.click(BUTTON))
 
         def dispatch(event: _DoneEvent) -> _DoneEvent:
             if dialog is not None:
@@ -378,7 +378,6 @@ def test_every_action_reclaims_the_dialog_event_from_browser_use():
         Page(client, dialog={"type": "alert", "message": "Hi"})
         adapter = _adapter(client)
         await adapter._ensure_listeners()
-        # browser-use's popups watchdog registers its own auto-accepting handler when a tab is created.
         client._event_registry.register("Page.javascriptDialogOpening", lambda event, sid: None)
         reply = await _quick(adapter.click(BUTTON))
         assert reply["dialog_opened"] == {"type": "alert", "message": "Hi"}
@@ -462,7 +461,6 @@ def test_new_target_listener_keeps_the_handler_browser_use_registered():
 
 
 LINK = {"frameId": TARGET, "reason": "anchorClick", "url": "http://x/second.html", "disposition": "currentTab"}
-# The fake URL never changes: only the navigation events tell the adapter that the document changed.
 RELOAD = {**LINK, "reason": "formSubmissionGet", "url": "http://x/index.html"}
 
 
@@ -582,7 +580,6 @@ def test_a_node_lost_after_the_input_is_not_stale():
     async def scenario() -> None:
         client = FakeCdp()
         Page(client)
-        # type_text: the box (1st resolve) is found and clicked; the node is gone when the field is cleared.
         _resolve_fails_from(client, 2, NOT_IN_DOCUMENT)
         adapter = _adapter(client)
         with pytest.raises(errors.DriverError, match="after input reached the page") as info:
@@ -652,8 +649,6 @@ def test_the_wire_error_carries_the_receiver():
     assert main._error_code_for(exc) == "ActionIntercepted"
     assert main._error_data_for(exc) == {"by": OVERLAY}
 
-
-# --- evaluate: an expression or a function, as Playwright MCP's evaluate ------------------------------------------
 
 cdp = _load_sidecar_module("cdp")
 

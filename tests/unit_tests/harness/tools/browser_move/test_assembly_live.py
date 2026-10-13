@@ -61,7 +61,7 @@ def _free_port() -> int:
 
 def _cdp_ready(endpoint: str) -> bool:
     try:
-        with urlopen(f"{endpoint}/json/version", timeout=1.0) as response:  # nosec B310 - loopback only
+        with urlopen(f"{endpoint}/json/version", timeout=1.0) as response:  # nosec
             json.load(response)
             return True
     except (URLError, OSError, ValueError):
@@ -76,7 +76,7 @@ def _chrome_processes(user_data_dir: Path) -> list[str]:
             "Get-CimInstance Win32_Process -Filter \"name='chrome.exe'\" | "
             "Select-Object -ExpandProperty CommandLine | ConvertTo-Json"
         )
-        completed = subprocess.run(  # noqa: S603, S607 - fixed read-only query
+        completed = subprocess.run(  # noqa: S603, S607
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
             capture_output=True,
             text=True,
@@ -86,7 +86,7 @@ def _chrome_processes(user_data_dir: Path) -> list[str]:
         raw = json.loads(completed.stdout or "[]")
         lines = [raw] if isinstance(raw, str) else [line for line in raw or [] if line]
     else:
-        completed = subprocess.run(  # noqa: S603, S607 - fixed read-only query
+        completed = subprocess.run(  # noqa: S603, S607
             ["pgrep", "-af", str(user_data_dir)], capture_output=True, text=True, timeout=30, check=False
         )
         lines = completed.stdout.splitlines()
@@ -100,7 +100,7 @@ def _process_table() -> set[tuple[int, int, str]]:
             "Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, CommandLine | "
             "ConvertTo-Json -Compress"
         )
-        completed = subprocess.run(  # noqa: S603, S607 - fixed read-only query
+        completed = subprocess.run(  # noqa: S603, S607
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
             capture_output=True,
             text=True,
@@ -109,7 +109,7 @@ def _process_table() -> set[tuple[int, int, str]]:
         )
         rows = json.loads(completed.stdout or "[]")
         return {(row["ProcessId"], row["ParentProcessId"], row["CommandLine"] or "") for row in rows}
-    completed = subprocess.run(  # noqa: S603, S607 - fixed read-only query
+    completed = subprocess.run(  # noqa: S603, S607
         ["ps", "-eo", "pid=,ppid=,args="], capture_output=True, text=True, timeout=30, check=False
     )
     table = set()

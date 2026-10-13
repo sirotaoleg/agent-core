@@ -287,7 +287,6 @@ def test_default_wiring_main_agent_gets_its_browser_tools_at_the_first_invoke() 
     with ctx:
         create_browser_agent(_fake_model(), settings=_fake_settings())
 
-    # The driver starts at the first invoke, and the tools are built from it then (BrowserRuntimeRail).
     assert calls[0].get("tools", []) == []
     rail = next(rail for rail in calls[0]["rails"] if isinstance(rail, BrowserRuntimeRail))
     assert rail._runtime is mock_runtime_cls.return_value
@@ -325,8 +324,6 @@ def test_default_wiring_adds_browser_state_and_windows_large_tool_results() -> N
     assert len(processors) == 3
     processor_map = dict(processors)
     config = processor_map["ToolResultWindowProcessor"]
-    # Pin the intended contract literally (not against the source constant) so a
-    # regression like the plain "browser_snapshot" name is actually caught.
     assert config.tool_names == [
         "browser_probe_interactives",
         "browser_probe_cards",
@@ -365,8 +362,6 @@ def test_caller_context_processor_rail_is_augmented_with_browser_state() -> None
 
     rails = calls[0].get("rails", [])
     context_rails = [rail for rail in rails if isinstance(rail, ContextProcessorRail)]
-    # Only the caller's rail is present, and it receives the required live state
-    # processor rather than competing with a second context rail.
     assert context_rails == [caller_rail]
     assert [key for key, _ in caller_rail._user_processors] == [
         "ToolResultWindowProcessor",
@@ -397,7 +392,6 @@ def test_default_wiring_adds_scoped_offload_recall_without_filesystem_tools() ->
     assert "read_file" not in tool_names
     assert "bash" not in tool_names
     assert "powershell" not in tool_names
-    # The recall tool is built by the runtime from the workspace and language it is given.
     assert mock_runtime_cls.call_args.kwargs["workspace"] == "/tmp/ws"
     assert mock_runtime_cls.call_args.kwargs["language"] == "en"
 
@@ -434,8 +428,6 @@ def test_settings_forwarded_to_runtime_constructor() -> None:
 
 
 def _model_without_client_config() -> SimpleNamespace:
-    # model_client_config=None routes _resolve_runtime_settings through
-    # build_runtime_settings(instance), exercising the keyed-instance path.
     return SimpleNamespace(model_client_config=None, model_config=None)
 
 
@@ -450,7 +442,6 @@ def test_browser_key_threads_keyed_instance_to_runtime() -> None:
     instance = mock_runtime_cls.call_args.kwargs["instance"]
     assert instance is not None
     assert instance.key == "teammate-A"
-    # The MCP server_id carried into the runtime must be isolated by the key.
     assert mock_runtime_cls.call_args.kwargs["mcp_cfg"].server_id.endswith("__teammate-A")
 
 

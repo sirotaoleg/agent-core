@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""No whole-word browser, page, tab or url in the contract or the core, comments and strings included;
-import statements are the import-boundary rule's business and are not counted."""
+"""No whole-word browser, page, tab or url in the contract or the core, outside import statements."""
 
 from __future__ import annotations
 
@@ -13,10 +12,7 @@ from . import _scan
 
 BROWSER_WORD_RE = re.compile(r"\b(?:browser|page|tab|url)\b", re.IGNORECASE)
 
-# file relative to the package -> number of browser-word matches.
 KNOWN_BROWSER_WORDS: dict[str, int] = {
-    # the documented residual (F_07): data keys and attributes (page, url), the surface name,
-    # identifiers and the text the model reads; each hit is listed there with its reason
     "runtime/agents.py": 1,
     "runtime/config.py": 3,
     "runtime/controllers/action.py": 4,

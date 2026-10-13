@@ -61,7 +61,7 @@ def test_search_results_word_does_not_invent_title_requirement():
 
 def test_sourced_weather_answer_does_not_require_another_field_mapping_lookup():
     state = _observed_state()
-    assert not state["field_coverage"]  # Do not invent typed temperature evidence from arbitrary text.
+    assert not state["field_coverage"]
     session = _FakeSession()
     session.update_state({STATE_KEY: state})
     BrowserRuntimeRail._apply_worker_progress_to_task_state(session, {"status": "completed"}, WEATHER_TEXT)
@@ -182,8 +182,6 @@ def test_string_error_is_not_promoted_to_page_evidence_when_wrapped():
 
 
 def test_card_probe_completes_extraction_for_a_requested_count_but_not_for_one_item():
-    """A card list is completion evidence for "top N" tasks but not for a task that
-    wants one specific item opened -- seeing the list is not reading the item."""
     cards_result = {"cards": [{"title": "Item 1", "result_index": 1}]}
 
     one_item_state = BrowserRuntimeRail._build_phase_state("Find a vegetarian lasagna rated 4.5 or higher")

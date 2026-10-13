@@ -28,12 +28,9 @@ MCP_PREFIX = "mcp_playwright-official_"
 DEVICE = ProvisionedDevice(kind="chrome", endpoint="http://127.0.0.1:9222", extras={})
 CAPABILITY_VIEWS = [view for view in builder.list_views() if view not in builder.RUNNER_VIEWS]
 
-# Extra tools the worker removes after the build.
 PROBES = frozenset({"browser_probe_interactives", "browser_probe_cards"})
 BATCH = "browser_batch_interact"
 RUNNER_REMOVED = PROBES | {BATCH, "browser_recall_offload"}
-# Server tools with no command: dropped from the agent, each selection logged once; gone from the goldens since the
-# switch (C7, C20, C25).
 NO_COMMAND: dict[str, frozenset[str]] = {
     "unsafe_dev": frozenset({"browser_run_code_unsafe"}),
     "vision": frozenset({"browser_mouse_down", "browser_mouse_up"}),
@@ -94,7 +91,6 @@ NO_COMMAND: dict[str, frozenset[str]] = {
         }
     ),
 }
-# browser-use: run control is not a model tool; screenshot, close, drag and drop belong to their own capabilities.
 BROWSER_USE_DROPPED = frozenset({"browser_cancel_run", "browser_clear_cancel"})
 BROWSER_USE_OUTSIDE_CORE = frozenset({"browser_close", "browser_drag", "browser_drop"})
 SCREENSHOT = "browser_take_screenshot"

@@ -20,24 +20,18 @@ from tests.unit_tests.harness.tools.browser_move.snapshots import builder
 
 _PKG = "openjiuwen.harness.tools.browser_move"
 
-# Regexes copied verbatim from the scripts that parse agent logs.
-# runs/mcp/budget.py
 BUDGET_RESP = re.compile(r"CompletionUsage\((.*?)\), provider=")
 BUDGET_FIELD = {
     k: re.compile(k + r"=([0-9.]+)")
     for k in ("prompt_tokens", "completion_tokens", "cached_tokens", "cache_write_tokens", "cost")
 }
-# agent-eval bench/webvoyager/run.py (run_one_task)
 RUN_USAGE_RE = re.compile(r"completion_tokens=(\d+),\s*prompt_tokens=(\d+),\s*total_tokens=(\d+)")
 RUN_TOKEN_RE = re.compile(r"tokens=\{input=(\d+),\s*output=(\d+)(?:,\s*cache=(\d+))?\}")
-# runs/mcp/analyze.py
 ANALYZE_TOOL_ERROR = r"(?-i:### Error|Traceback \(most recent)"
 ANALYZE_TOOL_RE = re.compile(r"name='mcp_playwright-official_(\w+)'|name='(browser_\w+)'")
 ANALYZE_USAGE = r"CompletionUsage\((.*?)\), provider="
 
 RUNNER_HELPERS = builder.RUNNER_HELPERS
-# Helpers BrowserAgentRuntime.ensure_started adds to the worker; the other two are
-# registered as runtime tools only, and the runner removes all five.
 WORKER_ADDED_HELPERS = ("browser_probe_interactives", "browser_probe_cards", "browser_batch_interact")
 
 WORKER_ANSWER = json.dumps(
@@ -51,7 +45,6 @@ WORKER_ANSWER = json.dumps(
     }
 )
 
-# Values the launcher (wv_mcp.ps1) and run_one_task set; distinct from the defaults.
 LAUNCHER_MCP_ARGS = "-y @playwright/mcp@0.0.78 --isolated --config C:/runs/refactor-mcp/playwright-mcp.config.json"
 
 
@@ -135,7 +128,6 @@ def test_runtime_settings_fields() -> None:
 
 
 async def _run_one_task(result: dict[str, Any]) -> None:
-    # Mirrors run_one_task: same imports, constructor arguments, helper removal, call.
     from openjiuwen.harness.tools.browser_move.runtime.config import build_runtime_settings
     from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
     from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
@@ -163,7 +155,7 @@ async def _run_one_task(result: dict[str, Any]) -> None:
             for name in RUNNER_HELPERS:
                 try:
                     runtime._service.browser_agent.ability_manager.remove_ability(name)
-                except Exception as exc:  # the runner swallows these; the test records them
+                except Exception as exc:
                     result["removal_errors"][name] = repr(exc)
         result["tools_after"] = [t.name for t in await worker.ability_manager.list_tool_info()]
         result["answer"] = await runtime.run_browser_task(task=builder.TASK_QUERY, session_id="wv-agent")
@@ -210,13 +202,12 @@ def test_helpers_are_really_removed_from_the_worker(runner_run: dict[str, Any]) 
 def test_run_browser_task_answer_dict(runner_run: dict[str, Any]) -> None:
     answer = runner_run["answer"]
     assert isinstance(answer, dict)
-    # Keys run.py reads: ok (PASS/FAIL), error (FAIL message), final and screenshot (judge).
     assert answer["ok"] is True, answer
     assert answer["final"] == "The main heading of the page is Example Domain."
     assert answer["error"] is None
     assert "screenshot" in answer
-    json.dumps(answer, ensure_ascii=False)  # run.py writes it to output.json
-    answer["_usage"] = {"input_tokens": 0}  # run.py adds its usage here
+    json.dumps(answer, ensure_ascii=False)
+    answer["_usage"] = {"input_tokens": 0}
 
 
 def test_runner_env_vars_keep_their_meaning(runner_run: dict[str, Any]) -> None:
@@ -231,8 +222,6 @@ def test_runner_env_vars_keep_their_meaning(runner_run: dict[str, Any]) -> None:
     assert worker.config.max_iterations == 50
     assert worker.config.model_config_obj.temperature == pytest.approx(0.7)
     assert worker.config.model_config_obj.top_p == pytest.approx(0.9)
-    # BROWSER_INSTRUCTION and BROWSER_LOGS_DIR are set by the runner and not read by
-    # agent-core; the run above had them set and completed.
     assert runner_run["answer"]["ok"] is True
 
 
@@ -244,9 +233,7 @@ def test_worker_tool_names_match_the_analyze_regex(runner_run: dict[str, Any]) -
 @pytest.mark.parametrize(
     "provider, expected_base",
     [
-        # run_one_task sets MODEL_PROVIDER=openai when only MODEL_NAME is given.
         ("openai", "https://llm.example/v1"),
-        # wv_mcp.ps1 sets openrouter; OPENAI_BASE_URL is not read for it.
         ("openrouter", "https://openrouter.ai/api/v1"),
     ],
 )
@@ -401,7 +388,6 @@ def test_run_py_tokens_line(openrouter_call: dict[str, Any]) -> None:
     recorder = _Recorder()
     log_llm_response(recorder, openrouter_call["message"])
     matches = [m.groups() for line in recorder.lines for m in RUN_TOKEN_RE.finditer(line)]
-    # No cache= part today; run.py treats it as optional.
     assert matches == [("4597", "123", None)]
 
 
@@ -430,7 +416,6 @@ def test_analyze_tool_error_signal_from_mcp_result() -> None:
 
 
 def test_analyze_traceback_signal_format() -> None:
-    # Produced by the standard library (logging with exc_info, traceback); pinned as a format.
     try:
         raise RuntimeError("boom")
     except RuntimeError:

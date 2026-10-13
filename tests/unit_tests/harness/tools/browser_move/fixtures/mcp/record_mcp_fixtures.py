@@ -26,8 +26,6 @@ SERVER = "@playwright/mcp@0.0.78"
 HERE = Path(__file__).resolve().parent
 PAGES_DIR = HERE / "pages"
 
-# Env read by build_playwright_mcp_config that would attach to another browser
-# or change the launch; cleared so the recorder always starts its own one.
 _CLEARED_ENV = (
     "BROWSER_DRIVER",
     "PLAYWRIGHT_MCP_COMMAND",
@@ -44,7 +42,6 @@ _CLEARED_ENV = (
     "PLAYWRIGHT_MCP_ENV_JSON",
 )
 
-# Same content as the WebVoyager baseline's playwright-mcp.config.json.
 _BASELINE_MCP_CONFIG = {
     "browser": {
         "contextOptions": {"locale": "en-US", "timezoneId": "America/New_York"},
@@ -59,15 +56,14 @@ _BASELINE_MCP_CONFIG = {
 }
 
 
-# Longer than the server's 5 s action timeout, so a click on a link to it times out after the click.
 _HANG_S = 30
 
 
 class _QuietHandler(SimpleHTTPRequestHandler):
-    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - stdlib signature
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         return
 
-    def do_GET(self) -> None:  # noqa: N802 - stdlib name
+    def do_GET(self) -> None:  # noqa: N802
         if self.path == "/hang":
             time.sleep(_HANG_S)
             self.send_response(204)
@@ -95,14 +91,11 @@ def _configure_env(work_dir: Path) -> None:
     os.environ["PLAYWRIGHT_RUNTIME_MCP_CWD"] = str(work_dir)
 
 
-# The server names its output files (page snapshots, console logs) by time,
-# e.g. ".playwright-mcp\page-2026-10-09T16-32-49-830Z.yml".
 _OUTPUT_FILE_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z")
 
 
 class _Placeholders:
     def __init__(self, port: int, tmp_dir: Path, outside_dir: Path) -> None:
-        # The doubled form is how paths appear inside the server's JS code lines.
         variants = {
             (spelling, token)
             for directory, token in ((tmp_dir, "<TMP>"), (outside_dir, "<OUTSIDE>"))
@@ -174,7 +167,6 @@ def _ref(snapshot_text: str, role: str, name: str | None) -> str:
     return match.group(1)
 
 
-# Closes the browser while a Playwright call is in flight; the server does not relaunch it afterwards.
 _CLOSE_BROWSER_MID_CALL = (
     "async (page) => { const pending = page.locator('#never').click({ timeout: 3000 }); "
     "await page.context().browser().close(); await pending; }"

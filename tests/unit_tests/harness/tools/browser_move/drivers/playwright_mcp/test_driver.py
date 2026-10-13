@@ -308,9 +308,6 @@ async def _value(value: Any) -> Any:
     return value
 
 
-# --- lifecycle -------------------------------------------------------------------------------------------------------
-
-
 def test_start_connects_and_health_pings_the_session(tmp_path: Path) -> None:
     health, calls = _run(tmp_path, {}, lambda driver: driver.health())
 
@@ -408,9 +405,6 @@ def test_a_call_without_a_connection_is_connection_lost_before_dispatch(tmp_path
     assert isinstance(outcome, ConnectionLost)
     assert outcome.dispatched is False
     assert calls == []
-
-
-# --- observe ----------------------------------------------------------------------------------------------------------
 
 
 def test_observe_reads_the_snapshot_header_tabs_elements_and_full_text(tmp_path: Path) -> None:
@@ -524,8 +518,6 @@ def test_an_observe_rooted_at_a_point_is_unsupported_before_any_call(tmp_path: P
     assert isinstance(error, Unsupported) and error.dispatched is False
     assert calls == []
 
-
-# --- handlers ---------------------------------------------------------------------------------------------------------
 
 SENT = [
     (Click(E12), "browser_click", {"element": "click e12", "target": "e12"}),
@@ -717,9 +709,6 @@ def test_unsupported_commands_send_nothing(tmp_path: Path, action: Any) -> None:
     assert calls == []
 
 
-# --- results and context tracking -------------------------------------------------------------------------------------
-
-
 SECRET = "s3cret-value"
 ECHOED = {
     "content": [
@@ -780,7 +769,7 @@ def test_the_context_of_every_result_is_carried_to_the_next_decode(tmp_path: Pat
 
     (_navigated, clicked), _calls = _execute(tmp_path, replies, Navigate("http://x/second.html"), Click(E12))
 
-    assert clicked.context_changed is True  # second.html -> index.html
+    assert clicked.context_changed is True
 
 
 def test_the_context_of_an_observation_is_carried_to_the_next_decode(tmp_path: Path) -> None:
@@ -792,7 +781,7 @@ def test_the_context_of_an_observation_is_carried_to_the_next_decode(tmp_path: P
 
     clicked, _calls = _run(tmp_path, replies, body)
 
-    assert clicked.context_changed is True  # popup.html -> second.html
+    assert clicked.context_changed is True
     assert clicked.opened_contexts == ()
 
 
@@ -840,8 +829,6 @@ def test_evaluate_returns_the_value(tmp_path: Path) -> None:
 
     assert outcome.value == {"name": "Ada", "size": "l"}
 
-
-# --- factory ----------------------------------------------------------------------------------------------------------
 
 REMOTE = ProvisionedDevice(kind="chrome", endpoint="http://127.0.0.1:9222", extras={})
 MANAGED = ProvisionedDevice(kind="chrome", endpoint="http://127.0.0.1:9333", extras={"port": 9333})

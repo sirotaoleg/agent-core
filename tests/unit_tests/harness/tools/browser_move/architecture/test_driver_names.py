@@ -12,7 +12,6 @@ from . import _scan
 
 DRIVER_NAME_RE = re.compile(r"playwright_mcp|browser_use(?![a-z])|browser-use|\bmcp\b", re.IGNORECASE)
 
-# The 70 tools of @playwright/mcp@0.0.78: the 69 catalog names plus browser_wait_for.
 MCP_TOOL_NAMES = frozenset(
     {
         "browser_annotate",
@@ -91,20 +90,13 @@ MCP_TOOL_NAME_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:" + "|".join(sorted(MCP_TOOL_NAMES, key=len, reverse=True)) + r")(?![A-Za-z0-9_])"
 )
 
-# file relative to the package -> number of driver-name matches.
 KNOWN_DRIVER_NAMES: dict[str, int] = {
-    # the runtime server's own transport: the config facade's name and the server's "/mcp" path
     "runtime/browser_tools.py": 3,
-    # the CDP endpoint of the given server config, part of the lifecycle identity
     "runtime/service.py": 1,
-    # the capability catalog's model-facing descriptions
-    "surfaces/browser/capabilities.py": 2,
-    # model-facing card text, kept byte-identical to the golden tool list
+    "surfaces/browser/capabilities.py": 1,
     "surfaces/browser/helpers/batch_steps.py": 1,
 }
 
-# file relative to the package -> number of MCP tool-name matches.
-# The model-facing tool names all live under surfaces/browser/ with the prompt text.
 KNOWN_MCP_TOOL_NAMES: dict[str, int] = {}
 
 

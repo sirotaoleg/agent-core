@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Import boundaries of browser_move: the core and ``surfaces/`` never reach a concrete driver or provisioner, the core
-reaches the registries from the composition root only, and ``openjiuwen/core`` never imports ``openjiuwen.harness``."""
+"""Import boundaries between the contract, drivers, provisioning, surfaces and the core."""
 
 from __future__ import annotations
 
@@ -12,27 +11,19 @@ from collections import Counter
 
 from . import _scan
 
-# The registries live in the bare packages; only the composition root may import them, and config.py the surface
-# registry for the surface settings.
 REGISTRY_IMPORTERS: dict[str, frozenset[str]] = {
     "drivers": frozenset({"runtime/assembly.py"}),
     "provisioning": frozenset({"runtime/assembly.py"}),
     "surfaces": frozenset({"runtime/assembly.py", "runtime/config.py"}),
 }
 
-# (file relative to the package, imported module relative to the package) -> count. Empty: the profile carries
-# the hooks, the catalog and the worker prompt, and the core reaches surfaces/ through the registry alone.
 KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {}
 
-# (core file, module outside the package that itself imports a concrete driver/surface/provisioner) -> count.
 KNOWN_CORE_DETOURS_INTO_CONCRETE_MODULES: dict[tuple[str, str], int] = {
-    # Direct builds the main agent with create_browser_agent, which imports the browser surface's rails.
     ("runtime/topology.py", "openjiuwen.harness.subagents.browser_agent"): 1,
 }
 
-# (file relative to openjiuwen/core, imported module) -> count.
 KNOWN_CORE_TO_HARNESS_IMPORTS: dict[tuple[str, str], int] = {
-    # Outside browser_move; the driver refactor does not remove these.
     ("context_engine/context/session_memory_manager.py", "openjiuwen.harness.tools.filesystem"): 2,
     ("context_engine/processor/forked/compressor/session_memory_agent.py", "openjiuwen.harness.tools.filesystem"): 1,
     ("memory/lite/coding_memory_tool_ops.py", "openjiuwen.harness.workspace.workspace"): 1,
@@ -44,12 +35,9 @@ KNOWN_CORE_TO_HARNESS_IMPORTS: dict[tuple[str, str], int] = {
     ("memory/lite/memory_tools.py", "openjiuwen.harness.workspace.workspace"): 1,
 }
 
-# (driver file, imported package module) -> count.
 KNOWN_DRIVER_IMPORTS_OUTSIDE_THEIR_LAYER: dict[tuple[str, str], int] = {}
-# The composition root wraps drivers; the settings facade builds one driver's server config lazily.
 DRIVER_LAYER_IMPORTERS = frozenset({"runtime/assembly.py"})
 LAZY_DRIVER_LAYER_IMPORTERS = frozenset({"runtime/config.py"})
-# The package and the runtime server entry point; everything else lives in a layer.
 ROOT_MODULES = frozenset({"__init__.py", "playwright_runtime_mcp_server.py"})
 SURFACE_MODULES_A_DRIVER_MAY_IMPORT = frozenset({"commands", "context"})
 
@@ -82,7 +70,6 @@ def _import_targets(relpath: str, node: ast.stmt) -> list[tuple[str, ...]]:
     targets = []
     for alias in node.names:
         sub = base + (alias.name,)
-        # ``from ..drivers import x`` reaches the module ``drivers.x`` only if it exists.
         targets.append(sub if alias.name != "*" and _scan.is_package_module(sub) else base)
     return targets
 

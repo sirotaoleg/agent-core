@@ -368,11 +368,6 @@ def test_execute_wrapper_preserves_non_none_tool_arguments() -> None:
     }
 
 
-# ---------------------------------------------------------------------------
-# Per-agent browser identity (BrowserInstanceConfig) — see plan: keyed server_id
-# ---------------------------------------------------------------------------
-
-
 def test_instance_launch_args_replace_the_environment_args() -> None:
     """A caller that knows its launch flags passes them on the instance; the environment is not consulted."""
     with patch.dict(os.environ, {"PLAYWRIGHT_MCP_ARGS": "-y @playwright/mcp@0.0.78 --headless"}, clear=True):

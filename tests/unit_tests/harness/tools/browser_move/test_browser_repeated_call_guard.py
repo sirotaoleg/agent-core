@@ -526,7 +526,6 @@ class _SameTurnLLM:
 
 
 def test_identical_calls_issued_in_one_model_turn_withhold_tools() -> None:
-    # A known false positive, pinned as it behaves today.
     async def scenario() -> tuple[dict[str, Any], list[dict[str, Any]], int]:
         llm = _SameTurnLLM(8)
         driver = fake_driver(_results(*[None] * 8))

@@ -18,15 +18,11 @@ PKG_DIR = REPO_ROOT.joinpath(*PKG_DOTTED.split("."))
 CORE_DIR = REPO_ROOT / "openjiuwen" / "core"
 
 CORE_FOLDERS = ("runtime",)
-# Wraps every driver, so it obeys the core rules although it lives under drivers/.
 CORE_MODULES = frozenset({"drivers/middleware.py"})
 CONTRACT_FOLDER = "contract"
 SURFACES_FOLDER = "surfaces"
-# Modules allowed to parse settings (and, for the driver-name rule, name drivers).
 CONFIG_MODULE_RE = re.compile(r"^(?:runtime/config\.py|surfaces/[^/]+/config\.py)$")
-# The composition root, under its current and its future folder.
 ASSEMBLY_MODULES = frozenset({"runtime/assembly.py"})
-# Keeps the public RuntimeSettings.mcp_cfg names; builds that one server config through a lazy driver import.
 SETTINGS_FACADE_MODULES = frozenset({"runtime/config.py"})
 
 
@@ -70,7 +66,6 @@ def read_text(relpath: str) -> str:
 
 def parse_source(text: str, filename: str) -> ast.Module:
     with warnings.catch_warnings():
-        # Invalid escape sequences in the scanned code are not this test's business.
         warnings.simplefilter("ignore", (SyntaxWarning, DeprecationWarning))
         return ast.parse(text, filename=filename)
 

@@ -179,9 +179,6 @@ def _names(built: AgentTools) -> list[str]:
     return [tool.card.name for tool in built.tools]
 
 
-# --- selection and the four rules ---------------------------------------------------------------------------------
-
-
 def test_catalog_entries_select_their_specs_once_in_catalog_order() -> None:
     built, _ = _build(FakeDriver(), ("core", "core"))
     assert _names(built) == ["toy_click", "toy_look", "toy_tabs", "toy_script"]
@@ -365,9 +362,6 @@ async def test_policy_rail_denies_with_the_factory_builders() -> None:
     assert isinstance(inputs.tool_msg, ToolMessage)
     assert inputs.tool_msg.content == "### Error\nscripts are off"
     assert ctx.extra["_skip_tool_calls"] == {"call-1": True}
-
-
-# --- the CommandTool pipeline -------------------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -674,9 +668,6 @@ async def test_command_record_reads_the_record_and_is_none_for_a_call_that_sent_
 
     assert command_record(sent) is sent.data["command"]
     assert command_record(undecoded) is None
-
-
-# --- the message metadata the context processors read -------------------------------------------------------------
 
 
 def _record(**fields: Any) -> CommandRecord:

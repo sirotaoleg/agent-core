@@ -218,7 +218,7 @@ def test_release_of_a_device_without_cleanup_does_nothing() -> None:
 
 
 class _CdpVersion(BaseHTTPRequestHandler):
-    def do_GET(self) -> None:  # noqa: N802 - http.server API
+    def do_GET(self) -> None:  # noqa: N802
         body = json.dumps({"Browser": "Chrome/140"}).encode() if self.path == "/json/version" else b""
         self.send_response(200 if body else 404)
         self.end_headers()

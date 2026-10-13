@@ -26,7 +26,6 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.context import Brows
 
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "mcp"
 BASE = "http://127.0.0.1:<PORT>"
-# The recorded file names carry "<TS>", which Windows does not allow in a file name.
 TIMESTAMP = "2026-10-10T00-00-00-000Z"
 SNAPSHOT_FILE = Path(".playwright-mcp") / f"page-{TIMESTAMP}.yml"
 
@@ -75,7 +74,6 @@ SECOND_AND_BLANK = BrowserContext(
 )
 
 
-# case -> (before, ok, context_changed)
 DECODED = {
     "snapshot_form_page": (FORM, True, False),
     "snapshot_depth_1": (FORM, True, False),
@@ -116,7 +114,6 @@ DECODED = {
     ),
 }
 
-# case -> (error type, dispatched)
 RAISED = {
     "click_intercepted_by_overlay": (ActionIntercepted, False),
     "click_timeout_not_enabled": (ActionTimeout, False),

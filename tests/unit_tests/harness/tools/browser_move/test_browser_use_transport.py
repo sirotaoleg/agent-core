@@ -18,9 +18,7 @@ from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import ex
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar import wire
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.transport import SidecarTransport
 
-# asyncio StreamReader default; screenshot NDJSON replies routinely exceed this.
 _DEFAULT_STREAM_LIMIT = 64 * 1024
-# Representative viewport screenshot base64 payload size (above default, below wire max).
 _SCREENSHOT_SIZED_B64_LEN = 70 * 1024
 
 
@@ -46,11 +44,6 @@ def _transport_with_stdout(reader: asyncio.StreamReader) -> SidecarTransport:
 @pytest.mark.asyncio
 @pytest.mark.level0
 async def test_default_stream_limit_cannot_read_screenshot_sized_line() -> None:
-    """Document the pre-fix failure mode: default 64 KiB readline limit.
-
-    Python 3.11+ ``StreamReader.readline`` wraps ``LimitOverrunError`` as
-    ``ValueError`` with the same message text.
-    """
     line = _screenshot_success_line()
     assert len(line) > _DEFAULT_STREAM_LIMIT
     reader = _feed_reader(line, limit=_DEFAULT_STREAM_LIMIT)
@@ -75,7 +68,6 @@ async def test_read_reply_accepts_screenshot_sized_ndjson_line() -> None:
 @pytest.mark.asyncio
 @pytest.mark.level0
 async def test_read_reply_maps_limit_overrun_to_driver_connection_lost() -> None:
-    # Force StreamReader oversize: line content exceeds the raised wire limit.
     oversized = _screenshot_success_line(b64_len=wire.MAX_LINE_BYTES + 1024)
     assert len(oversized) > wire.MAX_LINE_BYTES
     transport = _transport_with_stdout(_feed_reader(oversized, limit=wire.MAX_LINE_BYTES))
@@ -89,7 +81,6 @@ async def test_read_reply_maps_limit_overrun_to_driver_connection_lost() -> None
 async def test_read_reply_rejects_line_longer_than_max_after_read() -> None:
     """Defense-in-depth when a reader returns an oversize chunk without LimitOverrunError."""
     oversized = _screenshot_success_line(b64_len=wire.MAX_LINE_BYTES + 64)
-    # Use a higher reader limit so readline succeeds; transport must still reject.
     transport = _transport_with_stdout(_feed_reader(oversized, limit=wire.MAX_LINE_BYTES * 2))
 
     with pytest.raises(driver_errors.DriverConnectionLost, match="max line size"):

@@ -24,14 +24,12 @@ BROWSER_USE = "browser_use"
 RUNNER_VIEW = "runner"
 RUNNER_DIRECT_VIEW = "runner_direct"
 RUNNER_WORKER_VIEW = "runner_worker"
-# The runner mirror in each topology: the view's BROWSER_TOPOLOGY (None: the driver's default) and the agent's role.
 RUNNER_VIEWS: dict[str, tuple[str | None, str]] = {
     RUNNER_VIEW: (None, "worker"),
     RUNNER_DIRECT_VIEW: ("direct", "main"),
     RUNNER_WORKER_VIEW: ("delegated_worker", "worker"),
 }
 
-# Baseline model config. Values are only carried in configs; nothing is sent.
 MODEL_NAME = "anthropic/claude-sonnet-5.5"
 API_BASE = "https://openrouter.ai/api/v1"
 STUB_API_KEY = "stub-key-not-used"
@@ -52,7 +50,6 @@ RUNNER_HELPERS = (
     "browser_list_custom_actions",
 )
 
-# Environment prefixes cleared for a view so the machine's own settings never leak in.
 CLEARED_ENV_PREFIXES = (
     "BROWSER_",
     "PLAYWRIGHT_",
@@ -104,7 +101,6 @@ def view_env(workdir: Path) -> dict[str, str]:
         "PYTHONHASHSEED": "0",
         "BROWSER_RUNTIME_WORKDIR": str(workdir),
         "BROWSER_TIMEOUT_S": "600",
-        # Never executed (the MCP transport is stubbed); it only has to be an existing file.
         "PLAYWRIGHT_MCP_COMMAND": sys.executable,
         "MODEL_PROVIDER": "openrouter",
         "MODEL_NAME": MODEL_NAME,
@@ -239,7 +235,6 @@ def _make_capturing_client_factory(captured: list[dict[str, Any]], answer: str):
         __client_name__ = "snapshot-capture"
 
         def _record(self, messages: Any, tools: Any) -> AssistantMessage:
-            # A refused probe keeps the image-capability prompt section at its "unverified" variant.
             if _is_probe(messages):
                 raise RuntimeError("snapshot stub: image probe refused (no network)")
             if len(captured) >= MAX_STUB_CALLS:
@@ -440,7 +435,6 @@ async def _capability_view(view: str, captured: list[dict[str, Any]]) -> list[di
 
 
 async def _runner_view(captured: list[dict[str, Any]], notes: dict[str, Any], role: str) -> list[dict[str, Any]]:
-    # Same imports, constructor arguments, helper removal and call as run_one_task.
     from openjiuwen.harness.tools.browser_move.runtime.config import build_runtime_settings
     from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
     from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
@@ -464,7 +458,7 @@ async def _runner_view(captured: list[dict[str, Any]], notes: dict[str, Any], ro
             for name in RUNNER_HELPERS:
                 try:
                     worker.ability_manager.remove_ability(name)
-                except Exception:  # the runner swallows these too
+                except Exception:
                     pass
         notes["answer"] = await runtime.run_browser_task(task=TASK_QUERY, session_id="wv-snapshot")
     finally:

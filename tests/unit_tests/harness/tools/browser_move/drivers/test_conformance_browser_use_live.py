@@ -62,7 +62,7 @@ def _wait_for_cdp(endpoint: str, process: subprocess.Popen) -> None:
         if process.poll() is not None:
             raise RuntimeError(f"Chrome exited with code {process.returncode} before CDP was ready")
         try:
-            with urlopen(f"{endpoint}/json/version", timeout=1.0) as response:  # nosec B310 - loopback only
+            with urlopen(f"{endpoint}/json/version", timeout=1.0) as response:  # nosec
                 json.load(response)
                 return
         except (URLError, OSError, ValueError):
@@ -73,7 +73,7 @@ def _wait_for_cdp(endpoint: str, process: subprocess.Popen) -> None:
 def _kill_tree(process: subprocess.Popen) -> None:
     """Kill the Chrome we started and its child processes, nothing else."""
     if os.name == "nt":
-        subprocess.run(  # noqa: S603, S607 - fixed command on our own pid
+        subprocess.run(  # noqa: S603, S607
             ["taskkill", "/F", "/T", "/PID", str(process.pid)], capture_output=True, check=False
         )
     else:
@@ -86,7 +86,7 @@ def chrome_device() -> Iterator[ProvisionedDevice]:
     """A headless Chrome with a fresh profile on a free CDP port, as a provisioner would hand it to the driver."""
     port = _free_port()
     profile = Path(tempfile.mkdtemp(prefix="bu-conformance-chrome-"))
-    process = subprocess.Popen(  # noqa: S603 - our own Chrome binary and fixed flags
+    process = subprocess.Popen(  # noqa: S603
         [
             _chrome_binaries()[0],
             "--headless=new",

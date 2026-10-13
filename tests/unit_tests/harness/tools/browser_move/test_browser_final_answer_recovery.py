@@ -320,7 +320,6 @@ class TestIsolation:
             if _request_id(request) == "run-a":
                 if not _is_recovery(request):
                     return _answer(PROSE)
-                # Run A's recovery call: let run B make a model call while A's flag is set.
                 events["a_recovering"].set()
                 await asyncio.wait_for(events["b_second_request"].wait(), WAIT_S)
                 return _answer(json.dumps(ANSWER))
@@ -331,7 +330,6 @@ class TestIsolation:
             return _answer(json.dumps(ANSWER))
 
         async def before_tool_result() -> None:
-            # Bounded, so a broken implementation fails the assertions instead of hanging.
             await asyncio.wait_for(events["a_recovering"].wait(), WAIT_S)
 
         async def scenario() -> tuple[dict[str, Any], dict[str, Any]]:

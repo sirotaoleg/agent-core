@@ -37,9 +37,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.renderer import Brow
 
 DONE = ActionResult(ok=True)
 FILE_INPUT = Locator('input[type="file"]', None, "g0")
-# Sets files on an element, as browser-use does.
 ON_ELEMENTS = {**DEFAULT_ACTIONS, Navigate: frozenset(), UploadFile: frozenset({DriverRef, Locator})}
-# Answers an open file chooser only, as Playwright MCP does.
 THROUGH_CHOOSER = {**DEFAULT_ACTIONS, Navigate: frozenset(), UploadFile: frozenset()}
 
 
@@ -69,9 +67,6 @@ def test_the_custom_actions_keep_their_controller_names() -> None:
         "browser_drag_and_drop": drag_and_drop,
         "browser_set_input_files": set_input_files,
     }
-
-
-# --- browser_get_element_coordinates ---------------------------------------------------------------------------------
 
 
 def test_coordinates_of_one_element_come_from_one_page_script() -> None:
@@ -151,9 +146,6 @@ def test_coordinates_report_a_driver_error_with_the_ids() -> None:
     }
 
 
-# --- browser_drag_and_drop -------------------------------------------------------------------------------------------
-
-
 def test_drag_between_elements_marks_both_and_drags_one_onto_the_other() -> None:
     context = _context(_points({"x": 10, "y": 20}, {"x": 30, "y": 40}), DONE)
 
@@ -208,9 +200,6 @@ def test_drag_without_both_ends_asks_for_them() -> None:
     result = _run(drag_and_drop(_context(), element_source="#card"))
 
     assert result["ok"] is False and result["error"].startswith("Missing drag inputs.")
-
-
-# --- browser_set_input_files -----------------------------------------------------------------------------------------
 
 
 def test_set_input_files_returns_error_when_paths_empty() -> None:

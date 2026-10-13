@@ -115,9 +115,6 @@ def _fresh_selector_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(site_profiles, "_SELECTOR_CACHE", None)
 
 
-# --- cards -----------------------------------------------------------------------------------------------------------
-
-
 def test_the_extra_tools_are_the_probes_the_batch_find_and_recall() -> None:
     assert EXTRA_TOOLS == (ProbeInteractivesTool, ProbeCardsTool, BatchTool, FindTool, RecallOffloadTool)
 
@@ -133,9 +130,6 @@ def test_the_helpers_declare_read_progress_and_only_recall_is_exempt_from_budget
         ToolFlags(),
         ToolFlags(exempt_from_budget=True, worker=False),
     ]
-
-
-# --- the shared command step and records -----------------------------------------------------------------------------
 
 
 def test_the_tool_context_runs_commands_through_the_session_and_records_them() -> None:
@@ -179,9 +173,6 @@ def test_the_model_reads_the_probe_payload_as_before() -> None:
     assert render_tool_output(output) == json.dumps(output.data["content"], ensure_ascii=False)
 
 
-# --- recall ----------------------------------------------------------------------------------------------------------
-
-
 def test_recall_reads_the_workspace_in_the_language_of_the_tool_context(tmp_path: Path) -> None:
     handle = "a" * 32
     offload = tmp_path / "context" / "s1_context" / "offload"
@@ -194,9 +185,6 @@ def test_recall_reads_the_workspace_in_the_language_of_the_tool_context(tmp_path
 
     assert tool.card.tool_info() == BrowserOffloadRecallTool(tmp_path, language="en").card.tool_info()
     assert output.success and output.data["content"] == "hello world"
-
-
-# --- probes ----------------------------------------------------------------------------------------------------------
 
 
 def test_probe_interactives_runs_the_page_function_once_with_its_params() -> None:
@@ -287,9 +275,6 @@ def test_probe_cards_registers_cards_and_their_primary_links(tmp_path: Path) -> 
     assert context.page_state.selector_primary_links[".card"] == (0, "http://scene.test/mouse")
 
 
-# --- policy probe and activate ---------------------------------------------------------------------------------------
-
-
 def test_probe_for_policy_runs_the_source_with_its_params_and_registers_targets() -> None:
     source, params = "(params) => ({})", {"max_items": 250, "stamp_attribute": "data-openjiuwen-policy"}
     driver = FakeDriver(results=[_script({"url": START, "title": "Start", "elements": [dict(SAVE)]})])
@@ -346,9 +331,6 @@ def test_activate_page_returns_false_when_the_driver_fails() -> None:
     assert _run(activate_page(_context(driver), START)) is False
 
 
-# --- page metadata ---------------------------------------------------------------------------------------------------
-
-
 def test_page_metadata_measures_the_page_in_one_script_and_takes_tabs_from_the_context() -> None:
     measured = {"page_position": {"scroll_y": 10}, "semantic_state": {"result_count": 4}}
     driver = FakeDriver(observations=[_observation()], results=[_script(measured)])
@@ -391,9 +373,6 @@ def test_page_metadata_reports_a_driver_error() -> None:
     metadata, error = _run(page_metadata(_context(driver)))
 
     assert metadata == {} and error.startswith("browser state metadata capture failed: ")
-
-
-# --- browser_find ----------------------------------------------------------------------------------------------------
 
 
 def _find_context(driver: FakeDriver, native: bool = True) -> ToolContext:

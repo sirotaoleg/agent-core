@@ -129,7 +129,6 @@ class TestExplainInterceptedAction:
             ElementNotFound("Ref f1e136 not found in the current page snapshot. Try capturing new snapshot."),
             ActionTimeout("TimeoutError: browserBackend.callTool: Timeout 5000ms exceeded.\nCall log:\n"),
             result(detail="### Ran Playwright code\nawait page.getByRole('button').click();"),
-            # Intercepted, but the driver could not name the blocker: left untouched.
             _blocked(""),
         ],
         ids=["ref-not-found", "timeout-without-pattern", "success", "unparsable-pattern"],

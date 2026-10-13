@@ -103,7 +103,7 @@ def _png(width: int, height: int) -> bytes:
 def _sidecar_error(code: str, message: str = "boom", data: dict[str, Any] | None = None) -> Exception:
     try:
         SidecarTransport._unwrap_reply({"id": 1, "error": {"code": code, "message": message, "data": data or {}}})
-    except Exception as exc:  # noqa: BLE001 - we want exactly what the transport raises
+    except Exception as exc:  # noqa: BLE001
         return exc
     raise AssertionError("transport did not raise")
 
@@ -918,9 +918,6 @@ def test_importing_browser_use_driver_does_not_load_browser_use_package() -> Non
     added = set(sys.modules) - snapshot
     browser_use_modules = [name for name in added if name == "browser_use" or name.startswith("browser_use.")]
     assert not browser_use_modules, f"unexpected browser_use imports: {browser_use_modules}"
-
-
-# --- the gaps the live runs showed --------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(

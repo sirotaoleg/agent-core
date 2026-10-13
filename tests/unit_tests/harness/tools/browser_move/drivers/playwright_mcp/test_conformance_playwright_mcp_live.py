@@ -28,7 +28,6 @@ from tests.unit_tests.harness.tools.browser_move.drivers.test_conformance_browse
 
 pytest_plugins = ["openjiuwen.harness.tools.browser_move.contract.testing.conformance"]
 
-# The scene keeps its upload file outside the server's working directory, so uploads and drops go through staging.
 SERVER_ARGS = "-y @playwright/mcp@0.0.78"
 
 

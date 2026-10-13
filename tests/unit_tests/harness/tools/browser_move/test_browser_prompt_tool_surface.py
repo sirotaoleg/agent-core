@@ -27,17 +27,13 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import 
 from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import build_browser_worker_system_prompt
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import MCP_PREFIX, make_runtime
 
-# The runtime tools a caller may still add to the worker by card.
 RUNTIME_TOOLS = {
     "browser_custom_action": BrowserCustomActionTool,
     "browser_list_custom_actions": BrowserListActionsTool,
 }
-# The helpers the service gives the worker from the factory's extra tools.
 RUNTIME_WORKER_HELPERS = ("browser_probe_interactives", "browser_probe_cards", "browser_batch_interact")
 HELPER_TOOLS = (*RUNTIME_WORKER_HELPERS, *RUNTIME_TOOLS)
-# Only mentioned in conditional wording ("only when it is present").
 CONDITIONAL_MENTIONS = {"browser_run_code", "browser_take_screenshot"}
-# Prompt with the full tool surface at 18b840cf; it must stay byte-identical.
 FULL_SURFACE_PROMPT_SHA256 = "9844390e08d1a03d1b1b7eaafd6c64421dadf2d499ebefb3d38b9f824f577e22"
 
 _FINAL_JSON = json.dumps(
@@ -81,7 +77,6 @@ def _run_worker_request(helpers_added: tuple[str, ...], helpers_removed: tuple[s
     for name in helpers_added:
         if name in RUNTIME_TOOLS:
             worker.ability_manager.add(RUNTIME_TOOLS[name](MagicMock()).card)
-    # Mirrors the WebVoyager harness, which strips helpers after ensure_started().
     for name in helpers_removed:
         worker.ability_manager.remove_ability(name)
 
@@ -133,7 +128,6 @@ class TestWorkerRequestPromptMatchesTools:
         assert not missing, f"prompt names tools the model was not given: {sorted(missing)}"
 
     def test_runtime_default_surface_does_not_name_custom_action(self) -> None:
-        # The service gives the worker the probes and the batch, never browser_custom_action.
         system_prompt, tool_names = _run_worker_request(RUNTIME_WORKER_HELPERS, ())
 
         assert set(RUNTIME_WORKER_HELPERS) <= tool_names

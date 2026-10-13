@@ -140,9 +140,6 @@ def _marked(action: Any) -> bool:
     return isinstance(action.target, Locator) and action.target.css.startswith("[data-openjiuwen-target-id=")
 
 
-# --- card, flags, step contract --------------------------------------------------------------------------------------
-
-
 def test_the_batch_declares_that_it_acts() -> None:
     assert BatchTool.flags == ToolFlags(
         effect=Effect.ACT,
@@ -252,9 +249,6 @@ def test_a_batch_refused_before_any_command_leaves_no_record() -> None:
     assert command_record(output) is None and "command" not in output.data
 
 
-# --- one step: one command -----------------------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     ("step", "command"),
     [
@@ -350,9 +344,6 @@ def test_one_step_the_page_refused_reports_the_error_without_its_heading() -> No
     assert payload["steps"][0]["error"] == "no such key"
 
 
-# --- several steps ---------------------------------------------------------------------------------------------------
-
-
 def _booking(ids: list[str]) -> list[dict[str, Any]]:
     first_name, origin, destination, nationality, male, search, extracted = ids
     return [
@@ -375,27 +366,27 @@ def _booking(ids: list[str]) -> list[dict[str, Any]]:
 
 def test_realistic_booking_steps_run_as_commands_one_after_another() -> None:
     answers = [
-        _located(*[READY] * 7),  # preflight of every target
+        _located(*[READY] * 7),
         _located(),
-        DONE,  # fill
+        DONE,
         _located(),
         DONE,
         DONE,
         DONE,
         _located(),
-        DONE,  # autocomplete by text
+        DONE,
         _located(),
         DONE,
         DONE,
         DONE,
         _located(),
-        DONE,  # autocomplete by role
+        DONE,
         _located(),
-        DONE,  # select
+        DONE,
         _located(),
-        DONE,  # set_checked
+        DONE,
         _located(),
-        DONE,  # click
+        DONE,
         _condition(True, "Select"),
         _located({**READY, "value": "John"}),
     ]
@@ -636,7 +627,6 @@ def test_batch_interact_returns_compact_condition_observations() -> None:
 
 
 def test_a_condition_waits_until_its_value_holds_still_for_the_stable_time() -> None:
-    # The clock decides whether the loop polls three or four times, and the sleep step sends a Wait of its own.
     context = _context(_condition(True, "A"), *[_condition(True, "B")] * 5)
 
     payload = _batch(
@@ -759,9 +749,6 @@ def test_a_target_that_is_not_actionable_is_refused_before_anything_runs() -> No
     payload = _batch(context, [{"op": "click", "target_id": target_id}]).data["content"]
 
     assert payload["error"] == f"batch_target_validation_failed: PageState target {target_id} is not actionable in g0"
-
-
-# --- the record ------------------------------------------------------------------------------------------------------
 
 
 def test_the_batch_record_carries_the_last_command_the_strongest_effect_and_the_step_results() -> None:

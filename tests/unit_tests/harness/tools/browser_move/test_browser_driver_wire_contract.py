@@ -32,12 +32,6 @@ def test_wire_method_names_match_the_sidecar_adapter_plus_control() -> None:
 
 
 def test_driver_method_names_are_subset_of_wire_methods_and_driver_ref_round_trips() -> None:
-    """Wire-shape coverage for the element ref that crosses the process
-    boundary: the driver method names must stay a subset of the
-    control-augmented wire surface, and the contract's ``DriverRef`` must
-    round-trip through ``_ref_to_wire`` and the sidecar's own minting
-    convention.
-    """
     assert set(wire.DRIVER_METHOD_NAMES) <= wire.WIRE_METHOD_NAMES
 
     from openjiuwen.harness.tools.browser_move.drivers.browser_use.sidecar.session_adapter import (

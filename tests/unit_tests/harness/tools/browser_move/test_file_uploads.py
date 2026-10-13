@@ -27,11 +27,6 @@ def _make_ctl_with_builtins(upload_root: Path | None = None) -> ActionController
     return ctl
 
 
-# ---------------------------------------------------------------------------
-# _list_dir_files
-# ---------------------------------------------------------------------------
-
-
 def test_list_dir_files_returns_file_entries_with_metadata() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -49,11 +44,6 @@ def test_list_dir_files_returns_file_entries_with_metadata() -> None:
 def test_list_dir_files_handles_missing_directory() -> None:
     result = _list_dir_files(Path("/nonexistent/path/that/does/not/exist"))
     assert result == []
-
-
-# ---------------------------------------------------------------------------
-# list_upload_files builtin action
-# ---------------------------------------------------------------------------
 
 
 def test_list_upload_files_returns_error_when_env_not_set() -> None:

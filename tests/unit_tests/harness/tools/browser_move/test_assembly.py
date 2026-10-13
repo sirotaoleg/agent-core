@@ -520,7 +520,7 @@ _CONCRETE_PREFIXES = (
 
 
 def test_importing_the_package_and_the_assembly_loads_no_concrete_driver_surface_or_provisioner() -> None:
-    completed = subprocess.run(  # noqa: S603 - our own interpreter and a fixed script
+    completed = subprocess.run(  # noqa: S603
         [sys.executable, "-c", _CONCRETE_MODULES_PROBE], capture_output=True, text=True, check=True, timeout=120
     )
     loaded = json.loads(completed.stdout.strip().splitlines()[-1])

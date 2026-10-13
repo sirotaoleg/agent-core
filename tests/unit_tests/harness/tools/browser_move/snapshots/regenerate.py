@@ -1,10 +1,5 @@
 # coding: utf-8
-"""Rewrite the Playwright MCP golden files, and the browser-use runner_worker view, from the current code; by hand only.
-
-The other browser-use goldens were recorded from the reference commit and are never rewritten here.
-
-``--results`` rewrites the tool-result goldens instead and prints each one's diff against the recorded model text.
-"""
+"""Rewrite the Playwright MCP goldens and the browser-use runner_worker view by hand; ``--results``: result goldens."""
 
 from __future__ import annotations
 
@@ -50,7 +45,6 @@ def main() -> int:
 
 
 def main_results() -> int:
-    # Playwright call logs contain characters a Windows console code page cannot print.
     sys.stdout.reconfigure(encoding="utf-8")
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     cases = list_cases()

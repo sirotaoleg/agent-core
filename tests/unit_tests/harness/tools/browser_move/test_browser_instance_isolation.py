@@ -1,16 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Tests for per-agent browser isolation (different browsers for different agents).
-
-Covers the BrowserInstanceConfig identity key flowing through BrowserService
-(identity) and the browser surface factory (profile / provisioning / port /
-user-data-dir), and the teams manifest element that carries that identity
-across the spawn-wire boundary as serializable kwargs.
-
-These tests never launch Chrome: they exercise only config resolution and
-profile assembly, with the free-port allocator mocked for determinism.
-"""
+"""Per-agent browser isolation through the instance key; Chrome is never launched."""
 
 from __future__ import annotations
 
@@ -161,12 +152,6 @@ def test_allocated_port_persists_for_reuse() -> None:
     assert reloaded.driver_type == "managed"
 
 
-# ---------------------------------------------------------------------------
-# Cross-key reuse guard — the shared store's global selected_profile must not
-# let a second keyed instance attach to a first key's live browser.
-# ---------------------------------------------------------------------------
-
-
 def _provisioned(instance: BrowserInstanceConfig) -> BrowserProfile:
     """Provision through the managed provisioner over the store, with Chrome's start stubbed."""
     provisioner = ManagedBrowserProvisioner(profile_store=_store())
@@ -176,12 +161,6 @@ def _provisioned(instance: BrowserInstanceConfig) -> BrowserProfile:
 
 
 def test_keyed_instance_does_not_adopt_another_keys_selected_profile() -> None:
-    """Regression: keyed instances must not attach to another key's live Chrome.
-
-    Repro of the observed bug — ``usd-sgd`` starts first and becomes the global
-    selected_profile in the shared store; ``sgd-jpy`` must still get its own
-    browser instead of reusing usd-sgd's live CDP endpoint.
-    """
     with _isolated_env(), patch(_ALLOCATE_FREE_PORT, return_value=40020):
         _seed_live_profile(_store(), "usd-sgd", port=63668)
 
@@ -198,11 +177,6 @@ def test_keyed_instance_reuses_its_own_live_profile() -> None:
         profile = _provisioned(BrowserInstanceConfig(key="usd-sgd", driver_mode="managed"))
 
     assert (profile.name, profile.debug_port) == ("usd-sgd", 63668)
-
-
-# ---------------------------------------------------------------------------
-# Teams manifest plumbing — serializable browser identity across the wire
-# ---------------------------------------------------------------------------
 
 
 def _browser_input(**overrides):

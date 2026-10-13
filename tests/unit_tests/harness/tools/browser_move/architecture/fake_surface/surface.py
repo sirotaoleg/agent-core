@@ -95,8 +95,6 @@ def _look(args: Mapping[str, Any], refs: RefResolver) -> Action:
     return Observe(include_screenshot=True)
 
 
-# A screen has no metadata script, no probes, no custom actions, no semantic state and no delegated worker:
-# the hooks and the worker prompt stay None.
 PROFILE = SurfaceProfile(
     name="fake",
     commands=(Poke,),

@@ -18,9 +18,6 @@ from openjiuwen.core.foundation.llm import model as model_module
 from openjiuwen.core.foundation.llm.model_clients.base_model_client import BaseModelClient
 from openjiuwen.core.foundation.llm.schema.message_chunk import AssistantMessageChunk
 from openjiuwen.harness import deep_agent as deep_agent_module
-
-# The conftests snapshot the context-processor registry per test; the browser processors must be registered
-# before the first test starts, not by Direct.start's lazy import during it.
 from openjiuwen.harness.subagents import browser_agent  # noqa: F401
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.runtime.config import (
@@ -47,7 +44,6 @@ from tests.unit_tests.harness.tools.browser_move.drivers.test_conformance_browse
 )
 from tests.unit_tests.harness.tools.browser_move.test_agent_rails_live import ScriptedModel, _step, _tool_messages
 
-# The helpers agent-eval's WebVoyager runner strips from the worker after ensure_started().
 RUNNER_HELPERS = (
     "browser_probe_interactives",
     "browser_probe_cards",
@@ -62,7 +58,6 @@ MAIN_AGENT_HELPERS = {
     "browser_recall_offload",
 }
 FINAL = "The scene is open."
-# The scripted model has no image input, so the factory leaves the screenshot out.
 CORE_WITHOUT_IMAGES = tuple(name for name in CORE_BROWSER_TOOL_NAMES if name != "browser_take_screenshot")
 WORKER_ANSWER = json.dumps(
     {
@@ -161,7 +156,7 @@ class _OnEachDriver:
                 for name in RUNNER_HELPERS:
                     try:
                         worker.ability_manager.remove_ability(name)
-                    except Exception:  # noqa: BLE001 - the runner swallows these too
+                    except Exception:  # noqa: BLE001
                         pass
                 answer = await runtime.run_browser_task(task="Open the scene", session_id="topology-live")
                 return prefix, answer

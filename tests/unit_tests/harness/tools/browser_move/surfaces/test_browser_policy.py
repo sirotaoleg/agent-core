@@ -135,9 +135,6 @@ def test_a_batch_stops_at_a_paste_chord_after_the_steps_before_it() -> None:
     assert payload["steps"][1]["error"] == CLIPBOARD_DENIED
 
 
-# --- upload confinement ------------------------------------------------------------------------------------------
-
-
 def _upload_denial(path: str, upload_root: Path | None = None, workspace_root: Path | None = None) -> str | None:
     return policy_denial(UploadFile(None, (path,)), None, upload_rules(upload_root, workspace_root))
 

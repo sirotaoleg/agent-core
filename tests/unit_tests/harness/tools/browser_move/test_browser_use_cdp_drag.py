@@ -193,7 +193,6 @@ def test_perform_drag_html5_cdp_emits_intercept_then_drag_events() -> None:
         params for name, params in client.calls if name == "Input.dispatchMouseEvent" and params["type"] == "mouseMoved"
     ]
     assert any(int(m.get("buttons") or 0) & 1 for m in mouse_moves)
-    # intercept disabled in finally
     intercept_flags = [params.get("enabled") for name, params in client.calls if name == "Input.setInterceptDrags"]
     assert True in intercept_flags and False in intercept_flags
 
@@ -273,7 +272,7 @@ def test_session_adapter_drag_raises_when_box_missing() -> None:
     adapter._safe_current_url = AsyncMock(return_value="https://example.test/")
     adapter._resolve_ref_to_backend_node_id = AsyncMock(side_effect=[1, 2])
     adapter._element_box = AsyncMock(return_value=None)
-    adapter._ensure_listeners = AsyncMock()  # connect() arms it in a real session
+    adapter._ensure_listeners = AsyncMock()
 
     with pytest.raises(exceptions.ElementNotFound, match="bounding box"):
         _run(

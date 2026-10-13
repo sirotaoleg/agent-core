@@ -124,7 +124,6 @@ const installDom = (body) => {
 };
 """
 
-# Three repeated result cards plus one page-level sort tab whose rendering differs per case.
 _FIXTURE_JS = r"""
 const sortTab = (style, rect) => h('div', { role: 'tab', 'aria-selected': 'true', class: 'sort-tab' }, [], {
   text: 'Lowest price', rect, style,
@@ -214,7 +213,6 @@ def test_card_probe_reports_sort_tab_scrolled_out_of_view(probe_results: dict[st
     assert [card["sort_state"] for card in cards] == ["Lowest price"] * 3
 
 
-# Recipe cards next to a site menu, as on allrecipes.com: the menu's links must not come back as cards.
 _NAV_FIXTURE_JS = r"""
 const box = (top, height, width = 800) => ({ rect: { left: 10, top, width, height } });
 const recipe = (index) => h('li', { class: 'result-item' }, [

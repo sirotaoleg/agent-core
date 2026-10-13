@@ -54,7 +54,6 @@ TITLE = "() => document.title"
 COVER = "() => { cover(); return true; }"
 NOTE = "### Repeated call"
 ANSWER = json.dumps({"ok": True, "final": "The scene is open.", "page": {}, "screenshot": None, "error": None})
-# How each dialect addresses an element the driver listed: the MCP tools take the ref as ``target``.
 CLICK: dict[str, Callable[[str, BrowserPageState], dict[str, Any]]] = {
     "playwright_mcp": lambda ref, page_state: {"target": ref},
     "browser_use": lambda ref, page_state: {"ref": ref, "generation_id": page_state.generation_id},

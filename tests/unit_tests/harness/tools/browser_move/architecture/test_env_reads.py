@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Environment variables are read only in the config modules: directly, via an env-reading
-``runtime/utils/env.py`` helper or by a known name."""
+"""Environment variables are read only in the config modules."""
 
 from __future__ import annotations
 
@@ -16,13 +15,10 @@ from . import _scan
 ENV_MODULE = ("runtime", "utils", "env")
 UPPER_SNAKE_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$")
 
-# file relative to the package -> {descriptor: count}.
 KNOWN_ENV_READS: dict[str, dict[str, int]] = {
-    # the browser-use sidecar is a separate process with its own config boundary
     "drivers/browser_use/sidecar/session_adapter.py": {
         "os.environ.get(BROWSER_UPLOAD_ROOT)": 1,
     },
-    # not the process environment: the env mapping of the Playwright MCP child in the MCP server config
     "runtime/service.py": {
         "env_map.get(PLAYWRIGHT_MCP_CDP_ENDPOINT)": 1,
     },
@@ -137,7 +133,7 @@ def _direct_and_helper_reads(relpath: str) -> tuple[Counter, set[int], set[str]]
     keys: set[str] = set()
     for node in ast.walk(tree):
         if not isinstance(node, (ast.Name, ast.Attribute)) or isinstance(parents.get(node), ast.Attribute):
-            continue  # only the outermost name of an attribute chain
+            continue
         target = _resolve(relpath, node)
         if target is None:
             continue
@@ -170,7 +166,6 @@ def _known_env_names() -> frozenset[str]:
     for relpath in _scan.pkg_files():
         names |= _direct_and_helper_reads(relpath)[2]
         if _scan.is_config_module(relpath):
-            # Settings parsers read a mapping they are given, so every name they spell is an env name.
             tree = _scan.parse(relpath)
             names |= {n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
     return frozenset(n for n in names if UPPER_SNAKE_RE.match(n))
