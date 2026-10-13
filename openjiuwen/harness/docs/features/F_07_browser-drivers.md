@@ -4577,7 +4577,7 @@ Decisions:
    middleware on both dialects, and the batch and the custom upload action call the same rules, so a denied path
    reaches neither driver nor the MCP staging copy.
 2. **Allowed folders: the upload root and the agent workspace; with neither, the process cwd.** Absolute paths are
-   resolved with symlinks; a relative name must stay inside every root it is joined to.
+   resolved with symlinks; a relative name must stay inside the root it is joined to (see the next section).
 3. **The workspace reaches the rule through the settings.** A `PolicyRule` sees only the command and the context;
    the profile builds its rules from its settings, and `BrowserSettings.workspace_root` is filled by the runtime
    facade, the one place that knows both the workspace and the settings. The facade checks for the field by name,
@@ -4677,6 +4677,17 @@ passed, 123 skipped.
 Verification: unit suite 2560 passed, 123 skipped; goldens unchanged against `77091ac9e`; ruff clean on the touched
 files except findings present before the phase (16 ASYNC109 and 3 F541 in the MCP clients, one E501 in
 `transport.py`, one ASYNC240 in `helpers/custom.py`).
+
+### Relative upload names judged per root
+
+The first version of the rule joined a relative name to every root and accepted it when any joined path lay inside any
+root. With the workspace inside the upload root (upload root `/home/u`, workspace `/home/u/ws`), `../x.txt` joined to
+the workspace gives `/home/u/x.txt`, inside the upload root, so the rule allowed it, while browser-use joins the name to
+the upload root and reads `/home/x.txt`, outside both. The rule now accepts a relative name only when the path joined
+to a root lies inside that same root.
+
+Verification: a test with the workspace nested in the upload root denies `../x.txt` and allows `notes/../x.txt`; the
+old rule allowed the first. Policy tests: 44 passed, 1 skipped (the symlink case).
 
 ### Phase 11 live gate
 

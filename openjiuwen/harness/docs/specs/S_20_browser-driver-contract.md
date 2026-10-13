@@ -1127,8 +1127,8 @@ rule: both drivers insert its text literally.
 `upload_rules(upload_root, workspace_root)` confine the files a page receives: an `UploadFile` or a `Drop` with any
 path outside `BrowserSettings.upload_root` (`BROWSER_UPLOAD_ROOT`) and `BrowserSettings.workspace_root` is denied;
 with neither set, any path outside the process cwd is. Wrapping quotes are stripped and `~` expanded; an absolute
-path is resolved (symlinks followed) and must lie inside a root; a relative name is joined to each root and must stay
-inside it after resolution, so `..` cannot climb out. A `Drop` without paths passes. The reason names the paths and
+path is resolved (symlinks followed) and must lie inside a root; a relative name passes when, joined to some root
+and resolved, it lies inside that same root, so `..` cannot climb out of one root into another. A `Drop` without paths passes. The reason names the paths and
 the allowed folders and points the model at `list_upload_files`. `workspace_root` is the agent's workspace: the
 runtime facade sets it on its settings (`dataclasses.replace`) when it has a workspace and the settings have the
 field, so the main agent, the worker, the batch and the custom actions judge with the same folders; an agent built
