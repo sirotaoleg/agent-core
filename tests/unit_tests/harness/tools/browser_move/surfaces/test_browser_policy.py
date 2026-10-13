@@ -162,6 +162,14 @@ def test_an_upload_outside_the_configured_folders_is_denied(tmp_path: Path) -> N
     assert _upload_denial("~/.ssh/id_rsa", uploads) is not None
 
 
+def test_a_relative_upload_may_not_climb_out_of_the_root_it_is_joined_to(tmp_path: Path) -> None:
+    uploads = tmp_path / "home"
+    workspace = uploads / "ws"
+
+    assert _upload_denial("../x.txt", uploads, workspace) is not None
+    assert _upload_denial("notes/../x.txt", uploads, workspace) is None
+
+
 def test_without_configured_folders_an_upload_must_stay_under_the_process_cwd(tmp_path: Path) -> None:
     assert _upload_denial("data/cv.pdf") is None
     assert _upload_denial(str(Path.cwd() / "cv.pdf")) is None
