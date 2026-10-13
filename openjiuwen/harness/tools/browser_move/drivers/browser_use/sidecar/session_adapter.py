@@ -277,9 +277,7 @@ class SessionAdapter:
         if self._dialog_pending is not None:
             return await self._dialog_observation()
         await self._ensure_listeners()
-        summary = await self._session.get_browser_state_summary(
-            include_screenshot=include_screenshot, cached=cached
-        )
+        summary = await self._session.get_browser_state_summary(include_screenshot=include_screenshot, cached=cached)
         self._driver_generation += 1
         dom_state = getattr(summary, "dom_state", None)
         self._index_cache = dict(getattr(dom_state, "selector_map", None) or {})
@@ -485,9 +483,7 @@ class SessionAdapter:
 
         return await self._act(body)
 
-    async def scroll(
-        self, *, direction: str, amount: float, ref: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    async def scroll(self, *, direction: str, amount: float, ref: dict[str, Any] | None = None) -> dict[str, Any]:
         async def body(act: _Act) -> tuple[bool, str]:
             from browser_use.browser.events import ScrollEvent
 

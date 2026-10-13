@@ -54,14 +54,14 @@ class _EvidenceMixin:
         tool_args: Dict[str, Any],
     ) -> Dict[str, Any]:
         previous_evidence = {
-            cls._evidence_signature(item) for item in state.get("structured_evidence") or []
-            if isinstance(item, dict)
+            cls._evidence_signature(item) for item in state.get("structured_evidence") or [] if isinstance(item, dict)
         }
         previous_coverage = set(state.get("field_coverage") or [])
         cls._record_structured_evidence(state, result, kind=kind, tool_name=tool_name, tool_args=tool_args)
         evidence_added = any(
             cls._evidence_signature(item) not in previous_evidence
-            for item in state.get("structured_evidence") or [] if isinstance(item, dict)
+            for item in state.get("structured_evidence") or []
+            if isinstance(item, dict)
         )
         new_evidence_fields = sorted(set(state.get("field_coverage") or []) - previous_coverage)
         return {
@@ -189,11 +189,7 @@ class _EvidenceMixin:
         if not values and not field_status:
             return
         slots = state.setdefault("evidence_slots", [])
-        covered = {
-            cls._evidence_slot_key(slot): index
-            for index, slot in enumerate(slots)
-            if isinstance(slot, dict)
-        }
+        covered = {cls._evidence_slot_key(slot): index for index, slot in enumerate(slots) if isinstance(slot, dict)}
         for required in state.get("required_evidence_slots") or []:
             if not isinstance(required, dict):
                 continue
@@ -296,11 +292,7 @@ class _EvidenceMixin:
         page_state = result.get("page_state") if isinstance(result.get("page_state"), dict) else {}
         last_page = state.get("last_page") if isinstance(state.get("last_page"), dict) else {}
         source_url = str(
-            result.get("url")
-            or page_state.get("url")
-            or tool_args.get("url")
-            or last_page.get("url")
-            or ""
+            result.get("url") or page_state.get("url") or tool_args.get("url") or last_page.get("url") or ""
         ).strip()
         query: Dict[str, list[str]] = {}
         try:
@@ -417,14 +409,10 @@ class _EvidenceMixin:
         required_fields: Iterable[str],
     ) -> tuple[set[str], set[str]]:
         trusted_fields = {
-            cls._canonical_field_name(field_name)
-            for field_name in tool_args.get("_runtime_evidence_fields") or []
+            cls._canonical_field_name(field_name) for field_name in tool_args.get("_runtime_evidence_fields") or []
         }
         trusted_fields.discard("")
-        allowed_fields = {
-            cls._canonical_field_name(field_name)
-            for field_name in required_fields
-        }
+        allowed_fields = {cls._canonical_field_name(field_name) for field_name in required_fields}
         allowed_fields.discard("")
         allowed_fields.update(trusted_fields)
         return trusted_fields, allowed_fields
@@ -509,15 +497,14 @@ class _EvidenceMixin:
         else:
             snake_name = cls._snake_case_field_name(key)
             canonical = cls._canonical_evaluate_field_name(key)
-            field_allowed = canonical in _BROWSER_FIELD_ALIASES and (
-                not allowed_fields or canonical in allowed_fields
-            )
+            field_allowed = canonical in _BROWSER_FIELD_ALIASES and (not allowed_fields or canonical in allowed_fields)
             contextual_alias_allowed = (
-                snake_name not in _BROWSER_CONTEXTUAL_EVALUATE_FIELD_ALIASES
-                or canonical in trusted_fields
+                snake_name not in _BROWSER_CONTEXTUAL_EVALUATE_FIELD_ALIASES or canonical in trusted_fields
             )
-            if field_allowed and contextual_alias_allowed and not (
-                canonical == "sort_state" and isinstance(item, bool)
+            if (
+                field_allowed
+                and contextual_alias_allowed
+                and not (canonical == "sort_state" and isinstance(item, bool))
             ):
                 normalized_value, status = cls._normalize_evaluate_field_value(canonical, item)
                 normalized = (canonical, normalized_value, status, str(item)[:600])
@@ -790,9 +777,7 @@ class _EvidenceMixin:
             if value in (None, "", [], {}):
                 continue
             rendered = (
-                json.dumps(value, ensure_ascii=False, default=str)
-                if isinstance(value, (dict, list))
-                else str(value)
+                json.dumps(value, ensure_ascii=False, default=str) if isinstance(value, (dict, list)) else str(value)
             )
             values[field_name] = rendered[:500]
             provenance[field_name] = {

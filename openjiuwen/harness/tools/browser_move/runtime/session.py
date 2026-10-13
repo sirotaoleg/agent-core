@@ -233,16 +233,12 @@ class BrowserAgentRuntime:
         target = page_state.get_target(normalized)
         if target is None:
             raise ValueError(
-                f"Unknown PageState target_id {normalized}; current generation is "
-                f"{page_state.generation_id}."
+                f"Unknown PageState target_id {normalized}; current generation is {page_state.generation_id}."
             )
         if target.generation != page_state.generation:
             target = page_state.get_target(page_state.refresh_target_id(normalized))
         if target is None:
-            raise ValueError(
-                f"PageState target_id {normalized} could not be refreshed in "
-                f"{page_state.generation_id}."
-            )
+            raise ValueError(f"PageState target_id {normalized} could not be refreshed in {page_state.generation_id}.")
         return target
 
     def target_recovery_state(self, target_id: str) -> Dict[str, Any]:

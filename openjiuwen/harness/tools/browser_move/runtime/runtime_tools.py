@@ -45,15 +45,13 @@ _CUSTOM_ACTION_PARAMS: Dict[str, Any] = {
     "required": ["action"],
 }
 
-_LIST_ACTIONS_DESC = (
-    "List available custom browser actions and detailed parameter guidance "
-    "for browser_custom_action."
-)
+_LIST_ACTIONS_DESC = "List available custom browser actions and detailed parameter guidance for browser_custom_action."
 _LIST_ACTIONS_PARAMS: Dict[str, Any] = {
     "type": "object",
     "properties": {},
     "required": [],
 }
+
 
 class BrowserCustomActionTool(Tool):
     """Run a registered custom action."""

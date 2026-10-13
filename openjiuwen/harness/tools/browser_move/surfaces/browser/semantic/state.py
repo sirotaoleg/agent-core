@@ -56,11 +56,7 @@ def _coerce_tool_args(tool_args: Any) -> Dict[str, Any]:
 
 def _numbers_from_filter_value(value: Any) -> list[str]:
     if isinstance(value, (list, tuple)):
-        return [
-            number
-            for item in value
-            for number in _numbers_from_filter_value(item)
-        ][:2]
+        return [number for item in value for number in _numbers_from_filter_value(item)][:2]
     if value in (None, ""):
         return []
     return re.findall(r"\d+(?:\.\d+)?", str(value).replace(",", ""))[:2]
@@ -111,8 +107,7 @@ def price_interval_signature(tool_name: str, tool_args: Any) -> str:
             }:
                 continue
             descriptor = " ".join(
-                str(step.get(key) or "")
-                for key in ("field", "name", "label", "placeholder", "description")
+                str(step.get(key) or "") for key in ("field", "name", "label", "placeholder", "description")
             ).lower()
             if not re.search(r"price|amount|价格|价位", descriptor, re.IGNORECASE):
                 continue

@@ -226,9 +226,7 @@ class _TerminalMixin:
             "missing_slots": missing_slots[:12],
             "unavailable_slots": unavailable_slots[:12],
             "requested_slots": [
-                dict(slot)
-                for slot in (state.get("required_evidence_slots") or [])[:12]
-                if isinstance(slot, dict)
+                dict(slot) for slot in (state.get("required_evidence_slots") or [])[:12] if isinstance(slot, dict)
             ],
             "blockers": blockers[:10],
             "field_coverage": list(state.get("field_coverage") or [])[:32],
@@ -272,7 +270,8 @@ class _TerminalMixin:
             and (
                 requirements
                 or cls._has_task_evidence(state)
-                or state.get("terminal_reason") in {
+                or state.get("terminal_reason")
+                in {
                     "model_provider_unavailable",
                     "model_tool_protocol_error",
                     "runtime_completion_requirements_missing",

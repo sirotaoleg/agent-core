@@ -128,11 +128,7 @@ class _ProbeResultsMixin:
             if isinstance(item, dict)
         ]
         selected_sort = next(
-            (
-                target
-                for target in targets
-                if target["selected"] and cls._is_sort_interactive_target(target)
-            ),
+            (target for target in targets if target["selected"] and cls._is_sort_interactive_target(target)),
             None,
         )
         evidence = {

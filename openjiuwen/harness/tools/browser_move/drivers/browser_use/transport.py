@@ -177,7 +177,9 @@ class SidecarTransport:
         self._hello = message
         return message
 
-    async def request(self, method: str, params: dict[str, Any] | None = None, *, timeout_s: float | None = None) -> Any:
+    async def request(
+        self, method: str, params: dict[str, Any] | None = None, *, timeout_s: float | None = None
+    ) -> Any:
         """Send one request, await its matching reply. One in-flight request at a time."""
         if self._process is None or self._process.stdin is None or self._process.stdout is None:
             raise driver_errors.DriverNotConnected("sidecar transport has not been started")
@@ -214,15 +216,11 @@ class SidecarTransport:
         try:
             raw_line = await self._process.stdout.readline()
         except asyncio.LimitOverrunError as exc:
-            raise driver_errors.DriverConnectionLost(
-                "sidecar emitted a line exceeding the max line size"
-            ) from exc
+            raise driver_errors.DriverConnectionLost("sidecar emitted a line exceeding the max line size") from exc
         except ValueError as exc:
             if "chunk is longer than limit" not in str(exc):
                 raise
-            raise driver_errors.DriverConnectionLost(
-                "sidecar emitted a line exceeding the max line size"
-            ) from exc
+            raise driver_errors.DriverConnectionLost("sidecar emitted a line exceeding the max line size") from exc
         if raw_line and len(raw_line) > wire.MAX_LINE_BYTES:
             raise driver_errors.DriverConnectionLost("sidecar emitted a line exceeding the max line size")
         return raw_line

@@ -74,9 +74,7 @@ _READ_ONLY_CARD_TARGET_FIELDS = frozenset(
         "sort_state",
     }
 )
-_DEFAULT_CARD_FIELDS = frozenset(
-    {"title", "price", "rating", "source", "summary", "primary_link", "href"}
-)
+_DEFAULT_CARD_FIELDS = frozenset({"title", "price", "rating", "source", "summary", "primary_link", "href"})
 _MAX_PUBLIC_INTERACTIVES = 20
 _MAX_PUBLIC_CARDS = 8
 
@@ -346,9 +344,7 @@ class BrowserPageState(PageState):
         """Set task-scoped fields used to keep model-facing cards compact."""
 
         self.requested_fields = {
-            str(field_name or "").strip()
-            for field_name in fields
-            if str(field_name or "").strip()
+            str(field_name or "").strip() for field_name in fields if str(field_name or "").strip()
         }
 
     def refresh_target_id(self, target_id: str) -> str:

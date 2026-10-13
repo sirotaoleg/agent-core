@@ -323,9 +323,7 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
             missing = self._missing_completion_requirements(state)
             blockers = [str(item) for item in state.get("blockers") or [] if str(item).strip()]
             runtime_ready = bool(
-                state.get("structured_evidence")
-                or state.get("evidence_slots")
-                or state.get("field_coverage")
+                state.get("structured_evidence") or state.get("evidence_slots") or state.get("field_coverage")
             )
             if not blockers and not missing and runtime_ready:
                 payload["status"] = "completed"
@@ -609,9 +607,7 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
         extra = getattr(ctx, "extra", None)
         tool_runtime_state = extra.get(_BROWSER_TOOL_RUNTIME_STATE_KEY, {}) if isinstance(extra, dict) else {}
         call_state = (
-            tool_runtime_state.pop(self._tool_call_id(inputs), {})
-            if isinstance(tool_runtime_state, dict)
-            else {}
+            tool_runtime_state.pop(self._tool_call_id(inputs), {}) if isinstance(tool_runtime_state, dict) else {}
         )
         if isinstance(extra, dict) and not tool_runtime_state:
             extra.pop(_BROWSER_TOOL_RUNTIME_STATE_KEY, None)
@@ -619,7 +615,6 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
         action_class = str(call_state.get("action_class") or "") if isinstance(call_state, dict) else ""
         elapsed_ms = int(max(0.0, (time.perf_counter() - started_at) * 1000)) if started_at else 0
         return action_class, elapsed_ms
-
 
     @staticmethod
     def _tool_call_id(inputs: Any) -> str:
@@ -671,9 +666,7 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
         }
         target_match = re.search(r"\bt_g\d+_\d+\b", str(exc))
         if target_match is not None:
-            payload["runtime_state"].update(
-                self._runtime.target_recovery_state(target_match.group(0))
-            )
+            payload["runtime_state"].update(self._runtime.target_recovery_state(target_match.group(0)))
         call_id = self._tool_call_id(inputs)
         inputs.tool_result = payload
         inputs.tool_msg = ToolMessage(
@@ -697,7 +690,6 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
                 "new_evidence_fields": [],
             },
         )
-
 
     def _mark_action_group_call_completed(
         self,
@@ -1137,9 +1129,7 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
         shared_exhausted = bool(deadline_at and time.time() >= deadline_at)
         extra = getattr(ctx, "extra", None)
         invocation_deadline = (
-            float(extra.get(_BROWSER_INVOCATION_DEADLINE_KEY) or 0.0)
-            if isinstance(extra, dict)
-            else 0.0
+            float(extra.get(_BROWSER_INVOCATION_DEADLINE_KEY) or 0.0) if isinstance(extra, dict) else 0.0
         )
         invocation_exhausted = bool(invocation_deadline and time.monotonic() >= invocation_deadline)
         if not shared_exhausted and not invocation_exhausted:
@@ -1160,9 +1150,7 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
                 state["blockers"] = blockers[:10]
                 state["terminal_reason"] = blocker
             state["next_action_class"] = "finish"
-            state["deadline_remaining_s"] = (
-                0.0 if shared_exhausted else round(max(0.0, deadline_at - time.time()), 3)
-            )
+            state["deadline_remaining_s"] = 0.0 if shared_exhausted else round(max(0.0, deadline_at - time.time()), 3)
             state["invocation_remaining_s"] = 0.0
             session.update_state({_BROWSER_PHASE_STATE_KEY: state})
         ctx.request_force_finish(cls._structured_terminal_result(state))
@@ -1201,9 +1189,7 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
         state["resume_count"] = int(state.get("resume_count") or 0) + 1
         state["resume_instruction"] = resume_instruction[:2_000]
         state["status"] = "in_progress"
-        state["next_action_class"] = (
-            "collect_missing_evidence" if missing else "materially_different_strategy"
-        )
+        state["next_action_class"] = "collect_missing_evidence" if missing else "materially_different_strategy"
         state["terminal_reason"] = ""
         state.pop(_BROWSER_TERMINAL_SYNTHESIS_KEY, None)
         state["replan_required"] = False

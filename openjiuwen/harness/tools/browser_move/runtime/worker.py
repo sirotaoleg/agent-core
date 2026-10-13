@@ -134,9 +134,7 @@ class BrowserTaskProgressState:
             for slot in evidence_slots[-4:]:
                 if not isinstance(slot, dict):
                     continue
-                label = "/".join(
-                    str(slot.get(key) or "") for key in ("entity", "variant", "field")
-                ).strip("/")
+                label = "/".join(str(slot.get(key) or "") for key in ("entity", "variant", "field")).strip("/")
                 value = str(slot.get("value") or "").strip()
                 if label and value:
                     summaries.append(f"{label}: {value[:160]}")
@@ -820,9 +818,7 @@ class _WorkerLoop:
         sid = self.session_new(session_id)
         rid = (request_id or "").strip() or uuid.uuid4().hex
         effective_timeout = int(timeout_s) if (timeout_s is not None and timeout_s > 0) else self.guardrails.timeout_s
-        timeout_deadline = (
-            asyncio.get_running_loop().time() + float(effective_timeout)
-        )
+        timeout_deadline = asyncio.get_running_loop().time() + float(effective_timeout)
         attempts = 2 if self.guardrails.retry_once else 1
         base_task = (task or "").strip()
         previous_failure_summary = self._failure_context_by_session.get(sid, "")
@@ -857,9 +853,7 @@ class _WorkerLoop:
                 last_failure_page: Dict[str, Any] = {}
                 last_failure_screenshot: Any = None
                 while attempt_idx < max_attempts:
-                    remaining_timeout = (
-                        timeout_deadline - asyncio.get_running_loop().time()
-                    )
+                    remaining_timeout = timeout_deadline - asyncio.get_running_loop().time()
                     if remaining_timeout <= 0:
                         last_error = f"task_timeout: exceeded {effective_timeout}s"
                         break
@@ -967,10 +961,7 @@ class _WorkerLoop:
                     except TimeoutError:
                         attempt_idx += 1
                         last_error = f"task_timeout: exceeded {effective_timeout}s"
-                        if (
-                            attempt_idx >= attempts
-                            or asyncio.get_running_loop().time() >= timeout_deadline
-                        ):
+                        if attempt_idx >= attempts or asyncio.get_running_loop().time() >= timeout_deadline:
                             break
                     except asyncio.CancelledError:
                         await self.clear_cancel(sid, rid)

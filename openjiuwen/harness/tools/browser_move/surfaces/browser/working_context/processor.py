@@ -83,10 +83,7 @@ class BrowserWorkingContextProcessor(ContextProcessor):
         if message.name in {"current_browser_state", "browser_state_progress"}:
             return True
         metadata = message.metadata if isinstance(message.metadata, dict) else {}
-        return bool(
-            metadata.get("browser_state_context")
-            or metadata.get("browser_state_progress_context")
-        )
+        return bool(metadata.get("browser_state_context") or metadata.get("browser_state_progress_context"))
 
     @staticmethod
     def _is_working_context_message(message: BaseMessage) -> bool:

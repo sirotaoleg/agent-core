@@ -187,9 +187,7 @@ class _PhaseMixin:
         required_slots = _PhaseMixin._infer_required_evidence_slots(task)
         required_fields = list(
             dict.fromkeys(
-                str(slot.get("field") or "")
-                for slot in required_slots
-                if str(slot.get("field") or "").strip()
+                str(slot.get("field") or "") for slot in required_slots if str(slot.get("field") or "").strip()
             )
         )
         return {
@@ -269,9 +267,7 @@ class _PhaseMixin:
             token in normalized for token in ("comprehensive", "relevance", "综合", "默认排序")
         )
         latest_requested = any(token in normalized for token in ("latest", "newest", "最新", "最近发布"))
-        split_title_variants = bool(
-            "title" in required_fields and comprehensive_requested and latest_requested
-        )
+        split_title_variants = bool("title" in required_fields and comprehensive_requested and latest_requested)
         slots = [
             {"entity": entity, "variant": "default", "field": field_name}
             for field_name in required_fields
@@ -315,8 +311,18 @@ class _PhaseMixin:
         return re.search(rf"(?<![a-z0-9_]){re.escape(normalized_alias)}(?![a-z0-9_])", text) is not None
 
     _NUMBER_WORDS = {
-        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
-        "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+        "one": 1,
+        "two": 2,
+        "three": 3,
+        "four": 4,
+        "five": 5,
+        "six": 6,
+        "seven": 7,
+        "eight": 8,
+        "nine": 9,
+        "ten": 10,
+        "eleven": 11,
+        "twelve": 12,
     }
 
     @classmethod
@@ -419,11 +425,7 @@ class _PhaseMixin:
         filter_terms_present = _contains_any_token(serialized, filter_terms)
         script_tool = isinstance(kind.action, RunScript)
         filter_intent = bool(
-            filter_terms_present
-            and (
-                not script_tool
-                or cls._operation_intent(kind, args) == "script_mutation"
-            )
+            filter_terms_present and (not script_tool or cls._operation_intent(kind, args) == "script_mutation")
         )
         steps = args.get("steps")
         if kind.helper and isinstance(steps, list):
@@ -994,15 +996,18 @@ class _PhaseMixin:
         steps = args.get("steps")
         if not kind.helper or not isinstance(steps, list) or not steps:
             return False
-        read_only_ops = _BATCH_SAFE_READ_SELECTOR_OPS | _BATCH_EXPLICIT_SELECTOR_OPS | {
-            "wait_for_text",
-            "wait_for_load_state",
-            "wait_for_url",
-            "wait_for_tab",
-        }
+        read_only_ops = (
+            _BATCH_SAFE_READ_SELECTOR_OPS
+            | _BATCH_EXPLICIT_SELECTOR_OPS
+            | {
+                "wait_for_text",
+                "wait_for_load_state",
+                "wait_for_url",
+                "wait_for_tab",
+            }
+        )
         return all(
-            isinstance(step, dict) and str(step.get("op") or "").strip().lower() in read_only_ops
-            for step in steps
+            isinstance(step, dict) and str(step.get("op") or "").strip().lower() in read_only_ops for step in steps
         )
 
     @staticmethod
@@ -1120,7 +1125,8 @@ class _PhaseMixin:
     @staticmethod
     def _task_observations(state: Dict[str, Any]) -> list[Dict[str, Any]]:
         return [
-            item for item in state.get("structured_evidence") or []
+            item
+            for item in state.get("structured_evidence") or []
             if isinstance(item, dict) and item.get("kind") == "page_observation"
         ]
 
@@ -1302,7 +1308,7 @@ class _PhaseMixin:
         details["completion_evidence"] = completion_evidence[:300]
         phase_order = list(phases)
         try:
-            remaining_phases = phase_order[phase_order.index(phase) + 1:]
+            remaining_phases = phase_order[phase_order.index(phase) + 1 :]
         except ValueError:
             remaining_phases = []
         next_phase = next(

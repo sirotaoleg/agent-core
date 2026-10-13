@@ -74,11 +74,7 @@ class BrowserService(_WorkerLoop):
         self._settings = browser_settings or browser_surface_settings()
         self._core_settings = core_settings
         self._core: Optional[CoreSettings] = None
-        self._allowed_tool_names = (
-            None
-            if allowed_tool_names is None
-            else tuple(dict.fromkeys(allowed_tool_names))
-        )
+        self._allowed_tool_names = None if allowed_tool_names is None else tuple(dict.fromkeys(allowed_tool_names))
         self._cancel_store: BaseKVStore = cancel_store or InMemoryKVStore()
         self._page_state = page_state
         self._session: Optional[DriverSession] = None
@@ -171,10 +167,7 @@ class BrowserService(_WorkerLoop):
         instance = self._instance
         browser_key = instance.sanitized_key() if instance else ""
         managed_args = self._settings.managed_args
-        headless = any(
-            arg == "--headless" or arg.startswith("--headless=")
-            for arg in managed_args
-        )
+        headless = any(arg == "--headless" or arg.startswith("--headless=") for arg in managed_args)
         if self._driver_mode == "managed":
             display_mode = "headless" if headless else "headed"
         else:
@@ -184,9 +177,7 @@ class BrowserService(_WorkerLoop):
             (instance.user_data_dir if instance else "") or self._settings.user_data_dir
         ).strip()
         normalized_user_data_dir = (
-            os.path.normcase(
-                os.path.normpath(str(Path(explicit_user_data_dir).expanduser()))
-            )
+            os.path.normcase(os.path.normpath(str(Path(explicit_user_data_dir).expanduser())))
             if explicit_user_data_dir
             else f"profile:{self._profile_name}"
         )
@@ -197,9 +188,7 @@ class BrowserService(_WorkerLoop):
             driver_mode=self._driver_mode,
             display_mode=display_mode,
             managed_args=managed_args,
-            browser_binary=self.normalize_browser_binary(
-                self._configured_browser_binary()
-            ),
+            browser_binary=self.normalize_browser_binary(self._configured_browser_binary()),
             user_data_dir=normalized_user_data_dir,
             cdp_endpoint=self._configured_cdp_endpoint(),
             server_id=server_id,

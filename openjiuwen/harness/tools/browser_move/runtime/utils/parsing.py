@@ -54,7 +54,7 @@ def extract_json_object(text: Any) -> dict[str, Any]:
     first = raw.find("{")
     last = raw.rfind("}")
     if first >= 0 and last > first:
-        snippet = raw[first:last + 1]
+        snippet = raw[first : last + 1]
         try:
             parsed = json.loads(snippet)
         except json.JSONDecodeError:

@@ -409,7 +409,14 @@ class BrowserSubagentStatusLogger:
             if key_lower in _TEXT_VALUE_KEYS or any(token in key_lower for token in ("password", "token", "secret")):
                 redacted[key_str] = _redacted_text(value)
             elif key_lower in {
-                "selector", "role", "label", "placeholder", "checked", "timeout", "timeout_ms", "max_items"
+                "selector",
+                "role",
+                "label",
+                "placeholder",
+                "checked",
+                "timeout",
+                "timeout_ms",
+                "max_items",
             }:
                 safe_values[key_str] = value if isinstance(value, (bool, int, float)) else _safe_str(value, 120)
         if safe_values:
@@ -585,12 +592,10 @@ class BrowserSubagentStatusLogger:
                 domain = ""
             if domain and domain not in domains:
                 domains.append(domain)
-        
+
         task_hash = ""
         if text:
-            task_hash = hashlib.sha256(
-                text.encode("utf-8", "ignore")
-            ).hexdigest()[:16]
+            task_hash = hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest()[:16]
 
         return {
             "length": len(text),
@@ -617,7 +622,7 @@ class BrowserSubagentStatusLogger:
         prefix = f"{label}:"
         for line in text.splitlines()[:12]:
             if line.startswith(prefix):
-                return _safe_str(line[len(prefix):].strip(), 120)
+                return _safe_str(line[len(prefix) :].strip(), 120)
         return ""
 
     def _state(self, ctx: Any) -> dict[str, Any]:

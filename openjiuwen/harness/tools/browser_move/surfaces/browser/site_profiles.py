@@ -339,9 +339,13 @@ def _natural_result_exclusion(
         reason = "missing_primary_link"
     if not href:
         return reason
-    if not reason and requirements.get("required_link_patterns") and not _matches_any(
-        href,
-        requirements.get("required_link_patterns"),
+    if (
+        not reason
+        and requirements.get("required_link_patterns")
+        and not _matches_any(
+            href,
+            requirements.get("required_link_patterns"),
+        )
     ):
         reason = "primary_link_not_natural"
     if not reason and _matches_any(href, requirements.get("excluded_link_patterns")):
@@ -390,10 +394,7 @@ def profile_detail_link_key(profile: Mapping[str, Any] | None, value: Any) -> st
     host = (parsed.hostname or "").lower()
     if not _domain_matches(host, detail.get("domains") or profile.get("domains")):
         return ""
-    query = {
-        str(key).lower(): str(item)
-        for key, item in parse_qsl(parsed.query, keep_blank_values=True)
-    }
+    query = {str(key).lower(): str(item) for key, item in parse_qsl(parsed.query, keep_blank_values=True)}
     identifier = next(
         (
             query.get(str(parameter or "").lower(), "").strip()
@@ -413,10 +414,7 @@ def _card_semantic_inputs(card: Mapping[str, Any]) -> tuple[str, str, str]:
     href = str(card.get("primary_link") or card.get("href") or "")[:500]
     title = " ".join(str(card.get("title") or "").split())[:240]
     preview = " ".join(str(card.get("text_preview") or "").split())[:500]
-    badges = " ".join(
-        " ".join(str(item or "").split())[:100]
-        for item in (card.get("semantic_badges") or [])
-    )
+    badges = " ".join(" ".join(str(item or "").split())[:100] for item in (card.get("semantic_badges") or []))
     selector = " ".join(
         (
             str(card.get("selector_hint") or "")[:500],
@@ -641,11 +639,7 @@ def site_profiles_for_url(url: str) -> List[Dict[str, Any]]:
     host = domain_from_url(url)
     if not host:
         return builtin_site_profiles()
-    return [
-        deepcopy(profile)
-        for profile in BUILTIN_SITE_PROFILES
-        if _domain_matches(host, profile.get("domains"))
-    ]
+    return [deepcopy(profile) for profile in BUILTIN_SITE_PROFILES if _domain_matches(host, profile.get("domains"))]
 
 
 def normalize_route_signature(url: str) -> str:
@@ -810,11 +804,7 @@ def _is_cacheable_card(card: Dict[str, Any]) -> bool:
     preview = str(card.get("text_preview") or "").strip()
     buttons = card.get("buttons") or []
 
-    return (
-        score >= 30
-        and len(preview) >= 80
-        and (bool(card.get("primary_link")) or bool(buttons))
-    )
+    return score >= 30 and len(preview) >= 80 and (bool(card.get("primary_link")) or bool(buttons))
 
 
 def _generalize_selector(selector: str) -> List[str]:
@@ -841,11 +831,7 @@ def _generalize_selector(selector: str) -> List[str]:
     if no_nth and no_nth not in candidates:
         candidates.append(no_nth)
 
-    return [
-        item
-        for item in _unique(candidates, limit=4)
-        if not _selector_is_too_broad(item)
-    ]
+    return [item for item in _unique(candidates, limit=4) if not _selector_is_too_broad(item)]
 
 
 class BrowserSelectorCache:
@@ -923,11 +909,7 @@ class BrowserSelectorCache:
         if not isinstance(cards, list) or not cards:
             return
 
-        cacheable_cards = [
-            card
-            for card in cards
-            if isinstance(card, dict) and _is_cacheable_card(card)
-        ]
+        cacheable_cards = [card for card in cards if isinstance(card, dict) and _is_cacheable_card(card)]
 
         selector_source = str(result.get("selector_source") or "").strip().lower()
         min_cacheable_cards = 3 if selector_source == "generic" else 2
@@ -960,37 +942,21 @@ class BrowserSelectorCache:
             if not isinstance(card, dict):
                 continue
 
-            selectors["card_container_selectors"].extend(
-                _generalize_selector(str(card.get("selector_hint") or ""))
-            )
+            selectors["card_container_selectors"].extend(_generalize_selector(str(card.get("selector_hint") or "")))
             title_selector_hint = str(card.get("title_selector_hint") or "")
             if not _selector_looks_like_author_profile(title_selector_hint):
-                selectors["title_selectors"].extend(
-                    _generalize_selector(title_selector_hint)
-                )
-            selectors["price_selectors"].extend(
-                _generalize_selector(str(card.get("price_selector_hint") or ""))
-            )
-            selectors["rating_selectors"].extend(
-                _generalize_selector(str(card.get("rating_selector_hint") or ""))
-            )
+                selectors["title_selectors"].extend(_generalize_selector(title_selector_hint))
+            selectors["price_selectors"].extend(_generalize_selector(str(card.get("price_selector_hint") or "")))
+            selectors["rating_selectors"].extend(_generalize_selector(str(card.get("rating_selector_hint") or "")))
             selectors["availability_selectors"].extend(
                 _generalize_selector(str(card.get("availability_selector_hint") or ""))
             )
-            selectors["author_selectors"].extend(
-                _generalize_selector(str(card.get("author_selector_hint") or ""))
-            )
-            selectors["source_selectors"].extend(
-                _generalize_selector(str(card.get("source_selector_hint") or ""))
-            )
-            selectors["summary_selectors"].extend(
-                _generalize_selector(str(card.get("summary_selector_hint") or ""))
-            )
+            selectors["author_selectors"].extend(_generalize_selector(str(card.get("author_selector_hint") or "")))
+            selectors["source_selectors"].extend(_generalize_selector(str(card.get("source_selector_hint") or "")))
+            selectors["summary_selectors"].extend(_generalize_selector(str(card.get("summary_selector_hint") or "")))
             primary_link_selector_hint = str(card.get("primary_link_selector_hint") or "")
             if not _selector_looks_like_author_profile(primary_link_selector_hint):
-                selectors["primary_link_selectors"].extend(
-                    _generalize_selector(primary_link_selector_hint)
-                )
+                selectors["primary_link_selectors"].extend(_generalize_selector(primary_link_selector_hint))
 
             buttons = card.get("buttons") or []
             if isinstance(buttons, list):
@@ -999,21 +965,11 @@ class BrowserSelectorCache:
                         button_selector_hint = str(button.get("selector_hint") or "")
                         generalized_button_selectors = _generalize_selector(button_selector_hint)
                         if _selector_looks_like_article_link(button_selector_hint):
-                            selectors["primary_link_selectors"].extend(
-                                generalized_button_selectors
-                            )
-                            selectors["title_selectors"].extend(
-                                generalized_button_selectors
-                            )
-                        selectors["button_selectors"].extend(
-                            generalized_button_selectors
-                        )
+                            selectors["primary_link_selectors"].extend(generalized_button_selectors)
+                            selectors["title_selectors"].extend(generalized_button_selectors)
+                        selectors["button_selectors"].extend(generalized_button_selectors)
 
-        selectors = {
-            key: _unique(value, limit=20)
-            for key, value in selectors.items()
-            if _unique(value, limit=20)
-        }
+        selectors = {key: _unique(value, limit=20) for key, value in selectors.items() if _unique(value, limit=20)}
 
         if not selectors:
             return
@@ -1120,9 +1076,7 @@ class BrowserSelectorCache:
 
         now = time.time()
         rejection_reason = str(
-            result.get("cache_rejection_reason")
-            or result.get("selector_source")
-            or "cache_validation_failed"
+            result.get("cache_rejection_reason") or result.get("selector_source") or "cache_validation_failed"
         ).strip()
 
         updated = False
@@ -1142,7 +1096,6 @@ class BrowserSelectorCache:
 
         if updated:
             self._save(data)
-
 
 
 _SELECTOR_CACHE: BrowserSelectorCache | None = None

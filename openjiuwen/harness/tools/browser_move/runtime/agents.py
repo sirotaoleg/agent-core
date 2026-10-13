@@ -147,12 +147,8 @@ def ensure_execute_signature_compat(
             with anyio.fail_after(tool_timeout_s):
                 results = await original_execute(**call_kwargs)
         except TimeoutError as exc:
-            logger.error(
-                f"Tool execution timed out after {tool_timeout_s:.1f}s; tools={tool_names}"
-            )
-            raise RuntimeError(
-                f"tool_execution_timeout: tools={tool_names}, timeout_s={tool_timeout_s:.1f}"
-            ) from exc
+            logger.error(f"Tool execution timed out after {tool_timeout_s:.1f}s; tools={tool_names}")
+            raise RuntimeError(f"tool_execution_timeout: tools={tool_names}, timeout_s={tool_timeout_s:.1f}") from exc
         if tool_result_observer is not None:
             await _notify_tool_results(tool_call, results, tool_result_observer)
         return results

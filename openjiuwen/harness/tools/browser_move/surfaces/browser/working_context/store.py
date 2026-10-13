@@ -430,12 +430,12 @@ class BrowserWorkingContextStore:
             },
             "task": self._project_task_state(task_state),
             "runtime_directive": self._runtime_directive(task_state),
-            "recent_actions": list(task_state.get("recent_actions") or [])[-self.config.max_recent_steps:],
+            "recent_actions": list(task_state.get("recent_actions") or [])[-self.config.max_recent_steps :],
         }
         if not self.config.runtime_projection_only:
             model_notes = {
-                "key_facts": state.current.key_facts[-self.config.max_list_items:],
-                "important_information": state.current.important_information[-self.config.max_list_items:],
+                "key_facts": state.current.key_facts[-self.config.max_list_items :],
+                "important_information": state.current.important_information[-self.config.max_list_items :],
             }
             if any(model_notes.values()):
                 rendered_state["model_notes"] = model_notes
@@ -451,7 +451,7 @@ class BrowserWorkingContextStore:
 
     def _compact_retained_tool_evidence(self, steps: Iterable[BrowserStepRecord]) -> list[Dict[str, Any]]:
         evidence: list[Dict[str, Any]] = []
-        for step in list(steps)[-self.config.max_recent_steps:]:
+        for step in list(steps)[-self.config.max_recent_steps :]:
             for memory in step.tool_memories:
                 if not (memory.durable_content or memory.error):
                     continue
@@ -466,7 +466,7 @@ class BrowserWorkingContextStore:
                         "source": memory.content_source or ("error" if memory.error else "retained"),
                     }
                 )
-        return evidence[-self.config.max_recent_steps:]
+        return evidence[-self.config.max_recent_steps :]
 
     def _serialize_prompt_payload(self, value: Dict[str, Any]) -> str:
         """Serialize a bounded projection without ever truncating JSON text."""
@@ -482,8 +482,7 @@ class BrowserWorkingContextStore:
         notes = payload.get("model_notes")
         if isinstance(notes, dict):
             payload["model_notes"] = {
-                key: [_bounded_text(item, 240) for item in list(items or [])[-4:]]
-                for key, items in notes.items()
+                key: [_bounded_text(item, 240) for item in list(items or [])[-4:]] for key, items in notes.items()
             }
         payload["recent_actions"] = list(payload.get("recent_actions") or [])[-3:]
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
@@ -522,9 +521,7 @@ class BrowserWorkingContextStore:
         fallback["task"]["requirements"]["evidence"] = []
         fallback["task"]["requirements"]["missing"] = list(requirements.get("missing") or [])[:6]
         fallback["task"]["requirements"]["unavailable"] = list(requirements.get("unavailable") or [])[:4]
-        fallback["task"]["blockers"] = [
-            _bounded_text(item, 160) for item in list(task.get("blockers") or [])[:4]
-        ]
+        fallback["task"]["blockers"] = [_bounded_text(item, 160) for item in list(task.get("blockers") or [])[:4]]
         fallback["task"].pop("last_page", None)
         fallback["recent_actions"] = []
         body = json.dumps(fallback, ensure_ascii=False, separators=(",", ":"))
@@ -640,8 +637,7 @@ class BrowserWorkingContextStore:
                     continue
                 filter_text = f"{item.get('key', '')} {item.get('value', '')}".lower()
                 if any(
-                    token in filter_text
-                    for token in ("sort", "order", "sales", "销量", "排序", "价格", "最新", "综合")
+                    token in filter_text for token in ("sort", "order", "sales", "销量", "排序", "价格", "最新", "综合")
                 ):
                     sort_candidates.append(item)
             if sort_candidates:
@@ -821,10 +817,11 @@ class BrowserWorkingContextStore:
         target = BrowserWorkingContextStore._successful_click_target(state, progress)
         if target is None:
             return None
-        target_text = " ".join(
-            str(target.get(key) or "")
-            for key in ("element", "name", "label", "text", "value")
-        ).strip().lower()
+        target_text = (
+            " ".join(str(target.get(key) or "") for key in ("element", "name", "label", "text", "value"))
+            .strip()
+            .lower()
+        )
         for token, label in (
             ("销量", "销量"),
             ("sales", "销量"),
@@ -841,12 +838,7 @@ class BrowserWorkingContextStore:
             ("rating", "评分"),
         ):
             if token in target_text:
-                selector = str(
-                    target.get("target_id")
-                    or target.get("target")
-                    or target.get("ref")
-                    or ""
-                )
+                selector = str(target.get("target_id") or target.get("target") or target.get("ref") or "")
                 return label, selector[:600]
         return None
 
@@ -889,11 +881,7 @@ class BrowserWorkingContextStore:
 
         semantic_state = progress.get("semantic_state")
         semantic_state = semantic_state if isinstance(semantic_state, dict) else {}
-        changed_fields = {
-            str(field)
-            for field in progress.get("changed_fields") or []
-            if str(field).strip()
-        }
+        changed_fields = {str(field) for field in progress.get("changed_fields") or [] if str(field).strip()}
         phase = str(action.get("phase") or "")
         phase_progress = BrowserWorkingContextStore._phase_has_semantic_progress(
             phase,
@@ -908,7 +896,7 @@ class BrowserWorkingContextStore:
                 details["completion_evidence"] = "post-action semantic observation"
                 phase_names = list(phases)
                 try:
-                    remaining = phase_names[phase_names.index(phase) + 1:]
+                    remaining = phase_names[phase_names.index(phase) + 1 :]
                 except ValueError:
                     remaining = []
                 next_phase = phase
@@ -1040,18 +1028,11 @@ class BrowserWorkingContextStore:
                 for field_name in (state.get("field_coverage") or [])[:16]
                 if str(field_name).strip()
             ]
-        covered_keys = {
-            BrowserWorkingContextStore._evidence_slot_key(slot)
-            for slot in evidence_slots
-        }
+        covered_keys = {BrowserWorkingContextStore._evidence_slot_key(slot) for slot in evidence_slots}
         missing_slots = [
-            slot
-            for slot in required_slots
-            if BrowserWorkingContextStore._evidence_slot_key(slot) not in covered_keys
+            slot for slot in required_slots if BrowserWorkingContextStore._evidence_slot_key(slot) not in covered_keys
         ]
-        unavailable_slots = [
-            slot for slot in evidence_slots if slot.get("status") in {"missing", "unknown"}
-        ]
+        unavailable_slots = [slot for slot in evidence_slots if slot.get("status") in {"missing", "unknown"}]
         return {
             "task_id": state.get("task_id"),
             "goal": _bounded_text(state.get("goal") or state.get("task"), 1_000),
@@ -1069,8 +1050,11 @@ class BrowserWorkingContextStore:
                 "evidence": evidence_slots,
             },
             "observations": [
-                {"source": item.get("source"), "generation_id": item.get("generation_id"),
-                 "raw_text": _bounded_text(item.get("raw_text"), 1_500)}
+                {
+                    "source": item.get("source"),
+                    "generation_id": item.get("generation_id"),
+                    "raw_text": _bounded_text(item.get("raw_text"), 1_500),
+                }
                 for item in state.get("structured_evidence") or []
                 if isinstance(item, dict) and item.get("kind") == "page_observation"
             ][-2:],
@@ -1207,7 +1191,7 @@ class BrowserWorkingContextStore:
 
     def _limit_history(self, state: BrowserWorkingContextState) -> None:
         if len(state.recent_steps) > self.config.max_recent_steps:
-            state.recent_steps = state.recent_steps[-self.config.max_recent_steps:]
+            state.recent_steps = state.recent_steps[-self.config.max_recent_steps :]
 
     def _infer_tool_error(self, message: ToolMessage) -> Optional[str]:
         text = self.message_content_to_text(message.content)

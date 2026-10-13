@@ -154,8 +154,7 @@ def normalize_card_probe_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         {
             "identity": identity[:240],
             "classifications": [
-                {"region": region, "kind": kind, "is_ad": is_ad}
-                for region, kind, is_ad in sorted(values)
+                {"region": region, "kind": kind, "is_ad": is_ad} for region, kind, is_ad in sorted(values)
             ],
         }
         for identity, values in classifications.items()

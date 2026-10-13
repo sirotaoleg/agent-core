@@ -96,10 +96,7 @@ class BrowserServiceRegistry:
                 # stale (for example, the user closed the previous window).
                 entry.managed_drivers = [driver]
                 return
-            if any(
-                getattr(existing, "owns_process", False)
-                for existing in entry.managed_drivers
-            ):
+            if any(getattr(existing, "owns_process", False) for existing in entry.managed_drivers):
                 return
             if all(existing is not driver for existing in entry.managed_drivers):
                 entry.managed_drivers.append(driver)
@@ -113,11 +110,7 @@ class BrowserServiceRegistry:
             entry = self._entries.get(identity)
             if entry is None:
                 return
-            entry.managed_drivers = [
-                existing
-                for existing in entry.managed_drivers
-                if existing is not driver
-            ]
+            entry.managed_drivers = [existing for existing in entry.managed_drivers if existing is not driver]
             if not entry.services and not entry.managed_drivers:
                 self._entries.pop(identity, None)
 
@@ -190,6 +183,7 @@ class BrowserServiceRegistry:
         """Clear metadata for isolated tests after their resources are stopped."""
         with self._lock:
             self._entries.clear()
+
 
 BROWSER_SERVICE_REGISTRY = BrowserServiceRegistry()
 

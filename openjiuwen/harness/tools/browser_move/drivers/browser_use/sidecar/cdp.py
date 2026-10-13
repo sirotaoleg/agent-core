@@ -490,9 +490,7 @@ def build_external_drag_data(
             raise exceptions.DriverUnsupported("drop data item missing mimeType")
         if mime not in SUPPORTED_DROP_MIME_TYPES:
             supported = ", ".join(sorted(SUPPORTED_DROP_MIME_TYPES))
-            raise exceptions.DriverUnsupported(
-                f"drop MIME type {mime!r} is not supported (supported: {supported})"
-            )
+            raise exceptions.DriverUnsupported(f"drop MIME type {mime!r} is not supported (supported: {supported})")
         mime_items.append({"mimeType": mime, "data": str(raw.get("data") or "")})
     if not file_paths and not mime_items:
         raise exceptions.DriverError("drop requires at least one path or data item")

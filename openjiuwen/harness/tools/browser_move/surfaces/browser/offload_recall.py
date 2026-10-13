@@ -222,7 +222,7 @@ class BrowserOffloadRecallTool(Tool):
                 }
             fragment_offset = max(0, match_offset - _QUERY_CONTEXT_CHARS)
 
-        fragment = content[fragment_offset:fragment_offset + limit]
+        fragment = content[fragment_offset : fragment_offset + limit]
         next_offset = fragment_offset + len(fragment)
         return {
             "handle": handle,
@@ -250,8 +250,7 @@ class BrowserOffloadRecallTool(Tool):
         data = output.data
         if not data["found"]:
             return (
-                f'No match for "{data["query"]}" in offloaded result {data["handle"]} '
-                f"({data['original_size']} chars)."
+                f'No match for "{data["query"]}" in offloaded result {data["handle"]} ({data["original_size"]} chars).'
             )
         header = render_fields(
             {

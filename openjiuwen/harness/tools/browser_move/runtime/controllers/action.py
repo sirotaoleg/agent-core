@@ -14,6 +14,7 @@ import inspect
 from typing import Any, Awaitable, Callable, Protocol
 
 from openjiuwen.core.common.logging import logger
+
 from .base import BaseController
 
 ActionResult = dict[str, Any]
@@ -29,8 +30,7 @@ class RuntimeRunner(Protocol):
         session_id: str | None = None,
         request_id: str | None = None,
         timeout_s: int | None = None,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
 
 _ACTIONS: dict[str, ActionHandler] = {}

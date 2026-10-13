@@ -223,9 +223,7 @@ class BrowserStateContextProcessor(ContextProcessor):
         }
         completed_call_ids = set(tool_messages)
         executed_call_ids = {
-            call_id
-            for call_id, message in tool_messages.items()
-            if cls._tool_message_was_executed(message)
+            call_id for call_id, message in tool_messages.items() if cls._tool_message_was_executed(message)
         }
         return completed_call_ids, tool_messages, executed_call_ids
 
@@ -379,17 +377,19 @@ class BrowserStateContextProcessor(ContextProcessor):
         if not isinstance(page_state, dict):
             page_state = {}
 
-        state_header = self._fit_state_header({
-            "ok": bool(state.get("ok")),
-            "error": state.get("error"),
-            "url": state.get("url") or "",
-            "title": state.get("title") or "",
-            "tabs": state.get("tabs") or [],
-            "page_position": state.get("page_position") or {},
-            "semantic_state": state.get("semantic_state") or {},
-            "dom_error": state.get("dom_error"),
-            "page_state": page_state,
-        })
+        state_header = self._fit_state_header(
+            {
+                "ok": bool(state.get("ok")),
+                "error": state.get("error"),
+                "url": state.get("url") or "",
+                "title": state.get("title") or "",
+                "tabs": state.get("tabs") or [],
+                "page_position": state.get("page_position") or {},
+                "semantic_state": state.get("semantic_state") or {},
+                "dom_error": state.get("dom_error"),
+                "page_state": page_state,
+            }
+        )
         return (
             "<browser_state>\n"
             "This observation was captured initially or after the latest detected browser mutation and "
@@ -457,8 +457,7 @@ class BrowserStateContextProcessor(ContextProcessor):
                 values = compact_semantic.get(key)
                 if isinstance(values, dict):
                     compact_semantic[key] = {
-                        str(item_key)[:80]: str(item_value)[:160]
-                        for item_key, item_value in list(values.items())[:8]
+                        str(item_key)[:80]: str(item_value)[:160] for item_key, item_value in list(values.items())[:8]
                     }
                 elif isinstance(values, list):
                     compact_semantic[key] = [str(item)[:160] for item in values[:8]]

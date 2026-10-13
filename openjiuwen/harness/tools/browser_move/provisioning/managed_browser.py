@@ -327,16 +327,11 @@ class ManagedBrowserProvisioner:
                 if resolved:
                     return resolved
                 raise RuntimeError(f"Configured Chrome binary not found: {explicit}")
-            raise RuntimeError(
-                "Managed mode supports Chrome only. "
-                "Set BROWSER_MANAGED_BINARY to a Chrome executable."
-            )
+            raise RuntimeError("Managed mode supports Chrome only. Set BROWSER_MANAGED_BINARY to a Chrome executable.")
 
         candidates = _candidate_chrome_binaries(self._binary_candidates)
         if not candidates:
-            raise RuntimeError(
-                "Chrome needs to be installed. No Chrome binary was found on this machine."
-            )
+            raise RuntimeError("Chrome needs to be installed. No Chrome binary was found on this machine.")
         return candidates[0]
 
     def _build_args(self, binary: str) -> list[str]:
@@ -397,9 +392,7 @@ class ManagedBrowserProvisioner:
         while time.time() < deadline:
             if self._process.poll() is not None:
                 self._owns_process = False
-                raise RuntimeError(
-                    f"Managed browser process exited early with code {self._process.returncode}"
-                )
+                raise RuntimeError(f"Managed browser process exited early with code {self._process.returncode}")
             if self._is_endpoint_ready():
                 return self.cdp_endpoint
             time.sleep(0.25)
@@ -439,6 +432,7 @@ class ManagedBrowserProvisioner:
         if process is None:
             return
         from openjiuwen.core.common.logging import logger as _logger
+
         _logger.info("ManagedBrowser: clear handle process")
         process.poll()
 

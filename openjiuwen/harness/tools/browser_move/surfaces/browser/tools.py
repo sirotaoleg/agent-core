@@ -679,12 +679,12 @@ _BROWSER_DATE_PICKER_SECTION_NAME = "browser_date_picker_guidance"
 _BROWSER_DATE_PICKER_GUIDANCE = {
     "en": (
         "For calendar/date-picker widgets, do not type the date into a text field. Click the "
-        "specific day cell instead (look for a data-iso=\"YYYY-MM-DD\" attribute or an aria-label "
+        'specific day cell instead (look for a data-iso="YYYY-MM-DD" attribute or an aria-label '
         "naming the full date), then confirm the selection before proceeding."
     ),
     "cn": (
         "对于日历/日期选择器组件，不要向文本框输入日期，而应点击对应的日期单元格"
-        "（查找 data-iso=\"YYYY-MM-DD\" 属性或包含完整日期的 aria-label），"
+        '（查找 data-iso="YYYY-MM-DD" 属性或包含完整日期的 aria-label），'
         "确认选中后再继续。"
     ),
 }

@@ -71,9 +71,7 @@ class BrowserMoveStreamableHttpClient(StreamableHttpClient):
                     timeout=actual_timeout,
                     auth=self._auth_provider,
                 )
-                self._read, self._write, self._get_session_id = await self._exit_stack.enter_async_context(
-                    self._client
-                )
+                self._read, self._write, self._get_session_id = await self._exit_stack.enter_async_context(self._client)
                 self._session = await self._exit_stack.enter_async_context(
                     ClientSession(self._read, self._write, sampling_callback=None)
                 )
@@ -89,8 +87,7 @@ class BrowserMoveStreamableHttpClient(StreamableHttpClient):
                 await self.disconnect(timeout=timeout)
             except Exception as e:
                 logger.error(
-                    f"Streamable HTTP connection failed to {self._server_path} "
-                    f"(attempt {attempt}/{attempts}): {e}"
+                    f"Streamable HTTP connection failed to {self._server_path} (attempt {attempt}/{attempts}): {e}"
                 )
                 await self.disconnect(timeout=timeout)
         return False
@@ -161,9 +158,7 @@ class BrowserMoveStreamableHttpClient(StreamableHttpClient):
                 return tool_result
             except Exception as e:
                 if attempt == 0 and self.is_transport_error(e):
-                    logger.warning(
-                        f"Streamable HTTP tool call '{tool_name}' retry after reconnect: {e}"
-                    )
+                    logger.warning(f"Streamable HTTP tool call '{tool_name}' retry after reconnect: {e}")
                     connected = await self._reconnect(timeout=timeout)
                     if connected:
                         continue

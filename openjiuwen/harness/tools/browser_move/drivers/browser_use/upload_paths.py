@@ -37,9 +37,7 @@ def _candidates_for(text: str, upload_root: Path | None) -> list[Path]:
     return out
 
 
-def resolve_upload_file_paths(
-    paths: Sequence[str], *, upload_root: Path | None = None
-) -> tuple[list[str], str | None]:
+def resolve_upload_file_paths(paths: Sequence[str], *, upload_root: Path | None = None) -> tuple[list[str], str | None]:
     """Return ``(absolute_existing_paths, error_or_none)``.
 
     - Strips wrapping quotes (LLM/tool-arg footgun).

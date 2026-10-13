@@ -70,10 +70,8 @@ def _redacted_text(value: Any) -> dict[str, Any]:
     text = "" if value is None else str(value)
     text_hash = ""
     if text:
-        text_hash = hashlib.sha256(
-            text.encode("utf-8", errors="ignore")
-        ).hexdigest()[:12]
-    
+        text_hash = hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()[:12]
+
     return {
         "kind": type(value).__name__,
         "length": len(text),
@@ -162,9 +160,7 @@ def summarize_tool_arguments_for_log(tool_name: str, arguments: Any) -> dict[str
         code_text = str(code)
         code_hash = ""
         if code_text:
-            code_hash = hashlib.sha256(
-                code_text.encode("utf-8", "ignore")
-            ).hexdigest()[:12]
+            code_hash = hashlib.sha256(code_text.encode("utf-8", "ignore")).hexdigest()[:12]
 
         return {
             "kind": "code_execution",
@@ -175,11 +171,7 @@ def summarize_tool_arguments_for_log(tool_name: str, arguments: Any) -> dict[str
         }
 
     if "navigate" in lowered_name:
-        raw_url = (
-            arguments.get("url")
-            or arguments.get("href")
-            or arguments.get("target")
-        )
+        raw_url = arguments.get("url") or arguments.get("href") or arguments.get("target")
         return {
             "kind": "navigation",
             "keys": keys,
@@ -217,10 +209,7 @@ def summarize_tool_arguments_for_log(tool_name: str, arguments: Any) -> dict[str
         key_str = str(key)
         key_lower = key_str.lower()
 
-        is_sensitive_key = any(
-            token in key_lower
-            for token in sensitive_key_tokens
-        )
+        is_sensitive_key = any(token in key_lower for token in sensitive_key_tokens)
 
         if key_lower in _TEXT_VALUE_KEYS or is_sensitive_key:
             redacted_values[key_str] = _redacted_text(value)
