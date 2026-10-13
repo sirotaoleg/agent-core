@@ -24,6 +24,12 @@ REGISTRY_IMPORTERS: dict[str, frozenset[str]] = {
 # the hooks, the catalog and the worker prompt, and the core reaches surfaces/ through the registry alone.
 KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {}
 
+# (core file, module outside the package that itself imports a concrete driver/surface/provisioner) -> count.
+KNOWN_CORE_DETOURS_INTO_CONCRETE_MODULES: dict[tuple[str, str], int] = {
+    # Direct builds the main agent with create_browser_agent, which imports the browser surface's rails.
+    ("runtime/topology.py", "openjiuwen.harness.subagents.browser_agent"): 1,
+}
+
 # (file relative to openjiuwen/core, imported module) -> count.
 KNOWN_CORE_TO_HARNESS_IMPORTS: dict[tuple[str, str], int] = {
     # Outside browser_move; the driver refactor does not remove these.
@@ -207,6 +213,42 @@ def _collect_provisioning_imports_outside_the_contract() -> list[str]:
     return bad
 
 
+def _absolute_modules(node: ast.stmt, package: tuple[str, ...]) -> list[str]:
+    if isinstance(node, ast.Import):
+        return [alias.name for alias in node.names]
+    if not node.level:
+        return [node.module or ""]
+    base = package[: len(package) - (node.level - 1)]
+    return [".".join(base + ((node.module,) if node.module else ()))]
+
+
+def _concrete_modules_imported_by(module: str) -> list[str]:
+    """Concrete driver, surface or provisioner modules that a module outside the package imports itself."""
+    path = _scan.REPO_ROOT.joinpath(*module.split("."))
+    source = path.with_suffix(".py") if path.with_suffix(".py").is_file() else path / "__init__.py"
+    if not source.is_file():
+        return []
+    package = tuple(module.split(".")) if source.name == "__init__.py" else tuple(module.split(".")[:-1])
+    reached = []
+    for node, _lazy in _scan.iter_imports(_scan.parse_source(source.read_text(encoding="utf-8"), str(source))):
+        for name in _absolute_modules(node, package):
+            target = _scan.resolve_import("", name, 0)
+            if target is not None and _concrete_kind(target):
+                reached.append(".".join(target))
+    return reached
+
+
+def _collect_core_detours_into_concrete_modules() -> Counter:
+    found: Counter = Counter()
+    for relpath in _scan.files_where(_scan.is_core):
+        for node, _lazy in _scan.iter_imports(_scan.parse(relpath)):
+            for module in _outside_modules(node):
+                if module.startswith("openjiuwen.") and _scan.resolve_import(relpath, module, 0) is None:
+                    if _concrete_modules_imported_by(module):
+                        found[(relpath, module)] += 1
+    return found
+
+
 def _collect_imports_of_the_driver_layer() -> list[str]:
     bad = []
     for relpath in _scan.files_where(lambda f: _scan.in_folder(f, "runtime") or _scan.is_surface(f)):
@@ -231,6 +273,14 @@ class TestImportBoundaries:
             _collect_core_concrete_imports(),
             KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES,
             "core import of a concrete driver/surface/provisioner",
+        )
+        assert not problems, "\n".join(problems)
+
+    def test_core_never_reaches_a_concrete_module_through_a_module_outside_the_package(self):
+        problems = _scan.compare_with_allowlist(
+            _collect_core_detours_into_concrete_modules(),
+            KNOWN_CORE_DETOURS_INTO_CONCRETE_MODULES,
+            "core import of an outside module that imports a concrete driver/surface/provisioner",
         )
         assert not problems, "\n".join(problems)
 
