@@ -50,8 +50,9 @@ def _confined(raw: str, roots: tuple[Path, ...]) -> bool:
         text = text[1:-1].strip()
     path = Path(text).expanduser()
     # A relative name is read under a root by the driver, so it must not climb out of the one it is joined to.
-    candidates = [path.resolve()] if path.is_absolute() else [(root / path).resolve() for root in roots]
-    return any(_inside(candidate, root) for candidate in candidates for root in roots)
+    if path.is_absolute():
+        return any(_inside(path.resolve(), root) for root in roots)
+    return any(_inside((root / path).resolve(), root) for root in roots)
 
 
 def upload_rules(upload_root: Path | None, workspace_root: Path | None) -> tuple[PolicyRule, ...]:
