@@ -39,7 +39,7 @@ from `runtime/config.py` (the surface settings); the core imports no module of `
 `surfaces/<name>/` or `provisioning/`: the facade, the service, the config and the agent builders read the
 hooks, the worker prompt and the capability catalog from the surface profile, and the registry is the only way
 from the core to a surface. The browser words left in the core are data keys and attributes (`page`, `url`), the
-surface name, identifiers and text the model reads, listed one by one in F_07 ("Phase 9: PR d").
+surface name, identifiers and text the model reads, listed one by one in F_07.
 The browser profile store is `provisioning/profiles.py`. The old `playwright_runtime` package and the root module
 `offload_recall.py` are removed; callers import `runtime.<module>`, `surfaces.browser.<module>` or
 `provisioning.profiles`. The WebVoyager runner uses `runtime.config.build_runtime_settings`,
@@ -647,8 +647,6 @@ Managed provisioning:
 with a `webSocketDebuggerUrl` or `Browser` field (1.5 s timeout, the same check as `is_endpoint_ready`); a device
 without one (extension, or remote without `cdp_url`, where the driver launches its own browser) is always alive:
 there is nothing to probe or to provision again.
-
-`ManagedBrowserDriver` stays a deprecated alias of the class.
 
 ### The browser service (`runtime/service.py`, `runtime/worker.py`)
 

@@ -4732,3 +4732,9 @@ this change).
 
 Verification: the shim tests and the offload alias test are removed; the root-module rule lists `__init__.py` and
 `playwright_runtime_mcp_server.py`. Unit suite: 2536 passed, 123 skipped.
+
+## Removal of the ManagedBrowserDriver alias
+
+The deprecated module attribute `ManagedBrowserDriver`, an alias of `ManagedBrowserProvisioner` with a
+deprecation warning, is removed together with its tests; no module in the repository used it. Provisioning
+tests: 2532 unit tests pass.
