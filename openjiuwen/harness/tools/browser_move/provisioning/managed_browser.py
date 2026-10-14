@@ -12,7 +12,6 @@ import socket
 import subprocess
 import sys
 import time
-import warnings
 from pathlib import Path
 from types import MappingProxyType
 from typing import Optional, Protocol
@@ -441,14 +440,3 @@ def _build_profile(settings: ManagedBrowserSettings) -> BrowserProfile:
         host=host,
         extra_args=list(settings.managed_args),
     )
-
-
-def __getattr__(name: str):
-    if name == "ManagedBrowserDriver":
-        warnings.warn(
-            "ManagedBrowserDriver is deprecated; use ManagedBrowserProvisioner",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return ManagedBrowserProvisioner
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
