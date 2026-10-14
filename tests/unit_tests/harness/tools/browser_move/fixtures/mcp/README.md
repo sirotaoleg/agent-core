@@ -1,9 +1,9 @@
 # Recorded `@playwright/mcp@0.0.78` answers
 
 Real answers of the Playwright MCP server, recorded once from a local headless
-Chrome against the static pages in `pages/`. They are the input for the Phase 5
+Chrome against the static pages in `pages/`. They are the input for the
 snapshot parser and envelope decoder (`drivers/playwright_mcp/`) and for the
-Phase 4 rail tests. `test_mcp_fixtures_wellformed.py` only checks that the
+rail tests. `test_mcp_fixtures_wellformed.py` only checks that the
 files are complete; `drivers/playwright_mcp/test_snapshot.py` and
 `test_result.py` parse them.
 
