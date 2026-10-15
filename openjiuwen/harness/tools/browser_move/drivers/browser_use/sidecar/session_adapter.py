@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-import os
 import time
 from pathlib import Path
 from typing import Any
@@ -26,59 +25,35 @@ def _strip_upload_path_text(raw: str) -> str:
     return text
 
 
-def _upload_root() -> Path | None:
-    raw = (os.environ.get("BROWSER_UPLOAD_ROOT") or "").strip()
-    if not raw:
-        return None
-    try:
-        return Path(raw).expanduser().resolve()
-    except OSError:
-        return None
-
-
 def _normalize_upload_paths(paths: list[str]) -> tuple[list[str], str | None]:
-    """Return ``(existing_absolute_paths, error_or_none)``."""
+    """Return ``(existing_absolute_paths, error_or_none)``; the driver sends absolute paths only."""
     existing: list[str] = []
     missing: list[str] = []
     unreadable: list[str] = []
-    seen: set[str] = set()
-    root = _upload_root()
 
     for raw in paths or []:
         text = _strip_upload_path_text(str(raw))
         if not text:
             continue
-        primary = Path(text).expanduser()
-        candidates = [primary]
-        if not primary.is_absolute() and root is not None:
-            candidates.append(root / text)
-            candidates.append(root / primary.name)
-        resolved_ok: str | None = None
-        last_resolved = text
-        for candidate in candidates:
-            try:
-                resolved = candidate.resolve()
-            except OSError:
-                continue
-            last_resolved = str(resolved)
-            if not resolved.is_file():
-                continue
-            try:
-                with resolved.open("rb") as handle:
-                    handle.read(1)
-            except OSError:
-                unreadable.append(str(resolved))
-                resolved_ok = None
-                break
-            resolved_ok = str(resolved)
-            break
-        if resolved_ok is None:
-            if last_resolved not in unreadable:
-                missing.append(last_resolved)
+        path = Path(text).expanduser()
+        if not path.is_absolute():
+            return [], f"upload path must be absolute: {text!r}"
+        try:
+            resolved = path.resolve()
+        except OSError:
+            missing.append(text)
             continue
-        if resolved_ok not in seen:
-            seen.add(resolved_ok)
-            existing.append(resolved_ok)
+        if not resolved.is_file():
+            missing.append(str(resolved))
+            continue
+        try:
+            with resolved.open("rb") as handle:
+                handle.read(1)
+        except OSError:
+            unreadable.append(str(resolved))
+            continue
+        if str(resolved) not in existing:
+            existing.append(str(resolved))
 
     if not existing and not missing and not unreadable:
         return [], "upload_files requires at least one path"
