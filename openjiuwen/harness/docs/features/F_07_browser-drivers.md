@@ -4897,6 +4897,15 @@ composition root's defaults is what a test-scoped registry is for).
 
 Verification: unit suite `2547 passed, 123 skipped`; goldens unchanged.
 
+### Live gate
+
+Both live sets once, at the end (`BROWSER_MOVE_LIVE_MCP=1`, `BROWSER_USE_SIDECAR_PYTHON` set):
+`test_conformance_playwright_mcp_live.py`, `test_conformance_browser_use_live.py` and `test_topology_live.py`:
+`100 passed, 3 warnings in 239.36s (0:03:59)`, none skipped. Unit suite `2547 passed, 123 skipped`; architecture
+tests 34 passed; goldens byte for byte unchanged against the start of the feature; ruff clean on every touched file
+except findings present before it (`ASYNC250` in the demo CLI, `ASYNC240` in `helpers/custom.py`, `ASYNC109` in
+`test_service.py`).
+
 ### Known leftovers
 
 1. `runtime/worker.py` keeps its browser words: the worker's JSON `page` / `url` keys, the Playwright restart and
