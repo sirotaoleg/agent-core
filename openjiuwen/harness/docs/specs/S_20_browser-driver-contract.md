@@ -78,10 +78,8 @@ every rule with an allowlist that may only shrink:
   `build_playwright_mcp_config` / `RuntimeSettings.mcp_cfg` call the driver's config builder (the architecture
   rules treat that module as a config module: it reads the process environment for the facades).
 - The core does not reach a concrete driver, surface or provisioner through a module outside the package either:
-  a core import of an `openjiuwen` module that itself imports one of them is a finding. One is allowlisted:
-  `runtime/topology.py` imports `openjiuwen.harness.subagents.browser_agent` (inside `Direct.start`), whose
-  `create_browser_agent` builds the main agent with the browser surface's rails, capability catalog and context
-  processors.
+  a core import of an `openjiuwen` module that itself imports one of them is a finding; the allowlist is empty
+  (the main agent reaches the core through the profile's `main_agent` hook).
 - The package root holds `__init__.py` and the runtime server entry point `playwright_runtime_mcp_server.py`;
   every other module lives in a layer.
 
@@ -294,15 +292,18 @@ Data types only; their use is specified with the composition root and the tool f
   worker read: `capabilities` (the catalog, a tuple of `Capability` in order, its first entry the default one
   every agent gets), `custom_actions(controller, context)`, `page_metadata(context) -> (metadata, error)`,
   `policy_probe(context, source, params)`, `activate(context, address) -> bool`, `semantic_tracker()` (a
-  factory) and `worker_prompt(screenshot_subdir, artifacts_subdir, *, tool_names=None, driver_name)`, typed by the
-  `Protocol`s `CustomActions`, `Metadata`, `PolicyProbe`, `Activate` and `WorkerPrompt` in `surface.py`. Each is
-  `None` (the catalog empty) unless the surface fills it, and each is optional for the facade and the worker:
+  factory), `worker_prompt(screenshot_subdir, artifacts_subdir, *, tool_names=None, driver_name)`,
+  `page_state()` (a factory, "Page state") and `main_agent(runtime, model, *, language, max_iterations,
+  workspace, capabilities)`, typed by the `Protocol`s `CustomActions`, `Metadata`, `PolicyProbe`, `Activate`,
+  `WorkerPrompt` and `MainAgentFactory` in `surface.py`. Each is `None` (the catalog empty) unless the surface
+  fills it, and each is optional for the runtime and the worker:
   without `custom_actions` no custom action is registered; without `page_metadata` the captures use `{}` and no
   error; without `policy_probe` the facade answers `{"ok": False, "error": "surface '<name>' has no policy probe",
   "elements": [], "page_state": ...}`; without `activate` it answers `False`; without `semantic_tracker` it uses a
   tracker that never observes progress (`{"progress": "unknown", "observable_progress": False}`, `latest` `{}`);
   without `worker_prompt` the worker gets `runtime/agents.default_worker_prompt`, which names the driver and the
-  output folders and no surface. The unused `native_tools` field is gone (a driver's native tools are
+  output folders and no surface; without `main_agent` the `Direct` topology builds the main agent from the
+  profile's parts ("Topology"). The unused `native_tools` field is gone (a driver's native tools are
   `DriverInfo.native_tools`).
 - `Capability(name, description, tool_names, policy_only=False)`: one catalog entry; `policy_only` marks an
   entry a policy rule alone grants, which the driver has no feature to enable for.
@@ -753,12 +754,17 @@ session").
 
 ### Agent construction
 
-Every agent gets its session, tools and rails from this module and is built by exactly one builder: the main agent
-by `create_browser_agent` (`openjiuwen/harness/subagents/browser_agent.py`), which queues
-`BrowserRuntimeRail(runtime)` and `runtime.core_rails()` as rails at construction (before the first invoke; the
-tools arrive at the first invoke), the worker by `build_worker` (`runtime/agents.py`). The `Direct`
-topology builds the main agent through `create_browser_agent(..., runtime=<the facade>)`, `DelegatedWorker` the
-worker through `build_worker` ("Topology"). Nothing else creates an agent or opens a session.
+Every agent gets its session, tools and rails from this module and is built by exactly one builder: the browser
+main agent by `build_main_agent` (`surfaces/browser/runner/agent.py`; `create_browser_agent` in
+`openjiuwen/harness/subagents/browser_agent.py` resolves the capabilities, builds the facade when none is
+given and delegates to it), which queues `BrowserRuntimeRail(runtime)` and `runtime.core_rails()` as rails at
+construction (before the first invoke; the tools arrive at the first invoke); the main agent of a surface
+without a `main_agent` hook by `agent_over(parts, rails, model, *, language, workspace, system_prompt="",
+**agent_options)` (a deep agent with the parts' tools and prompt sections, `rails` before the profile's own;
+`build_agent` and the `Direct` topology share it); the worker by `build_worker` (`runtime/agents.py`). The
+`Direct` topology builds the main agent through the profile's `main_agent` hook, else `agent_over`,
+`DelegatedWorker` the worker through `build_worker` ("Topology"). Nothing else creates an agent or opens a
+session.
 
 `core_rails(profile, builders, page_state) -> (ActionPolicy, RepeatedCallGuardRail, InterceptedActionHintRail)`:
 `ActionPolicy(builders, profile.policy_rules, page_state)`, `RepeatedCallGuardRail()`,
@@ -840,6 +846,7 @@ drivers.
 | `custom_actions`, `page_metadata`, `policy_probe`, `activate` | `helpers.register_custom_actions`, `helpers.page_metadata`, `helpers.probe_for_policy`, `helpers.activate_page` |
 | `semantic_tracker` | `SemanticStateTracker` (`semantic/state.py`) |
 | `worker_prompt` | `tools.build_browser_worker_system_prompt` |
+| `main_agent` | `runner/agent.main_agent`: `build_main_agent` with the worker's sampling (`core.worker_temperature`) |
 | `policy_rules` | `policy.policy_rules(settings)`: the clipboard rules (`POLICY_RULES`) and the upload confinement to the settings' folders (see "Policy rail") |
 | `rails` | empty |
 | `scene` | `None` (the conformance suite takes `browser_scene()` directly) |
@@ -1446,15 +1453,18 @@ name for a registered default no strategy implements. Neither strategy names a d
 browser word (it is a core module under the browser-word ratchet); the `runtime` it receives is an
 `AgentRuntime`, the facade on the browser surface.
 
-- `Direct` (`name="direct"`, the browser-use default): `start` builds the main agent once, through
-  `create_browser_agent(model, language=WORKER_LANGUAGE, temperature=core.worker_temperature,
-  max_iterations=guardrails.max_steps, workspace=runtime.workspace, browser_capabilities=runtime.capabilities,
-  runtime=runtime)` with a `Model` from the service's provider, key, base and model name (`temperature` / `top_p`
-  from the core settings' worker values), after setting `runtime.dedicated_log = False`; `start` makes no model
-  call ("Invariant (image probe)"). No session is opened:
-  it opens at the agent's first invoke (`BrowserRuntimeRail.before_invoke`), as for any `create_browser_agent`
-  agent. `run`: `service.session_new(session_id)`, a request id, `await probe_image_support(<the same Model>)`
-  (the agent reads the verdict from the probe cache per model call, "`BrowserRuntimeRail`"), then
+- `Direct` (`name="direct"`, the browser-use default): `start` sets `runtime.dedicated_log = False` and builds
+  the main agent once through the profile's `main_agent(runtime, model, language=WORKER_LANGUAGE,
+  max_iterations=guardrails.max_steps, workspace=runtime.workspace, capabilities=runtime.capabilities)` with a
+  `Model` from the service's provider, key, base and model name (`temperature` / `top_p` from the core
+  settings' worker values); `start` makes no model call ("Invariant (image probe)"). With the browser hook no
+  session is opened: it opens at the agent's first invoke (`BrowserRuntimeRail.before_invoke`), as for any
+  `create_browser_agent` agent. Without a hook `start` opens the session (`runtime.ensure_runtime_ready()`) and
+  `run` builds the agent after the probe: `agent_over(runtime.agent_parts(image_support=<the verdict>,
+  language=WORKER_LANGUAGE), runtime.core_rails(), model, language=WORKER_LANGUAGE, workspace=,
+  max_iterations=guardrails.max_steps, enable_read_image_multimodal=<the verdict>)`. `run`:
+  `service.session_new(session_id)`, a request id, `await probe_image_support(<the same Model>)`
+  (the browser agent reads the verdict from the probe cache per model call, "`BrowserRuntimeRail`"), then
   `Runner.run_agent(agent, {"query": task,
   "conversation_id": "<sid>.direct.<rid>.<uuid>", "request_id": rid})` under `asyncio.wait_for(timeout_s or the
   guardrails' timeout)`; the result, a timeout (`task_timeout: exceeded <n>s`) or an exception becomes the answer

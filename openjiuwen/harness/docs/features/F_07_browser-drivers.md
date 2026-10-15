@@ -4822,9 +4822,41 @@ This reverses the "surface-neutral service is out of scope" decision of the opti
   no `runtime/session.py` / `runtime/service.py` entry in the browser-word and driver-name allowlists; goldens
   unchanged.
 
+### The main agent through the profile
+
+The one contract change of this feature: `SurfaceProfile.main_agent: MainAgentFactory | None`, a hook
+`(runtime, model, *, language, max_iterations, workspace, capabilities) -> agent`. `Direct.start` calls it when
+the profile sets it; without it the topology opens the session at `start` and builds the agent after the image
+probe from the profile's parts through `assembly.agent_over`, which `build_agent` shares, with the probe's
+verdict as `enable_read_image_multimodal` (no background probe). The browser profile sets the hook to
+`surfaces/browser/runner/agent.main_agent`; that module holds what `create_browser_agent` did for an existing
+runtime (the prompts, the card id, the sampling copy, `BrowserRuntimeRail`, the core rails, the context
+processors, the task cleanup) as `build_main_agent`, and `create_browser_agent` keeps its signature, resolves
+the capabilities, builds the facade when none is given and delegates. The core detour allowlist is empty.
+
+Decisions:
+1. The hook receives the facade: the facade subclasses the core runtime (above), so the browser rails get the
+   object they need without a lookup.
+2. The hook's `capabilities` are logged by the browser hook and not re-resolved: the runtime derived them from
+   its allowlist, and `create_browser_agent` keeps its own resolution and log for callers that start from
+   names.
+3. Without a hook the agent is built in `run`, not `start`: `start` must make no model call and the parts
+   depend on the probe's verdict.
+
+Rejected: a hook that returns the agent's parts instead of the agent (the browser agent is a deep agent with
+its own rails and processors; the parts are not enough); keeping the prompts in
+`openjiuwen/harness/subagents/browser_agent.py` and importing them from the surface (a cycle: the subagent
+module imports the surface).
+
+Verification: the topology tests patch the runner's builder and pin a profile without a hook (the session
+opens at `start`, the agent is built from the parts after the probe with the core rails and the verdict);
+the create-agent tests pin that the browser profile sets the hook and that the hook builds the browser agent
+with the runtime's sampling and the task cleanup. Unit suite `2575 passed, 123 skipped`; architecture tests
+24 passed with `KNOWN_CORE_DETOURS_INTO_CONCRETE_MODULES` empty; the browser prompts' two Playwright MCP
+mentions are allowlisted in `surfaces/browser/runner/agent.py`; goldens unchanged.
+
 ### Known leftovers
 
-1. `Direct.start` still builds the main agent through `create_browser_agent` (the allowlisted detour).
-2. `runtime/worker.py` keeps its browser words: the worker's JSON `page` / `url` keys, the Playwright restart and
+1. `runtime/worker.py` keeps its browser words: the worker's JSON `page` / `url` keys, the Playwright restart and
    retry markers, the progress record's `last_page` export and the model-facing text.
-3. `runtime/config.py` names the default surface (`surface: str = "browser"`).
+2. `runtime/config.py` names the default surface (`surface: str = "browser"`).
