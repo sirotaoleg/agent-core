@@ -88,7 +88,11 @@ every rule with an allowlist that may only shrink:
 A surface, driver or provisioner is added with new code and registry entries only. The fake-surface test
 (`tests/unit_tests/harness/tools/browser_move/architecture/fake_surface/`) holds this: a screen surface with its own
 command, renderer and policy rule, a driver and a provisioner, all defined in the test and registered in
-test-scoped registries, run a scripted task through `build_agent` on a real deep agent.
+test-scoped registries, run a scripted task through `build_agent` on a real deep agent, and through
+`AgentRuntime` on both topologies (`test_fake_surface_runtime.py`): the runtime takes the core settings, the
+screen's bundle, a temporary output folder and an identity of its own, `Direct` builds the agent from the parts
+(the profile sets no `main_agent`), `DelegatedWorker` the worker through the service, and the answer's
+`context.identity` is the screen's.
 
 ## Contract types
 

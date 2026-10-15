@@ -4879,6 +4879,24 @@ question for the owner; see the task report.
 Verification: unit suite `2537 passed, 123 skipped` (the suite of `browser_move` and the terminal-stream test);
 architecture tests 24 passed; goldens unchanged.
 
+### The fake surface through the runtime
+
+The proof the feature exists for: `architecture/fake_surface/test_fake_surface_runtime.py` runs the screen surface's
+scripted task (look, poke, look, click) through `AgentRuntime` on both topologies. The runtime takes
+`CoreSettings(driver="screen_driver", surface="fake", topology=...)`, `SurfaceBundle(ScreenSettings, PROFILE)`, the
+model client fields, `RunGuardrails`, a temporary workspace and output folder and the identity `screen:test`; the
+test-scoped registries stand in for the composition root's defaults for the run, the scripted model is injected
+at the topology's model builder (`Direct`) and at the worker builder (`DelegatedWorker`, whose worker is rebuilt
+with image support on the first run), and the probe answers yes so the screenshot-only `look` tool is offered.
+Checked: the answer (`ok`, `final`, `session_id`), `context == {"identity": "board", "metadata": {}}`, the tools
+the model saw, the commands the driver saw with their generations, one provision and one release, the output
+folder and the identity, and the core `PageState`.
+
+Rejected: a `registries` parameter on the runtime's constructor (an input the design did not list; patching the
+composition root's defaults is what a test-scoped registry is for).
+
+Verification: unit suite `2547 passed, 123 skipped`; goldens unchanged.
+
 ### Known leftovers
 
 1. `runtime/worker.py` keeps its browser words: the worker's JSON `page` / `url` keys, the Playwright restart and
