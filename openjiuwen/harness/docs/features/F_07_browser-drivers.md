@@ -5162,3 +5162,55 @@ MCP's 525, and the reruns below show the gap is the Direct topology's budgets, n
 - `ruff check` and `ruff format --check` clean on every touched file, except the pre-existing `ASYNC109` at
   `test_service.py:261`.
 - No WebVoyager run in this step: the measurement is the 2026-10-15 reruns above.
+
+## A final connection loss ends the task
+
+In the WebVoyager run of 2026-10-15 (`20261015-1339_bu_critical_sonnet-5.5_eb5454b10`, task Google Map--40, browser-use,
+direct topology) the stack lost its connection a second time in the same task. `DriverSession` raised the `driver_lost`
+error as designed, but nothing ended the task: `CommandTool` lets a `BaseError` through, the ability manager turned
+it into an ordinary tool message (`Tool execution error: [123023] deepagent runtime error, reason: the browser
+connection was lost again; the task cannot continue`) and the model went on: 10 more model calls after the final
+loss, every tool call failing the same way, until the task deadline; the deadline then judged the evidence complete
+and the answer's metadata hook met the dead stack, so the run ended in an exception instead of an answer.
+
+Decision: the session remembers the terminal loss, one core rail turns it into the end of the run, and each
+topology's answer path reads the result it already understands.
+
+1. **`DriverSession.lost`.** The `driver_lost` message once a loss ended the task (a second loss, or a restart that
+   failed), `None` otherwise; `begin_task()` clears it with the loss counter. The errors raised are unchanged.
+2. **`ConnectionLostRail`** (`runtime/rails/connection_lost.py`), the fourth core rail: `before_model_call` ends the
+   run with `{"output": <lost>, "result_type": "error", "error": <lost>}` when the session is lost. `core_rails`
+   takes a zero-argument session lookup, since the browser main agent's rails are built before the session exists.
+3. **The answer.** The worker loop takes a run a rail ended with an error of its own as the blocked answer
+   (`ok=False`, `error` and `final` the text, `status` `blocked`), with no recovery call and no retry. The browser
+   main agent's rail marks the task `blocked` with `terminal_reason` `browser_connection_lost` in `after_invoke`
+   (the answer: `ok=False`, `status` `blocked`, `error` `browser_task_incomplete`, the `browser_result` carrying the
+   reason and the text as `summary`); the reason is retryable on its own and a resume drops the blocker.
+
+The one-restart rule and `contract/` are untouched. In the direct topology the loss may happen inside the state
+capture the context processors run before a model call, after the stop has already let that call through: that
+one model call still happens and its command fails; the next model call is skipped.
+
+Rejected options:
+- Catching the error in `CommandTool` and returning a failure output: the model would retry just as in Google
+  Map--40, only with a prettier message; the batch helper, the probes and the runtime's own capture reach the
+  session without a `CommandTool`.
+- An exception the agent loop lets escape: tool exceptions become tool messages and only cancellation escapes the
+  loop; a run that raises gives the direct answer no status and lets the worker loop's retry run the task again.
+- Ending the run from the tool through the callback context (`accepts_tool_callback_context`): only `CommandTool`
+  would end it; the helpers and the state capture would not.
+- A hook on `on_tool_exception` instead of `before_model_call`: the loss can happen outside a tool call (the state
+  capture, the metadata hook); the model-call gate is the one place every path passes, and it is what makes "no
+  further model call" a property rather than a case list.
+- The stop in `BrowserRuntimeRail`: the worker has no such rail; the core rails are the rails both topologies
+  share, and a surface word in the core would fail the architecture tests.
+
+Verification: `uv run pytest tests/unit_tests/harness/tools/browser_move -q` → `2560 passed, 130 skipped`;
+`git diff eb5454b10 --stat -- tests/unit_tests/harness/tools/browser_move/snapshots/golden/` → empty. The topology
+test runs a fake driver that loses the connection on every command through the facade in both topologies: the
+worker makes two model calls (the restart, then the final loss) and the direct main agent one (the state capture
+takes the restart and, through the metadata hook, the final loss); both answers are `ok=False` with the lost-connection
+reason, and the driver sees `execute, stop, start, execute` (worker) and `observe, stop, start, execute, execute`
+(direct). The driver-session tests cover `lost` after a second loss and after a failed restart, and its reset by
+`begin_task()`; the rail test the skipped model call; the service test the blocked answer without a recovery call;
+the rail test on the direct side the `blocked` status over evidence, the retryable reason and the resume.

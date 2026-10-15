@@ -5,7 +5,7 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `device.py` / `masking.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/config.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/runtime/session.py`, `openjiuwen/harness/tools/browser_move/runtime/topology.py`, `openjiuwen/harness/tools/browser_move/runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/action_policy.py`, `openjiuwen/harness/tools/browser_move/runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/final_answer_recovery.py`, `openjiuwen/harness/tools/browser_move/runtime/config.py`, `openjiuwen/harness/tools/browser_move/runtime/service.py`, `openjiuwen/harness/tools/browser_move/runtime/service_registry.py`, `openjiuwen/harness/tools/browser_move/runtime/worker.py`, `openjiuwen/harness/tools/browser_move/runtime/utils/env.py`, `openjiuwen/harness/tools/browser_move/surfaces/browser/runner/` (`facade.py` / `settings.py` / `tools.py` / `actions.py` / `logging.py` / `server_config.py` / `main.py`), `openjiuwen/harness/tools/browser_move/surfaces/browser/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py` / `profiles.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `policy.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `site_profiles.py` / `state_processor.py` / `status_logging.py` / `helpers/` / `probes/` / `semantic/` / `working_context/` / `rails/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/context_engine/context/context_utils.py` (`offload_session_dir_name`) |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `device.py` / `masking.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/config.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/runtime/session.py`, `openjiuwen/harness/tools/browser_move/runtime/topology.py`, `openjiuwen/harness/tools/browser_move/runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/action_policy.py`, `openjiuwen/harness/tools/browser_move/runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/final_answer_recovery.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/connection_lost.py`, `openjiuwen/harness/tools/browser_move/runtime/config.py`, `openjiuwen/harness/tools/browser_move/runtime/service.py`, `openjiuwen/harness/tools/browser_move/runtime/service_registry.py`, `openjiuwen/harness/tools/browser_move/runtime/worker.py`, `openjiuwen/harness/tools/browser_move/runtime/utils/env.py`, `openjiuwen/harness/tools/browser_move/surfaces/browser/runner/` (`facade.py` / `settings.py` / `tools.py` / `actions.py` / `logging.py` / `server_config.py` / `main.py`), `openjiuwen/harness/tools/browser_move/surfaces/browser/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py` / `profiles.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `policy.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `site_profiles.py` / `state_processor.py` / `status_logging.py` / `helpers/` / `probes/` / `semantic/` / `working_context/` / `rails/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/context_engine/context/context_utils.py` (`offload_session_dir_name`) |
 | Last revised | 2026-10-15 |
 | Related feature | [[F_07_browser-drivers]] |
 
@@ -709,7 +709,10 @@ The service holds the `DriverSession` the worker runs on and provisions nothing 
 - `run_task(task, session_id=, request_id=, timeout_s=, *, worker)` runs the worker loop (the per-session lock,
   the cancel check, the attempts, the max-iteration resume, the failure context, the JSON contract and the
   final-answer recovery) on the agent `worker()` returns: `run_task_once(..., worker=)` awaits it once per attempt,
-  and the recovery call reuses that agent. `_restart` is `reset()` alone (the session closed, the `agent` slot
+  and the recovery call reuses that agent. A run a rail ended with an error of its own (`result_type` `error` and a
+  non-empty `error`, no JSON in the output: the `ConnectionLostRail` result) is the answer without a recovery call:
+  `ok=False`, `final` the output, `error` the text, `status` `blocked`, no retry (the text matches no restart
+  marker). `_restart` is `reset()` alone (the session closed, the `agent` slot
   cleared), so the next attempt's `worker()` rebuilds the worker where it is built (`DelegatedWorker.start`,
   "Topology"). The service builds no agent and starts none (there is no `ensure_started`); the `agent` slot is a
   plain attribute the delegated topology fills and the runner's helper removal reads. `observe_worker_tool_result`
@@ -788,11 +791,13 @@ without a `main_agent` hook by `agent_over(parts, rails, model, *, language, wor
 `DelegatedWorker` the worker through `build_worker` ("Topology"). Nothing else creates an agent or opens a
 session.
 
-`core_rails(profile, builders, page_state) -> (ActionPolicy, RepeatedCallGuardRail, InterceptedActionHintRail)`:
-`ActionPolicy(builders, profile.policy_rules, page_state)`, `RepeatedCallGuardRail()`,
-`InterceptedActionHintRail(profile.messages["retry"])`, in that order. `builders` is kept as given, not copied
-("Policy rail"), so the rails can be built before the driver starts over a mapping that fills later; the inputs
-exist before the session: the profile's constants and the page state.
+`core_rails(profile, builders, page_state, session_of) -> (ActionPolicy, RepeatedCallGuardRail,
+InterceptedActionHintRail, ConnectionLostRail)`: `ActionPolicy(builders, profile.policy_rules, page_state)`,
+`RepeatedCallGuardRail()`, `InterceptedActionHintRail(profile.messages["retry"])`, `ConnectionLostRail(session_of)`,
+in that order. `builders` is kept as given, not copied ("Policy rail"), and `session_of` is a zero-argument lookup
+of the `DriverSession` (`None` before it exists), so the rails can be built before the driver starts over a mapping
+and a session that fill later; the inputs exist before the session: the profile's constants, the page state and
+the lookup.
 
 `build_agent_parts(session, bundle, *, capabilities, image_support, language, workspace=None, worker=False) ->
 AgentParts` (`tools`, `prompt_sections`, `rails`, `builders`):
@@ -813,7 +818,8 @@ instance=None, registries=None, **agent_options) -> (DeepAgent, DriverSession)`:
 2. `DriverSession(assembly, BrowserPageState(), profile.messages)`;
 3. `build_agent_parts(session, assembly.surface, ...)`;
 4. `create_deep_agent(model, system_prompt=<system_prompt and the prompt sections, blank-line separated>,
-   tools=, rails=[*core_rails(profile, parts.builders, session.page_state), *parts.rails], workspace=, language=,
+   tools=, rails=[*core_rails(profile, parts.builders, session.page_state, lambda: session), *parts.rails],
+   workspace=, language=,
    **agent_options)`.
 
 The driver is started before the agent exists (the Playwright MCP native tools exist only after `start()`). A
@@ -828,7 +834,7 @@ image support decides both the screenshot-only tools (left out without it) and t
 the worker prompt names `browser_take_screenshot` only as "when it is present"; `build_browser_worker_agent(provider=, api_key=, api_base=, model_name=,
 max_steps=, tools=parts.tools, screenshot_subdir=, artifacts_subdir=, tool_result_observer=, settings=core,
 driver_name=<the driver's display name>)`; then `register_rail` for `core_rails(bundle.profile, parts.builders,
-session.page_state)`, the parts' rails and `FinalAnswerRecoveryRail()`, in that order. The model identity and
+session.page_state, lambda: session)`, the parts' rails and `FinalAnswerRecoveryRail()`, in that order. The model identity and
 `max_steps` are the service's own values, not `core`'s: `core` gives the worker temperature, top-p, tool timeout
 and logging. `WORKER_LANGUAGE` (`"en"`, written once in `agents.py`, re-exported by `topology.py`) is the language of
 every agent the facade's entry points build: the worker, and the main agent in the `Direct` topology.
@@ -1120,16 +1126,17 @@ read before the split.
 ### Driver session (`driver_session.py`, `DriverSession`)
 
 `DriverSession(assembly, page_state, messages)` forwards `execute` and `observe` to `assembly.stack`; `messages` must
-hold `driver_restarted` and `driver_lost` (read at construction). `page_state` is readable. Sessions are opened by
+hold `driver_restarted` and `driver_lost` (read at construction). `page_state` is readable; `lost` is the `driver_lost`
+message once a loss ended the task, else `None`. Sessions are opened by
 `assembly.open_session`, which retries the first open once on `ConnectionLost` ("Composition root"); the table
 below is what the session does with a connection lost after that.
 
 | Event | Behaviour |
 |---|---|
 | first `ConnectionLost` in a task (any `dispatched`) | `stop()` (driver errors ignored); then `provisioner.is_alive(device)`: alive → `start()` the same stack; dead → `provisioner.release(device)`, `provisioner.provision(surface_settings)`, `assembly.rebuild(new device)` (a failure here releases the new device), the session's assembly takes the new stack and device, `start()` the new stack; then `page_state.reset()` and the call raises `ConnectionLost(driver_restarted, dispatched=<original>)` |
-| restart fails (`start`, `provision`, `rebuild`) | task failure: `BaseError` `DEEPAGENT_RUNTIME_ERROR` with `driver_lost`, the restart error as cause |
-| second `ConnectionLost` in the same task | task failure, no restart |
-| `begin_task()` | resets the loss counter |
+| restart fails (`start`, `provision`, `rebuild`) | task failure: `BaseError` `DEEPAGENT_RUNTIME_ERROR` with `driver_lost`, the restart error as cause; `lost` is set |
+| second `ConnectionLost` in the same task | task failure (the same `BaseError`, this loss as cause), no restart; `lost` is set |
+| `begin_task()` | resets the loss counter and clears `lost` |
 | `stop()` | `stack.stop()`; the device stays (between tasks) |
 | `start()` | after `stop()`: `provisioner.is_alive(device)` → alive: `stack.start()`; dead: release, provision again, `rebuild`, start the new stack (the restart above without the stop). A `ConnectionLost` from that start gets the same single restart (stop, liveness, re-provision and rebuild when dead, start) and `page_state.reset()`; a second failure is the task failure above (`driver_lost`, the second error as cause). The loss counter is not touched |
 | `health()` | `stack.health()` |
@@ -1138,6 +1145,15 @@ below is what the session does with a connection lost after that.
 The failed command is never sent again. `health()` is not polled: the facade's `runtime_health` asks it. Liveness is
 asked of the provisioner, not of the driver: a driver may start without touching its device (Playwright MCP
 connects over CDP lazily).
+
+Invariant (after the single restart a second loss ends the task): once `lost` is set, no agent on the session makes
+another model call. The `BaseError` still fails the call that met the loss (a factory tool, a helper, the runtime's
+own capture or metadata call: the model may be mid-turn, and the ability manager turns a tool's exception into a
+tool message), and `ConnectionLostRail` ("`ConnectionLostRail`") finishes the run before the next model call with
+`{"output": <driver_lost>, "result_type": "error", "error": <driver_lost>}`. The worker loop takes that result as the
+blocked answer ("The service"); the browser main agent's rail marks the task `blocked` with `terminal_reason`
+`browser_connection_lost` ("`BrowserRuntimeRail`"). The restart rule is unchanged: one restart per task, the counter
+and `lost` cleared by `begin_task()`.
 
 ### Policy rail (`runtime/rails/action_policy.py`, `ActionPolicy`)
 
@@ -1354,6 +1370,18 @@ message, it replaces the message with `explain_blocked_command(record, retry)`:
 the sentence given at construction. The tool
 output (`tool_result`) keeps the driver's own error. Other records and messages without a record are left alone.
 
+### `ConnectionLostRail` (`runtime/rails/connection_lost.py`)
+
+`ConnectionLostRail(session_of)` takes the session lookup `core_rails` was given. In `before_model_call`, when
+`session_of()` is a session whose `lost` is set, it calls `ctx.request_force_finish({"output": <lost>,
+"result_type": "error", "error": <lost>})`, so the model call is skipped and the run ends with that result ("Driver
+session", the invariant). A missing or live session lets the call through. The rail reads no tool text and no
+record: it is the one place that turns the session's terminal loss into the end of the run, for every agent
+`core_rails` builds (the main agent of both topologies and the worker). A rail registered after it that reaches the
+session in its own `before_model_call` (the browser context processors' state capture) can meet the loss after the
+stop has let that call through; that model call's commands fail with the `BaseError`, and the next model call is
+the one the stop skips.
+
 ## The core runtime (`runtime/session.py`, `AgentRuntime`)
 
 `AgentRuntime(core, surface, *, provider, api_key, api_base, model_name, guardrails, allowed_tool_names=None,
@@ -1371,9 +1399,10 @@ It names no surface: what it needs from one it reads from `surface.profile`.
 - `ensure_runtime_ready()`: `service.ensure_runtime_ready()`; when the service's session is a new one, a
   `ToolContext` for the runtime's own calls (no image support, the given workspace and language) and the cached
   parts dropped.
-- `core_rails() -> (ActionPolicy, RepeatedCallGuardRail, InterceptedActionHintRail)`: `assembly.core_rails(surface.profile,
-  builders, page_state)` ("Agent construction"). A policy built before the session exists enforces the tools built
-  after it, through the live mapping.
+- `core_rails() -> (ActionPolicy, RepeatedCallGuardRail, InterceptedActionHintRail, ConnectionLostRail)`:
+  `assembly.core_rails(surface.profile, builders, page_state, lambda: self._session)` ("Agent construction"). A
+  policy built before the session exists enforces the tools built after it, through the live mapping; the
+  lost-connection stop reads the session through the lookup the same way.
 - Capabilities are derived from `allowed_tool_names` on first read: the entries of the profile's catalog whose tool
   names are all allowed; with no allowlist, the default entry's tools, and the service then holds
   `allowed_tool_names=None`.
@@ -1592,6 +1621,13 @@ from the package); the rail imports the facade (`runtime/session.py`), never the
   not a screenshot replaces the message content with the compact page state; a `NAVIGATE` effect appends
   `<browser_page_state>`; `Observe` and `RunScript` results and read-only helpers that count against budgets are
   bounded at 12,000 characters. Progress is persisted for tools with `progress`.
+- `after_invoke` on a result of type `error` that carries no progress block and is not the max-iteration result:
+  `_terminalize_invoke_failure(session, reason)`, status `partial` with evidence else `blocked`, the reason as
+  `terminal_reason` and a blocker. The reason is `browser_connection_lost` when the runtime's session has `lost` set
+  (then `blocked` whatever the evidence: the stack is gone), else `browser_execution_error`; the structured terminal
+  result follows (`error` `browser_task_incomplete`, the run's output as `summary`). `browser_connection_lost` is
+  retryable on its own (`_terminal_result_retryable`) and a resume drops it from the blockers: a new task restarts
+  the stack.
 - Classifiers by kind: `NAVIGATE` → navigation; `TypeText`, `PressKey`, `SelectOption`, `FillForm`, `UploadFile` →
   form; `RunScript` → script, its intent from the code as before; a read-only tool that counts against budgets →
   extraction; a batch by its ops; `Scroll` → viewport exploration; `Observe` and read-only helpers → target
