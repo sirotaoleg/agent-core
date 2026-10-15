@@ -18,7 +18,9 @@ REGISTRY_IMPORTERS: dict[str, frozenset[str]] = {
 }
 
 KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {
+    ("runtime/agents.py", "surfaces.browser.runner.logging"): 1,
     ("runtime/session.py", "surfaces.browser.runner.actions"): 2,
+    ("runtime/session.py", "surfaces.browser.runner.logging"): 1,
     ("runtime/session.py", "surfaces.browser.runner.tools"): 2,
 }
 

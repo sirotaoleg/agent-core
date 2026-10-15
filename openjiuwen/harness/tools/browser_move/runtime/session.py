@@ -22,8 +22,8 @@ from openjiuwen.core.single_agent.rail.base import AgentRail
 
 from ..contract import Action, DriverError, Effect, Health, Observe, SurfaceBundle
 from ..surfaces.browser.runner.actions import ActionController, BaseController
+from ..surfaces.browser.runner.logging import write_browser_agent_audit_artifact
 from .assembly import AgentParts, assemble_surface, build_agent_parts, core_rails
-from .browser_logging import write_browser_agent_audit_artifact
 from .config import (
     BrowserInstanceConfig,
     BrowserRunGuardrails,

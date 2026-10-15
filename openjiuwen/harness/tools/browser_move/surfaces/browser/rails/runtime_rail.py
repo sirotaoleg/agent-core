@@ -27,10 +27,6 @@ from openjiuwen.core.single_agent.rail.base import AgentCallbackContext, AgentRa
 from openjiuwen.harness.prompts import resolve_language
 from openjiuwen.harness.rails._multimodal import should_enable_read_image_multimodal
 from openjiuwen.harness.tools.browser_move.contract import Click, Effect, PolicyDenied
-from openjiuwen.harness.tools.browser_move.runtime.browser_logging import (
-    browser_agent_log_info,
-    browser_agent_log_warning,
-)
 from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime, ToolKind, _tool_args
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandRecord, command_record
 from openjiuwen.harness.tools.browser_move.runtime.worker import BrowserTaskProgressState
@@ -46,6 +42,10 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.keys import (
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.results import _ResultsMixin
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.terminal import _TerminalMixin
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.logging import (
+    browser_agent_log_info,
+    browser_agent_log_warning,
+)
 from openjiuwen.harness.tools.browser_move.surfaces.browser.semantic.evidence import _EvidenceMixin
 from openjiuwen.harness.tools.browser_move.surfaces.browser.semantic.phases import _PhaseMixin
 from openjiuwen.harness.tools.browser_move.surfaces.browser.status_logging import (

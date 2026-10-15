@@ -16,15 +16,15 @@ from openjiuwen.core.common.logging.browser_context import (
     reset_browser_agent_log_context,
     set_browser_agent_log_context,
 )
-from openjiuwen.harness.tools.browser_move.runtime import browser_logging
-from openjiuwen.harness.tools.browser_move.runtime.browser_logging import (
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner import logging as browser_logging
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.logging import (
     browser_agent_log_info,
     browser_agent_log_warning,
     configure_browser_agent_logging,
     get_browser_agent_logger,
     write_browser_agent_audit_artifact,
 )
-from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
 
 
 def _reset(browser_logger: logging.Logger) -> None:

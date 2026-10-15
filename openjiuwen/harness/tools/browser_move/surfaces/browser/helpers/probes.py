@@ -14,9 +14,6 @@ from openjiuwen.core.common.logging import tool_logger
 from openjiuwen.core.foundation.tool import Tool, ToolCard
 from openjiuwen.core.foundation.tool.schema import ToolOutput
 from openjiuwen.harness.tools.browser_move.contract import ActionResult, DriverError, RunScript
-from openjiuwen.harness.tools.browser_move.runtime.browser_logging import (
-    write_browser_agent_audit_artifact,
-)
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandRecord, ToolContext, ToolFlags
 from openjiuwen.harness.tools.browser_move.runtime.utils.parsing import extract_json_object
 from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
@@ -25,6 +22,9 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.probes import (
     build_interactive_probe_js,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.probes.semantics import normalize_card_probe_payload
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.logging import (
+    write_browser_agent_audit_artifact,
+)
 from openjiuwen.harness.tools.browser_move.surfaces.browser.site_profiles import (
     get_selector_cache,
     site_profiles_for_url,

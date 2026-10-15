@@ -18,8 +18,8 @@ from openjiuwen.core.single_agent.agents.react_agent import ReActAgent, ReActAge
 from openjiuwen.core.single_agent.schema.agent_card import AgentCard
 
 from ..contract import DriverInfo, SurfaceBundle
+from ..surfaces.browser.runner.logging import configure_browser_agent_logging
 from .assembly import build_agent_parts, core_rails
-from .browser_logging import configure_browser_agent_logging
 from .config import CoreSettings
 from .driver_session import DriverSession
 from .rails.final_answer_recovery import FinalAnswerRecoveryRail

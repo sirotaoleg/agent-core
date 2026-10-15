@@ -12,11 +12,11 @@ from collections import Counter
 from typing import Any, Callable, Mapping, Optional
 from urllib.parse import urlsplit, urlunsplit
 
-from openjiuwen.harness.tools.browser_move.runtime.browser_logging import (
-    browser_agent_log_info,
-)
 from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandRecord, command_record
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.logging import (
+    browser_agent_log_info,
+)
 
 _STATUS_KEY = "_browser_subagent_status_logging"
 _TEXT_VALUE_KEYS = {

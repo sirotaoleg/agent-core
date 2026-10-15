@@ -1,6 +1,8 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
+"""The dedicated browser agent log, its audit artifacts and the tool-call logging hook."""
+
 from __future__ import annotations
 
 import gzip
@@ -15,8 +17,7 @@ from typing import Any
 from openjiuwen.core.common.logging import logger as common_logger
 from openjiuwen.core.common.logging.browser_context import is_browser_agent_log_context
 from openjiuwen.core.common.logging.tool_call import register_tool_call_logger
-
-from .config import CoreSettings
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
 
 _BROWSER_LOGGER_NAME = "openjiuwen.browser_agent"
 _BROWSER_HANDLER_MARKER = "_openjiuwen_browser_agent_file_handler"

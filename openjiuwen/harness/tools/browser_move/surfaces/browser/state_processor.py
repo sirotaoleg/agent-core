@@ -19,7 +19,7 @@ from openjiuwen.harness.prompts.prompt_attachment_manager import (
 )
 
 from ...contract import Effect
-from ...runtime.browser_logging import browser_agent_log_warning
+from .runner.logging import browser_agent_log_warning
 from .working_context.store import BrowserWorkingContextStore
 
 _BROWSER_STATE_MESSAGE_NAME = "current_browser_state"

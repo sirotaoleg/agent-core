@@ -10,13 +10,13 @@ from typing import Any, Dict
 
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext
 from openjiuwen.harness.tools.browser_move.contract import Effect, Observe, RunScript
-from openjiuwen.harness.tools.browser_move.runtime.browser_logging import write_browser_agent_audit_artifact
 from openjiuwen.harness.tools.browser_move.runtime.session import ToolKind
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandRecord
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.keys import (
     _BATCH_MUTATING_TARGET_OPS,
     _BROWSER_TOOL_RUNTIME_STATE_KEY,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.logging import write_browser_agent_audit_artifact
 
 _BROWSER_OBSERVATION_MESSAGE_MAX_CHARS = 12_000
 _BROWSER_PAGE_STATE_TAG = "browser_page_state"

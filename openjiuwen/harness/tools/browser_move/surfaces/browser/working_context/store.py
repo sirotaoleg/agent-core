@@ -11,7 +11,7 @@ from typing import Any, Dict, Iterable, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from openjiuwen.core.foundation.llm import BaseMessage, ToolMessage, UserMessage
-from openjiuwen.harness.tools.browser_move.runtime.browser_logging import (
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.logging import (
     browser_agent_log_info,
     browser_agent_log_warning,
 )

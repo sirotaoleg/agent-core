@@ -18,7 +18,7 @@ from openjiuwen.core.single_agent.rail.base import (
     ModelCallInputs,
     ToolCallInputs,
 )
-from openjiuwen.harness.tools.browser_move.runtime.browser_logging import browser_agent_log_warning
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.logging import browser_agent_log_warning
 
 from ..working_context.store import (
     BROWSER_TOOL_MEMORY_METADATA_KEY,

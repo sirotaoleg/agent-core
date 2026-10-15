@@ -21,7 +21,6 @@ from openjiuwen.harness.factory import create_deep_agent
 from openjiuwen.harness.rails.context_engineer import ContextProcessorRail
 from openjiuwen.harness.schema.config import SubAgentConfig
 from openjiuwen.harness.schema.decision_policy import DecisionPolicyModel
-from openjiuwen.harness.tools.browser_move.runtime.browser_logging import configure_browser_agent_logging
 from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserInstanceConfig,
     CoreSettings,
@@ -36,6 +35,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import 
     resolve_browser_capabilities,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.logging import configure_browser_agent_logging
 from openjiuwen.harness.tools.browser_move.surfaces.browser.state_processor import (
     BrowserStateContextProcessorConfig,
 )

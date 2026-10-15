@@ -41,7 +41,7 @@ from openjiuwen.harness.subagent_lifecycle import (
 from openjiuwen.harness.tools.base_tool import ToolOutput
 
 try:
-    from openjiuwen.harness.tools.browser_move.runtime.browser_logging import (
+    from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.logging import (
         browser_agent_log_info,
     )
 except Exception:  # pragma: no cover - browser runtime is optional here
