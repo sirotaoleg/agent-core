@@ -14,9 +14,9 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
     load_repo_dotenv,
     process_environ,
 )
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.runtime.topology import WORKER_LANGUAGE
 
+from .facade import BrowserAgentRuntime
 from .settings import browser_surface_settings, build_runtime_settings, read_demo_inputs
 
 

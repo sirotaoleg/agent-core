@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
+    from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 
 
 @runtime_checkable

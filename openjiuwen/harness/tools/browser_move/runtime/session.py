@@ -2,37 +2,27 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
 
-"""The agent's runtime facade: the driver session and the factory tools."""
+"""The runtime over one driver session: the service, the factory tools and the topology that runs a task."""
 
 from __future__ import annotations
 
-import asyncio
-import dataclasses
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional
-from weakref import WeakSet
 
-from openjiuwen.core.common.logging import logger
 from openjiuwen.core.foundation.llm.model_clients.openai_model_client import OpenAIModelClient
-from openjiuwen.core.foundation.tool import McpServerConfig
-from openjiuwen.core.runner import Runner
+from openjiuwen.core.foundation.store.base_kv_store import BaseKVStore
 from openjiuwen.core.single_agent.rail.base import AgentRail
 
-from ..contract import Action, DriverError, Effect, Health, Observe, SurfaceBundle, SurfaceSettings
-from ..surfaces.browser.runner.actions import ActionController, BaseController
-from ..surfaces.browser.runner.logging import write_browser_agent_audit_artifact
-from ..surfaces.browser.runner.settings import BrowserInstanceConfig, browser_surface_settings
-from .assembly import AgentParts, assemble_surface, build_agent_parts, core_rails
-from .config import BrowserRunGuardrails, CoreSettings, process_environ
+from ..contract import Action, Effect, Health, SurfaceBundle
+from .assembly import AgentParts, build_agent_parts, core_rails
+from .config import CoreSettings, RunGuardrails
 from .driver_session import DriverSession
-from .page_state import PageState, Target
-from .service import BrowserService
+from .page_state import PageState
+from .service import AgentService
 from .tool_factory import Builder, ToolContext, ToolFlags
 from .topology import Topology, topology_for
-
-_ACTIVE_BROWSER_RUNTIMES: WeakSet[Any] = WeakSet()
 
 
 @dataclass(frozen=True)
@@ -68,49 +58,48 @@ def _tool_args(value: Any) -> Dict[str, Any]:
     return {}
 
 
-class BrowserAgentRuntime:
-    """Runtime kernel for the session lifecycle and deterministic helper actions."""
+class AgentRuntime:
+    """One session, the parts built on it, the rails' live builders, and the topology that runs each task."""
 
     def __init__(
         self,
+        core: CoreSettings,
+        surface: SurfaceBundle,
+        *,
         provider: str,
         api_key: str,
         api_base: str,
         model_name: str,
-        mcp_cfg: McpServerConfig,
-        guardrails: BrowserRunGuardrails,
-        instance: Optional[BrowserInstanceConfig] = None,
+        guardrails: RunGuardrails,
         allowed_tool_names: Optional[Iterable[str]] = None,
-        *,
-        core_settings: Optional[CoreSettings] = None,
-        browser_settings: Optional[SurfaceSettings] = None,
         workspace: Any = None,
         language: str = "cn",
+        output_dir: Path,
+        identity: str,
+        cancel_store: Optional[BaseKVStore] = None,
+        page_state: Optional[PageState] = None,
     ) -> None:
-        self._instance = instance
-        self._core_settings = core_settings
-        self._browser_settings = _with_workspace(browser_settings or browser_surface_settings(), workspace)
+        self._core = core
+        self._surface = surface
         self._workspace = workspace
         self._language = language
         self._allowed_tool_names = None if allowed_tool_names is None else tuple(dict.fromkeys(allowed_tool_names))
         self._capabilities: tuple[str, ...] | None = None
-        self._service = BrowserService(
+        self._service = AgentService(
+            core,
+            surface,
             provider=provider,
             api_key=api_key,
             api_base=api_base,
             model_name=model_name,
-            mcp_cfg=mcp_cfg,
             guardrails=guardrails,
-            instance=instance,
             allowed_tool_names=self._allowed_tool_names,
-            browser_settings=self._browser_settings,
-            core_settings=core_settings,
+            output_dir=output_dir,
+            identity=identity,
+            cancel_store=cancel_store,
+            page_state=page_state,
         )
-        self._browser_custom_action_tool = None
-        self._browser_list_actions_tool = None
-        self._controller: BaseController = ActionController()
         self._topology: Topology | None = None
-        self._surface: SurfaceBundle | None = None
         self._dedicated_log = True
         self._session: DriverSession | None = None
         self._context: ToolContext | None = None
@@ -118,18 +107,18 @@ class BrowserAgentRuntime:
         self._builders: dict[str, Builder] = {}
         self._fields: dict[str, frozenset[str]] = {}
         self._flags: dict[str, ToolFlags] = {}
-        self._tracker: Any = None
-        self._semantic_mark: tuple[int, Any] | None = None
-        self.observations_reused = 0
-        _ACTIVE_BROWSER_RUNTIMES.add(self)
 
     @property
-    def service(self) -> BrowserService:
+    def service(self) -> AgentService:
         return self._service
 
     @property
-    def core_settings(self) -> Optional[CoreSettings]:
-        return self._core_settings
+    def core(self) -> CoreSettings:
+        return self._core
+
+    @property
+    def surface(self) -> SurfaceBundle:
+        return self._surface
 
     @property
     def dedicated_log(self) -> bool:
@@ -145,39 +134,17 @@ class BrowserAgentRuntime:
         return self._workspace
 
     @property
+    def language(self) -> str:
+        return self._language
+
+    @property
     def capabilities(self) -> tuple[str, ...]:
         """The catalog entries whose tools are all allowed; the default entry alone when no allowlist was given."""
         if self._capabilities is None:
-            catalog = self.surface.profile.capabilities
+            catalog = self._surface.profile.capabilities
             allowed = set(catalog[0].tool_names if self._allowed_tool_names is None else self._allowed_tool_names)
             self._capabilities = tuple(entry.name for entry in catalog if set(entry.tool_names) <= allowed)
         return self._capabilities
-
-    @property
-    def _semantic_state_tracker(self) -> Any:
-        if self._tracker is None:
-            factory = self.surface.profile.semantic_tracker
-            self._tracker = _NoSemanticState() if factory is None else factory()
-        return self._tracker
-
-    async def _metadata(self) -> tuple[Mapping[str, Any], str | None]:
-        hook = self.surface.profile.page_metadata
-        return ({}, None) if hook is None else await hook(self._context)
-
-    def _semantic_changed(self) -> bool:
-        """Whether the generation or the last observation moved since the previous semantic observation."""
-        mark = (self._page_state.generation, self._page_state.last_observation)
-        previous, self._semantic_mark = self._semantic_mark, mark
-        return previous is not None and mark != previous
-
-    @property
-    def surface(self) -> SurfaceBundle:
-        """The surface bundle of the core settings; built once, before any driver, for the rails' profile constants."""
-        if self._surface is None:
-            self._surface = assemble_surface(
-                self._service.core, process_environ(), instance=self._instance, settings=self._browser_settings
-            )
-        return self._surface
 
     @property
     def builders(self) -> Mapping[str, Builder]:
@@ -185,18 +152,10 @@ class BrowserAgentRuntime:
         return self._builders
 
     def core_rails(self) -> tuple[AgentRail, ...]:
-        return core_rails(self.surface.profile, self._builders, self._page_state)
-
-    @property
-    def controller(self) -> BaseController:
-        return self._controller
+        return core_rails(self._surface.profile, self._builders, self.page_state)
 
     @property
     def page_state(self) -> PageState:
-        return self._service.page_state
-
-    @property
-    def _page_state(self) -> Any:
         return self._service.page_state
 
     @property
@@ -204,66 +163,18 @@ class BrowserAgentRuntime:
         return self._session
 
     @property
-    def page_id(self) -> str:
-        return self._page_state.page_id
+    def context(self) -> ToolContext | None:
+        """The tool context of the started session, for the runtime's own calls."""
+        return self._context
 
     @property
-    def generation_id(self) -> str:
-        return self._page_state.generation_id
+    def topology(self) -> Topology | None:
+        return self._topology
 
-    def export_page_state(self) -> Dict[str, Any]:
-        return self._page_state.export()
-
-    def set_task_requested_fields(self, fields: Iterable[str]) -> None:
-        """Keep PageState projection scoped to fields requested by this task."""
-
-        self._page_state.set_requested_fields(fields)
-
-    def resolve_model_target_id(self, target_id: str) -> Target:
-        """Resolve or safely refresh a runtime-owned model target."""
-
-        page_state = self._page_state
-        normalized = str(target_id or "").strip()
-        target = page_state.get_target(normalized)
-        if target is None:
-            raise ValueError(
-                f"Unknown PageState target_id {normalized}; current generation is {page_state.generation_id}."
-            )
-        if target.generation != page_state.generation:
-            target = page_state.get_target(page_state.refresh_target_id(normalized))
-        if target is None:
-            raise ValueError(f"PageState target_id {normalized} could not be refreshed in {page_state.generation_id}.")
-        return target
-
-    def target_recovery_state(self, target_id: str) -> Dict[str, Any]:
-        """Return bounded current-generation recovery details for one target."""
-
-        page_state = self._page_state
-        return {
-            "current_generation": page_state.generation_id,
-            "candidate_fresh_targets": page_state.recovery_candidates(target_id, limit=5),
-        }
-
-    def resolve_primary_link(self, tool_args: Any) -> str:
-        parsed = _tool_args(tool_args)
-        explicit = str(parsed.get("primary_link") or parsed.get("href") or parsed.get("url") or "").strip()
-        if explicit:
-            return explicit
-        target_id = str(parsed.get("target_id") or parsed.get("target") or "").strip()
-        if target_id.startswith("t_g"):
-            try:
-                target = self.resolve_model_target_id(target_id)
-            except ValueError:
-                target = None
-            if target is not None and target.href:
-                return target.href
-        page_state = self._page_state
-        for key in ("selector", "target"):
-            selector = str(parsed.get(key) or "").strip()
-            generation_and_href = page_state.selector_primary_links.get(selector)
-            if generation_and_href and generation_and_href[0] == page_state.generation:
-                return generation_and_href[1]
-        return ""
+    async def metadata(self) -> tuple[Mapping[str, Any], str | None]:
+        """The profile's metadata of the current context, ``({}, None)`` for a surface without the hook."""
+        hook = self._surface.profile.page_metadata
+        return ({}, None) if hook is None else await hook(self._context)
 
     def tool_kind(self, tool_name: str, tool_args: Any) -> ToolKind:
         """The command ``tool_args`` decode to on a factory tool, or a helper's flags; unknown tools act."""
@@ -271,7 +182,7 @@ class BrowserAgentRuntime:
         if build is not None:
             fields = self._fields.get(tool_name, frozenset())
             try:
-                action = build(_tool_args(tool_args), self._page_state)
+                action = build(_tool_args(tool_args), self.page_state)
             except ValueError:
                 return ToolKind(progress=True, known=True, fields=fields)
             return ToolKind(action=action, effect=action.effect, progress=True, known=True, fields=fields)
@@ -285,27 +196,6 @@ class BrowserAgentRuntime:
             known=True,
             helper=True,
         )
-
-    def register_runtime_tools(self) -> None:
-        """The two custom-action tools in ``Runner.resource_mgr``, once."""
-        if self._browser_custom_action_tool is not None:
-            return
-        from ..surfaces.browser.runner.tools import BrowserCustomActionTool, BrowserListActionsTool
-
-        self._browser_custom_action_tool = BrowserCustomActionTool(self)
-        self._browser_list_actions_tool = BrowserListActionsTool(self)
-        self._register_runtime_tool(self._browser_custom_action_tool, tool_name="browser_custom_action")
-        self._register_runtime_tool(self._browser_list_actions_tool, tool_name="browser_list_custom_actions")
-
-    @staticmethod
-    def _register_runtime_tool(tool_obj: Any, *, tool_name: str) -> None:
-        add_result = Runner.resource_mgr.add_tool(tool_obj, tag="agent.playwright.runtime")
-        if add_result is None or getattr(add_result, "is_ok", lambda: False)():
-            return
-        error_value = getattr(add_result, "value", add_result)
-        if "already exist" in str(error_value):
-            return
-        raise RuntimeError(f"Failed to register {tool_name} tool: {error_value}")
 
     async def cancel_run(self, session_id: str, request_id: Optional[str] = None) -> Dict[str, Any]:
         await self._service.request_cancel(session_id=session_id, request_id=request_id)
@@ -326,8 +216,7 @@ class BrowserAgentRuntime:
         }
 
     async def ensure_runtime_ready(self) -> None:
-        """Make sure the service's driver session runs; the custom actions run on it from then on."""
-        _ACTIVE_BROWSER_RUNTIMES.add(self)
+        """Make sure the service's driver session runs; a new session gets a fresh tool context and parts."""
         await self._service.ensure_runtime_ready()
         session = self._service.session
         if session is self._session:
@@ -336,7 +225,7 @@ class BrowserAgentRuntime:
         profile = session.assembly.surface.profile
         self._context = ToolContext(
             session,
-            self._page_state,
+            self.page_state,
             profile.renderer,
             session.assembly.stack.info,
             profile.settings,
@@ -345,9 +234,6 @@ class BrowserAgentRuntime:
             self._language,
         )
         self._session = session
-        self._controller.register_builtin_actions()
-        if profile.custom_actions is not None:
-            profile.custom_actions(self._controller, self._context)
 
     def agent_parts(self, *, image_support: bool, language: str) -> AgentParts:
         """The factory tools of the started session in the receiving agent's language, once per key."""
@@ -378,196 +264,42 @@ class BrowserAgentRuntime:
         self._context = None
         self._parts = {}
 
-    async def capture_browser_state(self, *, action_group_id: str = "") -> Dict[str, Any]:
-        """The observation the next model call reads: the last one while it is current, else a fresh one."""
-        await self.ensure_runtime_ready()
-        page_state = self._page_state
-        observation = page_state.fresh_observation
-        dom_error = None
-        snapshot_audit: Dict[str, Any] = {}
-        if observation is None:
-            try:
-                observation = await self._context.observe(Observe())
-            except DriverError as exc:
-                dom_error = f"page observation failed: {exc}"
-                logger.warning("[BrowserAgentRuntime] observation failed: %s", exc, exc_info=True)
-        else:
-            self.observations_reused += 1
-        if observation is not None:
-            snapshot_audit = write_browser_agent_audit_artifact("ax_snapshot", observation.native_text or "")
-
-        metadata, metadata_error = await self._metadata()
-        exported = page_state.export()
-
-        errors = [error for error in (dom_error, metadata_error) if error]
-        semantic_state = metadata.get("semantic_state")
-        if not isinstance(semantic_state, dict):
-            semantic_state = {}
-        semantic_state.update(
-            {
-                "url": metadata.get("url") or exported["url"],
-                "field_coverage": sorted(page_state.field_coverage),
-            }
-        )
-        semantic_tracker = self._semantic_state_tracker
-        if metadata_error:
-            semantic_progress = semantic_tracker.latest
-            semantic_progress.update(
-                {
-                    "progress": "unknown",
-                    "observable_progress": False,
-                    "capture_error": metadata_error,
-                }
-            )
-        else:
-            semantic_progress = semantic_tracker.observe(
-                semantic_state,
-                action_group_id=action_group_id,
-                changed=self._semantic_changed(),
-            )
-        semantic_state = self._with_semantic_provenance(
-            semantic_progress,
-            fallback_state=semantic_state,
-        )
-        return {
-            "ok": not errors,
-            "error": "; ".join(errors) or None,
-            "url": metadata.get("url") or exported["url"],
-            "title": metadata.get("title") or exported["title"],
-            "tabs": metadata.get("tabs") or [],
-            "page_position": metadata.get("page_position") or {},
-            "semantic_state": semantic_state,
-            "semantic_progress": semantic_progress,
-            "field_coverage": semantic_state.get("field_coverage") or [],
-            "page_state": exported,
-            "dom": "",
-            "dom_error": dom_error,
-            "audit": {"ax_snapshot": snapshot_audit} if snapshot_audit else {},
-        }
-
-    async def capture_reconciliation_browser_state(self, *, action_group_id: str) -> Dict[str, Any]:
-        """Reconcile an ambiguous mutation from the surface metadata alone, without observing."""
-
-        await self.ensure_runtime_ready()
-        metadata, metadata_error = await self._metadata()
-        page_state = self.export_page_state()
-        semantic_state = metadata.get("semantic_state")
-        if not isinstance(semantic_state, dict):
-            semantic_state = {}
-        semantic_state.update(
-            {
-                "url": metadata.get("url") or page_state.get("url") or "",
-                "field_coverage": page_state.get("field_coverage") or [],
-            }
-        )
-        tracker = self._semantic_state_tracker
-        if metadata_error:
-            semantic_progress = tracker.latest
-            semantic_progress.update(
-                {
-                    "progress": "unknown",
-                    "observable_progress": False,
-                    "capture_error": metadata_error,
-                }
-            )
-        else:
-            semantic_progress = tracker.observe(
-                semantic_state, action_group_id=action_group_id, changed=self._semantic_changed()
-            )
-        semantic_state = self._with_semantic_provenance(
-            semantic_progress,
-            fallback_state=semantic_state,
-        )
-        return {
-            "ok": not metadata_error,
-            "error": metadata_error,
-            "url": metadata.get("url") or page_state.get("url") or "",
-            "title": metadata.get("title") or page_state.get("title") or "",
-            "tabs": metadata.get("tabs") or [],
-            "page_position": metadata.get("page_position") or {},
-            "semantic_state": semantic_state,
-            "semantic_progress": semantic_progress,
-            "field_coverage": semantic_state.get("field_coverage") or [],
-            "page_state": page_state,
-            "dom": "",
-            "dom_error": None,
-            "reconciliation_only": True,
-        }
-
-    async def capture_compact_browser_state(self, *, action_group_id: str) -> Dict[str, Any]:
-        """Merge completed read-only observations without another driver round trip."""
-        page_state = self.export_page_state()
-        semantic_tracker = self._semantic_state_tracker
-        semantic_state = semantic_tracker.current_state
-        semantic_state.update(
-            {
-                "url": page_state.get("url") or semantic_state.get("url") or "",
-                "field_coverage": page_state.get("field_coverage") or semantic_state.get("field_coverage") or [],
-            }
-        )
-        semantic_progress = semantic_tracker.observe(
-            semantic_state,
-            action_group_id=action_group_id,
-            changed=self._semantic_changed(),
-        )
-        semantic_state = self._with_semantic_provenance(
-            semantic_progress,
-            fallback_state=semantic_state,
-        )
-        return {
-            "ok": True,
-            "error": None,
-            "url": page_state.get("url") or "",
-            "title": page_state.get("title") or "",
-            "tabs": [],
-            "page_position": {},
-            "semantic_state": semantic_state,
-            "semantic_progress": semantic_progress,
-            "field_coverage": semantic_state["field_coverage"],
-            "page_state": page_state,
-            "dom": "",
-            "dom_error": None,
-        }
-
-    def _with_semantic_provenance(
-        self,
-        semantic_progress: Dict[str, Any],
-        *,
-        fallback_state: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        tracked_state = semantic_progress.get("semantic_state")
-        semantic_state = dict(tracked_state) if isinstance(tracked_state, dict) else dict(fallback_state)
-        semantic_state["generation_id"] = self.generation_id
-        semantic_progress["semantic_state"] = semantic_state
-        return semantic_state
-
     async def acquire_task_resources(self) -> None:
         """Acquire one task reference before invoking a reusable subagent."""
-        _ACTIVE_BROWSER_RUNTIMES.add(self)
         self._service.acquire_task_binding()
 
     async def ensure_started(self) -> None:
-        """The runner's agent, by the topology: the worker through the service, or the main agent on this facade."""
+        """The runner's agent, by the topology: the worker through the service, or the main agent on this runtime."""
         if self._topology is None:
-            self._topology = topology_for(self._service.core)
+            self._topology = topology_for(self._core)
         await self._topology.start(self)
 
-    async def run_browser_task(
+    async def run_task(
         self,
         task: str,
         session_id: Optional[str] = None,
         request_id: Optional[str] = None,
         timeout_s: Optional[int] = None,
     ) -> Dict[str, Any]:
+        """Run one task through the topology; the answer carries the context the task ended in."""
         await self.ensure_started()
-        return await self._topology.run(self, task, session_id, request_id, timeout_s)
+        answer = await self._topology.run(self, task, session_id, request_id, timeout_s)
+        answer["context"] = await self._answer_context(bool(answer.get("ok")))
+        return answer
+
+    async def _answer_context(self, ok: bool) -> Dict[str, Any]:
+        """After a successful run the profile's metadata, then the surface identity of the current context."""
+        metadata: Mapping[str, Any] = {}
+        if ok and self._context is not None:
+            metadata, _ = await self.metadata()
+        context = self.page_state.surface_context
+        return {"identity": "" if context is None else context.identity, "metadata": dict(metadata)}
 
     def main_agent_answer(
         self, session_id: str, request_id: str, *, result: Optional[Dict[str, Any]] = None, error: Optional[str] = None
     ) -> Dict[str, Any]:
-        """The runner's answer dict from a main-agent run: the location from the state, status when reported."""
+        """The runner's answer dict from a main-agent run: the output, and status when the rail reported one."""
         result = result or {}
-        surface = self._page_state.surface_context
         payload = result.get("authoritative_browser_result")
         progress = result.get("progress_state")
         error = error if error is not None else result.get("error")
@@ -576,7 +308,6 @@ class BrowserAgentRuntime:
             "session_id": session_id,
             "request_id": request_id,
             "final": str(result.get("output") or ""),
-            "page": {"url": surface.url if surface else "", "title": surface.title if surface else ""},
             "screenshot": None,
             "error": error or None,
         }
@@ -586,45 +317,6 @@ class BrowserAgentRuntime:
         if progress:
             answer["progress"] = progress
         return answer
-
-    async def run_custom_action(
-        self,
-        *,
-        action: str,
-        session_id: str = "",
-        request_id: str = "",
-        params: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        await self.ensure_runtime_ready()
-        self._controller.bind_runtime(self)
-        return await self._controller.run_action(
-            action=action,
-            session_id=session_id,
-            request_id=request_id,
-            **(params or {}),
-        )
-
-    async def probe_for_policy(self, source: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Run a policy-owned probe script and register its elements as PageState targets."""
-        await self.ensure_runtime_ready()
-        probe = self.surface.profile.policy_probe
-        if probe is None:
-            error = f"surface {self.surface.profile.name!r} has no policy probe"
-            return {"ok": False, "error": error, "elements": [], "page_state": self.export_page_state()}
-        return await probe(self._context, source, params)
-
-    async def activate_page(self, url: str) -> bool:
-        """Bring the context at ``url`` (else the current one) to the front so its timers run and its menus render."""
-        await self.ensure_runtime_ready()
-        activate = self.surface.profile.activate
-        return False if activate is None else await activate(self._context, url)
-
-    async def list_actions(self) -> Dict[str, Any]:
-        return {
-            "ok": True,
-            "actions": self._controller.list_actions(),
-            "details": self._controller.describe_actions(),
-        }
 
     async def runtime_health(self) -> Dict[str, Any]:
         session = self._service.session
@@ -645,19 +337,18 @@ class BrowserAgentRuntime:
         try:
             await self._service.shutdown()
         finally:
-            _ACTIVE_BROWSER_RUNTIMES.discard(self)
             self._drop_session()
             if self._topology is not None:
                 self._topology.drop()
                 self._topology = None
             await OpenAIModelClient.aclose()
 
-    async def release_task_resources(self) -> None:
-        """Release task bindings while preserving Chrome and its profile."""
+    async def release_task_resources(self) -> bool:
+        """Release one task binding; the last one stops the driver stack, keeps the device and resets the state."""
         fully_released = await self._service.release_task_binding()
         if fully_released:
-            self._page_state.reset()
-            self._semantic_state_tracker.reset()
+            self.page_state.reset()
+        return fully_released
 
     async def reset(self) -> None:
         """Release the current session and restart lazily on the next task."""
@@ -665,115 +356,4 @@ class BrowserAgentRuntime:
             await self._service.reset()
         finally:
             self._drop_session()
-            self._page_state.reset()
-            self._semantic_state_tracker.reset()
-
-    @property
-    def semantic_progress(self) -> Dict[str, Any]:
-        """Return the latest task-local semantic progress observation."""
-        return self._semantic_state_tracker.latest
-
-    def acknowledge_semantic_replan(self) -> None:
-        """Acknowledge one materially different action selected after replanning."""
-        self._semantic_state_tracker.acknowledge_replan()
-
-    def reset_semantic_task(self) -> None:
-        """Start semantic loop tracking for a new user task without resetting Chrome."""
-        self._semantic_state_tracker.reset()
-
-
-def _with_workspace(settings: Any, workspace: Any) -> Any:
-    if workspace is None or not hasattr(settings, "workspace_root"):
-        return settings
-    root = getattr(workspace, "root_path", workspace)
-    return dataclasses.replace(settings, workspace_root=Path(root).expanduser().resolve())
-
-
-class _NoSemanticState:
-    """The tracker of a surface without semantic state: progress is never observable."""
-
-    @property
-    def latest(self) -> Dict[str, Any]:
-        return {}
-
-    @property
-    def current_state(self) -> Dict[str, Any]:
-        return {}
-
-    def observe(self, state: Mapping[str, Any], *, action_group_id: str, changed: bool) -> Dict[str, Any]:
-        return {"progress": "unknown", "observable_progress": False}
-
-    def reset(self) -> None:
-        pass
-
-    def acknowledge_replan(self) -> None:
-        pass
-
-
-async def reset_active_browser_runtimes() -> int:
-    """Reset every live runtime owned by this process."""
-    runtimes = list(_ACTIVE_BROWSER_RUNTIMES)
-    if not runtimes:
-        return 0
-
-    results = await asyncio.gather(
-        *(runtime.reset() for runtime in runtimes),
-        return_exceptions=True,
-    )
-    reset_count = 0
-    for runtime, result in zip(runtimes, results):
-        if isinstance(result, BaseException):
-            logger.warning(
-                "Failed to reset active runtime %s: %s",
-                id(runtime),
-                result,
-            )
-            continue
-        reset_count += 1
-    return reset_count
-
-
-async def reset_managed_browser_runtime(
-    *,
-    browser_key: str = "",
-    profile_name: str = "jiuwenclaw",
-    display_mode: str,
-    browser_binary: str = "",
-) -> int:
-    """Reset only the configured managed device, including its idle handle."""
-    normalized_binary = BrowserService.normalize_browser_binary(browser_binary)
-    normalized_key = str(browser_key or "").strip()
-    normalized_profile = str(profile_name or "").strip()
-    normalized_mode = str(display_mode or "").strip().lower()
-
-    reset_count = 0
-    for runtime in list(_ACTIVE_BROWSER_RUNTIMES):
-        identity = runtime.service.lifecycle_identity
-        matches_browser = identity.browser_key == normalized_key
-        matches_profile = identity.profile_name == normalized_profile
-        matches_mode = identity.display_mode == normalized_mode
-        matches_binary = identity.browser_binary == normalized_binary
-        if identity.driver_mode != "managed":
-            continue
-        if not matches_browser or not matches_profile:
-            continue
-        if not matches_mode or not matches_binary:
-            continue
-        try:
-            await runtime.reset()
-        except Exception as exc:
-            logger.warning(
-                "Failed to reset the managed runtime %s: %s",
-                id(runtime),
-                exc,
-            )
-        else:
-            reset_count += 1
-
-    reset_count += await BrowserService.reset_registered_managed_browser(
-        browser_key=normalized_key,
-        profile_name=normalized_profile,
-        display_mode=normalized_mode,
-        browser_binary=normalized_binary,
-    )
-    return reset_count
+            self.page_state.reset()

@@ -27,9 +27,9 @@ from openjiuwen.core.single_agent.rail.base import AgentCallbackContext, AgentRa
 from openjiuwen.harness.prompts import resolve_language
 from openjiuwen.harness.rails._multimodal import should_enable_read_image_multimodal
 from openjiuwen.harness.tools.browser_move.contract import Click, Effect, PolicyDenied
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime, ToolKind, _tool_args
+from openjiuwen.harness.tools.browser_move.runtime.session import ToolKind, _tool_args
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandRecord, command_record
-from openjiuwen.harness.tools.browser_move.runtime.worker import BrowserTaskProgressState
+from openjiuwen.harness.tools.browser_move.runtime.worker import TaskProgressState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.probes.results import _ProbeResultsMixin
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.keys import (
     _BROWSER_FIELD_ALIASES,
@@ -42,6 +42,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.keys import (
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.results import _ResultsMixin
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.terminal import _TerminalMixin
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.logging import (
     browser_agent_log_info,
     browser_agent_log_warning,
@@ -992,15 +993,15 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
         return str(session.get_state(_BROWSER_PROGRESS_TASK_KEY) or "").strip()
 
     @staticmethod
-    def _load_progress_state(session: Any) -> BrowserTaskProgressState:
+    def _load_progress_state(session: Any) -> TaskProgressState:
         if session is None:
-            return BrowserTaskProgressState()
+            return TaskProgressState()
         task_state = session.get_state(_BROWSER_PHASE_STATE_KEY)
         if isinstance(task_state, dict) and task_state:
-            return BrowserTaskProgressState.from_task_state(task_state)
-        return BrowserTaskProgressState.from_dict(session.get_state(_BROWSER_PROGRESS_STATE_KEY))
+            return TaskProgressState.from_task_state(task_state)
+        return TaskProgressState.from_dict(session.get_state(_BROWSER_PROGRESS_STATE_KEY))
 
-    def _hydrate_service_progress_from_session(self, session: Any) -> BrowserTaskProgressState:
+    def _hydrate_service_progress_from_session(self, session: Any) -> TaskProgressState:
         session_id = session.get_session_id()
         progress_state = self._load_progress_state(session)
         if progress_state.is_empty():

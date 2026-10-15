@@ -22,12 +22,12 @@ from openjiuwen.harness.rails.context_engineer import ContextProcessorRail
 from openjiuwen.harness.schema.config import SubAgentConfig
 from openjiuwen.harness.schema.decision_policy import DecisionPolicyModel
 from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
     DEFAULT_BROWSER_CAPABILITIES,
     resolve_browser_capabilities,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.logging import configure_browser_agent_logging
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import (
     BrowserInstanceConfig,

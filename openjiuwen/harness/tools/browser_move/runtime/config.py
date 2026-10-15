@@ -30,7 +30,7 @@ from .utils.env import (
 
 
 @dataclass
-class BrowserRunGuardrails:
+class RunGuardrails:
     max_steps: int = DEFAULT_GUARDRAIL_MAX_STEPS
     max_failures: int = DEFAULT_GUARDRAIL_MAX_FAILURES
     timeout_s: int = DEFAULT_BROWSER_TIMEOUT_S
@@ -144,8 +144,8 @@ def _tool_timeout_s(environ: Mapping[str, str]) -> float:
     return value if value > 0 else DEFAULT_TOOL_TIMEOUT_S
 
 
-def _guardrails(environ: Mapping[str, str]) -> BrowserRunGuardrails:
-    return BrowserRunGuardrails(
+def _guardrails(environ: Mapping[str, str]) -> RunGuardrails:
+    return RunGuardrails(
         max_steps=int_value(environ, "BROWSER_GUARDRAIL_MAX_STEPS", default=DEFAULT_GUARDRAIL_MAX_STEPS, minimum=1),
         max_failures=int_value(
             environ, "BROWSER_GUARDRAIL_MAX_FAILURES", default=DEFAULT_GUARDRAIL_MAX_FAILURES, minimum=0
@@ -278,7 +278,7 @@ class CoreSettings:
     worker_temperature: float = DEFAULT_WORKER_TEMPERATURE
     worker_top_p: float = DEFAULT_WORKER_TOP_P
     tool_timeout_s: float = DEFAULT_TOOL_TIMEOUT_S
-    guardrails: BrowserRunGuardrails = field(default_factory=BrowserRunGuardrails)
+    guardrails: RunGuardrails = field(default_factory=RunGuardrails)
     log_file: Path | None = DEFAULT_LOG_FILE
     log_level: int = logging.INFO
     log_mirror_common: bool = False

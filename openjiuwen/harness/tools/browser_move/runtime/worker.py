@@ -35,7 +35,7 @@ _ctx_observer_request_id: contextvars.ContextVar[str] = contextvars.ContextVar(
 
 
 @dataclass
-class BrowserTaskProgressState:
+class TaskProgressState:
     request_id: str = ""
     status: str = "unknown"
     completed_steps: list[str] = field(default_factory=list)
@@ -50,7 +50,7 @@ class BrowserTaskProgressState:
     last_worker_final: str = ""
 
     @classmethod
-    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "BrowserTaskProgressState":
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "TaskProgressState":
         if not isinstance(data, dict):
             return cls()
         last_page = data.get("last_page") if isinstance(data.get("last_page"), dict) else {}
@@ -74,7 +74,7 @@ class BrowserTaskProgressState:
         )
 
     @classmethod
-    def from_task_state(cls, data: Optional[Dict[str, Any]]) -> "BrowserTaskProgressState":
+    def from_task_state(cls, data: Optional[Dict[str, Any]]) -> "TaskProgressState":
         """Build the legacy progress DTO from runtime-owned task state."""
 
         if not isinstance(data, dict) or not data:
@@ -359,8 +359,8 @@ class _WorkerLoop:
             return f"{tool_name}: {payload_summary}"
         return payload_summary
 
-    def _get_progress_state(self, session_id: str) -> BrowserTaskProgressState:
-        return self._progress_by_session.setdefault(session_id, BrowserTaskProgressState())
+    def _get_progress_state(self, session_id: str) -> TaskProgressState:
+        return self._progress_by_session.setdefault(session_id, TaskProgressState())
 
     def _update_progress_from_tool_observation(
         self,
@@ -495,7 +495,7 @@ class _WorkerLoop:
                 progress_state.completion_evidence = [self._trim_text(final_text, 220)]
 
     @classmethod
-    def _build_progress_context(cls, progress_state: Optional[BrowserTaskProgressState]) -> str:
+    def _build_progress_context(cls, progress_state: Optional[TaskProgressState]) -> str:
         if progress_state is None:
             return ""
         lines: list[str] = []
@@ -519,7 +519,7 @@ class _WorkerLoop:
         return "Known progress for continuation:\n" + "\n".join(lines)
 
     @staticmethod
-    def _is_empty_progress_state(progress_state: BrowserTaskProgressState) -> bool:
+    def _is_empty_progress_state(progress_state: TaskProgressState) -> bool:
         return (
             progress_state.status == "unknown"
             and not any(
@@ -560,7 +560,7 @@ class _WorkerLoop:
         final: str,
         screenshot: Optional[str],
         attempt: int,
-        progress_state: Optional[BrowserTaskProgressState],
+        progress_state: Optional[TaskProgressState],
     ) -> str:
         return self._build_failure_summary(
             task=task,
@@ -573,7 +573,7 @@ class _WorkerLoop:
             progress_state=progress_state,
         )
 
-    def set_progress_state(self, session_id: str, progress_state: BrowserTaskProgressState) -> None:
+    def set_progress_state(self, session_id: str, progress_state: TaskProgressState) -> None:
         sid = (session_id or "").strip()
         if not sid:
             return
@@ -764,7 +764,7 @@ class _WorkerLoop:
         final: str,
         screenshot: Any,
         attempt: int,
-        progress_state: Optional[BrowserTaskProgressState] = None,
+        progress_state: Optional[TaskProgressState] = None,
     ) -> str:
         lines = [
             "Failure summary for continuation:",

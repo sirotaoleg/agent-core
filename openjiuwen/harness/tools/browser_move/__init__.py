@@ -22,7 +22,7 @@ __all__ = [
 
 def __getattr__(name: str) -> Any:
     if name in {"reset_active_browser_runtimes", "reset_managed_browser_runtime"}:
-        module = import_module("openjiuwen.harness.tools.browser_move.runtime.session")
+        module = import_module("openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade")
         return getattr(module, name)
     if name == "build_browser_runtime_mcp_config":
         module = import_module("openjiuwen.harness.tools.browser_move.surfaces.browser.runner.server_config")

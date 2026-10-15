@@ -1,7 +1,7 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Who runs a task behind the facade: the main agent on the facade itself, or a worker through the service."""
+"""Who runs a task behind the runtime: the main agent on the runtime itself, or a worker through the service."""
 
 from __future__ import annotations
 
@@ -18,17 +18,17 @@ from .agents import WORKER_LANGUAGE, build_worker
 from .config import CoreSettings
 
 if TYPE_CHECKING:
-    from .session import BrowserAgentRuntime
+    from .session import AgentRuntime
 
 
 class Topology(Protocol):
     name: str
 
-    async def start(self, runtime: BrowserAgentRuntime) -> None: ...
+    async def start(self, runtime: AgentRuntime) -> None: ...
 
     async def run(
         self,
-        runtime: BrowserAgentRuntime,
+        runtime: AgentRuntime,
         task: str,
         session_id: str | None,
         request_id: str | None,
@@ -51,14 +51,14 @@ def _model(service: Any) -> Model:
 
 
 class Direct:
-    """The main agent, built on the facade, calls the tools itself; one run per task under the guardrails' timeout."""
+    """The main agent, built on the runtime, calls the tools itself; one run per task under the guardrails' timeout."""
 
     name = "direct"
 
     def __init__(self) -> None:
         self._agent: Any = None
 
-    async def start(self, runtime: BrowserAgentRuntime) -> None:
+    async def start(self, runtime: AgentRuntime) -> None:
         if self._agent is not None:
             return
         from openjiuwen.harness.subagents.browser_agent import create_browser_agent
@@ -78,7 +78,7 @@ class Direct:
 
     async def run(
         self,
-        runtime: BrowserAgentRuntime,
+        runtime: AgentRuntime,
         task: str,
         session_id: str | None,
         request_id: str | None,
@@ -103,7 +103,7 @@ class Direct:
 
 
 class DelegatedWorker:
-    """The facade's caller hands the task to the service, which runs the worker over the session."""
+    """The runtime's caller hands the task to the service, which runs the worker over the session."""
 
     name = "delegated_worker"
 
@@ -112,12 +112,12 @@ class DelegatedWorker:
         self._offered: frozenset[str] = frozenset()
         self._dropped: frozenset[str] = frozenset()
 
-    async def start(self, runtime: BrowserAgentRuntime) -> None:
+    async def start(self, runtime: AgentRuntime) -> None:
         await runtime.ensure_runtime_ready()
         service = runtime.service
-        if service.browser_agent is None:
+        if service.agent is None:
             session = service.session
-            service.browser_agent = await build_worker(
+            service.agent = await build_worker(
                 session,
                 session.assembly.surface,
                 provider=service.provider,
@@ -133,14 +133,13 @@ class DelegatedWorker:
                 image_support=self._image_support,
             )
             if self._dropped:
-                service.browser_agent.ability_manager.remove_ability(sorted(self._dropped))
+                service.agent.ability_manager.remove_ability(sorted(self._dropped))
                 self._dropped = frozenset()
-            self._offered = _tool_names(service.browser_agent)
-        runtime.register_runtime_tools()
+            self._offered = _tool_names(service.agent)
 
     async def run(
         self,
-        runtime: BrowserAgentRuntime,
+        runtime: AgentRuntime,
         task: str,
         session_id: str | None,
         request_id: str | None,
@@ -148,14 +147,14 @@ class DelegatedWorker:
     ) -> dict[str, Any]:
         if await probe_image_support(_model(runtime.service)) and not self._image_support:
             self._image_support = True
-            started = runtime.service.browser_agent
+            started = runtime.service.agent
             if started is not None:
                 self._dropped = self._offered - _tool_names(started)
-                runtime.service.browser_agent = None
+                runtime.service.agent = None
 
         async def worker() -> Any:
             await self.start(runtime)
-            return runtime.service.browser_agent
+            return runtime.service.agent
 
         return await runtime.service.run_task(
             task=task, session_id=session_id, request_id=request_id, timeout_s=timeout_s, worker=worker

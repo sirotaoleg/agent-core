@@ -11,7 +11,7 @@ from typing import Any, Mapping, Optional
 
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.contract import SurfaceBundle, SurfaceSettings
-from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings, RunGuardrails
 from openjiuwen.harness.tools.browser_move.runtime.utils.env import SUPPORTED_MODEL_PROVIDERS, parse_command_args
 from openjiuwen.harness.tools.browser_move.surfaces import SURFACES
 
@@ -53,7 +53,7 @@ class RuntimeSettings:
     api_base: str
     model_name: str
     mcp_cfg: McpServerConfig
-    guardrails: BrowserRunGuardrails
+    guardrails: RunGuardrails
     instance: Optional[BrowserInstanceConfig] = None
 
 
@@ -77,7 +77,7 @@ def resolve_playwright_mcp_cwd() -> str:
     return str(browser_surface_settings().mcp_cwd)
 
 
-def build_browser_guardrails() -> BrowserRunGuardrails:
+def build_browser_guardrails() -> RunGuardrails:
     return CoreSettings.from_process_env().guardrails
 
 

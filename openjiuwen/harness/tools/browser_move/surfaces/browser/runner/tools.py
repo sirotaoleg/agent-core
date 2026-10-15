@@ -11,7 +11,7 @@ from openjiuwen.core.foundation.tool import Tool, ToolCard
 from openjiuwen.harness.tools.base_tool import ToolOutput
 
 if TYPE_CHECKING:
-    from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
+    from .facade import BrowserAgentRuntime
 
 _ctx_parent_session_id: contextvars.ContextVar[str] = contextvars.ContextVar(
     "playwright_runtime_parent_session_id",

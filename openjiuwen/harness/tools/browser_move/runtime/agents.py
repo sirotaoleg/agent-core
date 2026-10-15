@@ -18,7 +18,6 @@ from openjiuwen.core.single_agent.agents.react_agent import ReActAgent, ReActAge
 from openjiuwen.core.single_agent.schema.agent_card import AgentCard
 
 from ..contract import DriverInfo, SurfaceBundle
-from ..surfaces.browser.runner.logging import configure_browser_agent_logging
 from .assembly import build_agent_parts, core_rails
 from .config import CoreSettings
 from .driver_session import DriverSession
@@ -225,7 +224,6 @@ def build_browser_worker_agent(
         )
     )
     settings = settings or CoreSettings.from_process_env()
-    configure_browser_agent_logging(settings)
     if config.model_config_obj is not None:
         config.model_config_obj.temperature = settings.worker_temperature
         config.model_config_obj.top_p = settings.worker_top_p

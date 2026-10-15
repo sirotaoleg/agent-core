@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 
 from openjiuwen.core.single_agent.prompts.builder import PromptSection
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext
-from openjiuwen.harness.tools.browser_move.runtime.worker import MAX_ITERATION_MESSAGE, BrowserTaskProgressState
+from openjiuwen.harness.tools.browser_move.runtime.worker import MAX_ITERATION_MESSAGE, TaskProgressState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.keys import (
     _BROWSER_PHASE_STATE_KEY,
     _BROWSER_TASK_DEADLINE_KEY,
@@ -353,7 +353,7 @@ class _TerminalMixin:
 
     @staticmethod
     def _build_progress_result(
-        progress_state: BrowserTaskProgressState,
+        progress_state: TaskProgressState,
         clean_output: str,
     ) -> Dict[str, Any]:
         """Build completion output from runtime-owned progress only."""
