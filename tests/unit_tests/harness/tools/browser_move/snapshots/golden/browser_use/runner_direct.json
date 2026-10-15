@@ -1,0 +1,775 @@
+{
+  "agents": [
+    {
+      "role": "main",
+      "system_prompt": "You are a browser automation agent responsible for executing web tasks directly. Choose the strategy at this agent level and use the available Playwright and runtime tools; the runtime validates targets and outcomes but does not replace your task judgment.\nEvery model call includes one runtime-maintained <browser_working_context> followed by the latest <browser_state>. Runtime outcomes and blockers are authoritative; inferred fields are extraction hints, not additional user requirements. Source observations also provide usable evidence. A fresh browser capture occurs initially and after a recognized page mutation; otherwise the cached observation is reused. When the runtime directive requires replanning, change the strategy materially.\nFor a simple lookup, prefer a direct search-results URL when the engine and query are known. Use browser_probe_interactives for page controls and browser_probe_cards for repeated results or products. Use the compact PageState target_id with its generation_id directly; never reconstruct guessed CSS from a target ID. When a card has primary_link or href, navigate directly to that URL.\nUse browser_batch_interact when two or more deterministic actions or same-page field extractions are already known. Use a primitive for one uncertain action. Prefer observable condition waits over fixed sleep. Use browser_snapshot only when compact probes are insufficient, and browser_evaluate only for a small exact target or computation. If an older result has a <persisted-output> marker, recall it only when its preview does not contain the needed evidence; recalled targets are not executable after navigation.\nUse canonical fields when convenient, but do not reread a page just to rename already observed facts. Report genuinely unavailable values as unknown. One trustworthy page value or structured result is enough; do not verify the same fact with multiple tools. Stop immediately when the requested outcome is evidenced. The runtime determines final status, so return a concise natural-language result rather than another progress object.\nIf an optional capability makes a browser_run_code tool visible, use it only when deterministic tools are insufficient, and never dump the full document. Preserve session continuity and report a concrete blocker when the available browser state or tools cannot complete the task.\n\n# Safety\n\n- Never disclose private data.\n- Ask the user before modifying or deleting important files, running commands that affect the system, or performing operations involving money, accounts, or sensitive information.\n- Refuse requests that are illegal, harmful, or infringe on the rights of others.\n- Obtain user confirmation before sending emails, publishing publicly, or taking other actions with external impact.\n- Internal operations such as reading files, searching, and organizing may proceed normally.\n- If a task fails, briefly explain the reason and provide a suggestion.\n- When uncertain, state the uncertainty and then provide the most likely approach.\n- Do not fabricate tool results, file contents, execution status, or actions claimed to be completed.\n\n\nImage input is unavailable or unverified for this run. Do not request screenshots, including browser_take_screenshot or browser_batch_interact with op=screenshot. Use DOM probes, accessibility snapshots, and targeted evaluation instead.\n\nFor calendar/date-picker widgets, do not type the date into a text field. Click the specific day cell instead (look for a data-iso=\"YYYY-MM-DD\" attribute or an aria-label naming the full date), then confirm the selection before proceeding.\n\nTask rules:\n- Today's date is <DATE>. A date without a year means its next occurrence on or after today.\n- Apply every filter, category and option the task names (a property type, a class year, a price range) before reading results.\n- Check on the page what is today's, the latest or the newest; never answer that from memory.\n- When the task names a source, open that source and read the answer there.\n- Perform every UI step the task names, even when the answer is reachable another way.\n- When the question has two readings, answer both.\n- When the site misreads an entity, query it again disambiguated (full name, kind or unit).\n- When the page shows the answer, state it plainly, without caveats that undermine it.\n- Do not retry a hand-built search URL more than twice; open a candidate result instead.",
+      "tools": [
+        {
+          "description": "Execute deterministic browser interactions in one standalone runtime tool call. Use after browser_probe_interactives/browser_probe_cards when a page-level flow has multiple known targets, such as three or more form fields, click+type+choose autocomplete, dropdown or date-picker selection, filter panels, search submit plus result wait, or compact extraction. This is a first-class helper like the probe tools; do not route this through browser_custom_action. Pass the current PageState generation_id and use target_id from probes for actions. Only read-only extraction and explicit wait operations accept a validated selector. Locator strategies are mutually exclusive. A one-step call is rewritten by the runtime to an equivalent official browser primitive when one exists, so it does not fail and require another model turn. Multi-step calls are preflighted before side effects. Results use status=completed/partial/failed and contain only compact step status, extracted fields, condition observations, metrics, and PageState.",
+          "name": "browser_batch_interact",
+          "parameters": {
+            "properties": {
+              "condition_timeout_ms": {
+                "description": "Default timeout for condition waits in milliseconds. Default 10000, clamped to the action timeout..30000.",
+                "type": "integer"
+              },
+              "continue_on_error": {
+                "description": "When true, continue after failed steps and return per-step errors.",
+                "type": "boolean"
+              },
+              "generation_id": {
+                "description": "Current PageState generation_id returned by navigate, probe, snapshot, or the previous batch. Targets from older generations are rejected before browser execution.",
+                "pattern": "^g[0-9]+$",
+                "type": "string"
+              },
+              "global_timeout_ms": {
+                "description": "Hard timeout for the whole batch. Default is computed from step count, capped at 120000; explicit values are capped at 180000.",
+                "type": "integer"
+              },
+              "request_id": {
+                "description": "Optional browser task request id.",
+                "type": "string"
+              },
+              "session_id": {
+                "description": "Optional browser task session id.",
+                "type": "string"
+              },
+              "steps": {
+                "description": "Ordered browser steps to execute in one batch. Supported ops: click, fill, type, autocomplete, select_visible_text, press, select_option, set_checked, wait_for_selector, wait_for_text, wait_for_load_state, wait_for_url, wait_for_first_card_title, wait_for_sort_state, wait_for_result_count, wait_for_dom_text_change, wait_for_stable, wait_for_tab, extract_text, extract_value, screenshot.",
+                "items": {
+                  "properties": {
+                    "activate": {
+                      "description": "For wait_for_tab, activate the matched new tab for subsequent steps. Default true.",
+                      "type": "boolean"
+                    },
+                    "attribute": {
+                      "description": "Attribute inspected by wait_for_sort_state; defaults to aria-sort.",
+                      "type": "string"
+                    },
+                    "checked": {
+                      "description": "Desired checked state for set_checked.",
+                      "type": "boolean"
+                    },
+                    "choose_name": {
+                      "description": "Alias for option_name.",
+                      "type": "string"
+                    },
+                    "choose_role": {
+                      "description": "Alias for option_role.",
+                      "type": "string"
+                    },
+                    "choose_selector": {
+                      "description": "Alias for option_selector.",
+                      "type": "string"
+                    },
+                    "choose_text": {
+                      "description": "Alias for option_text in autocomplete flows.",
+                      "type": "string"
+                    },
+                    "count": {
+                      "description": "Exact result count expected.",
+                      "type": "integer"
+                    },
+                    "delay_ms": {
+                      "description": "Optional typing delay in milliseconds.",
+                      "type": "integer"
+                    },
+                    "description": {
+                      "description": "Human-readable purpose for logs/debugging.",
+                      "type": "string"
+                    },
+                    "exact": {
+                      "description": "Use exact matching for role/label/text locators.",
+                      "type": "boolean"
+                    },
+                    "expected_text": {
+                      "description": "Expected first-card title text.",
+                      "type": "string"
+                    },
+                    "expected_url": {
+                      "description": "Alias for the exact URL expected by wait_for_url.",
+                      "type": "string"
+                    },
+                    "expected_value": {
+                      "description": "Expected attribute or text value for a wait condition.",
+                      "type": "string"
+                    },
+                    "field": {
+                      "description": "Structured output field name for extraction steps.",
+                      "type": "string"
+                    },
+                    "full_page": {
+                      "description": "When true, screenshot the full page.",
+                      "type": "boolean"
+                    },
+                    "index": {
+                      "description": "Native select option index.",
+                      "type": "integer"
+                    },
+                    "key": {
+                      "description": "Keyboard key for press, e.g. Enter or Escape.",
+                      "type": "string"
+                    },
+                    "label": {
+                      "description": "Label text for labeled form controls.",
+                      "type": "string"
+                    },
+                    "label_value": {
+                      "description": "Native select visible label alias.",
+                      "type": "string"
+                    },
+                    "max_chars": {
+                      "description": "Maximum characters for extract_text.",
+                      "type": "integer"
+                    },
+                    "max_count": {
+                      "description": "Maximum result count expected.",
+                      "type": "integer"
+                    },
+                    "min_count": {
+                      "description": "Minimum result count expected.",
+                      "type": "integer"
+                    },
+                    "min_tabs": {
+                      "description": "Minimum context tab count for wait_for_tab. By default the runtime waits for one more tab than existed when the batch started.",
+                      "type": "integer"
+                    },
+                    "name": {
+                      "description": "Accessible name for role-based locating.",
+                      "type": "string"
+                    },
+                    "op": {
+                      "description": "Step operation name.",
+                      "enum": [
+                        "click",
+                        "fill",
+                        "type",
+                        "autocomplete",
+                        "select_visible_text",
+                        "press",
+                        "select_option",
+                        "set_checked",
+                        "wait_for_selector",
+                        "wait_for_text",
+                        "wait_for_load_state",
+                        "wait_for_url",
+                        "wait_for_first_card_title",
+                        "wait_for_sort_state",
+                        "wait_for_result_count",
+                        "wait_for_dom_text_change",
+                        "wait_for_stable",
+                        "wait_for_tab",
+                        "extract_text",
+                        "extract_value",
+                        "screenshot"
+                      ],
+                      "type": "string"
+                    },
+                    "option_label": {
+                      "description": "Native select visible label. Alias for option_text when op=select_option.",
+                      "type": "string"
+                    },
+                    "option_name": {
+                      "description": "Accessible name for option_role.",
+                      "type": "string"
+                    },
+                    "option_ref": {
+                      "description": "Current-generation AX ref for an autocomplete/dropdown option.",
+                      "type": "string"
+                    },
+                    "option_role": {
+                      "description": "ARIA role for an autocomplete/dropdown option, e.g. option/menuitem.",
+                      "type": "string"
+                    },
+                    "option_selector": {
+                      "description": "CSS selector for an autocomplete/dropdown option to choose.",
+                      "type": "string"
+                    },
+                    "option_target_id": {
+                      "description": "PageState target_id for an autocomplete/dropdown option.",
+                      "type": "string"
+                    },
+                    "option_text": {
+                      "description": "Visible option text for autocomplete/select_visible_text/native select label.",
+                      "type": "string"
+                    },
+                    "option_value": {
+                      "description": "Native select option value. Alias for value when op=select_option.",
+                      "type": "string"
+                    },
+                    "optional": {
+                      "description": "When true, failure records the step but continues.",
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "description": "Screenshot path for op=screenshot.",
+                      "type": "string"
+                    },
+                    "placeholder": {
+                      "description": "Placeholder text for form controls.",
+                      "type": "string"
+                    },
+                    "poll_interval_ms": {
+                      "description": "Dynamic-condition polling interval, clamped to 50..1000ms; default 100ms. Polling always shares the step's total timeout.",
+                      "type": "integer"
+                    },
+                    "previous_text": {
+                      "description": "Previous DOM text used by wait_for_dom_text_change.",
+                      "type": "string"
+                    },
+                    "ref": {
+                      "description": "Native AX ref returned by browser_snapshot/browser_find in the current generation. The runtime resolves it without model-generated CSS.",
+                      "type": "string"
+                    },
+                    "role": {
+                      "description": "ARIA role to locate, e.g. button/textbox/link.",
+                      "type": "string"
+                    },
+                    "selector": {
+                      "description": "Current-generation selector_hint from a probe, or an explicit selector only for a wait condition. Do not combine with another locator strategy.",
+                      "type": "string"
+                    },
+                    "stable_ms": {
+                      "description": "How long a matched value must remain unchanged.",
+                      "type": "integer"
+                    },
+                    "state": {
+                      "description": "Wait state for wait_for_selector/load_state, e.g. visible/attached/domcontentloaded.",
+                      "type": "string"
+                    },
+                    "target_id": {
+                      "description": "Generation-scoped target_id returned by the current PageState/probe. Preferred for actions and mutually exclusive with ref/selector/role/label/placeholder/text/testid.",
+                      "type": "string"
+                    },
+                    "testid": {
+                      "description": "Exact data-testid value for a target.",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Visible text for locate/click/wait_for_text.",
+                      "type": "string"
+                    },
+                    "timeout_ms": {
+                      "description": "Optional per-step timeout override.",
+                      "type": "integer"
+                    },
+                    "title_contains": {
+                      "description": "Title substring expected on a newly opened tab.",
+                      "type": "string"
+                    },
+                    "url": {
+                      "description": "Exact URL expected by wait_for_url.",
+                      "type": "string"
+                    },
+                    "url_contains": {
+                      "description": "URL substring expected by wait_for_url.",
+                      "type": "string"
+                    },
+                    "url_pattern": {
+                      "description": "Regular expression expected to match the current URL.",
+                      "type": "string"
+                    },
+                    "value": {
+                      "description": "Value to fill/type/select, or autocomplete query.",
+                      "type": "string"
+                    },
+                    "values": {
+                      "description": "MCP/Playwright-style native select values list. Also accepted for single-select fields.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "op"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 25,
+                "minItems": 1,
+                "type": "array"
+              },
+              "timeout_ms": {
+                "description": "Default per-step timeout in milliseconds. Default 2500, clamped to 250..30000.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "steps",
+              "generation_id"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Click an element.",
+          "name": "browser_click",
+          "parameters": {
+            "properties": {
+              "button": {
+                "description": "Mouse button: left, right, or middle. Default left.",
+                "type": "string"
+              },
+              "click_count": {
+                "description": "Number of clicks. Default 1.",
+                "type": "integer"
+              },
+              "generation_id": {
+                "description": "Current PageState generation_id for the element target.",
+                "type": "string"
+              },
+              "ref": {
+                "description": "Element ref from the current page observation.",
+                "type": "string"
+              },
+              "selector": {
+                "description": "CSS selector when a validated selector is already known.",
+                "type": "string"
+              },
+              "target_id": {
+                "description": "Generation-scoped target_id from PageState / probes.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "generation_id"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Evaluate a small JavaScript expression in the page. Do not dump the full document.",
+          "name": "browser_evaluate",
+          "parameters": {
+            "properties": {
+              "args": {
+                "description": "Optional JSON-serializable argument passed to the script."
+              },
+              "function": {
+                "description": "JavaScript source to evaluate (expression or function body).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "function"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Upload one or more files to a file input element.",
+          "name": "browser_file_upload",
+          "parameters": {
+            "properties": {
+              "generation_id": {
+                "description": "Current PageState generation_id for the element target.",
+                "type": "string"
+              },
+              "paths": {
+                "description": "Absolute or workspace-relative file paths to upload. Relative/bare names also resolve under BROWSER_UPLOAD_ROOT when set (see list_upload_files).",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "ref": {
+                "description": "Element ref from the current page observation.",
+                "type": "string"
+              },
+              "selector": {
+                "description": "CSS selector when a validated selector is already known.",
+                "type": "string"
+              },
+              "target_id": {
+                "description": "Generation-scoped target_id from PageState / probes.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "generation_id",
+              "paths"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Fill multiple form fields in one call (type / select / checkbox).",
+          "name": "browser_fill_form",
+          "parameters": {
+            "properties": {
+              "fields": {
+                "description": "Ordered field fill steps.",
+                "items": {
+                  "properties": {
+                    "label": {
+                      "type": "string"
+                    },
+                    "ref": {
+                      "type": "string"
+                    },
+                    "selector": {
+                      "type": "string"
+                    },
+                    "sensitive": {
+                      "type": "boolean"
+                    },
+                    "target_id": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Field type: textbox, combobox/select, checkbox/radio.",
+                      "type": "string"
+                    },
+                    "value": {}
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "generation_id": {
+                "description": "Current PageState generation_id for the element target.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "generation_id",
+              "fields"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Search the current accessibility / page snapshot for text or a regex. Returns matching nodes with target_id/ref and short context. Requires a prior browser_snapshot (or probe) for the current generation.",
+          "name": "browser_find",
+          "parameters": {
+            "properties": {
+              "generation_id": {
+                "description": "Optional PageState generation_id; defaults to current.",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum matches to return (1-100). Default 20.",
+                "type": "integer"
+              },
+              "query": {
+                "description": "Text or regex pattern to search for in the current snapshot.",
+                "type": "string"
+              },
+              "regex": {
+                "description": "Treat query as a regular expression. Default false.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Accept or dismiss a JavaScript alert/confirm/prompt. If no dialog is open yet, arms handling for the next dialog — call this before the click/type that opens it.",
+          "name": "browser_handle_dialog",
+          "parameters": {
+            "properties": {
+              "accept": {
+                "description": "True to accept/OK, false to dismiss/Cancel.",
+                "type": "boolean"
+              },
+              "promptText": {
+                "description": "Optional text to submit for a prompt() dialog.",
+                "type": "string"
+              },
+              "prompt_text": {
+                "description": "Alias for promptText.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "accept"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Hover the mouse over an element (tooltips / :hover menus).",
+          "name": "browser_hover",
+          "parameters": {
+            "properties": {
+              "generation_id": {
+                "description": "Current PageState generation_id for the element target.",
+                "type": "string"
+              },
+              "ref": {
+                "description": "Element ref from the current page observation.",
+                "type": "string"
+              },
+              "selector": {
+                "description": "CSS selector when a validated selector is already known.",
+                "type": "string"
+              },
+              "target_id": {
+                "description": "Generation-scoped target_id from PageState / probes.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "generation_id"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Navigate to a URL.",
+          "name": "browser_navigate",
+          "parameters": {
+            "properties": {
+              "timeout_ms": {
+                "description": "Optional navigation timeout in milliseconds.",
+                "type": "integer"
+              },
+              "url": {
+                "description": "Absolute URL to open, e.g. https://example.com",
+                "type": "string"
+              },
+              "wait_until": {
+                "description": "Navigation wait condition. Default load.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "url"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Navigate back in browser history.",
+          "name": "browser_navigate_back",
+          "parameters": {
+            "properties": {},
+            "required": [],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Press a keyboard key or key combination.",
+          "name": "browser_press_key",
+          "parameters": {
+            "properties": {
+              "key": {
+                "description": "Key or combination, e.g. Enter, Control+a, Escape.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "key"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Return compact repeated card/listing structures from the current page. Use this first on product pages, marketplace pages, search-result pages, catalog pages, article-list pages, table/list-row result pages, or any page with repeated visible cards/listings. The result includes compact PageState with generation-scoped card/control target_id values, candidate card title, author/source, summary/snippet, price, rating, review count, availability, primary link, and visible controls, region/kind/result_index/is_ad semantics that distinguish main results, accounts, sidebars, hot searches, shops, chats, and product links, match_count/visible/enabled/clickable/generation_id, recurring structure signatures, and cache diagnostics. Navigate primary_link/href directly instead of clicking a card hint. If this returns the fields needed for the task, including article/search-result title/link/author/source/summary fields, use the compact card result directly instead of taking screenshots/snapshots or running broad DOM evaluation. Only evaluate again when a required field is missing.",
+          "name": "browser_probe_cards",
+          "parameters": {
+            "properties": {
+              "include_buttons": {
+                "description": "When true, include visible buttons/links inside each card. Default true.",
+                "type": "boolean"
+              },
+              "max_cards": {
+                "description": "Maximum number of cards to return. Default 12, hard-capped at 20.",
+                "type": "integer"
+              },
+              "query": {
+                "description": "Optional text filter, e.g. 'mouse', 'book', 'laptop', or 'cart'.",
+                "type": "string"
+              },
+              "viewport_only": {
+                "description": "When true, only inspect cards visible in the current viewport. Default true.",
+                "type": "boolean"
+              }
+            },
+            "required": [],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Return a compact list of visible, high-value interactive elements on the current page. Use this for page-level controls such as buttons, links, inputs, forms, navigation, login, pagination, menus, calendar dates, sort tabs, rating filters, and visible actions. Dynamic controls are returned as generation-scoped targets with region/kind semantics. The optional query filter is alias-aware for common search/input terms, including placeholders, aria labels, input type/name/id/class, and Chinese search text such as 搜索/关键词. Prefer max_items around 20-30 unless a larger inventory is needed. For product/search/listing card data, prefer browser_probe_cards first. The result includes compact PageState and generation-scoped target_id values that can be passed directly to browser_batch_interact without rebuilding CSS. It also includes role/text/region/kind plus match_count/visible/enabled/actionable. The model-facing result does not expose Probe-local ids or internal selectors.",
+          "name": "browser_probe_interactives",
+          "parameters": {
+            "properties": {
+              "max_items": {
+                "description": "Maximum number of elements to return. Default 30, hard-capped at 40.",
+                "type": "integer"
+              },
+              "query": {
+                "description": "Optional text filter, e.g. 'cart', 'search', 'next', or 'login'.",
+                "type": "string"
+              },
+              "viewport_only": {
+                "description": "When true, only return elements currently visible in the viewport. Default true.",
+                "type": "boolean"
+              }
+            },
+            "required": [],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Recall a bounded text fragment from an older browser probe or snapshot result when a <persisted-output> marker's preview is insufficient. Pass only its 32-character handle. The tool can read only ToolResultWindowProcessor output owned by the current browser session; it cannot read arbitrary files. Use query to find the first matching fragment at or after offset, or omit query to read a chunk. Recalled refs and selectors are stale evidence after navigation and must never be used for browser interaction.",
+          "name": "browser_recall_offload",
+          "parameters": {
+            "properties": {
+              "handle": {
+                "description": "The 32-character handle from a persisted browser output marker.",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum returned characters. Default 8000, hard-capped at 16000.",
+                "maximum": 16000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "offset": {
+                "description": "Character offset for chunking or the query search start. Default 0.",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "query": {
+                "description": "Optional case-insensitive text to locate inside the original result.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "handle"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Select an option from a native select element.",
+          "name": "browser_select_option",
+          "parameters": {
+            "properties": {
+              "generation_id": {
+                "description": "Current PageState generation_id for the element target.",
+                "type": "string"
+              },
+              "label": {
+                "description": "Visible option label to select.",
+                "type": "string"
+              },
+              "ref": {
+                "description": "Element ref from the current page observation.",
+                "type": "string"
+              },
+              "selector": {
+                "description": "CSS selector when a validated selector is already known.",
+                "type": "string"
+              },
+              "target_id": {
+                "description": "Generation-scoped target_id from PageState / probes.",
+                "type": "string"
+              },
+              "value": {
+                "description": "Option value attribute to select.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "generation_id"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Capture an accessibility/page observation of the current page.",
+          "name": "browser_snapshot",
+          "parameters": {
+            "properties": {
+              "include_screenshot": {
+                "description": "Include a screenshot in the observation. Default false.",
+                "type": "boolean"
+              }
+            },
+            "required": [],
+            "type": "object"
+          }
+        },
+        {
+          "description": "List, select, or close browser tabs.",
+          "name": "browser_tabs",
+          "parameters": {
+            "properties": {
+              "action": {
+                "description": "Tab action: list, select, or close. Default list.",
+                "enum": [
+                  "list",
+                  "select",
+                  "close",
+                  "new"
+                ],
+                "type": "string"
+              },
+              "index": {
+                "description": "Zero-based tab index for select/close.",
+                "type": "integer"
+              }
+            },
+            "required": [],
+            "type": "object"
+          }
+        },
+        {
+          "description": "Type text into an element.",
+          "name": "browser_type",
+          "parameters": {
+            "properties": {
+              "clear": {
+                "description": "Clear existing content before typing. Default true.",
+                "type": "boolean"
+              },
+              "generation_id": {
+                "description": "Current PageState generation_id for the element target.",
+                "type": "string"
+              },
+              "press_enter": {
+                "description": "Press Enter after typing. Default false.",
+                "type": "boolean"
+              },
+              "ref": {
+                "description": "Element ref from the current page observation.",
+                "type": "string"
+              },
+              "selector": {
+                "description": "CSS selector when a validated selector is already known.",
+                "type": "string"
+              },
+              "sensitive": {
+                "description": "Mark input as sensitive (e.g. password). Default false.",
+                "type": "boolean"
+              },
+              "target_id": {
+                "description": "Generation-scoped target_id from PageState / probes.",
+                "type": "string"
+              },
+              "text": {
+                "description": "Text to type into the element.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "generation_id",
+              "text"
+            ],
+            "type": "object"
+          }
+        }
+      ]
+    }
+  ],
+  "driver": "browser_use",
+  "view": "runner_direct"
+}

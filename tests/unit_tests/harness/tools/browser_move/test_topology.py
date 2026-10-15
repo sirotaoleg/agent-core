@@ -58,6 +58,7 @@ HELPERS = {"browser_probe_interactives", "browser_probe_cards", "browser_batch_i
 METADATA = result(value={"page_position": {}, "semantic_state": {}})
 MCP = CoreSettings(driver="playwright_mcp")
 BROWSER_USE = CoreSettings(driver="browser_use")
+BROWSER_USE_DIRECT = CoreSettings(driver="browser_use", topology="direct")
 
 
 def _runtime(
@@ -99,9 +100,9 @@ def _registering_runtime_tools() -> Any:
     ("driver", "topology", "expected"),
     [
         ("playwright_mcp", "", DelegatedWorker),
-        ("browser_use", "", Direct),
+        ("browser_use", "", DelegatedWorker),
         ("playwright_mcp", "direct", Direct),
-        ("browser_use", "delegated_worker", DelegatedWorker),
+        ("browser_use", "direct", Direct),
     ],
 )
 def test_topology_for_takes_the_setting_and_falls_back_to_the_drivers_default(
@@ -121,16 +122,22 @@ def test_a_registered_default_that_no_strategy_implements_is_refused() -> None:
 
 def test_the_instances_driver_override_decides_the_default() -> None:
     runtime = _runtime(MCP, instance=BrowserInstanceConfig(driver="browser_use"))
-    with patch.object(agent_module, "build_main_agent", return_value=MagicMock()) as create:
+    with (
+        patch.object(topology_module, "default_topology", return_value="direct") as registered,
+        patch.object(agent_module, "build_main_agent", return_value=MagicMock()) as create,
+    ):
         run(runtime.ensure_started())
 
+    registered.assert_called_once_with("browser_use")
     create.assert_called_once()
     assert runtime.service.agent is None
 
 
 class TestDirect:
     def test_start_builds_the_main_agent_on_the_facade_once_and_run_maps_the_answer(self) -> None:
-        runtime = _runtime(CoreSettings(driver="browser_use", worker_temperature=0.3, worker_top_p=0.9))
+        runtime = _runtime(
+            CoreSettings(driver="browser_use", topology="direct", worker_temperature=0.3, worker_top_p=0.9)
+        )
         agent = MagicMock()
         result = {
             "output": "The main heading is Example Domain.",
@@ -176,7 +183,7 @@ class TestDirect:
         }
 
     def test_start_makes_no_model_call_and_run_awaits_the_probe_before_the_agent_runs(self) -> None:
-        runtime = _runtime(BROWSER_USE)
+        runtime = _runtime(BROWSER_USE_DIRECT)
         events: list[str] = []
 
         async def probe(model: Any) -> bool:
@@ -200,7 +207,7 @@ class TestDirect:
         assert events == ["probe https://example.invalid/v1 test-model", "agent"]
 
     def test_the_agent_speaks_the_workers_language_and_gets_the_core_rails_at_construction(self) -> None:
-        runtime = _runtime(BROWSER_USE, language=None)
+        runtime = _runtime(BROWSER_USE_DIRECT, language=None)
         built: list[dict[str, Any]] = []
 
         def capture(**kwargs: Any) -> MagicMock:
@@ -223,7 +230,7 @@ class TestDirect:
         assert policy._page_state is runtime.page_state
 
     def test_a_profile_without_a_main_agent_gets_one_from_the_parts_after_the_probe(self) -> None:
-        runtime = _runtime(BROWSER_USE)
+        runtime = _runtime(BROWSER_USE_DIRECT)
         profile = dataclasses.replace(runtime.surface.profile, main_agent=None)
         runtime._surface = dataclasses.replace(runtime.surface, profile=profile)
         agent = MagicMock()
@@ -251,7 +258,7 @@ class TestDirect:
         assert (answer["ok"], answer["final"]) == (True, "done")
 
     def test_the_policy_built_before_the_session_sees_the_tools_built_after_it(self) -> None:
-        runtime = _runtime(BROWSER_USE)
+        runtime = _runtime(BROWSER_USE_DIRECT)
         policy = runtime.core_rails()[0]
         with _assembling():
             run(runtime.ensure_runtime_ready())
@@ -263,7 +270,7 @@ class TestDirect:
         assert HELPERS <= {tool.card.name for tool in parts.tools}
 
     def test_the_agent_runs_outside_the_browser_log_context_like_the_worker(self) -> None:
-        direct = _runtime(BROWSER_USE)
+        direct = _runtime(BROWSER_USE_DIRECT)
         with patch.object(agent_module, "build_main_agent", return_value=MagicMock()):
             run(direct.ensure_started())
 
@@ -281,7 +288,7 @@ class TestDirect:
             assert (_runtime().dedicated_log, run(invoked(_runtime()))) == (True, (True, True))
 
     def test_a_session_that_cannot_start_fails_the_task_before_any_model_call(self, tmp_path: Path) -> None:
-        runtime = _runtime(BROWSER_USE, workspace=tmp_path)
+        runtime = _runtime(BROWSER_USE_DIRECT, workspace=tmp_path)
         failing = AsyncMock(side_effect=ConnectionLost("connect: No valid agent focus available", dispatched=True))
         model_calls = AsyncMock(side_effect=RuntimeError("the model was called"))
         with (
@@ -297,7 +304,7 @@ class TestDirect:
         model_calls.assert_not_awaited()
 
     def test_a_failed_or_timed_out_run_is_reported_in_the_answer(self) -> None:
-        runtime = _runtime(BROWSER_USE)
+        runtime = _runtime(BROWSER_USE_DIRECT)
         with (
             patch.object(agent_module, "build_main_agent", return_value=MagicMock()),
             patch.object(topology_module.Runner, "run_agent", AsyncMock(side_effect=RuntimeError("model gone"))),
@@ -317,7 +324,7 @@ class TestDirect:
         assert (timed_out["ok"], timed_out["error"]) == (False, "task_timeout: exceeded 1s")
 
     def test_shutdown_drops_the_agent_so_the_next_start_builds_a_new_one(self) -> None:
-        runtime = _runtime(BROWSER_USE)
+        runtime = _runtime(BROWSER_USE_DIRECT)
         with (
             patch.object(agent_module, "build_main_agent", return_value=MagicMock()) as create,
             patch.object(runtime_module.OpenAIModelClient, "aclose", AsyncMock()),

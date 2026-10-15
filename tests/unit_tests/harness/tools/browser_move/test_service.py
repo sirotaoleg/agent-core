@@ -536,7 +536,7 @@ def test_the_session_takes_the_settings_with_the_instance_applied_and_the_core_s
 def test_the_instance_driver_overrides_the_core_driver() -> None:
     service = _make_service(instance=BrowserInstanceConfig(driver="browser_use"), core_settings=CoreSettings())
 
-    assert (service.core.driver, default_topology(service.core.driver)) == ("browser_use", "direct")
+    assert (service.core.driver, default_topology(service.core.driver)) == ("browser_use", "delegated_worker")
     assert _handed(service)["core"].driver == "browser_use"
 
 

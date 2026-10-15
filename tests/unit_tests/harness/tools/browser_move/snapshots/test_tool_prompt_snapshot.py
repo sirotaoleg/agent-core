@@ -20,7 +20,7 @@ from tests.unit_tests.harness.tools.browser_move.snapshots.test_tool_factory_gol
 
 VIEWS = builder.list_views()
 CAPABILITY_VIEWS = [view for view in VIEWS if view not in builder.RUNNER_VIEWS]
-RECORDED_BROWSER_USE_VIEWS = CAPABILITY_VIEWS + [builder.RUNNER_VIEW]
+BROWSER_USE_RUNNER_VIEWS = [v for v in builder.list_views(builder.BROWSER_USE) if v in builder.RUNNER_VIEWS]
 
 
 @pytest.fixture(scope="module")
@@ -82,7 +82,7 @@ def test_playwright_mcp_snapshot_is_deterministic(
     assert builder.render(again) == built_views[view]
 
 
-@pytest.mark.parametrize("view", RECORDED_BROWSER_USE_VIEWS)
+@pytest.mark.parametrize("view", CAPABILITY_VIEWS)
 def test_browser_use_golden_is_well_formed(view: str) -> None:
     path = builder.BROWSER_USE_GOLDEN_DIR / f"{view}.json"
     text = path.read_text(encoding="utf-8")
@@ -129,8 +129,8 @@ def test_browser_use_prompt_equals_the_playwright_mcp_prompt(
     assert built["system_prompt"] == _golden_agent(builder.GOLDEN_DIR, view)["system_prompt"]
 
 
-def test_browser_use_runner_worker_matches_golden(tmp_path_factory: pytest.TempPathFactory) -> None:
-    view = builder.RUNNER_WORKER_VIEW
+@pytest.mark.parametrize("view", BROWSER_USE_RUNNER_VIEWS)
+def test_browser_use_runner_view_matches_golden(view: str, tmp_path_factory: pytest.TempPathFactory) -> None:
     golden = builder.BROWSER_USE_GOLDEN_DIR / f"{view}.json"
     assert golden.exists(), f"missing {golden.name}; run {builder.REGENERATE_COMMAND}"
     expected = golden.read_text(encoding="utf-8")

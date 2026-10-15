@@ -24,11 +24,12 @@ BROWSER_USE = "browser_use"
 RUNNER_VIEW = "runner"
 RUNNER_DIRECT_VIEW = "runner_direct"
 RUNNER_WORKER_VIEW = "runner_worker"
-RUNNER_VIEWS: dict[str, tuple[str | None, str]] = {
-    RUNNER_VIEW: (None, "worker"),
-    RUNNER_DIRECT_VIEW: ("direct", "main"),
-    RUNNER_WORKER_VIEW: ("delegated_worker", "worker"),
+RUNNER_VIEWS: dict[str, str | None] = {
+    RUNNER_VIEW: None,
+    RUNNER_DIRECT_VIEW: "direct",
+    RUNNER_WORKER_VIEW: "delegated_worker",
 }
+ROLES = {"direct": "main", "delegated_worker": "worker"}
 
 MODEL_NAME = "anthropic/claude-sonnet-5.5"
 API_BASE = "https://openrouter.ai/api/v1"
@@ -397,13 +398,21 @@ def render(doc: Any) -> str:
     return json.dumps(doc, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
 
 
+def runner_topology(view: str, driver: str) -> str:
+    """The topology a runner view runs on ``driver``: the view's own, or the driver's registered default."""
+    import openjiuwen.harness.tools.browser_move.drivers  # noqa: F401  registers the built-in drivers
+    from openjiuwen.harness.tools.browser_move.contract.registry import default_topology
+
+    return RUNNER_VIEWS[view] or default_topology(driver)
+
+
 def list_views(driver: str = DRIVER) -> list[str]:
     """The capability views, the runner in the driver's default topology and the runner in the other one."""
     from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
         DEFAULT_BROWSER_CAPABILITIES,
     )
 
-    other = RUNNER_DIRECT_VIEW if driver == DRIVER else RUNNER_WORKER_VIEW
+    other = RUNNER_DIRECT_VIEW if runner_topology(RUNNER_VIEW, driver) == "delegated_worker" else RUNNER_WORKER_VIEW
     return [c.name for c in DEFAULT_BROWSER_CAPABILITIES] + [RUNNER_VIEW, other]
 
 
@@ -468,11 +477,13 @@ async def _runner_view(captured: list[dict[str, Any]], notes: dict[str, Any], ro
     return [agent_entry(role, captured[0])]
 
 
-async def _build_view_async(view: str, captured: list[dict[str, Any]], notes: dict[str, Any]) -> list[dict[str, Any]]:
+async def _build_view_async(
+    view: str, driver: str, captured: list[dict[str, Any]], notes: dict[str, Any]
+) -> list[dict[str, Any]]:
     await reset_process_state()
     try:
         if view in RUNNER_VIEWS:
-            return await _runner_view(captured, notes, RUNNER_VIEWS[view][1])
+            return await _runner_view(captured, notes, ROLES[runner_topology(view, driver)])
         return await _capability_view(view, captured)
     finally:
         await reset_process_state()
@@ -485,11 +496,11 @@ def build_view(view: str, workdir: Path, driver: str = DRIVER) -> tuple[dict[str
     mcp_calls: list[str] = []
     notes: dict[str, Any] = {}
     extra_env = {"BROWSER_DRIVER": driver} if driver != DRIVER else {}
-    topology = RUNNER_VIEWS.get(view, (None, ""))[0]
+    topology = RUNNER_VIEWS.get(view)
     if topology:
         extra_env["BROWSER_TOPOLOGY"] = topology
     with isolated_env(workdir, extra_env), io_stubs(captured, mcp_calls, driver=driver), fresh_checkpointer():
-        agents = asyncio.run(_build_view_async(view, captured, notes))
+        agents = asyncio.run(_build_view_async(view, driver, captured, notes))
     notes.update({"model_calls": len(captured), "mcp_calls": sorted(set(mcp_calls)), "captured": captured})
     doc = {"driver": driver, "view": view, "agents": agents}
     return stabilize(doc, workdir), notes

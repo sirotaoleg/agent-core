@@ -1,5 +1,5 @@
 # coding: utf-8
-"""Rewrite the Playwright MCP goldens and the browser-use runner_worker view by hand; ``--results``: result goldens."""
+"""Rewrite the Playwright MCP goldens and the browser-use runner views by hand; ``--results``: result goldens."""
 
 from __future__ import annotations
 
@@ -11,9 +11,10 @@ from tests.unit_tests.harness.tools.browser_move.snapshots.builder import (
     BROWSER_USE,
     BROWSER_USE_GOLDEN_DIR,
     GOLDEN_DIR,
-    RUNNER_WORKER_VIEW,
+    RUNNER_VIEWS,
     build_all,
     build_view,
+    list_views,
     render,
 )
 from tests.unit_tests.harness.tools.browser_move.snapshots.results import (
@@ -25,9 +26,14 @@ from tests.unit_tests.harness.tools.browser_move.snapshots.results import (
 
 
 def main() -> int:
+    browser_use_views = list_views(BROWSER_USE)
     with tempfile.TemporaryDirectory(prefix="browser-snapshot-", ignore_cleanup_errors=True) as tmp:
         texts = build_all(Path(tmp))
-        worker_text = render(build_view(RUNNER_WORKER_VIEW, Path(tmp) / BROWSER_USE, driver=BROWSER_USE)[0])
+        runner_texts = {
+            view: render(build_view(view, Path(tmp) / BROWSER_USE / view, driver=BROWSER_USE)[0])
+            for view in browser_use_views
+            if view in RUNNER_VIEWS
+        }
     GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
     for stale in sorted(set(p.stem for p in GOLDEN_DIR.glob("*.json")) - set(texts)):
         (GOLDEN_DIR / f"{stale}.json").unlink()
@@ -37,10 +43,14 @@ def main() -> int:
         changed = not path.exists() or path.read_text(encoding="utf-8") != text
         path.write_text(text, encoding="utf-8", newline="\n")
         print(f"{'updated' if changed else 'unchanged'} {view}.json")
-    path = BROWSER_USE_GOLDEN_DIR / f"{RUNNER_WORKER_VIEW}.json"
-    changed = not path.exists() or path.read_text(encoding="utf-8") != worker_text
-    path.write_text(worker_text, encoding="utf-8", newline="\n")
-    print(f"{'updated' if changed else 'unchanged'} {BROWSER_USE}/{RUNNER_WORKER_VIEW}.json")
+    for stale in sorted(set(p.stem for p in BROWSER_USE_GOLDEN_DIR.glob("*.json")) - set(browser_use_views)):
+        (BROWSER_USE_GOLDEN_DIR / f"{stale}.json").unlink()
+        print(f"removed {BROWSER_USE}/{stale}.json")
+    for view, text in runner_texts.items():
+        path = BROWSER_USE_GOLDEN_DIR / f"{view}.json"
+        changed = not path.exists() or path.read_text(encoding="utf-8") != text
+        path.write_text(text, encoding="utf-8", newline="\n")
+        print(f"{'updated' if changed else 'unchanged'} {BROWSER_USE}/{view}.json")
     return 0
 
 
