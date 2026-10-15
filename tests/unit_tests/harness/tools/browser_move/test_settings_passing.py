@@ -287,8 +287,8 @@ class TestValuesFromSettings:
         assert existing == []
         assert error is not None and "no upload folder is configured" in error
 
-    def test_default_chrome_user_data_dir_uses_the_given_local_app_data(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("os.name", "nt")
+    @pytest.mark.skipif(platform.system() != "Windows", reason="pathlib builds no WindowsPath elsewhere")
+    def test_default_chrome_user_data_dir_uses_the_given_local_app_data(self) -> None:
         assert _default_chrome_user_data_dir("C:/Local") == str(Path("C:/Local") / "Google" / "Chrome" / "User Data")
 
 
