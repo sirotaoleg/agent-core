@@ -692,3 +692,42 @@ def test_a_script_error_names_the_javascript_error_not_just_uncaught() -> None:
 
     assert info.value.js_message == "TypeError: document.title is not a function"
     assert str(info.value) == "TypeError: document.title is not a function"
+
+
+def _guard_calls(client: FakeCdp) -> tuple[list[str | None], list[str]]:
+    installed = [sid for name, _params, sid in client.calls if name == "Page.addScriptToEvaluateOnNewDocument"]
+    evaluated = [params["expression"] for name, params, _sid in client.calls if name == "Runtime.evaluate"]
+    return installed, evaluated
+
+
+def test_the_init_script_is_installed_once_per_session_for_new_documents_and_the_current_one():
+    client = FakeCdp()
+    adapter = session_adapter.SessionAdapter()
+    adapter._init_script = "guard();"
+    ids = (SESSION, POPUP_SESSION)
+    sessions = [SimpleNamespace(cdp_client=client, session_id=sid, target_id=TARGET) for sid in ids]
+    adapter._session = SimpleNamespace(get_or_create_cdp_session=AsyncMock(side_effect=sessions))
+
+    async def scenario() -> None:
+        await adapter._ensure_cdp_session()
+        await adapter._ensure_cdp_session()
+        adapter._cdp_session = None
+        await adapter._ensure_cdp_session()
+
+    asyncio.run(scenario())
+
+    installed, evaluated = _guard_calls(client)
+    assert installed == [SESSION, POPUP_SESSION]
+    assert client.sent("Page.addScriptToEvaluateOnNewDocument") == [{"source": "guard();"}] * 2
+    assert len(evaluated) == 2 and all("guard();" in expression for expression in evaluated)
+
+
+def test_without_an_init_script_nothing_is_installed():
+    client = FakeCdp()
+    adapter = session_adapter.SessionAdapter()
+    session = SimpleNamespace(cdp_client=client, session_id=SESSION, target_id=TARGET)
+    adapter._session = SimpleNamespace(get_or_create_cdp_session=AsyncMock(return_value=session))
+
+    asyncio.run(adapter._ensure_cdp_session())
+
+    assert _guard_calls(client) == ([], [])

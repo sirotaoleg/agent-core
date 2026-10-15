@@ -7,6 +7,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
+import subprocess
+from importlib import resources
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -26,6 +29,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import BROWSER
 from tests.unit_tests.harness.tools.browser_move.surfaces.test_browser_batch import DONE, _batch, _context, _sent
 
 MCP_BUILDERS = {f"mcp_playwright-official_{name}": build for name, build in DECODERS.items()}
+GUARD = resources.files("openjiuwen.harness.tools.browser_move.surfaces.browser.probes").joinpath("clipboard_guard.js")
 BROWSER_BUILDERS = {spec.name: spec.build for spec in BROWSER_TOOL_SPECS if spec.build is not None}
 DIALECTS = [
     pytest.param(MCP_BUILDERS, "mcp_playwright-official_", id="playwright_mcp"),
@@ -71,6 +75,29 @@ def test_other_page_scripts_pass(code: str) -> None:
 
 def test_the_denial_tells_the_model_to_read_the_value_from_the_page() -> None:
     assert "clipboard" in CLIPBOARD_DENIED and "Read the value from the page instead" in CLIPBOARD_DENIED
+
+
+def test_the_clipboard_guard_script_is_shipped_with_the_policy_message() -> None:
+    assert GUARD.is_file()
+    text = GUARD.read_text(encoding="utf-8")
+    assert "the clipboard belongs to the host machine" in text and "Read the value from the page instead" in text
+
+
+def test_the_guard_rejects_an_aliased_read_and_refuses_the_paste_command_in_the_page() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    script = (
+        "globalThis.navigator = { clipboard: { readText: () => Promise.resolve('secret') } };\n"
+        "globalThis.document = { execCommand: (command) => command };\n"
+        + GUARD.read_text(encoding="utf-8")
+        + "\nconst c = navigator.clipboard;\n"
+        "const report = (value) => console.log(JSON.stringify(value));\n"
+        "c.readText().then(() => report({ read: 'answered' }), (error) => report("
+        "{ read: error.message, paste: document.execCommand('paste'), copy: document.execCommand('copy') }));"
+    )
+    completed = subprocess.run([node, "-e", script], check=True, text=True, capture_output=True)
+    assert json.loads(completed.stdout) == {"read": CLIPBOARD_DENIED, "paste": False, "copy": "copy"}
 
 
 def _rail_verdict(

@@ -243,6 +243,31 @@ EXPECTED_ACTIONS = {
 }
 
 
+def test_start_installs_the_clipboard_guard_as_the_server_init_script(tmp_path: Path) -> None:
+    import mcp.client.stdio
+
+    seen: list[Any] = []
+
+    @contextlib.asynccontextmanager
+    async def record(params: Any, *args: Any, **kwargs: Any):
+        del args, kwargs
+        seen.append(params)
+        yield None, None
+
+    async def scenario() -> None:
+        driver = PlaywrightMcpDriver(_config(tmp_path))
+        await driver.start()
+        await driver.stop()
+
+    with _mcp({}), patch.object(mcp.client.stdio, "stdio_client", record):
+        asyncio.run(scenario())
+
+    [params] = seen
+    assert params.args[:4] == ["-y", "@playwright/mcp@0.0.78", "--caps=vision,pdf", "--init-script"]
+    guard = Path(params.args[4])
+    assert guard.name == "clipboard_guard.js" and "clipboard belongs to the host machine" in guard.read_text("utf-8")
+
+
 def test_info_actions_are_pinned() -> None:
     actions = PlaywrightMcpDriver().info.actions
     assert {command: set(refs) for command, refs in actions.items()} == EXPECTED_ACTIONS

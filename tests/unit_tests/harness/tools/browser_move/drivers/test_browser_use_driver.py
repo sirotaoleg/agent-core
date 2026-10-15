@@ -848,7 +848,10 @@ def test_factory_connects_to_the_device_endpoint(monkeypatch):
     driver = create_browser_use_driver(device, None)
     asyncio.run(driver.start())
     transport.start.assert_awaited_once_with(timeout_s=30.0)
-    assert transport.request.call_args.args == ("connect", {"cdp_url": "http://127.0.0.1:9333", "timeout_s": 30.0})
+    assert transport.request.call_args.args == (
+        "connect",
+        {"cdp_url": "http://127.0.0.1:9333", "timeout_s": 30.0, "init_script": driver_module._clipboard_guard()},
+    )
     assert driver.info.versions == {"browser": "Chrome/140", "protocol": "1.3", "browser_use": "0.13.10"}
 
 
@@ -856,7 +859,17 @@ def test_start_with_an_explicit_config_overrides_the_factory_config(monkeypatch)
     transport = _patched_transport(monkeypatch, connect_reply=dict(CONNECT_REPLY))
     driver = BrowserUseDriver(BrowserUseConfig(cdp_url="http://a"))
     asyncio.run(driver.start(BrowserUseConfig(cdp_url="http://b", timeout_s=5.0)))
-    assert transport.request.call_args.args == ("connect", {"cdp_url": "http://b", "timeout_s": 5.0})
+    assert transport.request.call_args.args == (
+        "connect",
+        {"cdp_url": "http://b", "timeout_s": 5.0, "init_script": driver_module._clipboard_guard()},
+    )
+
+
+def test_start_hands_the_clipboard_guard_to_the_sidecar(monkeypatch):
+    transport = _patched_transport(monkeypatch, connect_reply=dict(CONNECT_REPLY))
+    asyncio.run(BrowserUseDriver(BrowserUseConfig(cdp_url="http://a")).start())
+    script = transport.request.call_args.args[1]["init_script"]
+    assert "the clipboard belongs to the host machine" in script and "addScriptToEvaluateOnNewDocument" not in script
 
 
 def test_start_without_config_is_refused():

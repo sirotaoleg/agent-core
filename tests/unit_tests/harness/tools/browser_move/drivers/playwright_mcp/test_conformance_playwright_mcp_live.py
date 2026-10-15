@@ -22,6 +22,7 @@ from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import _candidate_chrome_binaries
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene import browser_scene
+from tests.unit_tests.harness.tools.browser_move.drivers.browser_scene_extras import BrowserSceneExtras
 from tests.unit_tests.harness.tools.browser_move.drivers.test_conformance_browser_use_live import (  # noqa: F401
     chrome_device,
 )
@@ -58,7 +59,7 @@ def mcp_settings() -> Iterator[BrowserSettings]:
 
 @pytest.mark.live
 @pytest.mark.skipif(_skip_reason() is not None, reason=_skip_reason() or "")
-class TestPlaywrightMcpConformance(DriverConformance):
+class TestPlaywrightMcpConformance(DriverConformance, BrowserSceneExtras):
     scene = browser_scene()
     driver_actions = PlaywrightMcpDriver.handled_actions()
 

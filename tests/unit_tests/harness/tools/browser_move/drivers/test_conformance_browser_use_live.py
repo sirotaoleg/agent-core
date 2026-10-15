@@ -28,6 +28,7 @@ from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import _candidate_chrome_binaries
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene import browser_scene
+from tests.unit_tests.harness.tools.browser_move.drivers.browser_scene_extras import BrowserSceneExtras
 
 pytest_plugins = ["openjiuwen.harness.tools.browser_move.contract.testing.conformance"]
 
@@ -112,7 +113,7 @@ def chrome_device() -> Iterator[ProvisionedDevice]:
 
 @pytest.mark.live
 @pytest.mark.skipif(_skip_reason() is not None, reason=_skip_reason() or "")
-class TestBrowserUseConformance(DriverConformance):
+class TestBrowserUseConformance(DriverConformance, BrowserSceneExtras):
     scene = browser_scene()
     driver_actions = BrowserUseDriver.handled_actions()
 
