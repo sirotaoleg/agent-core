@@ -9,11 +9,11 @@ from unittest.mock import AsyncMock
 
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails
-from openjiuwen.harness.tools.browser_move.runtime.runtime_tools import (
+from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.tools import (
     BrowserCustomActionTool,
     BrowserListActionsTool,
 )
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 
 
 def _run(coro):

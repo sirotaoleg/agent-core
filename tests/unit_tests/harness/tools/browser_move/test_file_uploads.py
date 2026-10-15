@@ -9,10 +9,13 @@ import asyncio
 import tempfile
 from pathlib import Path
 
-from openjiuwen.harness.tools.browser_move.runtime.controllers.action import ActionController, register_builtin_actions
 from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers.custom import (
     _list_dir_files,
     register_custom_action_specs,
+)
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.actions import (
+    ActionController,
+    register_builtin_actions,
 )
 
 

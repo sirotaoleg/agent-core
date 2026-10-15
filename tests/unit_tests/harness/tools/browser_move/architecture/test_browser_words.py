@@ -15,10 +15,8 @@ BROWSER_WORD_RE = re.compile(r"\b(?:browser|page|tab|url)\b", re.IGNORECASE)
 KNOWN_BROWSER_WORDS: dict[str, int] = {
     "runtime/agents.py": 1,
     "runtime/config.py": 3,
-    "runtime/controllers/action.py": 4,
     "runtime/rails/final_answer_recovery.py": 1,
     "runtime/rails/repeated_call_guard.py": 4,
-    "runtime/runtime_tools.py": 3,
     "runtime/service.py": 1,
     "runtime/session.py": 25,
     "runtime/worker.py": 48,

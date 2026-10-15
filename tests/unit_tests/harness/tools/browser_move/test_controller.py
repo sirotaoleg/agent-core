@@ -10,8 +10,8 @@ from typing import Any
 
 import pytest
 
-from openjiuwen.harness.tools.browser_move.runtime import controller
 from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import register_custom_action_specs
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner import actions as controller
 
 
 @pytest.fixture(autouse=True)

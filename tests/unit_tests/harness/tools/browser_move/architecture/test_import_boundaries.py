@@ -17,7 +17,10 @@ REGISTRY_IMPORTERS: dict[str, frozenset[str]] = {
     "surfaces": frozenset({"runtime/assembly.py", "runtime/config.py"}),
 }
 
-KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {}
+KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {
+    ("runtime/session.py", "surfaces.browser.runner.actions"): 2,
+    ("runtime/session.py", "surfaces.browser.runner.tools"): 2,
+}
 
 KNOWN_CORE_DETOURS_INTO_CONCRETE_MODULES: dict[tuple[str, str], int] = {
     ("runtime/topology.py", "openjiuwen.harness.subagents.browser_agent"): 1,

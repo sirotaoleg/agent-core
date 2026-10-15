@@ -17,7 +17,6 @@ __all__ = [
     "SRC_ROOT",
     "build_browser_runtime_mcp_config",
     "browser_tools",
-    "controller",
     "reset_active_browser_runtimes",
     "reset_managed_browser_runtime",
     "service",
@@ -25,8 +24,6 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
-    if name == "controller":
-        return import_module("openjiuwen.harness.tools.browser_move.runtime.controllers")
     if name == "browser_tools":
         return import_module("openjiuwen.harness.tools.browser_move.runtime.browser_tools")
     if name == "service":

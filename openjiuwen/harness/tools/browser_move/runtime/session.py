@@ -21,6 +21,7 @@ from openjiuwen.core.runner import Runner
 from openjiuwen.core.single_agent.rail.base import AgentRail
 
 from ..contract import Action, DriverError, Effect, Health, Observe, SurfaceBundle
+from ..surfaces.browser.runner.actions import ActionController, BaseController
 from .assembly import AgentParts, assemble_surface, build_agent_parts, core_rails
 from .browser_logging import write_browser_agent_audit_artifact
 from .config import (
@@ -31,7 +32,6 @@ from .config import (
     browser_surface_settings,
     process_environ,
 )
-from .controllers import ActionController, BaseController
 from .driver_session import DriverSession
 from .page_state import PageState, Target
 from .service import BrowserService
@@ -296,7 +296,7 @@ class BrowserAgentRuntime:
         """The two custom-action tools in ``Runner.resource_mgr``, once."""
         if self._browser_custom_action_tool is not None:
             return
-        from .runtime_tools import BrowserCustomActionTool, BrowserListActionsTool
+        from ..surfaces.browser.runner.tools import BrowserCustomActionTool, BrowserListActionsTool
 
         self._browser_custom_action_tool = BrowserCustomActionTool(self)
         self._browser_list_actions_tool = BrowserListActionsTool(self)

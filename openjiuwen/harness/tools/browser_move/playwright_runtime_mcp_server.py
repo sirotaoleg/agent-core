@@ -24,7 +24,8 @@ from openjiuwen.harness.tools.browser_move.runtime.config import (
     process_environ,
     runtime_server_environ,
 )
-from openjiuwen.harness.tools.browser_move.runtime.controllers.action import (
+from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import register_custom_action_specs
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.actions import (
     bind_runtime,
     clear_runtime_runner,
     get_default_controller,
@@ -32,7 +33,6 @@ from openjiuwen.harness.tools.browser_move.runtime.controllers.action import (
     register_builtin_actions,
     run_action,
 )
-from openjiuwen.harness.tools.browser_move.surfaces.browser.helpers import register_custom_action_specs
 
 if TYPE_CHECKING:
     from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
@@ -210,7 +210,7 @@ async def browser_clear_cancel(
         "Or use coord_source_x+coord_source_y+coord_target_x+coord_target_y. "
         "Aliases source/target and source_x/source_y/target_x/target_y are accepted. "
         "Use list_upload_files to discover files available at BROWSER_UPLOAD_ROOT before uploading. "
-        "Register your own via runtime.controllers.action.register_action."
+        "Register your own via surfaces.browser.runner.actions.register_action."
     ),
 )
 async def browser_custom_action(

@@ -21,10 +21,10 @@ from openjiuwen.harness.tools.browser_move.contract import (
     Ref,
     RunScript,
 )
-from openjiuwen.harness.tools.browser_move.runtime.controllers.action import ActionController
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import ToolContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate, UploadFile
 from openjiuwen.harness.tools.browser_move.surfaces.browser.policy import policy_denial, policy_rules
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.actions import ActionController
 
 _MARK = "data-openjiuwen-target-id"
 _ALIASES = "Aliases source/target and source_x/source_y/target_x/target_y are also supported."

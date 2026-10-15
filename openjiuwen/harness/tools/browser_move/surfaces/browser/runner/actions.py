@@ -1,6 +1,6 @@
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Custom action controller of the runtime server."""
+"""The custom-action controller: the base contract, the instance registry and the module-level default."""
 
 from __future__ import annotations
 
@@ -9,11 +9,68 @@ import contextlib
 import contextvars
 import copy
 import inspect
+from abc import ABC, abstractmethod
 from typing import Any, Awaitable, Callable, Protocol
 
 from openjiuwen.core.common.logging import logger
 
-from .base import BaseController
+
+class BaseController(ABC):
+    """Abstract contract for controller implementations."""
+
+    @abstractmethod
+    def bind_runtime(self, runtime: Any) -> None:
+        """Bind a runtime object used by runtime-backed actions."""
+
+    @abstractmethod
+    def bind_runtime_runner(self, runner: Any | None) -> None:
+        """Bind a runtime runner callable."""
+
+    @abstractmethod
+    def clear_runtime_runner(self) -> None:
+        """Clear any currently bound runtime runner."""
+
+    @abstractmethod
+    def bind_code_executor(self, executor: Any | None) -> None:
+        """Bind ``async (js_code: str) -> Any`` for custom actions that run prebuilt scripts."""
+
+    @abstractmethod
+    def clear_code_executor(self) -> None:
+        """Clear the bound code executor."""
+
+    @abstractmethod
+    def register_action(self, name: str, handler: Any, *, overwrite: bool = True) -> None:
+        """Register an action handler."""
+
+    @abstractmethod
+    def register_action_spec(
+        self,
+        name: str,
+        *,
+        summary: str = "",
+        when_to_use: str = "",
+        params: dict[str, str] | None = None,
+    ) -> None:
+        """Register metadata for an action."""
+
+    @abstractmethod
+    def list_actions(self) -> list[str]:
+        """List registered action names."""
+
+    @abstractmethod
+    def describe_actions(self) -> dict[str, dict[str, Any]]:
+        """Return metadata for registered actions."""
+
+    @abstractmethod
+    async def run_action(
+        self,
+        action: str,
+        session_id: str = "",
+        request_id: str = "",
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Execute a registered action."""
+
 
 ActionResult = dict[str, Any]
 ActionHandler = Callable[..., Awaitable[Any] | Any]
