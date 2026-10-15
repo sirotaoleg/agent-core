@@ -330,8 +330,6 @@ class BrowserUseDriver(HandlerDriver):
     async def _type_text(self, action: TypeText) -> ActionResult:
         if action.target is None:
             raise Unsupported("BrowserUseDriver types only into a target element", dispatched=False)
-        if action.slowly:
-            raise Unsupported("BrowserUseDriver cannot type slowly", dispatched=False)
         data = await self._request(
             "type_text",
             {
@@ -340,6 +338,7 @@ class BrowserUseDriver(HandlerDriver):
                 "clear": action.clear,
                 "press_enter": action.submit,
                 "sensitive": action.sensitive,
+                "slowly": action.slowly,
             },
         )
         return self._act_result(data)

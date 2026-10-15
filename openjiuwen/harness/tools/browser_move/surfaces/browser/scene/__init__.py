@@ -507,6 +507,18 @@ def paste_command_case(actions: Actions) -> SceneCase | str:
     )
 
 
+def slow_typing_case(actions: Actions) -> SceneCase | str:
+    """``TypeText(slowly=True)`` into the empty name field leaves the value plain typing leaves."""
+    kind = _kind_for(actions, TypeText, _ELEMENT_KINDS)
+    if isinstance(kind, str):
+        return kind
+
+    def step(seen: Sequence[Observation]) -> Action:
+        return TypeText(target=_ref(seen[-1], NAME, kind), text="Ada", slowly=True)
+
+    return SceneCase(steps=(step,), check=_title_is("form:3:false"))
+
+
 def browser_scene() -> Scene:
     """A new, not yet started browser scene for the conformance suite (pages on ``127.0.0.1``, no network)."""
     scene = _BrowserScene()
@@ -530,4 +542,5 @@ __all__ = [
     "browser_scene",
     "clipboard_read_case",
     "paste_command_case",
+    "slow_typing_case",
 ]

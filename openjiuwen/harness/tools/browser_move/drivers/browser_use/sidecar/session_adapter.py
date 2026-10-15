@@ -101,6 +101,7 @@ def _normalize_upload_paths(paths: list[str]) -> tuple[list[str], str | None]:
 _DRIVER_REF_HANDLE_PREFIX = "bnid:"
 _RESUME_TIMEOUT_S = 1.0
 _NAVIGATION_COMMIT_WAIT_S = 1.0
+_SLOW_TYPING_DELAY_S = 0.03
 
 
 def _mint_driver_ref(backend_node_id: int, driver_generation: int) -> dict[str, Any]:
@@ -371,6 +372,7 @@ class SessionAdapter:
         clear: bool = True,
         press_enter: bool = False,
         sensitive: bool = False,
+        slowly: bool = False,
     ) -> dict[str, Any]:
         async def body(act: _Act) -> tuple[bool, str]:
             backend_node_id = await self._resolve_ref_to_backend_node_id(ref)
@@ -388,7 +390,12 @@ class SessionAdapter:
                     "function(){ if ('value' in this) { this.value = ''; } else { this.textContent = ''; } "
                     "this.dispatchEvent(new Event('input', {bubbles: true})); }",
                 )
-            await cdp.insert_text(cdp_session.cdp_client, cdp_session.session_id, text)
+            if slowly:
+                for character in text:
+                    await cdp.insert_text(cdp_session.cdp_client, cdp_session.session_id, character)
+                    await asyncio.sleep(_SLOW_TYPING_DELAY_S)
+            else:
+                await cdp.insert_text(cdp_session.cdp_client, cdp_session.session_id, text)
             if press_enter:
                 await cdp.dispatch_key_press(cdp_session.cdp_client, cdp_session.session_id, "Enter")
             return True, "typed" if not sensitive else "typed (sensitive)"
