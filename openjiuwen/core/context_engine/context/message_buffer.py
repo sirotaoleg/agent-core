@@ -144,17 +144,25 @@ class OffloadMessageBuffer:
         return []
 
     def _filesystem_reload_paths(self, offload_handle: str) -> List[str]:
-        """Return candidate filesystem paths for an offload handle."""
+        """Return candidate filesystem paths for an offload handle; the folder of the literal id comes last."""
         if not (self._workspace_dir and self._session_id):
             return [offload_handle]
 
-        session_dir = ContextUtils.offload_session_dir_name(self._session_id)
-        offload_dir = os.path.join(self._workspace_dir, "context", session_dir + "_context", "offload")
-        exact_path = os.path.join(offload_dir, offload_handle + ".json")
-        paths = [exact_path]
-        prefixed_paths = sorted(glob.glob(os.path.join(offload_dir, f"*_{offload_handle}.json")))
-        paths.extend(path for path in prefixed_paths if path not in paths)
+        paths: List[str] = []
+        for session_dir in self._offload_session_dirs():
+            offload_dir = os.path.join(self._workspace_dir, "context", session_dir + "_context", "offload")
+            paths.append(os.path.join(offload_dir, offload_handle + ".json"))
+            prefixed_paths = sorted(glob.glob(os.path.join(glob.escape(offload_dir), f"*_{offload_handle}.json")))
+            paths.extend(path for path in prefixed_paths if path not in paths)
         return paths
+
+    def _offload_session_dirs(self) -> List[str]:
+        session_dir = ContextUtils.offload_session_dir_name(self._session_id)
+        legacy = self._session_id
+        if legacy == session_dir or "/" in legacy or "\\" in legacy or legacy in {".", ".."}:
+            return [session_dir]
+        # Sessions stored before ids were made path-safe sit under the literal id (Linux and macOS).
+        return [session_dir, legacy]
 
     def clear(
             self,
