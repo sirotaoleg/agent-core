@@ -28,12 +28,16 @@ from openjiuwen.harness.tools.browser_move.runtime.config import RunGuardrails
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
     CORE_BROWSER_TOOL_NAMES,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.working_context import (
     BrowserWorkingContextRail,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.agent import main_agent
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import RuntimeSettings
+
+_AGENT_MODULE = "openjiuwen.harness.tools.browser_move.surfaces.browser.runner.agent"
 
 
 def _fake_model() -> MagicMock:
@@ -77,7 +81,7 @@ def _patch_all(fake_create, *, runtime_mock=None):
         mock_runtime_cls.return_value = runtime_mock
     stack.enter_context(
         patch(
-            "openjiuwen.harness.subagents.browser_agent.create_deep_agent",
+            "openjiuwen.harness.tools.browser_move.surfaces.browser.runner.agent.create_deep_agent",
             side_effect=fake_create,
         )
     )
@@ -562,10 +566,33 @@ def test_a_given_runtime_is_used_instead_of_a_new_facade() -> None:
     given = MagicMock(spec=BrowserAgentRuntime)
     with (
         patch("openjiuwen.harness.subagents.browser_agent.BrowserAgentRuntime") as runtime_cls,
-        patch("openjiuwen.harness.subagents.browser_agent.create_deep_agent", side_effect=fake_create),
+        patch(
+            "openjiuwen.harness.tools.browser_move.surfaces.browser.runner.agent.create_deep_agent",
+            side_effect=fake_create,
+        ),
     ):
         create_browser_agent(_fake_model(), runtime=given)
 
     runtime_cls.assert_not_called()
     rails = [rail for rail in calls[0]["rails"] if isinstance(rail, BrowserRuntimeRail)]
     assert len(rails) == 1 and rails[0]._runtime is given
+
+
+def test_the_browser_profile_builds_its_main_agent_through_the_hook() -> None:
+    calls, fake_create = _capture_create_deep_agent()
+    runtime = MagicMock(spec=BrowserAgentRuntime)
+    runtime.core_rails.return_value = ()
+    runtime.core.worker_temperature = 0.3
+
+    assert create_browser_surface({}).profile.main_agent is main_agent
+    with patch(f"{_AGENT_MODULE}.create_deep_agent", side_effect=fake_create):
+        agent = main_agent(
+            runtime, _fake_model(), language="en", max_iterations=7, workspace=None, capabilities=("core",)
+        )
+
+    assert calls[0]["max_iterations"] == 7 and calls[0]["language"] == "en"
+    assert calls[0]["model"].model_config.temperature == 0.3
+    assert any(isinstance(rail, BrowserRuntimeRail) and rail._runtime is runtime for rail in calls[0]["rails"])
+    agent.register_task_resource_cleanup.assert_called_once_with(
+        runtime.release_task_resources, prepare=runtime.acquire_task_resources
+    )

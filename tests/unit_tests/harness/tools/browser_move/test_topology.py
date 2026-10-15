@@ -20,7 +20,6 @@ from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext
 from openjiuwen.harness import deep_agent as deep_agent_module
 from openjiuwen.harness.rails.context_engineer import ContextProcessorRail
-from openjiuwen.harness.subagents import browser_agent as browser_agent_module
 from openjiuwen.harness.subagents.browser_agent import DEFAULT_BROWSER_AGENT_SYSTEM_PROMPT
 from openjiuwen.harness.tools.browser_move.contract import ConnectionLost
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
@@ -41,6 +40,7 @@ from openjiuwen.harness.tools.browser_move.runtime.topology import (
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails import runtime_rail as rail_module
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner import agent as agent_module
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner import facade as facade_module
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import BrowserInstanceConfig
@@ -121,7 +121,7 @@ def test_a_registered_default_that_no_strategy_implements_is_refused() -> None:
 
 def test_the_instances_driver_override_decides_the_default() -> None:
     runtime = _runtime(MCP, instance=BrowserInstanceConfig(driver="browser_use"))
-    with patch.object(browser_agent_module, "create_browser_agent", return_value=MagicMock()) as create:
+    with patch.object(agent_module, "build_main_agent", return_value=MagicMock()) as create:
         run(runtime.ensure_started())
 
     create.assert_called_once()
@@ -140,7 +140,7 @@ class TestDirect:
             "progress_state": {"status": "completed", "completed_steps": ["read the heading"]},
         }
         with (
-            patch.object(browser_agent_module, "create_browser_agent", return_value=agent) as create,
+            patch.object(agent_module, "build_main_agent", return_value=agent) as create,
             patch.object(topology_module.Runner, "run_agent", AsyncMock(return_value=result)) as run_agent,
             _assembling() as assemble,
         ):
@@ -152,10 +152,10 @@ class TestDirect:
         assert runtime.service.agent is None
         create.assert_called_once()
         kwargs = create.call_args.kwargs
-        assert kwargs["runtime"] is runtime
-        assert (kwargs["language"], kwargs["max_iterations"], kwargs["browser_capabilities"]) == ("en", 7, ["core"])
+        assert create.call_args.args[0] is runtime
+        assert (kwargs["language"], kwargs["max_iterations"], kwargs["workspace"]) == ("en", 7, None)
         assert kwargs["temperature"] == 0.3
-        model = create.call_args.args[0]
+        model = create.call_args.args[1]
         assert (model.model_client_config.api_key, model.model_config.model_name) == ("test-key", "test-model")
         assert (model.model_config.temperature, model.model_config.top_p) == (0.3, 0.9)
         assert run_agent.await_args.args[0] is agent
@@ -189,7 +189,7 @@ class TestDirect:
 
         with (
             patch.object(topology_module, "probe_image_support", side_effect=probe),
-            patch.object(browser_agent_module, "create_browser_agent", return_value=MagicMock()),
+            patch.object(agent_module, "build_main_agent", return_value=MagicMock()),
             patch.object(topology_module.Runner, "run_agent", side_effect=run_agent),
         ):
             run(runtime.ensure_started())
@@ -207,7 +207,7 @@ class TestDirect:
             built.append(kwargs)
             return MagicMock()
 
-        with patch.object(browser_agent_module, "create_deep_agent", side_effect=capture), _assembling() as assemble:
+        with patch.object(agent_module, "create_deep_agent", side_effect=capture), _assembling() as assemble:
             run(runtime.ensure_started())
 
         (agent,) = built
@@ -221,6 +221,34 @@ class TestDirect:
         policy = agent["rails"][1]
         assert policy._builders is runtime.builders and dict(policy._builders) == {}
         assert policy._page_state is runtime.page_state
+
+    def test_a_profile_without_a_main_agent_gets_one_from_the_parts_after_the_probe(self) -> None:
+        runtime = _runtime(BROWSER_USE)
+        profile = dataclasses.replace(runtime.surface.profile, main_agent=None)
+        runtime._surface = dataclasses.replace(runtime.surface, profile=profile)
+        agent = MagicMock()
+        with (
+            _assembling(mcp_fake_driver(results=[METADATA])) as assemble,
+            patch.object(topology_module, "probe_image_support", AsyncMock(return_value=True)),
+            patch.object(topology_module, "agent_over", return_value=agent) as build,
+            patch.object(topology_module.Runner, "run_agent", AsyncMock(return_value={"output": "done"})) as run_agent,
+        ):
+            run(runtime.ensure_started())
+            assert (assemble.await_count, build.call_count) == (1, 0)
+            answer = run(runtime.run_browser_task(task="Open it", session_id="s"))
+
+        parts, rails, model = build.call_args.args
+        assert HELPERS <= {tool.card.name for tool in parts.tools}
+        assert [type(rail) for rail in rails] == [ActionPolicy, RepeatedCallGuardRail, InterceptedActionHintRail]
+        assert model.model_config.model_name == "test-model"
+        assert build.call_args.kwargs == {
+            "language": WORKER_LANGUAGE,
+            "workspace": None,
+            "max_iterations": 7,
+            "enable_read_image_multimodal": True,
+        }
+        assert run_agent.await_args.args[0] is agent
+        assert (answer["ok"], answer["final"]) == (True, "done")
 
     def test_the_policy_built_before_the_session_sees_the_tools_built_after_it(self) -> None:
         runtime = _runtime(BROWSER_USE)
@@ -236,7 +264,7 @@ class TestDirect:
 
     def test_the_agent_runs_outside_the_browser_log_context_like_the_worker(self) -> None:
         direct = _runtime(BROWSER_USE)
-        with patch.object(browser_agent_module, "create_browser_agent", return_value=MagicMock()):
+        with patch.object(agent_module, "build_main_agent", return_value=MagicMock()):
             run(direct.ensure_started())
 
         async def invoked(runtime: BrowserAgentRuntime) -> tuple[bool, bool]:
@@ -271,7 +299,7 @@ class TestDirect:
     def test_a_failed_or_timed_out_run_is_reported_in_the_answer(self) -> None:
         runtime = _runtime(BROWSER_USE)
         with (
-            patch.object(browser_agent_module, "create_browser_agent", return_value=MagicMock()),
+            patch.object(agent_module, "build_main_agent", return_value=MagicMock()),
             patch.object(topology_module.Runner, "run_agent", AsyncMock(side_effect=RuntimeError("model gone"))),
         ):
             failed = run(runtime.run_browser_task(task="Report the heading", session_id="s", request_id="r"))
@@ -280,7 +308,7 @@ class TestDirect:
             await asyncio.sleep(10)
 
         with (
-            patch.object(browser_agent_module, "create_browser_agent", return_value=MagicMock()),
+            patch.object(agent_module, "build_main_agent", return_value=MagicMock()),
             patch.object(topology_module.Runner, "run_agent", AsyncMock(side_effect=slow)),
         ):
             timed_out = run(runtime.run_browser_task(task="Report the heading", session_id="s", timeout_s=1))
@@ -291,7 +319,7 @@ class TestDirect:
     def test_shutdown_drops_the_agent_so_the_next_start_builds_a_new_one(self) -> None:
         runtime = _runtime(BROWSER_USE)
         with (
-            patch.object(browser_agent_module, "create_browser_agent", return_value=MagicMock()) as create,
+            patch.object(agent_module, "build_main_agent", return_value=MagicMock()) as create,
             patch.object(runtime_module.OpenAIModelClient, "aclose", AsyncMock()),
         ):
             run(runtime.ensure_started())

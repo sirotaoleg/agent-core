@@ -19,9 +19,7 @@ REGISTRY_IMPORTERS: dict[str, frozenset[str]] = {
 
 KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {}
 
-KNOWN_CORE_DETOURS_INTO_CONCRETE_MODULES: dict[tuple[str, str], int] = {
-    ("runtime/topology.py", "openjiuwen.harness.subagents.browser_agent"): 1,
-}
+KNOWN_CORE_DETOURS_INTO_CONCRETE_MODULES: dict[tuple[str, str], int] = {}
 
 KNOWN_CORE_TO_HARNESS_IMPORTS: dict[tuple[str, str], int] = {
     ("context_engine/context/session_memory_manager.py", "openjiuwen.harness.tools.filesystem"): 2,
