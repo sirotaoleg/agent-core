@@ -4985,3 +4985,46 @@ The test `test_default_chrome_user_data_dir_uses_the_given_local_app_data` (`tes
 The test now skips outside Windows (`platform.system() != "Windows"`, the file's existing pattern) and no longer
 patches `os.name`: the helper reads the real `os.name`, so the simulation added nothing on Windows and broke
 elsewhere. Rejected: rewriting with `PureWindowsPath`, which would test a path join the helper does not make.
+
+## Review 1: the clipboard rule enforced in the page
+
+`_CLIPBOARD_READ` is a regex over the script text. `() => { const c = navigator.clipboard; return c.readText(); }`
+passes it and read the host clipboard.
+
+Decisions:
+1. **Enforce in the page, keep the regex as early feedback.** `probes/clipboard_guard.js` runs in every document
+   before the page's scripts: `Clipboard.prototype.read` / `readText` (and `navigator.clipboard`'s own) become
+   functions that reject with the `CLIPBOARD_DENIED` text, `execCommand("paste")` returns `false`, on
+   `Document.prototype` and the document. The properties are frozen (`configurable: false`), so neither the page
+   nor a model script restores them. The regex stays: a denied call costs no round trip and the model gets the
+   reason before anything runs.
+2. **Playwright MCP installs it through `--init-script`.** `npx -y @playwright/mcp@0.0.78 --help` lists
+   `--init-script <path...>` ("path to JavaScript file to add as an initialization script. The script will be
+   evaluated in every page before any of the page's scripts"). The driver appends the argument when it starts a
+   stdio server; the kept config is unchanged. A `streamable-http` server is remote and gets none.
+3. **browser-use installs it in the sidecar.** The driver reads the resource and sends it as `init_script` of the
+   `connect` request; the sidecar calls `Page.addScriptToEvaluateOnNewDocument` on every CDP session it obtains and
+   evaluates the script once on the document already open, because that document loaded before the registration.
+   One install per session id.
+4. **A resource read, not an import.** Both drivers name the probes package as a string to
+   `importlib.resources.files`; the dependency rule of S_20 is unchanged and the architecture test sees no import.
+   `pyproject.toml` already ships `probes/*.js`.
+
+Rejected options:
+- Widening the regex (aliases, bracket access, `Reflect.get`): a text rule never covers a language; the page is the
+  only place the rule can hold.
+- `--grant-permissions` tuning or a clipboard permission denial: Chrome's permission is per origin and the managed
+  profile may already hold grants; a permission also does not cover `execCommand("paste")`.
+- Installing the guard from the policy rail with a `RunScript` after every navigation: a page's own scripts run
+  first, and a document the rail never sees (a popup) is unguarded.
+
+Known leftover: on Playwright MCP a document already open when the server attaches over CDP (before the first
+`Navigate`) runs no init script; the agent's first command is a navigation, and the sidecar path covers this case
+by evaluating the script on attach.
+
+Verification: the resource is shipped and carries the policy message; with `node` the guard rejects the aliased
+read with exactly `CLIPBOARD_DENIED`, answers `false` to `paste` and leaves `copy` alone; the Playwright MCP driver
+starts its server with `--init-script <path of clipboard_guard.js>` (the stdio client's parameters recorded); the
+browser-use driver's `connect` carries the script text; the sidecar installs it once per session and evaluates it
+on the current document, nothing without a script. Live: `clipboard_read_case` and `paste_command_case` on both
+drivers (see the live run at the end of this document's review sections).

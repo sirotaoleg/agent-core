@@ -79,6 +79,12 @@ every rule with an allowlist that may only shrink:
   facade `surfaces/browser/runner/settings.py`, whose public `playwright_mcp_config` /
   `build_playwright_mcp_config` / `RuntimeSettings.mcp_cfg` call the driver's config builder (the architecture
   rules treat that module as a config module: it reads the process environment for the facades).
+  (it wraps the built driver with the middleware) and, inside function bodies only, `runtime/config.py`, whose
+  public `playwright_mcp_config` / `build_playwright_mcp_config` / `RuntimeSettings.mcp_cfg` call the driver's
+  config builder.
+- A driver reads the browser surface's `probes/clipboard_guard.js` as a package resource
+  (`importlib.resources.files(<package name as a string>)`): a resource read, not an import, so the driver rule
+  above stands and the architecture test sees no import. No driver imports `probes`.
 - The core does not reach a concrete driver, surface or provisioner through a module outside the package either:
   a core import of an `openjiuwen` module that itself imports one of them is a finding; the allowlist is empty
   (the main agent reaches the core through the profile's `main_agent` hook).
@@ -401,6 +407,10 @@ scaled to the screenshot. An `IndexRef` cannot be built (skipped).
   `Locator`; needs `RunScript`.
 - Timeout: `Wait(until_text=<a text on no scene page>, seconds=2.0)`; needs `Wait`.
 - Sensitive: `form-field`, a `FillForm` that fills the "Full name" textbox with the secret, `sensitive=True`.
+- Beyond the `Scene` fields, the module exports case builders the two live suites run through the suite's session
+  helpers: `clipboard_read_case` (a `RunScript` of `CLIPBOARD_ALIAS_SCRIPT`, `const c = navigator.clipboard;
+  c.readText()`, which the driver must report as an error carrying the `CLIPBOARD_DENIED` text) and
+  `paste_command_case` (a `RunScript` of `document.execCommand('paste')` whose value must be `False`).
 - Context changes: `navigate`, `same-url-reload` (`Navigate` to the current address), `link-click`, `open-tab`,
   `popup-click` (`window.open`), `switch-tab`, `close-tab`, `dialog` (a `confirm()`; its check wants
   `BrowserContext.dialog == "confirm: Proceed?"` in the click's result and in an `observe()` while the dialog is
@@ -1152,6 +1162,15 @@ reads the clipboard (`clipboard.read`/`readText`, dotted or bracketed, or `execC
 reason is `CLIPBOARD_DENIED`, which tells the model to read the value from the page and type it. `TypeText` has no
 rule: both drivers insert its text literally.
 
+The script rule is a text match and is early feedback only; the page enforces the same rule. The resource
+`surfaces/browser/probes/clipboard_guard.js` runs in every document before the page's own scripts: it replaces
+`Clipboard.prototype.read` / `readText` (and the instance's, when `navigator.clipboard` exists) with functions that
+return a promise rejected with the `CLIPBOARD_DENIED` text, and makes `Document.prototype.execCommand("paste")`
+(and the document's) return `false`; the properties are not configurable, so the page cannot restore them, and a
+second install on the same document is a no-op. Each driver installs it at `start()` (see the drivers): a script
+that reaches the clipboard through an alias (`const c = navigator.clipboard; c.readText()`) passes the regex and
+is rejected in the page, on both drivers. Shipped as package data (`probes/*.js`).
+
 `upload_rules(upload_root, workspace_root)` confine the files a page receives. One resolution rule,
 `surfaces/browser/commands.upload_paths(paths, upload_root)`, is applied by the rule and by both drivers, so the
 path the rule judges is the path the driver sends. Invariants of `upload_paths`: wrapping quotes are stripped and
@@ -1631,7 +1650,11 @@ no elements, no screenshot) instead of raising. Outside a dialog `dialog` is `No
 - Factory: `create_browser_use_driver(device, surface_settings)` builds `BrowserUseConfig(cdp_url=device.endpoint,
   sidecar_python=..., upload_root=...)`, the last two from the `BrowserSettings` (`None` settings: neither);
   `start(config=None)` spawns the sidecar with that interpreter (`None`: `.venvs/browser-use` in the repo) and
-  attaches to that CDP endpoint (an explicit config overrides). `UploadFile` and `Drop` resolve their paths with
+  attaches to that CDP endpoint (an explicit config overrides); the `connect` request carries `init_script`, the
+  text of the clipboard guard, which the sidecar installs on every CDP session it obtains (the one at connect and
+  every later one, after a tab switch or for a new target) with `Page.addScriptToEvaluateOnNewDocument`, and runs
+  once on the document open at that moment, which loaded before the registration; a session is guarded once.
+  `UploadFile` and `Drop` resolve their paths with
   `drivers/browser_use/upload_paths.resolve_upload_file_paths`, which applies `commands.upload_paths` with
   `upload_root` (a relative name is a file under the upload root, never under the process directory) and then
   reports missing or unreadable files; a `ValueError` of the rule is `ActionResult(ok=False, detail=<message>)`
@@ -1790,7 +1813,11 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   device has an endpoint, `PLAYWRIGHT_MCP_CDP_ENDPOINT` is set and `PLAYWRIGHT_MCP_BROWSER` defaults to `chrome`, as
   the old service injection did. The composition root never sees the command line.
 - `start()` owns one MCP client (`BrowserMoveStdioClient`, or `BrowserMoveStreamableHttpClient` for
-  `streamable-http`) and calls it directly, never through `ToolMgr`; it reads `tools/list` once and keeps each
+  `streamable-http`) and calls it directly, never through `ToolMgr`. A stdio server is started with
+  `--init-script <path of probes/clipboard_guard.js>` appended to the configured arguments (`@playwright/mcp`
+  evaluates the file in every page before the page's scripts); the config the driver keeps is unchanged, so
+  `DriverInfo.versions` still reads the version from it. A `streamable-http` server is not ours to start and gets
+  no guard. `start()` reads `tools/list` once and keeps each
   mapped tool's description as `DriverInfo.tool_hints`, and every listed tool that has a decoder (`tools.py`) as
   `DriverInfo.native_tools[name] = NativeTool(description, schema, build)`: the description verbatim, the schema
   as the client lists it (`inputSchema` through the stdio client's `sanitize_json_schema`, so without `$schema`);
