@@ -43,8 +43,10 @@ imports the standard library and itself; `surfaces/` imports no driver package a
 reaches the registries (`DRIVERS`, `PROVISIONERS`, `SURFACES`) from `runtime/assembly.py` only; the core imports
 no module of `drivers/<name>/`, `surfaces/<name>/` or `provisioning/`: the runtime, the service, the config and
 the agent builders read the hooks, the worker prompt and the capability catalog from the surface profile, and the
-registry is the only way from the core to a surface. The browser words left in the core are data keys and attributes (`page`, `url`), the
-surface name, identifiers and text the model reads, listed one by one in F_07.
+registry is the only way from the core to a surface. The browser words left in the core are the worker loop's
+data (the worker's JSON `page` / `url` keys, the Playwright restart and retry markers, the progress record's
+`last_page` export) and the no-op script atoms of the repeated-call guard; the allowlist names them and may only
+shrink. The default surface name is `surfaces.DEFAULT_SURFACE`, imported by the core settings.
 The browser profile store is `provisioning/profiles.py`. The old `playwright_runtime` package and the root module
 `offload_recall.py` are removed; callers import `runtime.<module>`, `surfaces.browser.<module>` or
 `provisioning.profiles`. The WebVoyager runner uses `surfaces.browser.runner.settings.build_runtime_settings`,

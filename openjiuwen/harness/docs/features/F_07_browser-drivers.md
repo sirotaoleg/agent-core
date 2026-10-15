@@ -4855,8 +4855,31 @@ with the runtime's sampling and the task cleanup. Unit suite `2575 passed, 123 s
 24 passed with `KNOWN_CORE_DETOURS_INTO_CONCRETE_MODULES` empty; the browser prompts' two Playwright MCP
 mentions are allowlisted in `surfaces/browser/runner/agent.py`; goldens unchanged.
 
+### Browser words out of the core rails
+
+The browser-word allowlist listed nine core modules. After the moves and the split seven are gone with their
+modules; the rest are renamed where a name is all there is: the recovery message asks for "the final JSON object
+required by your instructions" without listing the browser fields, the repeated-call note speaks of "the document's
+title or address" and of calls that "do not change anything", the worker loop's prompt text ("the current logical
+session", "the current state", "Recent tool activity", "Last location"), its error strings ("Worker did not return
+valid JSON output", "unknown execution error") and the generated id prefix name no browser, the worker card is
+"Worker that executes tasks using <driver> tools", and the default surface name is declared in
+`surfaces/__init__.py` (`DEFAULT_SURFACE`) and imported by `CoreSettings`. No golden pins any of these texts; the
+tests that pinned them follow.
+
+What stays, with the allowlist shrunk to it (`runtime/rails/repeated_call_guard.py: 1`, `runtime/worker.py: 37`):
+the guard's no-op script atoms (`document.title`, `document.URL`, `location.href`: browser DOM reads the guard treats
+as constants) and the worker loop's data: the worker's JSON `page` / `url` keys it reads and writes, the Playwright
+restart and retry markers ("target page, context or browser has been closed", "page crashed", …) and the progress
+record's `last_page` export. None is a name: each is browser knowledge the core applies, and moving it out needs
+either a surface-provided definition (a contract member the task did not allow) or a behaviour change (dropping
+the marker-driven retry, taking the location from the page state's identity instead of the worker's claim). Open
+question for the owner; see the task report.
+
+Verification: unit suite `2537 passed, 123 skipped` (the suite of `browser_move` and the terminal-stream test);
+architecture tests 24 passed; goldens unchanged.
+
 ### Known leftovers
 
 1. `runtime/worker.py` keeps its browser words: the worker's JSON `page` / `url` keys, the Playwright restart and
-   retry markers, the progress record's `last_page` export and the model-facing text.
-2. `runtime/config.py` names the default surface (`surface: str = "browser"`).
+   retry markers and the progress record's `last_page` export; the repeated-call guard its no-op script atoms.
