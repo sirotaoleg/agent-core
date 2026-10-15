@@ -310,3 +310,31 @@ def test_a_start_that_loses_the_connection_twice_fails() -> None:
     assert driver.kinds() == ["start", "stop", "start"]
     assert isinstance(raised.value.cause, ConnectionLost)
     assert page_state.generation_id == "g0"
+
+
+def test_lost_names_the_loss_that_ended_the_task_and_begin_task_clears_it() -> None:
+    driver = FakeDriver()
+    driver.lose_connection_on(1)
+    session, _, _ = _session(driver)
+    with pytest.raises(ConnectionLost):
+        _execute(session)
+    assert session.lost is None
+    driver.fail_next(ConnectionLost("lost again"))
+
+    with pytest.raises(BaseError):
+        _execute(session)
+
+    assert session.lost == "the device is gone"
+    session.begin_task()
+    assert session.lost is None
+
+
+def test_a_failed_restart_also_marks_the_session_lost() -> None:
+    driver = StartFailsDriver()
+    driver.lose_connection_on(1)
+    session, _, _ = _session(driver)
+
+    with pytest.raises(BaseError):
+        _execute(session)
+
+    assert session.lost == "the device is gone"

@@ -2384,3 +2384,49 @@ def test_the_inner_agents_hooks_take_image_support_from_the_outer_deep_agents_pr
     assert ("Image input is unavailable" in prompt) is not verdict
     denied = tool_ctx.inputs.tool_result
     assert (denied is not None and denied["error"]["code"] == "browser_image_input_unavailable") is not verdict
+
+
+_LOST = "the browser connection was lost again; the task cannot continue"
+
+
+def _runtime_with_a_lost_session() -> MagicMock:
+    runtime = MagicMock(spec=BrowserAgentRuntime)
+    runtime.service = MagicMock()
+    runtime.service._progress_by_session = {}
+    runtime.session = SimpleNamespace(lost=_LOST)
+    return runtime
+
+
+def test_after_invoke_marks_a_lost_connection_blocked_with_its_reason_even_over_evidence() -> None:
+    session = _FakeSession()
+    state = BrowserRuntimeRail._build_phase_state("Return the product title and price")
+    state["field_coverage"] = ["title"]
+    state["structured_evidence"] = [{"fields": ["title"], "values": {"title": "Keyboard"}}]
+    session.update_state({"__browser_phase_budget_state__": state})
+    result = {"output": _LOST, "result_type": "error", "error": _LOST}
+    ctx = AgentCallbackContext(
+        agent=MagicMock(),
+        session=session,
+        inputs=InvokeInputs(query="Return the product title and price", result=result),
+    )
+
+    _run(BrowserRuntimeRail(_runtime_with_a_lost_session()).after_invoke(ctx))
+
+    authoritative = result["authoritative_browser_result"]
+    assert (authoritative["status"], authoritative["terminal_reason"]) == ("blocked", "browser_connection_lost")
+    assert "browser_connection_lost" in authoritative["blockers"]
+    assert authoritative["summary"] == _LOST
+    assert (result["result_type"], result["error"]) == ("error", "browser_task_incomplete")
+
+
+def test_a_task_ended_by_a_lost_connection_is_retryable_and_a_resume_drops_the_blocker() -> None:
+    session = _FakeSession()
+    state = BrowserRuntimeRail._build_phase_state("Open the scene")
+    state.update({"status": "blocked", "terminal_reason": "browser_connection_lost"})
+    state["blockers"] = ["browser_connection_lost"]
+    rail = BrowserRuntimeRail(_runtime_with_a_lost_session())
+
+    assert rail._terminal_result_retryable(state) is True
+    resumed = rail._resume_task_state(session, state, "Open the scene again")
+
+    assert (resumed["status"], resumed["terminal_reason"], resumed["blockers"]) == ("in_progress", "", [])

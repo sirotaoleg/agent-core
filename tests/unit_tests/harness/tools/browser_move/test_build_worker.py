@@ -22,6 +22,7 @@ from openjiuwen.harness.tools.browser_move.runtime.agents import WORKER_LANGUAGE
 from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
 from openjiuwen.harness.tools.browser_move.runtime.driver_session import DriverSession
 from openjiuwen.harness.tools.browser_move.runtime.rails.action_policy import ActionPolicy
+from openjiuwen.harness.tools.browser_move.runtime.rails.connection_lost import ConnectionLostRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.final_answer_recovery import FinalAnswerRecoveryRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.intercepted_action import InterceptedActionHintRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.repeated_call_guard import RepeatedCallGuardRail
@@ -101,10 +102,12 @@ def test_the_worker_is_built_with_the_model_identity_the_core_settings_and_the_o
         ActionPolicy,
         RepeatedCallGuardRail,
         InterceptedActionHintRail,
+        ConnectionLostRail,
         FinalAnswerRecoveryRail,
     ]
     policy = worker.register_rail.await_args_list[0].args[0]
     assert policy._page_state is session.page_state
+    assert worker.register_rail.await_args_list[3].args[0]._session_of() is session
     assert MCP_PREFIX + "browser_click" in policy._builders
     assert set(policy._builders) <= {tool.card.name for tool in kwargs["tools"]}
 

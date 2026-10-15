@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -15,6 +16,7 @@ import pytest
 
 from openjiuwen.core.common.logging.browser_context import is_browser_agent_log_context
 from openjiuwen.core.context_engine.context.context_utils import ContextUtils
+from openjiuwen.core.foundation.llm import AssistantMessage, ToolCall
 from openjiuwen.core.foundation.llm.model_clients.openai_model_client import OpenAIModelClient
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext
@@ -29,6 +31,7 @@ from openjiuwen.harness.tools.browser_move.runtime import session as runtime_mod
 from openjiuwen.harness.tools.browser_move.runtime import topology as topology_module
 from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings, RunGuardrails
 from openjiuwen.harness.tools.browser_move.runtime.rails.action_policy import ActionPolicy
+from openjiuwen.harness.tools.browser_move.runtime.rails.connection_lost import ConnectionLostRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.final_answer_recovery import FinalAnswerRecoveryRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.intercepted_action import InterceptedActionHintRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.repeated_call_guard import RepeatedCallGuardRail
@@ -224,7 +227,13 @@ class TestDirect:
         assert (agent["language"], working_context.language) == (WORKER_LANGUAGE, "en")
         assert agent["system_prompt"] == DEFAULT_BROWSER_AGENT_SYSTEM_PROMPT["en"]
         kinds = [type(rail) for rail in agent["rails"]]
-        assert kinds[:4] == [BrowserRuntimeRail, ActionPolicy, RepeatedCallGuardRail, InterceptedActionHintRail]
+        assert kinds[:5] == [
+            BrowserRuntimeRail,
+            ActionPolicy,
+            RepeatedCallGuardRail,
+            InterceptedActionHintRail,
+            ConnectionLostRail,
+        ]
         policy = agent["rails"][1]
         assert policy._builders is runtime.builders and dict(policy._builders) == {}
         assert policy._page_state is runtime.page_state
@@ -246,7 +255,12 @@ class TestDirect:
 
         parts, rails, model = build.call_args.args
         assert HELPERS <= {tool.card.name for tool in parts.tools}
-        assert [type(rail) for rail in rails] == [ActionPolicy, RepeatedCallGuardRail, InterceptedActionHintRail]
+        assert [type(rail) for rail in rails] == [
+            ActionPolicy,
+            RepeatedCallGuardRail,
+            InterceptedActionHintRail,
+            ConnectionLostRail,
+        ]
         assert model.model_config.model_name == "test-model"
         assert build.call_args.kwargs == {
             "language": WORKER_LANGUAGE,
@@ -387,6 +401,7 @@ class TestDelegatedWorker:
             ActionPolicy,
             RepeatedCallGuardRail,
             InterceptedActionHintRail,
+            ConnectionLostRail,
             FinalAnswerRecoveryRail,
         ]
         assert [call.args[0].card.name for call in add_tool.call_args_list] == [
@@ -523,3 +538,58 @@ class TestDelegatedWorker:
 
         assert runtime.service.agent is not first
         assert assemble.await_count == 2
+
+
+LOST = "the browser connection was lost again; the task cannot continue"
+
+
+class _LosingDriver(FakeDriver):
+    """Loses the connection on every command, however often the stack restarts."""
+
+    def _answer(self, kind: str, payload: Any, queue: Any) -> Any:
+        raise ConnectionLost("connection lost", dispatched=True)
+
+
+def _navigating_model() -> AsyncMock:
+    """A model that navigates on every turn while it has tools."""
+
+    async def invoke(**kwargs: Any) -> AssistantMessage:
+        tools = kwargs.get("tools") or []
+        name = next((tool.name for tool in tools if tool.name.endswith("browser_navigate")), None)
+        if name is None:
+            return AssistantMessage(content="no tools left")
+        arguments = json.dumps({"url": HOME_URL})
+        call = ToolCall(id=f"call-{model.await_count}", type="function", name=name, arguments=arguments)
+        return AssistantMessage(content="", tool_calls=[call])
+
+    model = AsyncMock(side_effect=invoke)
+    return model
+
+
+@pytest.mark.parametrize("topology", ["direct", "delegated_worker"])
+def test_a_second_connection_loss_ends_the_task_blocked_with_no_further_model_call(
+    topology: str, tmp_path: Path
+) -> None:
+    runtime = _runtime(CoreSettings(driver="playwright_mcp", topology=topology), workspace=tmp_path)
+    driver = _LosingDriver(info=mcp_driver_info())
+    model = _navigating_model()
+    with (
+        _assembling(driver),
+        patch.object(OpenAIModelClient, "invoke", model),
+        patch.object(OpenAIModelClient, "stream", model),
+        patch.object(deep_agent_module, "schedule_image_support_probe"),
+    ):
+        answer = run(runtime.run_browser_task(task="Open the scene", session_id="s", request_id="r"))
+
+    assert answer["ok"] is False
+    if topology == "direct":
+        assert (model.await_count, driver.kinds()) == (1, ["observe", "stop", "start", "execute", "execute"]), (
+            "the state capture before the first model call takes the restart and, through the metadata hook, "
+            "the final loss; the one model call's command fails and no further model call is made"
+        )
+        browser_result = json.loads(answer["final"])["browser_result"]
+        assert (answer["status"], answer["error"]) == ("blocked", "browser_task_incomplete")
+        assert (browser_result["terminal_reason"], browser_result["summary"]) == ("browser_connection_lost", LOST)
+    else:
+        assert (model.await_count, driver.kinds()) == (2, ["execute", "stop", "start", "execute"])
+        assert (answer["error"], answer["final"], answer["progress_state"]["status"]) == (LOST, LOST, "blocked")

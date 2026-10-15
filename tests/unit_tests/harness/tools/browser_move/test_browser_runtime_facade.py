@@ -14,6 +14,7 @@ from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_m
 from openjiuwen.harness.tools.browser_move.runtime import session as runtime_module
 from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings, RunGuardrails
 from openjiuwen.harness.tools.browser_move.runtime.rails.action_policy import ActionPolicy
+from openjiuwen.harness.tools.browser_move.runtime.rails.connection_lost import ConnectionLostRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.intercepted_action import InterceptedActionHintRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.repeated_call_guard import RepeatedCallGuardRail
 from openjiuwen.harness.tools.browser_move.runtime.session import AgentRuntime
@@ -169,11 +170,17 @@ def test_core_rails_read_the_profile_and_the_facades_live_builders() -> None:
         run(runtime.ensure_runtime_ready())
         runtime.agent_parts(image_support=False, language="en")
 
-    assert [type(rail) for rail in rails] == [ActionPolicy, RepeatedCallGuardRail, InterceptedActionHintRail]
+    assert [type(rail) for rail in rails] == [
+        ActionPolicy,
+        RepeatedCallGuardRail,
+        InterceptedActionHintRail,
+        ConnectionLostRail,
+    ]
     assert rails[0]._builders is runtime.builders
     assert rails[0]._rules == runtime.surface.profile.policy_rules
     assert rails[0]._page_state is runtime.page_state
     assert rails[2]._retry == runtime.surface.profile.messages["retry"]
+    assert rails[3]._session_of() is runtime.session
     assert MCP_PREFIX + "browser_click" in runtime.builders
 
 

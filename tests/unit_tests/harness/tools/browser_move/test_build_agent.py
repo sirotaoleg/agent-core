@@ -39,6 +39,7 @@ from openjiuwen.harness.tools.browser_move.runtime.assembly import (
 from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
 from openjiuwen.harness.tools.browser_move.runtime.driver_session import DriverSession
 from openjiuwen.harness.tools.browser_move.runtime.rails.action_policy import ActionPolicy
+from openjiuwen.harness.tools.browser_move.runtime.rails.connection_lost import ConnectionLostRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.intercepted_action import InterceptedActionHintRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.repeated_call_guard import RepeatedCallGuardRail
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import ToolContext
@@ -143,17 +144,24 @@ def test_the_parts_hold_the_profile_rails_only() -> None:
     assert set(parts.builders) == {"toy_look", "toy_script"}
 
 
-def test_the_core_rails_are_the_policy_the_guard_and_the_hint_in_that_order() -> None:
+def test_the_core_rails_are_the_policy_the_guard_the_hint_and_the_lost_connection_stop_in_that_order() -> None:
     page_state = BrowserPageState()
     builders: dict[str, Any] = {}
+    session = object()
 
-    rails = core_rails(PROFILE, builders, page_state)
+    rails = core_rails(PROFILE, builders, page_state, lambda: session)
 
-    assert [type(rail) for rail in rails] == [ActionPolicy, RepeatedCallGuardRail, InterceptedActionHintRail]
+    assert [type(rail) for rail in rails] == [
+        ActionPolicy,
+        RepeatedCallGuardRail,
+        InterceptedActionHintRail,
+        ConnectionLostRail,
+    ]
     assert rails[0]._builders is builders
     assert rails[0]._rules == (RULE,)
     assert rails[0]._page_state is page_state
     assert rails[2]._retry == "Retry."
+    assert rails[3]._session_of() is session
 
 
 def test_profile_rails_receive_the_tool_context_of_the_session() -> None:
@@ -212,12 +220,14 @@ def test_build_agent_hands_the_parts_to_create_deep_agent_over_a_started_session
         ActionPolicy,
         RepeatedCallGuardRail,
         InterceptedActionHintRail,
+        ConnectionLostRail,
         ProfileRail,
     ]
     assert (kwargs["workspace"], kwargs["language"], kwargs["max_iterations"]) == ("/tmp/ws", "en", 7)
     assert session.assembly.stack.inner.inner.inner is driver
     assert driver.kinds() == ["start"]
     assert kwargs["rails"][0]._page_state is session.page_state
+    assert kwargs["rails"][3]._session_of() is session
     assert set(kwargs["rails"][0]._builders) == {"toy_look", "toy_script"}
 
 

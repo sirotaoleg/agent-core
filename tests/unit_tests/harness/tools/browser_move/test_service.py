@@ -664,3 +664,15 @@ def test_run_task_does_not_reset_browser_runtime_after_completion() -> None:
 
     assert result["ok"] is True
     assert reset_calls["count"] == 0
+
+
+def test_run_task_takes_a_run_the_runtime_ended_as_the_blocked_answer_without_recovery() -> None:
+    service = _make_service(retry_once=True)
+    lost = "the browser connection was lost again; the task cannot continue"
+    run_agent = AsyncMock(return_value={"output": lost, "result_type": "error", "error": lost})
+    with patch("openjiuwen.harness.tools.browser_move.runtime.worker.Runner.run_agent", run_agent):
+        result = _run(service.run_task(worker=_worker, task="Open page", session_id="s", request_id="r"))
+
+    assert (result["ok"], result["error"], result["final"], result["attempt"]) == (False, lost, lost, 1)
+    assert result["progress_state"]["status"] == "blocked"
+    run_agent.assert_awaited_once()
