@@ -178,15 +178,18 @@ class SessionAdapter:
         self._current_act: _Act | None = None
         self._waiting_inputs: set[asyncio.Task] = set()
         self._listening_client: Any = None
+        self._init_script: str | None = None
+        self._guarded_sessions: set[str] = set()
 
-    async def connect(self, *, cdp_url: str, timeout_s: float = 30.0) -> dict[str, Any]:
+    async def connect(self, *, cdp_url: str, timeout_s: float = 30.0, init_script: str | None = None) -> dict[str, Any]:
         from browser_use.browser.profile import BrowserProfile
         from browser_use.browser.session import BrowserSession
 
         profile = BrowserProfile(headless=None)
         self._session = BrowserSession(cdp_url=cdp_url, is_local=False, browser_profile=profile)
         await self._session.start()
-        self._cdp_session = await self._session.get_or_create_cdp_session()
+        self._init_script = init_script or None
+        await self._ensure_cdp_session()
         await self._ensure_listeners()
 
         version_info: dict[str, Any] = {}
@@ -230,6 +233,7 @@ class SessionAdapter:
         self._session = None
         self._cdp_session = None
         self._index_cache = {}
+        self._guarded_sessions = set()
 
     async def observe(
         self, *, include_dom: bool = True, include_screenshot: bool = False, cached: bool = False
@@ -682,7 +686,18 @@ class SessionAdapter:
     async def _ensure_cdp_session(self) -> Any:
         if self._cdp_session is None:
             self._cdp_session = await self._session.get_or_create_cdp_session()
+            await self._guard_document(self._cdp_session)
         return self._cdp_session
+
+    async def _guard_document(self, cdp_session: Any) -> None:
+        if not self._init_script or cdp_session.session_id in self._guarded_sessions:
+            return
+        await cdp.add_script_on_new_document(cdp_session.cdp_client, cdp_session.session_id, self._init_script)
+        # The document open at attach time loaded before the script was registered, so it gets it now.
+        await cdp.evaluate_expression(
+            cdp_session.cdp_client, cdp_session.session_id, self._init_script, await_promise=False
+        )
+        self._guarded_sessions.add(cdp_session.session_id)
 
     async def _ensure_listeners(self) -> None:
         cdp_session = await self._ensure_cdp_session()

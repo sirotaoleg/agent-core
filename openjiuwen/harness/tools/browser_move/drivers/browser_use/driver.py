@@ -12,6 +12,7 @@ import re
 import struct
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from importlib import resources
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
@@ -67,6 +68,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
 
 _CONTEXT_KIND = "tab"
+_PROBES = "openjiuwen.harness.tools.browser_move.surfaces.browser.probes"
 _TARGET_ATTRIBUTE = "data-openjiuwen-target-id"
 _SCOPED_SCRIPT = (
     "(input) => {{ const element = document.querySelector(input.selector); "
@@ -119,6 +121,10 @@ class BrowserUseConfig:
     sidecar_python: Path | None = None
     upload_root: Path | None = None
     environ: Mapping[str, str] = dataclasses.field(default_factory=dict, repr=False)
+
+
+def _clipboard_guard() -> str:
+    return resources.files(_PROBES).joinpath("clipboard_guard.js").read_text(encoding="utf-8")
 
 
 def _translate_error(method: str, exc: Exception) -> DriverError:
@@ -259,7 +265,9 @@ class BrowserUseDriver(HandlerDriver):
         try:
             await transport.start(timeout_s=config.timeout_s)
             result = await transport.request(
-                "connect", {"cdp_url": config.cdp_url, "timeout_s": config.timeout_s}, timeout_s=config.timeout_s
+                "connect",
+                {"cdp_url": config.cdp_url, "timeout_s": config.timeout_s, "init_script": _clipboard_guard()},
+                timeout_s=config.timeout_s,
             )
         except Exception as exc:
             await transport.close()

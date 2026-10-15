@@ -470,6 +470,11 @@ async def perform_external_drop(
     }
 
 
+async def add_script_on_new_document(cdp_client: Any, session_id: str, source: str) -> None:
+    """Install ``source`` to run in every new document of the session before the page's own scripts."""
+    await cdp_client.send.Page.addScriptToEvaluateOnNewDocument(params={"source": source}, session_id=session_id)
+
+
 async def enable_page_domain(cdp_client: Any, session_id: str) -> None:
     """Enable the Page domain (required for JS dialog events/handling)."""
     await cdp_client.send.Page.enable(params={}, session_id=session_id)
@@ -552,6 +557,7 @@ def _unwrap_js_result(result: dict[str, Any]) -> Any:
 __all__ = [
     "SUPPORTED_DROP_MIME_TYPES",
     "add_event_listener",
+    "add_script_on_new_document",
     "build_external_drag_data",
     "call_function_on_backend_node",
     "describe_node_backend_id",

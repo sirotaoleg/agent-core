@@ -55,6 +55,8 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.scene.server import 
 
 PAGES = Path(__file__).parent / "pages"
 UPLOAD_NAME = "scene-upload.txt"
+CLIPBOARD_ALIAS_SCRIPT = "() => { const c = navigator.clipboard; return c.readText(); }"
+PASTE_COMMAND_SCRIPT = "() => document.execCommand('paste')"
 
 Actions = Mapping[type[Action], frozenset[type]]
 Check = Callable[[Observation, Observation, ActionResult], bool]
@@ -488,6 +490,23 @@ class _BrowserScene:
         }
 
 
+def clipboard_read_case(actions: Actions) -> SceneCase | str:
+    """A clipboard read through an alias no script text rule sees; the page must reject the promise."""
+    if RunScript not in actions:
+        return "the driver does not handle RunScript, which this case needs"
+    return SceneCase(steps=(lambda seen: RunScript(code=CLIPBOARD_ALIAS_SCRIPT),))
+
+
+def paste_command_case(actions: Actions) -> SceneCase | str:
+    """``document.execCommand('paste')`` answers ``false`` in the page."""
+    if RunScript not in actions:
+        return "the driver does not handle RunScript, which this case needs"
+    return SceneCase(
+        steps=(lambda seen: RunScript(code=PASTE_COMMAND_SCRIPT),),
+        check=lambda before, after, result: result.value is False,
+    )
+
+
 def browser_scene() -> Scene:
     """A new, not yet started browser scene for the conformance suite (pages on ``127.0.0.1``, no network)."""
     scene = _BrowserScene()
@@ -505,4 +524,10 @@ def browser_scene() -> Scene:
     )
 
 
-__all__ = ["browser_scene"]
+__all__ = [
+    "CLIPBOARD_ALIAS_SCRIPT",
+    "PASTE_COMMAND_SCRIPT",
+    "browser_scene",
+    "clipboard_read_case",
+    "paste_command_case",
+]

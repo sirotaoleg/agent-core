@@ -13,6 +13,7 @@ import re
 import shutil
 import uuid
 from dataclasses import dataclass
+from importlib import resources
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -80,6 +81,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.context import Brows
 
 _PACKAGE_VERSION = re.compile(r"^@playwright/mcp@(?P<version>.+)$")
 _PING_TIMEOUT_S = 5.0
+_PROBES = "openjiuwen.harness.tools.browser_move.surfaces.browser.probes"
 
 _TOOL_OF: dict[type[Action], str] = {
     Click: "browser_click",
@@ -173,6 +175,20 @@ def _staged(paths: tuple[str, ...], upload_root: Path | None, root: Path) -> tup
     return staged, created
 
 
+def _with_init_script(server: McpServerConfig) -> McpServerConfig:
+    """The server config with the clipboard guard as its init script; a remote server keeps its own setup."""
+    if server.client_type == "streamable-http":
+        return server
+    guard = str(resources.files(_PROBES).joinpath("clipboard_guard.js"))
+    return McpServerConfig(
+        server_id=server.server_id,
+        server_name=server.server_name,
+        server_path=server.server_path,
+        client_type=server.client_type,
+        params={**server.params, "args": [*(server.params.get("args") or ()), "--init-script", guard]},
+    )
+
+
 def _unstaged(directories: list[Path]) -> None:
     for directory in directories:
         shutil.rmtree(directory, ignore_errors=True)
@@ -219,7 +235,7 @@ class PlaywrightMcpDriver(HandlerDriver):
                 config.server
             )
         else:
-            client = BrowserMoveStdioClient(config.server)
+            client = BrowserMoveStdioClient(_with_init_script(config.server))
         if not await client.connect():
             raise ConnectionLost(f"could not start {config.server.server_name}", dispatched=False)
         try:
