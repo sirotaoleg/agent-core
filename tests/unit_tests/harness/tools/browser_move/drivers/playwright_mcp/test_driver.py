@@ -10,6 +10,7 @@ import dataclasses
 import json
 import os
 import sys
+import tempfile
 import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -102,6 +103,7 @@ POINT_2 = PointRef(30, 40, "g3")
 TAB_1 = ContextRef(id="1", kind="tab", title="Second")
 
 HANG = "hang"
+MISSING = str((Path(tempfile.gettempdir()) / "openjiuwen-missing-upload" / "a.csv").resolve())
 
 Call = tuple[str, dict[str, Any]]
 
@@ -165,7 +167,7 @@ def _mcp(replies: dict[str, Any]) -> Iterator[list[Call]]:
         yield calls
 
 
-def _config(cwd: Path, timeout_s: float = 5) -> PlaywrightMcpConfig:
+def _config(cwd: Path, timeout_s: float = 5, upload_root: Path | None = None) -> PlaywrightMcpConfig:
     server = McpServerConfig(
         server_id="playwright_official_stdio",
         server_name="playwright-official",
@@ -178,14 +180,16 @@ def _config(cwd: Path, timeout_s: float = 5) -> PlaywrightMcpConfig:
             "timeout_s": timeout_s,
         },
     )
-    return PlaywrightMcpConfig(server)
+    return PlaywrightMcpConfig(server, upload_root=upload_root)
 
 
-def _run(cwd: Path, replies: dict[str, Any], body: Callable[[PlaywrightMcpDriver], Any]) -> tuple[Any, list[Call]]:
+def _run(
+    cwd: Path, replies: dict[str, Any], body: Callable[[PlaywrightMcpDriver], Any], upload_root: Path | None = None
+) -> tuple[Any, list[Call]]:
     """Start a driver on the fake session, run ``body`` on it, stop it; returns its outcome and the tool calls sent."""
 
     async def scenario() -> Any:
-        driver = PlaywrightMcpDriver(_config(cwd))
+        driver = PlaywrightMcpDriver(_config(cwd, upload_root=upload_root))
         await driver.start()
         try:
             return await body(driver)
@@ -197,7 +201,9 @@ def _run(cwd: Path, replies: dict[str, Any], body: Callable[[PlaywrightMcpDriver
     return outcome, [call for call in calls if call != "tools/list"]
 
 
-def _execute(cwd: Path, replies: dict[str, Any], *actions: Any) -> tuple[list[Any], list[Call]]:
+def _execute(
+    cwd: Path, replies: dict[str, Any], *actions: Any, upload_root: Path | None = None
+) -> tuple[list[Any], list[Call]]:
     """Outcomes of the actions in order: the ``ActionResult`` or the ``DriverError`` each raised."""
 
     async def body(driver: PlaywrightMcpDriver) -> list[Any]:
@@ -209,7 +215,7 @@ def _execute(cwd: Path, replies: dict[str, Any], *actions: Any) -> tuple[list[An
                 outcomes.append(exc)
         return outcomes
 
-    return _run(cwd, replies, body)
+    return _run(cwd, replies, body, upload_root)
 
 
 EXPECTED_ACTIONS = {
@@ -564,11 +570,11 @@ SENT = [
         },
     ),
     (
-        Drop(E12, paths=("C:/a.csv",), data=(("text/plain", "x"),)),
+        Drop(E12, paths=(MISSING,), data=(("text/plain", "x"),)),
         "browser_drop",
-        {"element": "drop on e12", "target": "e12", "paths": ["C:/a.csv"], "data": {"text/plain": "x"}},
+        {"element": "drop on e12", "target": "e12", "paths": [MISSING], "data": {"text/plain": "x"}},
     ),
-    (UploadFile(None, ("C:/a.csv",)), "browser_file_upload", {"paths": ["C:/a.csv"]}),
+    (UploadFile(None, (MISSING,)), "browser_file_upload", {"paths": [MISSING]}),
     (UploadFile(None), "browser_file_upload", {}),
     (HandleDialog(accept=True), "browser_handle_dialog", {"accept": True}),
     (HandleDialog(accept=False, prompt_text="x"), "browser_handle_dialog", {"accept": False, "promptText": "x"}),
@@ -671,15 +677,46 @@ def test_a_drop_stages_its_files_too(tmp_path: Path) -> None:
     assert Path(arguments["paths"][0]).is_relative_to(server / "uploads")
 
 
-def test_files_under_the_server_directory_and_missing_files_go_as_given(tmp_path: Path) -> None:
+def test_files_under_the_server_directory_and_missing_files_go_resolved_without_a_copy(tmp_path: Path) -> None:
     _outside, server = _outside_and_server(tmp_path)
     (server / "in.csv").write_text("a", encoding="utf-8")
     paths = ("in.csv", str(server / "in.csv"), str(tmp_path / "gone.csv"), str(tmp_path / "home"))
 
-    _outcomes, [(_tool, arguments)] = _execute(server, {"browser_file_upload": OK}, UploadFile(None, paths))
+    _outcomes, [(_tool, arguments)] = _execute(
+        server, {"browser_file_upload": OK}, UploadFile(None, paths), upload_root=server
+    )
 
-    assert arguments["paths"] == list(paths)
+    assert arguments["paths"] == [str(Path(path).resolve()) for path in (server / "in.csv", *paths[1:])]
     assert not (server / "uploads").exists()
+
+
+def test_a_relative_name_is_the_file_under_the_upload_root_not_under_the_server_directory(tmp_path: Path) -> None:
+    allowed, server = tmp_path / "allowed", tmp_path / "server"
+    for folder in (allowed, server):
+        folder.mkdir()
+        (folder / "report.txt").write_text(folder.name, encoding="utf-8")
+
+    async def upload(driver: PlaywrightMcpDriver) -> bytes:
+        await driver.execute(UploadFile(None, ("report.txt",)))
+        return next((server / "uploads").glob("*/report.txt")).read_bytes()
+
+    copied, [(_tool, arguments)] = _run(server, {"browser_file_upload": OK}, upload, upload_root=allowed)
+
+    assert Path(arguments["paths"][0]).is_relative_to(server / "uploads")
+    assert copied == b"allowed"
+
+
+@pytest.mark.parametrize(
+    "action", [UploadFile(None, ("report.txt",)), Drop(E12, paths=("report.txt",))], ids=["upload", "drop"]
+)
+def test_a_relative_name_without_an_upload_root_is_refused_before_any_call(tmp_path: Path, action: Any) -> None:
+    (tmp_path / "report.txt").write_text("x", encoding="utf-8")
+
+    [outcome], calls = _execute(tmp_path, {}, action)
+
+    assert isinstance(outcome, ActionResult) and outcome.ok is False
+    assert "no upload folder is configured" in outcome.detail
+    assert calls == []
 
 
 UNSUPPORTED = [

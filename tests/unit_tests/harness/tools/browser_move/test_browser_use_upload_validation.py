@@ -7,13 +7,14 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+import pytest
+
 from openjiuwen.harness.tools.browser_move.contract import ActionResult, DriverRef
-from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import BrowserUseDriver
+from openjiuwen.harness.tools.browser_move.drivers.browser_use.driver import BrowserUseConfig, BrowserUseDriver
 from openjiuwen.harness.tools.browser_move.drivers.browser_use.upload_paths import resolve_upload_file_paths
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import UploadFile
 
@@ -24,8 +25,8 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _make_driver_with_transport(transport: AsyncMock) -> BrowserUseDriver:
-    driver = BrowserUseDriver()
+def _make_driver_with_transport(transport: AsyncMock, upload_root: Path | None = None) -> BrowserUseDriver:
+    driver = BrowserUseDriver(BrowserUseConfig(cdp_url="", upload_root=upload_root))
     driver._transport = transport
     driver._driver_generation = 7
     return driver
@@ -48,38 +49,39 @@ def test_upload_files_missing_path_returns_failed_act_result_without_sidecar() -
     transport.request.assert_not_called()
 
 
-def test_upload_files_existing_path_calls_sidecar_with_resolved_absolute() -> None:
+def test_a_relative_name_reaches_the_sidecar_as_the_file_under_the_upload_root_not_the_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    allowed, outside = tmp_path / "allowed", tmp_path / "outside"
+    for folder in (allowed, outside):
+        folder.mkdir()
+        (folder / "report.txt").write_text(folder.name, encoding="utf-8")
+    monkeypatch.chdir(outside)
     transport = AsyncMock()
     transport.request = AsyncMock(
-        return_value={
-            "ok": True,
-            "detail": "uploaded 1 file(s)",
-            "document_changed": False,
-            "driver_generation": 8,
-        }
+        return_value={"ok": True, "detail": "uploaded 1 file(s)", "document_changed": False, "driver_generation": 8}
     )
-    driver = _make_driver_with_transport(transport)
+    driver = _make_driver_with_transport(transport, upload_root=allowed)
 
-    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as handle:
-        handle.write(b"hello")
-        existing = handle.name
-    try:
-        parent = Path(existing).parent
-        rel = Path(existing).name
-        old_cwd = Path.cwd()
-        try:
-            os.chdir(parent)
-            result = _run(driver.execute(UploadFile(_FILE_INPUT, (rel,))))
-        finally:
-            os.chdir(old_cwd)
-    finally:
-        Path(existing).unlink(missing_ok=True)
+    result = _run(driver.execute(UploadFile(_FILE_INPUT, ("report.txt",))))
 
     assert result.ok is True
-    transport.request.assert_called_once()
     method, params = transport.request.call_args.args
     assert method == "upload_files"
-    assert params["paths"] == [str(Path(existing).resolve())]
+    assert params["paths"] == [str((allowed / "report.txt").resolve())]
+
+
+def test_a_relative_name_without_an_upload_root_never_reaches_the_sidecar(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "report.txt").write_text("x", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    transport = AsyncMock()
+    transport.request = AsyncMock()
+    driver = _make_driver_with_transport(transport)
+
+    result = _run(driver.execute(UploadFile(_FILE_INPUT, ("report.txt",))))
+
+    assert result.ok is False and "no upload folder is configured" in result.detail
+    transport.request.assert_not_called()
 
 
 def test_upload_files_tilde_path_is_expanded_before_sidecar() -> None:

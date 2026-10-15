@@ -285,7 +285,7 @@ class TestValuesFromSettings:
         monkeypatch.setenv("BROWSER_UPLOAD_ROOT", str(tmp_path))
         existing, error = resolve_upload_file_paths(["staged.txt"])
         assert existing == []
-        assert error is not None and "not found" in error
+        assert error is not None and "no upload folder is configured" in error
 
     def test_default_chrome_user_data_dir_uses_the_given_local_app_data(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("os.name", "nt")

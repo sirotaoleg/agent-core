@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 from pathlib import Path
 from typing import Any
 
@@ -228,11 +229,28 @@ def test_set_input_files_defaults_selector_to_file_input() -> None:
 
 def test_set_input_files_outside_the_upload_folders_never_reaches_the_driver() -> None:
     context = _context(DONE)
+    outside = str(Path(__file__).resolve())
 
-    result = _run(set_input_files(context, paths=["/etc/passwd"]))
+    result = _run(set_input_files(context, paths=[outside]))
 
     assert _sent(context) == []
     assert result["ok"] is False and "outside the folders files may be uploaded from" in result["error"]
+
+
+def test_set_input_files_judges_a_relative_name_under_the_upload_root(tmp_path: Path, monkeypatch) -> None:
+    allowed, outside = tmp_path / "allowed", tmp_path / "outside"
+    for folder in (allowed, outside):
+        folder.mkdir()
+        (folder / "report.txt").write_text(folder.name, encoding="utf-8")
+    monkeypatch.chdir(outside)
+    context = _context(DONE, DONE)
+    context = dataclasses.replace(context, settings=BrowserSettings(upload_root=allowed))
+
+    passed = _run(set_input_files(context, paths=["report.txt"]))
+    climbed = _run(set_input_files(context, paths=["../outside/report.txt"]))
+
+    assert passed["ok"] is True and _sent(context) == [UploadFile(FILE_INPUT, ("report.txt",))]
+    assert climbed["ok"] is False and "outside the upload folder" in climbed["error"]
 
 
 def test_set_input_files_on_a_driver_with_a_chooser_clicks_the_input_then_answers_the_chooser() -> None:

@@ -167,11 +167,24 @@ def test_a_relative_upload_may_not_climb_out_of_the_root_it_is_joined_to(tmp_pat
     assert _upload_denial("notes/../x.txt", uploads, workspace) is None
 
 
-def test_without_configured_folders_an_upload_must_stay_under_the_process_cwd(tmp_path: Path) -> None:
-    assert _upload_denial("data/cv.pdf") is None
-    assert _upload_denial(str(Path.cwd() / "cv.pdf")) is None
-    assert _upload_denial(str(tmp_path / "cv.pdf")) is not None
-    assert _upload_denial("../outside.txt") is not None
+def test_without_configured_folders_every_upload_is_denied(tmp_path: Path) -> None:
+    assert "none configured" in _upload_denial(str(Path.cwd() / "cv.pdf"))
+    assert "none configured" in _upload_denial(str(tmp_path / "cv.pdf"))
+    assert "no upload folder is configured" in _upload_denial("data/cv.pdf")
+
+
+def test_a_relative_name_is_judged_under_the_upload_root_whatever_the_process_cwd_is(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    allowed, outside = tmp_path / "allowed", tmp_path / "outside"
+    for folder in (allowed, outside):
+        folder.mkdir()
+        (folder / "report.txt").write_text(folder.name, encoding="utf-8")
+    monkeypatch.chdir(outside)
+
+    assert _upload_denial("report.txt", allowed) is None
+    assert _upload_denial("../outside/report.txt", allowed) is not None
+    assert _upload_denial(str(outside / "report.txt"), allowed) is not None
 
 
 def test_a_symlink_out_of_the_upload_root_is_denied(tmp_path: Path) -> None:
@@ -185,6 +198,7 @@ def test_a_symlink_out_of_the_upload_root_is_denied(tmp_path: Path) -> None:
         pytest.skip("this account cannot create symlinks")
 
     assert _upload_denial(str(link), uploads) is not None
+    assert _upload_denial("innocent.txt", uploads) is not None
 
 
 def test_a_drop_is_confined_like_an_upload_and_one_without_files_passes(tmp_path: Path) -> None:
@@ -209,6 +223,27 @@ def test_the_policy_rail_denies_an_upload_outside_the_upload_root_on_both_dialec
     assert isinstance(denied.inputs.tool_result, PolicyDenied)
     assert "outside the folders files may be uploaded from" in denied.inputs.tool_msg.content
     assert allowed.inputs.tool_msg is None
+
+
+@pytest.mark.parametrize(("builders", "prefix"), DIALECTS)
+def test_the_policy_rail_judges_a_relative_name_under_the_upload_root_on_both_dialects(
+    builders: dict[str, Any], prefix: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    allowed, outside = tmp_path / "allowed", tmp_path / "outside"
+    for folder in (allowed, outside):
+        folder.mkdir()
+        (folder / "report.txt").write_text(folder.name, encoding="utf-8")
+    monkeypatch.chdir(outside)
+    environ = {"BROWSER_UPLOAD_ROOT": str(allowed)}
+    tool = prefix + "browser_file_upload"
+    target = {"ref": "e1", "generation_id": "g0"}
+
+    passed = _rail_verdict(builders, tool, {"paths": ["report.txt"], **target}, environ)
+    climbed = _rail_verdict(builders, tool, {"paths": ["../outside/report.txt"], **target}, environ)
+
+    assert passed.inputs.tool_msg is None
+    assert isinstance(climbed.inputs.tool_result, PolicyDenied)
+    assert "outside the upload folder" in climbed.inputs.tool_msg.content
 
 
 @pytest.mark.parametrize(
