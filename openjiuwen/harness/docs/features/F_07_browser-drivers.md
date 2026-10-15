@@ -138,7 +138,9 @@ environment variables, split by owner (S_20 "Settings"). This step adds the pars
 6. **`topology` is derived from `driver`**, a property, not a field read from the environment: the default per
    driver is decided (delegated worker for Playwright MCP, direct for browser-use) and no variable exists; the
    choice is measured in the benchmark phase. (Superseded by "Phase 6: topology setting": `topology` is a field
-   read from `BROWSER_TOPOLOGY`, and `""` means the default the driver's registration declares.)
+   read from `BROWSER_TOPOLOGY`, and `""` means the default the driver's registration declares. The measurement
+   is in "Default topology for browser-use: delegated worker": both built-in drivers now register
+   `delegated_worker`.)
 7. **No `tracing` field.** No variable switches tracing; the composition root passes the `Tracing` sink. The
    existing raw-audit switch is `log_audit_raw`.
 8. **`driver_mode` stays a field.** `BrowserInstanceConfig` appends `provisioning` and `driver` after its eight
@@ -5065,3 +5067,98 @@ resolution (the process working directory first, then `BROWSER_UPLOAD_ROOT`) was
 for nothing. `_normalize_upload_paths` now refuses a relative path and checks existence and readability of the
 absolute ones; the environment read and its allowlist entry are gone. Verification: the sidecar, driver and upload
 tests, 235 passed.
+
+## Default topology for browser-use: delegated worker
+
+### Background
+
+"Settings" decision 6 left the browser-use default at `direct` (the main agent on the facade) and deferred the
+choice to the benchmark phase; Phase 6 made it the driver's registered default, so `BROWSER_DRIVER=browser_use`
+without `BROWSER_TOPOLOGY` ran the main agent while Playwright MCP ran the worker. The WebVoyager runs of
+2026-10-15 at eb5454b10 (`C:\Users\olegs\jiuwen-jev\runs\refactor-bu\results\20261015-*`, Sonnet 5.5 through
+OpenRouter, `max_steps` 50, `timeout_s` 600) put browser-use at 511 of the 528 valid tasks against Playwright
+MCP's 525, and the reruns below show the gap is the Direct topology's budgets, not the driver.
+
+### The measurement
+
+1. **23 browser-use failures rerun on Direct** (`20261015-1339_bu_critical`): judge SUCCESS 5 (21.7%), agent ok
+   14, 9 answers the judge rejected; $11.02, $0.479 per task; 655 model calls; 10 780 744 of 13 202 332 input
+   tokens cached (82%). Seven runs ended `browser_task_incomplete`, four of them at the 50-call budget
+   (Amazon--15, Apple--16, Google Search--14, Huggingface--19), and two died in the stack (Google Map--40,
+   Wolfram Alpha--18); the per-site averages sit at 200-250 s for Amazon, Apple, Coursera, ESPN and Google Map,
+   against the 240 s simple-task deadline of `surfaces/browser/rails/runtime_rail.py`.
+2. **The 14 left rerun on `BROWSER_TOPOLOGY=delegated_worker`** (`20261015-1410_bu_budget10`, 10 tasks, and
+   `20261015-1421_adhoc`, 4 tasks): judge SUCCESS 8 of 10 and 1 of 4, 9 of 14 together; $2.13 and $1.14, $0.213
+   and $0.286 per task ($0.23 together, less than half of Direct's $0.479); 6 820 739 of 7 182 458 and 3 166 308
+   of 3 380 803 input tokens cached (95% and 94%). The worker loop's retries and the worker budget finish the
+   tasks Direct abandoned (Amazon--15, Apple--2, ArXiv--11, ESPN--40, Google Map--40, Google Search--14,
+   Huggingface--19, Google Flights--6; Google Map--31 the judge accepts with `ok=False`).
+3. **The 9 remaining** of the 23 fail on Playwright MCP too or are geo, site or judge cases: Apple--4 and
+   Apple--16 (configurations and prices the store no longer lists), Google Search--6 (a Trends range that does
+   not exist), Google Map--5 and Wolfram Alpha--18 (`ok=True` answers the judge rejects), and the four not
+   rerun (Amazon--38, Coursera--3, Wolfram Alpha--33: `ok=True` answers the judge rejected on Direct;
+   Google Search--15: one call, 6 s).
+
+### Decisions
+
+1. **`browser_use` registers `default_topology="delegated_worker"`.** One word in `drivers/__init__.py`; both
+   built-in drivers now spell the same default and `BROWSER_TOPOLOGY=direct` remains the explicit override
+   (`topology_for` is unchanged). Every caller of the facade's `ensure_started()` on browser-use now runs the
+   worker through the browser service, with the worker's prompt, retries and JSON progress.
+2. **The golden builder derives the runner views from the registered default.** `RUNNER_VIEWS` maps a view to
+   its topology (`runner` to `None`, the default); `ROLES` maps a topology to the recorded role; `runner_topology`
+   resolves a view on a driver through `default_topology`, and `list_views(driver)` adds `runner_direct` when the
+   default is the worker, else `runner_worker`. So both drivers now record `runner` (the worker) and
+   `runner_direct` (the main agent through the runner), and `regenerate.py` rewrites the browser-use runner views
+   and removes a stale one, leaving the twelve recorded capability goldens alone.
+3. **The browser-use `runner` golden gains the worker agent.** It was recorded at 857239db with no agents (the
+   old runner never ran browser-use) and compared with nothing; built by today's code it is the old
+   `runner_worker.json` byte for byte except `"view"`, and it is now compared like the MCP runner view.
+
+### Rejected options
+
+- **Raising the Direct budgets** (more steps, a longer simple-task deadline). The Direct reruns at 50 steps and
+  240 s already cost $0.479 per task; the worker finishes the same tasks for half the money (cache hit 95%
+  against 82%), so a bigger Direct budget would buy the passes at the wrong price.
+  The budgets stay where they are for `BROWSER_TOPOLOGY=direct`.
+- **Keeping `runner_worker.json` next to a rebuilt `runner.json`.** The two would be the same document under two
+  names; the "other topology" of browser-use is now `direct`.
+- **Leaving `runner.json` as recorded.** A golden that claims the runner's default view and holds no agents pins
+  nothing; the well-formedness check over recorded goldens now covers the twelve capability views only.
+
+### Behaviour changes to know
+
+- `default_topology("browser_use")` is `"delegated_worker"`; `topology_for(CoreSettings(driver="browser_use"))`
+  is `DelegatedWorker`. `BROWSER_TOPOLOGY=direct` gives `Direct` on either driver.
+- With the variable unset, browser-use opens the session at `ensure_started()` and puts the worker in
+  `service.agent`; the main agent on the facade needs the explicit `direct`.
+- `builder.RUNNER_VIEWS` values are topology names or `None`; `builder.ROLES` and `builder.runner_topology` are
+  new; `list_views("browser_use")` ends with `runner`, `runner_direct`.
+
+### Golden status
+
+- `golden/browser_use/runner.json`: rebuilt (role `worker`, the 14 unprefixed core tools, the worker prompt saying
+  "browser-use tools"); equal to the former `runner_worker.json` except `"view"`.
+- `golden/browser_use/runner_direct.json`: new (role `main`, the 18 tools of the MCP `runner_direct` view with
+  unprefixed names, the same system prompt as `golden/playwright_mcp/runner_direct.json`).
+- `golden/browser_use/runner_worker.json`: removed.
+- `golden/playwright_mcp/`: "unchanged" for all thirteen views; the files `regenerate.py` rewrote with LF were
+  restored to their committed bytes.
+
+### Verification
+
+- `test_service.py`: the instance's driver override resolves to `delegated_worker` through `default_topology`.
+- `test_topology.py`: `topology_for` gives `DelegatedWorker` for browser-use with the field unset and `Direct`
+  with `direct`; the instance-override test patches `default_topology` to `direct` and asserts it is asked for
+  `browser_use`; the `Direct` tests build their runtime with `topology="direct"`.
+- `test_tool_prompt_snapshot.py`: the browser-use `runner` and `runner_direct` views built and compared with
+  their goldens; `test_golden_files_cover_exactly_the_views` checks the new set; the well-formedness test runs
+  over the twelve recorded capability goldens.
+- `uv run python -m tests.unit_tests.harness.tools.browser_move.snapshots.regenerate`: `unchanged` for the
+  thirteen MCP views; `removed browser_use/runner_worker.json`; `updated browser_use/runner.json`;
+  `updated browser_use/runner_direct.json`.
+- `uv run pytest tests/unit_tests/harness/tools/browser_move -q`: **2551 passed, 130 skipped, 8 warnings in
+  76.43s (0:01:16)** (2551 / 130 before: one comparison test replaced by two, one well-formedness case fewer).
+- `ruff check` and `ruff format --check` clean on every touched file, except the pre-existing `ASYNC109` at
+  `test_service.py:261`.
+- No WebVoyager run in this step: the measurement is the 2026-10-15 reruns above.

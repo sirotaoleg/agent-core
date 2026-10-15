@@ -278,7 +278,7 @@ re-export the registry, so `from ..drivers import DRIVERS` gives a registry with
 
 | Package | Names | Factory | Default topology |
 |---|---|---|---|
-| `drivers/__init__.py` | `browser_use` | `drivers.browser_use.driver:create_browser_use_driver` | `direct` |
+| `drivers/__init__.py` | `browser_use` | `drivers.browser_use.driver:create_browser_use_driver` | `delegated_worker` |
 | | `playwright_mcp` | `drivers.playwright_mcp.driver:create_playwright_mcp_driver` | `delegated_worker` |
 | `surfaces/__init__.py` | `browser` | `surfaces.browser.profile:create_browser_surface` | — |
 | `provisioning/__init__.py` | `managed`, `remote`, `extension` | `provisioning.managed_browser:ManagedBrowserProvisioner` | — |
@@ -1488,9 +1488,10 @@ name for a registered default no strategy implements. Neither strategy names a d
 browser word (it is a core module under the browser-word ratchet); the `runtime` it receives is an
 `AgentRuntime`, the facade on the browser surface.
 
-- `Direct` (`name="direct"`, the browser-use default): `start` sets `runtime.dedicated_log = False` and builds
-  the main agent once through the profile's `main_agent(runtime, model, language=WORKER_LANGUAGE,
-  max_iterations=guardrails.max_steps, workspace=runtime.workspace, capabilities=runtime.capabilities)` with a
+- `Direct` (`name="direct"`, no built-in driver's default; `BROWSER_TOPOLOGY=direct` selects it): `start` sets
+  `runtime.dedicated_log = False` and builds the main agent once through the profile's `main_agent(runtime, model,
+  language=WORKER_LANGUAGE, max_iterations=guardrails.max_steps, workspace=runtime.workspace,
+  capabilities=runtime.capabilities)` with a
   `Model` from the service's provider, key, base and model name (`temperature` / `top_p` from the core
   settings' worker values); `start` makes no model call ("Invariant (image probe)"). With the browser hook no
   session is opened: it opens at the agent's first invoke (`BrowserRuntimeRail.before_invoke`), as for any
@@ -1506,7 +1507,7 @@ browser word (it is a core module under the browser-word ratchet); the `runtime`
   through `runtime.main_agent_answer`. One attempt per task: the worker loop's retries are worker guardrails.
   `drop` forgets the agent. Invariant: the conversation id is the context engine's session id and names the offload
   directory, so its separators are path-legal on every OS (`:` is not on Windows).
-- `DelegatedWorker` (`name="delegated_worker"`, the Playwright MCP default): `start` is
+- `DelegatedWorker` (`name="delegated_worker"`, the registered default of both built-in drivers): `start` is
   `runtime.ensure_runtime_ready()` (the session opens here), then, when `service.agent` is `None`,
   `service.agent = await build_worker(session, session.assembly.surface, provider=, api_key=, api_base=,
   model_name=, max_steps=guardrails.max_steps, core=service.core, capabilities=runtime.capabilities,
