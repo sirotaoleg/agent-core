@@ -76,6 +76,14 @@ def _workspace_root(workspace: Optional[str | PathLike[str] | "Workspace"]) -> P
     return Path(root_path).resolve()
 
 
+def _offload_session_dirs(session_id: str) -> list[str]:
+    session_dir = ContextUtils.offload_session_dir_name(session_id)
+    if session_dir == session_id or "/" in session_id or "\\" in session_id or session_id in {".", ".."}:
+        return [session_dir]
+    # Sessions stored before ids were made path-safe sit under the literal id (Linux and macOS).
+    return [session_dir, session_id]
+
+
 class BrowserOffloadRecallTool(Tool):
     """Read only this browser session's window-processor artifacts."""
 
@@ -167,22 +175,21 @@ class BrowserOffloadRecallTool(Tool):
         )
 
     def _load_message(self, session_id: str, handle: str) -> Dict[str, Any]:
-        offload_dir = (
-            self._workspace_root
-            / "context"
-            / f"{ContextUtils.offload_session_dir_name(session_id)}_context"
-            / "offload"
-        ).resolve()
-        if not offload_dir.is_relative_to(self._workspace_root):
-            raise ValueError("browser offload directory escapes the configured workspace")
-
-        candidate_path = offload_dir / f"{_OFFLOAD_FILE_PREFIX}_{handle}.json"
-        if candidate_path.is_symlink():
-            raise ValueError("browser offload handle was not found in the current session")
-        offload_path = candidate_path.resolve()
-        if offload_path.parent != offload_dir:
-            raise ValueError("browser offload path is outside the current session")
-        if not offload_path.is_file():
+        offload_path = None
+        for session_dir in _offload_session_dirs(session_id):
+            offload_dir = (self._workspace_root / "context" / f"{session_dir}_context" / "offload").resolve()
+            if not offload_dir.is_relative_to(self._workspace_root):
+                raise ValueError("browser offload directory escapes the configured workspace")
+            candidate_path = offload_dir / f"{_OFFLOAD_FILE_PREFIX}_{handle}.json"
+            if candidate_path.is_symlink():
+                raise ValueError("browser offload handle was not found in the current session")
+            resolved = candidate_path.resolve()
+            if resolved.parent != offload_dir:
+                raise ValueError("browser offload path is outside the current session")
+            if resolved.is_file():
+                offload_path = resolved
+                break
+        if offload_path is None:
             raise ValueError("browser offload handle was not found in the current session")
         if offload_path.stat().st_size > _MAX_OFFLOAD_FILE_SIZE:
             raise ValueError("browser offload artifact exceeds the safe recall size")
