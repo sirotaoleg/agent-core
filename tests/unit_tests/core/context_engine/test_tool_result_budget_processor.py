@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import Path
 from typing import List
 from unittest.mock import AsyncMock, MagicMock
 
@@ -923,3 +924,55 @@ class TestOffloadSessionDirName:
     def test_ids_that_read_alike_stay_distinct(self):
         names = {ContextUtils.offload_session_dir_name(value) for value in ("a:b", "a/b", "a b", "a-b")}
         assert len(names) == 4
+
+
+class TestOffloadMessageBufferLegacyFolder:
+    @staticmethod
+    def _buffer(workspace: Path, session_id: str):
+        from openjiuwen.core.context_engine.context.message_buffer import OffloadMessageBuffer
+        from openjiuwen.core.sys_operation import OperationMode, SysOperation, SysOperationCard
+        from openjiuwen.core.sys_operation.config import LocalWorkConfig
+
+        buffer = OffloadMessageBuffer()
+        card = SysOperationCard(id="test_legacy_offload", mode=OperationMode.LOCAL, work_config=LocalWorkConfig())
+        buffer.set_sys_operation(SysOperation(card=card))
+        buffer.set_workspace_info(str(workspace), session_id)
+        return buffer
+
+    @staticmethod
+    def _write(workspace: Path, session_dir: str, file_name: str, content: str) -> None:
+        folder = workspace / "context" / f"{session_dir}_context" / "offload"
+        folder.mkdir(parents=True, exist_ok=True)
+        payload = {"messages": [{"role": "tool", "content": content, "tool_call_id": "tc-1", "name": "grep"}]}
+        (folder / file_name).write_text(json.dumps(payload), encoding="utf-8")
+
+    @pytest.mark.asyncio
+    async def test_a_session_stored_under_its_literal_id_is_still_found(self, tmp_path):
+        session_id = "wv task 1"
+        self._write(tmp_path, session_id, "ToolResultBudgetProcessor_h1.json", "old folder")
+
+        reloaded = await self._buffer(tmp_path, session_id).reload("h1", "filesystem")
+
+        assert [message.content for message in reloaded] == ["old folder"]
+
+    @pytest.mark.asyncio
+    async def test_the_path_safe_folder_wins_over_the_literal_one(self, tmp_path):
+        session_id = "wv task 1"
+        self._write(tmp_path, session_id, "ToolResultBudgetProcessor_h1.json", "old folder")
+        self._write(tmp_path, ContextUtils.offload_session_dir_name(session_id), "h1.json", "new folder")
+
+        reloaded = await self._buffer(tmp_path, session_id).reload("h1", "filesystem")
+
+        assert [message.content for message in reloaded] == ["new folder"]
+
+    @pytest.mark.parametrize("session_id", ["a/b", "a\\b", "../x", ".", ".."])
+    def test_an_id_with_a_path_separator_never_names_a_folder(self, tmp_path, session_id):
+        paths = self._buffer(tmp_path, session_id)._filesystem_reload_paths("h1")
+
+        safe = ContextUtils.offload_session_dir_name(session_id)
+        assert paths == [str(tmp_path / "context" / f"{safe}_context" / "offload" / "h1.json")]
+
+    def test_a_path_safe_id_is_looked_up_once(self, tmp_path):
+        paths = self._buffer(tmp_path, "browser-session")._filesystem_reload_paths("h1")
+
+        assert paths == [str(tmp_path / "context" / "browser-session_context" / "offload" / "h1.json")]
