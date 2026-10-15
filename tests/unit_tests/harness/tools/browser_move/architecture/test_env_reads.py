@@ -16,9 +16,6 @@ ENV_MODULE = ("runtime", "utils", "env")
 UPPER_SNAKE_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$")
 
 KNOWN_ENV_READS: dict[str, dict[str, int]] = {
-    "drivers/browser_use/sidecar/session_adapter.py": {
-        "os.environ.get(BROWSER_UPLOAD_ROOT)": 1,
-    },
     "surfaces/browser/runner/facade.py": {
         "env_map.get(PLAYWRIGHT_MCP_CDP_ENDPOINT)": 1,
     },
