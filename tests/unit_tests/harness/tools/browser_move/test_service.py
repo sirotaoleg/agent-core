@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
-"""Tests for BrowserService guardrails, retries, and worker conversation behavior."""
+"""Tests for AgentService guardrails, retries, and worker conversation behavior."""
 
 from __future__ import annotations
 
@@ -16,9 +16,10 @@ from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.contract.registry import default_topology
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
-from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
-from openjiuwen.harness.tools.browser_move.runtime.service import BrowserService
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings, RunGuardrails
+from openjiuwen.harness.tools.browser_move.runtime.service import AgentService
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import BrowserInstanceConfig
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     DEVICE,
@@ -35,7 +36,7 @@ async def _worker() -> Any:
     return _AGENT
 
 
-def _make_service(
+def _make_runtime(
     *,
     retry_once: bool = False,
     runtime_cwd: str | None = None,
@@ -43,7 +44,7 @@ def _make_service(
     browser_settings: BrowserSettings | None = None,
     allowed_tool_names: Iterable[str] | None = None,
     core_settings: CoreSettings | None = None,
-) -> BrowserService:
+) -> BrowserAgentRuntime:
     mcp_cfg = McpServerConfig(
         server_id="test-playwright",
         server_name="test-playwright",
@@ -51,13 +52,13 @@ def _make_service(
         client_type="stdio",
         params={"cwd": runtime_cwd or str(Path.cwd())},
     )
-    return BrowserService(
+    return BrowserAgentRuntime(
         provider="openai",
         api_key="test-key",
         api_base="https://example.invalid/v1",
         model_name="test-model",
         mcp_cfg=mcp_cfg,
-        guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=retry_once),
+        guardrails=RunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=retry_once),
         instance=instance,
         allowed_tool_names=allowed_tool_names,
         browser_settings=browser_settings,
@@ -65,11 +66,15 @@ def _make_service(
     )
 
 
+def _make_service(**kwargs: Any) -> AgentService:
+    return _make_runtime(**kwargs).service
+
+
 def _run(coro):
     return asyncio.run(coro)
 
 
-def _opened(service: BrowserService, driver: FakeDriver | None = None) -> tuple[FakeDriver, AsyncMock]:
+def _opened(service: AgentService, driver: FakeDriver | None = None) -> tuple[FakeDriver, AsyncMock]:
     """Open the service's session on ``driver``; returns it with the ``assemble_driver`` mock that built it."""
     driver = driver or mcp_fake_driver()
     assemble = AsyncMock(return_value=fake_assembly(driver))
@@ -78,7 +83,7 @@ def _opened(service: BrowserService, driver: FakeDriver | None = None) -> tuple[
     return driver, assemble
 
 
-def _handed(service: BrowserService) -> dict[str, Any]:
+def _handed(service: AgentService) -> dict[str, Any]:
     _, assemble = _opened(service)
     return assemble.await_args.kwargs | {"core": assemble.await_args.args[0]}
 
@@ -475,7 +480,7 @@ def test_completed_status_overrides_false_ok_when_evidence_is_present() -> None:
 
 def test_run_task_once_uses_fresh_worker_conversation_ids() -> None:
     service = _make_service()
-    service.browser_agent = object()
+    service.agent = object()
     seen_conversation_ids: list[str] = []
     seen_request_ids: list[str] = []
 
@@ -507,24 +512,25 @@ def test_run_task_once_uses_fresh_worker_conversation_ids() -> None:
 
 def test_profile_store_defaults_to_runtime_workspace() -> None:
     expected_root = (Path.cwd() / "tmp-runtime-root").resolve()
-    service = _make_service(runtime_cwd=str(expected_root))
+    runtime = _make_runtime(runtime_cwd=str(expected_root))
 
-    handed = _handed(service)["settings"]
+    handed = _handed(runtime.service)["settings"]
 
     assert (handed.mcp_cwd, handed.profile_store_path) == (expected_root, None)
-    assert handed.mcp_server is service.mcp_cfg
+    assert handed.mcp_server is runtime.mcp_cfg
 
 
-def test_the_session_takes_the_given_mcp_config_the_instance_and_the_core_settings() -> None:
+def test_the_session_takes_the_settings_with_the_instance_applied_and_the_core_settings() -> None:
     instance = BrowserInstanceConfig(key="k", driver_mode="managed")
     core = CoreSettings(driver="playwright_mcp", status_log=False)
-    service = _make_service(instance=instance, core_settings=core)
+    runtime = _make_runtime(instance=instance, core_settings=core)
 
-    handed = _handed(service)
+    handed = _handed(runtime.service)
 
-    assert handed["instance"] is instance
+    assert handed["instance"] is None
     assert handed["core"] is core
-    assert handed["settings"].mcp_server is service.mcp_cfg
+    assert (handed["settings"].profile_name, handed["settings"].provisioning) == ("k", "managed")
+    assert handed["settings"].mcp_server is runtime.mcp_cfg
 
 
 def test_the_instance_driver_overrides_the_core_driver() -> None:
@@ -584,12 +590,16 @@ def test_given_browser_settings_win_over_the_environment(monkeypatch: pytest.Mon
     monkeypatch.setenv("BROWSER_PROFILE_NAME", "from-env")
     monkeypatch.setenv("BROWSER_MANAGED_ARGS", "--from-env")
 
-    service = _make_service(
+    runtime = _make_runtime(
         browser_settings=BrowserSettings(provisioning="managed", profile_name="from-settings", managed_args=("--x",))
     )
+    identity = runtime.lifecycle_identity
 
-    assert (service._driver_mode, service._profile_name) == ("managed", "from-settings")
-    assert service.lifecycle_identity.managed_args == ("--x",)
+    assert (identity.driver_mode, identity.profile_name, identity.managed_args) == (
+        "managed",
+        "from-settings",
+        ("--x",),
+    )
 
 
 def test_without_browser_settings_the_service_reads_them_once_from_the_environment(
@@ -598,11 +608,11 @@ def test_without_browser_settings_the_service_reads_them_once_from_the_environme
     monkeypatch.setenv("BROWSER_PROVISIONING", "managed")
     monkeypatch.setenv("BROWSER_PROFILE_NAME", "from-env")
 
-    service = _make_service()
+    runtime = _make_runtime()
     monkeypatch.setenv("BROWSER_PROFILE_NAME", "changed-later")
 
-    assert (service._driver_mode, service._profile_name) == ("managed", "from-env")
-    assert _handed(service)["settings"].profile_name == "from-env"
+    assert (runtime.lifecycle_identity.driver_mode, runtime.lifecycle_identity.profile_name) == ("managed", "from-env")
+    assert _handed(runtime.service)["settings"].profile_name == "from-env"
 
 
 def test_unknown_instance_provisioning_names_the_instance_field_and_browser_provisioning() -> None:
@@ -623,7 +633,7 @@ def test_reset_stops_browser_without_eager_restart() -> None:
 
     assert driver.kinds() == ["stop"]
     assert provisioner.released == [DEVICE]
-    assert (service.started, service.session, service.browser_agent) == (False, None, None)
+    assert (service.started, service.session, service.agent) == (False, None, None)
     assert assemble.await_count == 1
 
 

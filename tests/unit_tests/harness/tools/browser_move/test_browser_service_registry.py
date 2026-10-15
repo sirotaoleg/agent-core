@@ -15,18 +15,19 @@ from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
-from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails
-from openjiuwen.harness.tools.browser_move.runtime.service import BrowserService
+from openjiuwen.harness.tools.browser_move.runtime.config import RunGuardrails
+from openjiuwen.harness.tools.browser_move.runtime.service import AgentService
 from openjiuwen.harness.tools.browser_move.runtime.service_registry import (
-    BROWSER_SERVICE_REGISTRY,
+    SERVICE_REGISTRY,
 )
-from openjiuwen.harness.tools.browser_move.runtime.session import (
+from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import (
     _ACTIVE_BROWSER_RUNTIMES,
     BrowserAgentRuntime,
+    BrowserServiceIdentity,
     reset_active_browser_runtimes,
     reset_managed_browser_runtime,
 )
-from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import BrowserInstanceConfig
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import DEVICE, mcp_fake_driver
 
@@ -41,14 +42,14 @@ def _mcp_cfg(key: str) -> McpServerConfig:
     )
 
 
-def _make_service(*, key: str = "shared") -> BrowserService:
-    return BrowserService(
+def _make_runtime(*, key: str = "shared") -> BrowserAgentRuntime:
+    return BrowserAgentRuntime(
         provider="openai",
         api_key="test-key",
         api_base="https://example.invalid/v1",
         model_name="test-model",
         mcp_cfg=_mcp_cfg(key),
-        guardrails=BrowserRunGuardrails(
+        guardrails=RunGuardrails(
             max_steps=3,
             max_failures=1,
             timeout_s=30,
@@ -56,6 +57,10 @@ def _make_service(*, key: str = "shared") -> BrowserService:
         ),
         instance=BrowserInstanceConfig(key=key, driver_mode="managed"),
     )
+
+
+def _make_service(*, key: str = "shared") -> AgentService:
+    return _make_runtime(key=key).service
 
 
 def _provisioner() -> MagicMock:
@@ -69,7 +74,7 @@ def _assembly(provisioner: Any) -> DriverAssembly:
     return DriverAssembly(mcp_fake_driver(), DEVICE, provisioner, surface=bundle)
 
 
-async def _open(service: BrowserService, provisioner: Any) -> FakeDriver:
+async def _open(service: AgentService, provisioner: Any) -> FakeDriver:
     """Open the service's session on a fresh fake driver over ``provisioner``."""
     assembly = _assembly(provisioner)
     with patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=assembly)):
@@ -79,10 +84,10 @@ async def _open(service: BrowserService, provisioner: Any) -> FakeDriver:
 
 @pytest.fixture(autouse=True)
 def _clear_process_registry():
-    BROWSER_SERVICE_REGISTRY.clear()
+    SERVICE_REGISTRY.clear()
     _ACTIVE_BROWSER_RUNTIMES.clear()
     yield
-    BROWSER_SERVICE_REGISTRY.clear()
+    SERVICE_REGISTRY.clear()
     _ACTIVE_BROWSER_RUNTIMES.clear()
 
 
@@ -91,7 +96,7 @@ async def test_release_last_task_binding_preserves_managed_chrome() -> None:
     service = _make_service()
     provisioner = _provisioner()
     driver = await _open(service, provisioner)
-    service._browser_agent = MagicMock()
+    service.agent = MagicMock()
 
     assert await service.release_task_binding() is True
 
@@ -99,7 +104,7 @@ async def test_release_last_task_binding_preserves_managed_chrome() -> None:
     provisioner.release.assert_not_called()
     provisioner.stop.assert_not_called()
     assert service.session is not None
-    assert service._browser_agent is None
+    assert service.agent is None
     assert service.started is False
 
 
@@ -111,7 +116,7 @@ async def test_explicit_reset_stops_browser_preserved_after_task_release() -> No
         api_base="https://example.invalid/v1",
         model_name="test-model",
         mcp_cfg=_mcp_cfg("shared"),
-        guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
+        guardrails=RunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
         instance=BrowserInstanceConfig(key="shared", driver_mode="managed"),
     )
     provisioner = _provisioner()
@@ -163,17 +168,17 @@ async def test_reused_service_waits_for_last_concurrent_task_reference() -> None
     service.acquire_task_binding()
     service.acquire_task_binding()
     driver = await _open(service, _provisioner())
-    service._browser_agent = MagicMock()
+    service.agent = MagicMock()
 
     await service.release_task_binding()
     assert driver.kinds() == []
     assert service.started is True
-    assert service._browser_agent is not None
+    assert service.agent is not None
 
     await service.release_task_binding()
     assert driver.kinds() == ["stop"]
     assert service.started is False
-    assert service._browser_agent is None
+    assert service.agent is None
 
 
 @pytest.mark.asyncio
@@ -210,10 +215,20 @@ async def test_reset_stops_only_matching_browser_identity() -> None:
 
 def test_display_mode_is_part_of_lifecycle_identity(monkeypatch) -> None:
     monkeypatch.setenv("BROWSER_MANAGED_ARGS", "--headless=new")
-    headless = _make_service()
+    headless = _make_runtime()
     monkeypatch.setenv("BROWSER_MANAGED_ARGS", "")
-    headed = _make_service()
+    headed = _make_runtime()
 
     assert headless.lifecycle_identity != headed.lifecycle_identity
     assert headless.lifecycle_identity.display_mode == "headless"
     assert headed.lifecycle_identity.display_mode == "headed"
+
+
+def test_the_registry_key_is_the_identity_string_and_round_trips() -> None:
+    runtime = _make_runtime(key="k")
+    identity = runtime.lifecycle_identity
+
+    assert runtime.service.identity == identity.key
+    assert isinstance(identity.key, str)
+    assert BrowserServiceIdentity.from_key(identity.key) == identity
+    assert SERVICE_REGISTRY.managed_driver_identities() == ()

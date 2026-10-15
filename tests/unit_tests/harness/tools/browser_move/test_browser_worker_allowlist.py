@@ -23,7 +23,7 @@ def _worker_tool_names(allowed_tool_names: tuple[str, ...] | None) -> set[str]:
         allowed_tool_names=allowed_tool_names, image_support=None, core_settings=CoreSettings(driver="playwright_mcp")
     )
     asyncio.run(runtime.ensure_started())
-    worker = runtime.service.browser_agent
+    worker = runtime.service.agent
     return {tool.name for tool in asyncio.run(worker.ability_manager.list_tool_info())}
 
 

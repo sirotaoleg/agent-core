@@ -13,9 +13,9 @@ import pytest
 from openjiuwen.core.foundation.llm.schema.message import UserMessage
 from openjiuwen.core.single_agent.prompts.builder import SystemPromptBuilder
 from openjiuwen.core.single_agent.rail.base import AgentCallbackContext, ModelCallInputs
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser import tools as tools_module
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import (
     browser_task_rules,
     build_browser_worker_system_prompt,

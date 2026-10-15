@@ -16,9 +16,9 @@ from openjiuwen.harness.tools.browser_move.contract import (
     SwitchContext,
 )
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
-from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.runtime.config import RunGuardrails
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     fake_assembly,
     make_runtime,
@@ -85,7 +85,7 @@ def test_probe_for_policy_starts_the_driver_session_on_demand() -> None:
         api_base="https://example.invalid/v1",
         model_name="test-model",
         mcp_cfg=McpServerConfig(server_id="t", server_name="t", server_path="stdio://playwright", client_type="stdio"),
-        guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
+        guardrails=RunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
     )
     driver = mcp_fake_driver(results=[result(value={"url": _FLIGHTS, "elements": []})] * 2)
     assemble = AsyncMock(return_value=fake_assembly(driver))

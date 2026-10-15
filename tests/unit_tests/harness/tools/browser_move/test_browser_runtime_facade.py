@@ -12,19 +12,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.runtime import session as runtime_module
-from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings, RunGuardrails
 from openjiuwen.harness.tools.browser_move.runtime.rails.action_policy import ActionPolicy
 from openjiuwen.harness.tools.browser_move.runtime.rails.intercepted_action import InterceptedActionHintRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.repeated_call_guard import RepeatedCallGuardRail
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.runtime.session import AgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
     CORE_BROWSER_TOOL_NAMES,
     VISION_BROWSER_TOOL_NAMES,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import UploadFile
 from openjiuwen.harness.tools.browser_move.surfaces.browser.policy import policy_denial
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner import facade as facade_module
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     DEVICE,
+    HOME_URL,
     MCP_PREFIX,
     element,
     fake_assembly,
@@ -51,7 +54,7 @@ def _runtime(core: CoreSettings | None = None, language: str | None = "en") -> B
             client_type="stdio",
             params={"cwd": str(Path.cwd())},
         ),
-        guardrails=BrowserRunGuardrails(max_steps=7, max_failures=1, timeout_s=30, retry_once=False),
+        guardrails=RunGuardrails(max_steps=7, max_failures=1, timeout_s=30, retry_once=False),
         core_settings=core,
         **({} if language is None else {"language": language}),
     )
@@ -71,7 +74,7 @@ def test_the_main_agent_and_the_worker_share_the_services_session() -> None:
 
     assert assemble.await_count == 1
     assert runtime.session is runtime.service.session is not None
-    worker = runtime.service.browser_agent
+    worker = runtime.service.agent
     names = {tool.name for tool in run(worker.ability_manager.list_tool_info())}
     assert HELPERS <= names and "browser_recall_offload" not in names
     assert {tool.card.name for tool in parts.tools} == names | {"browser_recall_offload"}
@@ -142,7 +145,7 @@ def test_shutdown_closes_the_session_and_the_model_clients() -> None:
         run(runtime.shutdown())
 
     assert provisioner.released == [DEVICE]
-    assert (runtime.session, runtime.service.session, runtime.service.browser_agent) == (None, None, None)
+    assert (runtime.session, runtime.service.session, runtime.service.agent) == (None, None, None)
     aclose.assert_awaited_once()
     assert assemble.await_count == 1
 
@@ -155,7 +158,7 @@ def test_the_surface_is_built_once_from_the_settings_before_any_driver() -> None
 
     assert assemble.await_count == 0
     assert bundle is runtime.surface
-    assert bundle.profile.name == "browser" and bundle.settings is runtime.service._settings
+    assert bundle.profile.name == "browser" and bundle.settings is runtime.service.surface.settings
 
 
 def test_core_rails_read_the_profile_and_the_facades_live_builders() -> None:
@@ -190,7 +193,7 @@ def test_agent_parts_are_built_once_per_image_support_and_language() -> None:
 
 def test_register_runtime_tools_adds_the_two_custom_action_tools_once() -> None:
     runtime = _runtime()
-    with patch.object(runtime_module.Runner.resource_mgr, "add_tool", MagicMock(return_value=None)) as add_tool:
+    with patch.object(facade_module.Runner.resource_mgr, "add_tool", MagicMock(return_value=None)) as add_tool:
         runtime.register_runtime_tools()
         runtime.register_runtime_tools()
 
@@ -214,7 +217,18 @@ def _runtime_without_hooks() -> BrowserAgentRuntime:
     assembly = fake_assembly(mcp_fake_driver([observation()]))
     profile = dataclasses.replace(assembly.surface.profile, **dict.fromkeys(_HOOKS))
     assembly = dataclasses.replace(assembly, surface=dataclasses.replace(assembly.surface, profile=profile))
-    runtime = BrowserAgentRuntime(
+    with (
+        patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=assembly)),
+        patch.object(facade_module, "assemble_surface", return_value=assembly.surface),
+    ):
+        runtime = _without_hooks_runtime()
+        run(runtime.ensure_runtime_ready())
+    assert runtime.surface is assembly.surface
+    return runtime
+
+
+def _without_hooks_runtime() -> BrowserAgentRuntime:
+    return BrowserAgentRuntime(
         provider="openai",
         api_key="test-key",
         api_base="https://example.invalid/v1",
@@ -226,16 +240,9 @@ def _runtime_without_hooks() -> BrowserAgentRuntime:
             client_type="stdio",
             params={"cwd": str(Path.cwd())},
         ),
-        guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
+        guardrails=RunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
         language="en",
     )
-    with (
-        patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=assembly)),
-        patch.object(runtime_module, "assemble_surface", return_value=assembly.surface),
-    ):
-        run(runtime.ensure_runtime_ready())
-        assert runtime.surface is assembly.surface
-    return runtime
 
 
 def test_a_surface_without_hooks_registers_no_custom_actions() -> None:
@@ -275,10 +282,56 @@ def test_the_facade_lets_uploads_come_from_its_workspace(tmp_path: Path) -> None
         api_base="https://example.invalid/v1",
         model_name="test-model",
         mcp_cfg=McpServerConfig(server_id="s", server_name="s", server_path="stdio://s"),
-        guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
+        guardrails=RunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
         workspace=str(tmp_path),
     )
     rules = runtime.surface.profile.policy_rules
 
     assert policy_denial(UploadFile(None, (str(tmp_path / "notes.txt"),)), None, rules) is None
     assert policy_denial(UploadFile(None, (str(tmp_path.parent / "other.txt"),)), None, rules) is not None
+
+
+class _Answering:
+    """A topology that answers through the runtime's own answer builder."""
+
+    name = "answering"
+
+    def __init__(self, error: str | None = None) -> None:
+        self._error = error
+
+    async def start(self, runtime: Any) -> None:
+        pass
+
+    async def run(self, runtime: Any, task: str, session_id: Any, request_id: Any, timeout_s: Any) -> dict[str, Any]:
+        return runtime.main_agent_answer(session_id, request_id, result={"output": task}, error=self._error)
+
+    def drop(self) -> None:
+        pass
+
+
+def test_the_core_answer_has_no_page_and_the_run_adds_the_context_the_task_ended_in() -> None:
+    metadata = result(value={"page_position": {}, "semantic_state": {}})
+    runtime = make_runtime(mcp_fake_driver([observation()], [metadata, metadata]))
+    run(runtime.capture_browser_state())
+    runtime._topology = _Answering()
+
+    core = AgentRuntime.main_agent_answer(runtime, "s", "r", result={"output": "done"})
+    answer = run(runtime.run_task("done", "s", "r"))
+
+    assert set(core) == {"ok", "session_id", "request_id", "final", "screenshot", "error"}
+    assert answer["page"] == {"url": HOME_URL, "title": "Home"}
+    assert answer["context"]["identity"] == HOME_URL
+    assert (answer["context"]["metadata"]["url"], answer["context"]["metadata"]["title"]) == (HOME_URL, "Home")
+    assert set(answer) == set(core) | {"page", "context"}
+
+
+def test_a_failed_answer_carries_the_identity_but_captures_no_metadata() -> None:
+    runtime = make_runtime(mcp_fake_driver([observation()], [result(value={"page_position": {}})]))
+    run(runtime.capture_browser_state())
+    runtime._topology = _Answering(error="boom")
+
+    answer = run(runtime.run_task("done", "s", "r"))
+
+    assert (answer["ok"], answer["error"]) == (False, "boom")
+    assert answer["context"] == {"identity": HOME_URL, "metadata": {}}
+    assert runtime.session.assembly.stack.kinds() == ["observe", "execute"]

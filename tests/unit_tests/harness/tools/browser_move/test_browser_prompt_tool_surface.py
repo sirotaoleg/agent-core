@@ -68,7 +68,7 @@ def _run_worker_request(helpers_added: tuple[str, ...], helpers_removed: tuple[s
     runtime = make_runtime(image_support=None, core_settings=CoreSettings(driver="playwright_mcp"))
     asyncio.run(runtime.ensure_started())
     service = runtime.service
-    worker = service.browser_agent
+    worker = service.agent
     llm = _RecordingLLM()
     worker.set_llm(llm)
     for name in RUNTIME_WORKER_HELPERS:
@@ -81,7 +81,7 @@ def _run_worker_request(helpers_added: tuple[str, ...], helpers_removed: tuple[s
         worker.ability_manager.remove_ability(name)
 
     async def current() -> Any:
-        return service.browser_agent
+        return service.agent
 
     result = asyncio.run(
         service.run_task_once(task="Open example.com", session_id="s-1", request_id="r-1", worker=current)

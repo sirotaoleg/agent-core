@@ -75,7 +75,7 @@ def clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> pytest.MonkeyP
     "module, name",
     [
         (f"{_PKG}.surfaces.browser.runner.settings", "build_runtime_settings"),
-        (f"{_PKG}.runtime.session", "BrowserAgentRuntime"),
+        (f"{_PKG}.surfaces.browser.runner.facade", "BrowserAgentRuntime"),
         (f"{_PKG}.surfaces.browser.capabilities", "CORE_BROWSER_TOOL_NAMES"),
     ],
 )
@@ -108,7 +108,7 @@ def test_core_browser_tool_names() -> None:
 
 
 def test_runtime_signature() -> None:
-    from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
+    from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 
     params = inspect.signature(BrowserAgentRuntime).parameters
     for name in ("provider", "api_key", "api_base", "model_name", "mcp_cfg", "guardrails", "allowed_tool_names"):
@@ -128,10 +128,10 @@ def test_runtime_settings_fields() -> None:
 
 
 async def _run_one_task(result: dict[str, Any]) -> None:
-    from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
     from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
         CORE_BROWSER_TOOL_NAMES,
     )
+    from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
     from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import build_runtime_settings
 
     settings = build_runtime_settings()
@@ -147,14 +147,14 @@ async def _run_one_task(result: dict[str, Any]) -> None:
     )
     try:
         await runtime.ensure_started()
-        worker = runtime._service.browser_agent
+        worker = runtime._service.agent
         result["worker"] = worker
         result["tools_before"] = [t.name for t in await worker.ability_manager.list_tool_info()]
         result["removal_errors"] = {}
-        if runtime._service and runtime._service.browser_agent and hasattr(worker, "ability_manager"):
+        if runtime._service and runtime._service.agent and hasattr(worker, "ability_manager"):
             for name in RUNNER_HELPERS:
                 try:
-                    runtime._service.browser_agent.ability_manager.remove_ability(name)
+                    runtime._service.agent.ability_manager.remove_ability(name)
                 except Exception as exc:
                     result["removal_errors"][name] = repr(exc)
         result["tools_after"] = [t.name for t in await worker.ability_manager.list_tool_info()]

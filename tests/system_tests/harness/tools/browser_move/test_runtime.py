@@ -12,7 +12,7 @@ from typing import Any, Dict
 import pytest
 
 from openjiuwen.harness.tools.browser_move.runtime.config import MISSING_API_KEY_MESSAGE, load_repo_dotenv
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import build_runtime_settings
 
 

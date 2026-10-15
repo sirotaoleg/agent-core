@@ -40,7 +40,6 @@ from openjiuwen.harness.tools.browser_move.contract import (
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.contract.testing.fake import DEFAULT_ACTIONS
 from openjiuwen.harness.tools.browser_move.runtime import session as runtime_module
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.runtime.tool_factory import CommandRecord, command_record
 from openjiuwen.harness.tools.browser_move.runtime.worker import MAX_ITERATION_MESSAGE
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
@@ -50,6 +49,8 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import 
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import Navigate
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails import runtime_rail as rail_module
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner import facade as facade_module
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.working_context.store import (
     BrowserWorkingContextStore,
 )
@@ -149,14 +150,14 @@ def test_reset_active_browser_runtimes_resets_all_live_instances() -> None:
 
     first = _Runtime()
     second = _Runtime()
-    runtime_module._ACTIVE_BROWSER_RUNTIMES.clear()
-    runtime_module._ACTIVE_BROWSER_RUNTIMES.add(first)
-    runtime_module._ACTIVE_BROWSER_RUNTIMES.add(second)
+    facade_module._ACTIVE_BROWSER_RUNTIMES.clear()
+    facade_module._ACTIVE_BROWSER_RUNTIMES.add(first)
+    facade_module._ACTIVE_BROWSER_RUNTIMES.add(second)
 
-    assert _run(runtime_module.reset_active_browser_runtimes()) == 2
+    assert _run(facade_module.reset_active_browser_runtimes()) == 2
     first.reset.assert_awaited_once()
     second.reset.assert_awaited_once()
-    runtime_module._ACTIVE_BROWSER_RUNTIMES.clear()
+    facade_module._ACTIVE_BROWSER_RUNTIMES.clear()
 
 
 def test_before_invoke_calls_ensure_runtime_ready() -> None:

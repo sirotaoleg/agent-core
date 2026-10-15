@@ -435,10 +435,10 @@ async def _capability_view(view: str, captured: list[dict[str, Any]]) -> list[di
 
 
 async def _runner_view(captured: list[dict[str, Any]], notes: dict[str, Any], role: str) -> list[dict[str, Any]]:
-    from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
     from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
         CORE_BROWSER_TOOL_NAMES,
     )
+    from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
     from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import build_runtime_settings
 
     settings = build_runtime_settings()
@@ -453,7 +453,7 @@ async def _runner_view(captured: list[dict[str, Any]], notes: dict[str, Any], ro
     )
     try:
         await runtime.ensure_started()
-        worker = runtime._service.browser_agent
+        worker = runtime._service.agent
         if runtime._service and worker and hasattr(worker, "ability_manager"):
             for name in RUNNER_HELPERS:
                 try:

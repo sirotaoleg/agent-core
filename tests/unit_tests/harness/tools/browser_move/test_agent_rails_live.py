@@ -18,16 +18,16 @@ import pytest
 from openjiuwen.core.foundation.llm import AssistantMessage, Model, ModelClientConfig, ModelRequestConfig, ToolCall
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.runtime.assembly import build_agent
-from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings, RunGuardrails
 from openjiuwen.harness.tools.browser_move.runtime.rails.final_answer_recovery import (
     NON_JSON_OUTPUT,
     RESTATE_MESSAGE,
 )
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import CORE_BROWSER_TOOL_NAMES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import MESSAGES
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import playwright_mcp_config
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene import PAGES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene.server import SceneServer
@@ -185,21 +185,21 @@ class _OnEachDriver:
                 api_base="https://example.invalid/v1",
                 model_name="mock-model",
                 mcp_cfg=playwright_mcp_config(settings),
-                guardrails=BrowserRunGuardrails(max_steps=4, max_failures=1, timeout_s=120),
+                guardrails=RunGuardrails(max_steps=4, max_failures=1, timeout_s=120),
                 browser_settings=settings,
                 core_settings=dataclasses.replace(CoreSettings.from_env(environ), topology="delegated_worker"),
             )
             await runtime.ensure_started()
             try:
                 service = runtime.service
-                worker = service.browser_agent
+                worker = service.agent
                 prefix = service.session.assembly.stack.info.tool_name_prefix
                 names = {tool.name for tool in await worker.ability_manager.list_tool_info()}
                 model = ScriptedModel([_step("browser_navigate", {"url": scene_url})], ("I opened the scene.", ANSWER))
                 worker.set_llm(model)
 
                 async def current() -> Any:
-                    return service.browser_agent
+                    return service.agent
 
                 result = await service.run_task_once(
                     task="Open the scene", session_id="rails-live", request_id="r-1", worker=current

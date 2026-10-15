@@ -28,12 +28,11 @@ from openjiuwen.harness.tools.browser_move.runtime import agents as agents_modul
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.runtime import session as runtime_module
 from openjiuwen.harness.tools.browser_move.runtime import topology as topology_module
-from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings, RunGuardrails
 from openjiuwen.harness.tools.browser_move.runtime.rails.action_policy import ActionPolicy
 from openjiuwen.harness.tools.browser_move.runtime.rails.final_answer_recovery import FinalAnswerRecoveryRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.intercepted_action import InterceptedActionHintRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.repeated_call_guard import RepeatedCallGuardRail
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.runtime.topology import (
     WORKER_LANGUAGE,
     DelegatedWorker,
@@ -42,16 +41,21 @@ from openjiuwen.harness.tools.browser_move.runtime.topology import (
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails import runtime_rail as rail_module
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner import facade as facade_module
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import BrowserInstanceConfig
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
+    HOME_URL,
     MCP_PREFIX,
     fake_assembly,
     mcp_driver_info,
     mcp_fake_driver,
+    result,
     run,
 )
 
 HELPERS = {"browser_probe_interactives", "browser_probe_cards", "browser_batch_interact"}
+METADATA = result(value={"page_position": {}, "semantic_state": {}})
 MCP = CoreSettings(driver="playwright_mcp")
 BROWSER_USE = CoreSettings(driver="browser_use")
 
@@ -74,7 +78,7 @@ def _runtime(
             client_type="stdio",
             params={"cwd": str(Path.cwd())},
         ),
-        guardrails=BrowserRunGuardrails(max_steps=7, max_failures=1, timeout_s=30, retry_once=False),
+        guardrails=RunGuardrails(max_steps=7, max_failures=1, timeout_s=30, retry_once=False),
         instance=instance,
         core_settings=core,
         workspace=None if workspace is None else str(workspace),
@@ -88,7 +92,7 @@ def _assembling(driver: Any = None) -> Any:
 
 
 def _registering_runtime_tools() -> Any:
-    return patch.object(runtime_module.Runner.resource_mgr, "add_tool", MagicMock(return_value=None))
+    return patch.object(facade_module.Runner.resource_mgr, "add_tool", MagicMock(return_value=None))
 
 
 @pytest.mark.parametrize(
@@ -121,7 +125,7 @@ def test_the_instances_driver_override_decides_the_default() -> None:
         run(runtime.ensure_started())
 
     create.assert_called_once()
-    assert runtime.service.browser_agent is None
+    assert runtime.service.agent is None
 
 
 class TestDirect:
@@ -137,7 +141,7 @@ class TestDirect:
         }
         with (
             patch.object(browser_agent_module, "create_browser_agent", return_value=agent) as create,
-            patch.object(runtime_module.Runner, "run_agent", AsyncMock(return_value=result)) as run_agent,
+            patch.object(topology_module.Runner, "run_agent", AsyncMock(return_value=result)) as run_agent,
             _assembling() as assemble,
         ):
             run(runtime.ensure_started())
@@ -145,7 +149,7 @@ class TestDirect:
             answer = run(runtime.run_browser_task(task="Report the heading", session_id="wv-agent"))
 
         assert assemble.await_count == 0, "the main agent opens the session at its first invoke"
-        assert runtime.service.browser_agent is None
+        assert runtime.service.agent is None
         create.assert_called_once()
         kwargs = create.call_args.kwargs
         assert kwargs["runtime"] is runtime
@@ -168,6 +172,7 @@ class TestDirect:
             "error": None,
             "status": "completed",
             "progress": {"status": "completed", "completed_steps": ["read the heading"]},
+            "context": {"identity": "", "metadata": {}},
         }
 
     def test_start_makes_no_model_call_and_run_awaits_the_probe_before_the_agent_runs(self) -> None:
@@ -185,7 +190,7 @@ class TestDirect:
         with (
             patch.object(topology_module, "probe_image_support", side_effect=probe),
             patch.object(browser_agent_module, "create_browser_agent", return_value=MagicMock()),
-            patch.object(runtime_module.Runner, "run_agent", side_effect=run_agent),
+            patch.object(topology_module.Runner, "run_agent", side_effect=run_agent),
         ):
             run(runtime.ensure_started())
             started = list(events)
@@ -267,7 +272,7 @@ class TestDirect:
         runtime = _runtime(BROWSER_USE)
         with (
             patch.object(browser_agent_module, "create_browser_agent", return_value=MagicMock()),
-            patch.object(runtime_module.Runner, "run_agent", AsyncMock(side_effect=RuntimeError("model gone"))),
+            patch.object(topology_module.Runner, "run_agent", AsyncMock(side_effect=RuntimeError("model gone"))),
         ):
             failed = run(runtime.run_browser_task(task="Report the heading", session_id="s", request_id="r"))
 
@@ -276,7 +281,7 @@ class TestDirect:
 
         with (
             patch.object(browser_agent_module, "create_browser_agent", return_value=MagicMock()),
-            patch.object(runtime_module.Runner, "run_agent", AsyncMock(side_effect=slow)),
+            patch.object(topology_module.Runner, "run_agent", AsyncMock(side_effect=slow)),
         ):
             timed_out = run(runtime.run_browser_task(task="Report the heading", session_id="s", timeout_s=1))
 
@@ -310,7 +315,7 @@ class TestDelegatedWorker:
             run(runtime.ensure_started())
 
         assert assemble.await_count == 1
-        assert runtime.service.browser_agent is worker
+        assert runtime.service.agent is worker
         build.assert_called_once()
         kwargs = build.call_args.kwargs
         names = {tool.card.name for tool in kwargs["tools"]}
@@ -358,7 +363,7 @@ class TestDelegatedWorker:
         runtime = _runtime(MCP)
         probe = AsyncMock(return_value=True)
         with (
-            _assembling(),
+            _assembling(mcp_fake_driver(results=[METADATA, METADATA])),
             _registering_runtime_tools(),
             patch.object(topology_module, "probe_image_support", probe),
             patch.object(agents_module, "build_agent_parts", wraps=agents_module.build_agent_parts) as parts,
@@ -367,7 +372,7 @@ class TestDelegatedWorker:
 
         probe.assert_not_awaited()
         assert parts.call_args.kwargs["image_support"] is False
-        names = {tool.name for tool in run(runtime.service.browser_agent.ability_manager.list_tool_info())}
+        names = {tool.name for tool in run(runtime.service.agent.ability_manager.list_tool_info())}
         assert MCP_PREFIX + "browser_take_screenshot" not in names
 
     @pytest.mark.parametrize(("verdict", "images"), [(True, True), (False, False), (None, False)])
@@ -382,20 +387,20 @@ class TestDelegatedWorker:
             return {"ok": True}
 
         with (
-            _assembling(),
+            _assembling(mcp_fake_driver(results=[METADATA, METADATA])),
             _registering_runtime_tools(),
             patch.object(topology_module, "probe_image_support", probe),
             patch.object(runtime.service, "run_task", AsyncMock(side_effect=run_task)),
         ):
             run(runtime.ensure_started())
-            started = runtime.service.browser_agent
+            started = runtime.service.agent
             run(runtime.run_browser_task(task="Open the scene", session_id="s", request_id="r"))
             run(runtime.run_browser_task(task="Open it again", session_id="s", request_id="r2"))
 
         assert probe.await_count == 2
-        names = {tool.name for tool in run(runtime.service.browser_agent.ability_manager.list_tool_info())}
+        names = {tool.name for tool in run(runtime.service.agent.ability_manager.list_tool_info())}
         assert (MCP_PREFIX + "browser_take_screenshot" in names) is images
-        assert (runtime.service.browser_agent is started) is not images
+        assert (runtime.service.agent is started) is not images
 
     def test_a_worker_rebuilt_for_images_leaves_out_the_tools_the_caller_removed(self) -> None:
         runtime = _runtime(MCP)
@@ -405,16 +410,16 @@ class TestDelegatedWorker:
             return {"ok": True}
 
         with (
-            _assembling(),
+            _assembling(mcp_fake_driver(results=[METADATA])),
             _registering_runtime_tools(),
             patch.object(topology_module, "probe_image_support", AsyncMock(return_value=True)),
             patch.object(runtime.service, "run_task", AsyncMock(side_effect=run_task)),
         ):
             run(runtime.ensure_started())
-            runtime.service.browser_agent.ability_manager.remove_ability(sorted(HELPERS))
+            runtime.service.agent.ability_manager.remove_ability(sorted(HELPERS))
             run(runtime.run_browser_task(task="Open the scene", session_id="s", request_id="r"))
 
-        names = {tool.name for tool in run(runtime.service.browser_agent.ability_manager.list_tool_info())}
+        names = {tool.name for tool in run(runtime.service.agent.ability_manager.list_tool_info())}
         assert HELPERS.isdisjoint(names)
         assert MCP_PREFIX + "browser_take_screenshot" in names
 
@@ -422,20 +427,20 @@ class TestDelegatedWorker:
         runtime = _runtime(MCP)
         with _assembling(), _registering_runtime_tools():
             run(runtime.ensure_started())
-            first = runtime.service.browser_agent
+            first = runtime.service.agent
             run(runtime.release_task_resources())
-            assert runtime.service.browser_agent is None
+            assert runtime.service.agent is None
             run(runtime.acquire_task_resources())
             run(runtime.ensure_started())
 
-        assert runtime.service.browser_agent is not first
+        assert runtime.service.agent is not first
         assert runtime.service.started is True
 
     def test_run_hands_the_task_to_the_service_with_a_worker_that_rebuilds_after_a_reset(self) -> None:
         runtime = _runtime(MCP)
         run_task = AsyncMock(return_value={"ok": True})
         with (
-            _assembling() as assemble,
+            _assembling(mcp_fake_driver(results=[METADATA])) as assemble,
             _registering_runtime_tools(),
             patch.object(runtime.service, "run_task", run_task),
         ):
@@ -445,7 +450,7 @@ class TestDelegatedWorker:
             run(runtime.service.reset())
             second = run(worker())
 
-        assert answer == {"ok": True}
+        assert (answer["ok"], answer["context"]["identity"], set(answer)) == (True, HOME_URL, {"ok", "context"})
         assert run_task.await_args.kwargs | {"worker": None} == {
             "task": "Open the scene",
             "session_id": "s",
@@ -454,7 +459,7 @@ class TestDelegatedWorker:
             "worker": None,
         }
         assert first is not None and second is not None and second is not first
-        assert first is not runtime.service.browser_agent and second is runtime.service.browser_agent
+        assert first is not runtime.service.agent and second is runtime.service.agent
         assert assemble.await_count == 2
 
     def test_on_a_browser_use_shaped_driver_the_worker_reads_browser_use_tools_with_plain_names(self) -> None:
@@ -463,7 +468,7 @@ class TestDelegatedWorker:
         with _assembling(FakeDriver(info=info)), _registering_runtime_tools():
             run(runtime.ensure_started())
 
-        worker = runtime.service.browser_agent
+        worker = runtime.service.agent
         prompt = worker.config.prompt_template[0]["content"]
         assert "with browser-use tools and approved runtime helper tools only." in prompt
         assert "required by a browser-use action." in prompt
@@ -475,11 +480,11 @@ class TestDelegatedWorker:
         runtime = _runtime(MCP)
         with _assembling() as assemble, _registering_runtime_tools():
             run(runtime.ensure_started())
-            first = runtime.service.browser_agent
+            first = runtime.service.agent
             with patch.object(runtime_module.OpenAIModelClient, "aclose", AsyncMock()):
                 run(runtime.shutdown())
-            assert runtime.service.browser_agent is None
+            assert runtime.service.agent is None
             run(runtime.ensure_started())
 
-        assert runtime.service.browser_agent is not first
+        assert runtime.service.agent is not first
         assert assemble.await_count == 2

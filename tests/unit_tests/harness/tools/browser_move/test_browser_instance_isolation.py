@@ -16,9 +16,9 @@ from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import (
     _build_profile,
 )
 from openjiuwen.harness.tools.browser_move.provisioning.profiles import BrowserProfile, BrowserProfileStore
-from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails
-from openjiuwen.harness.tools.browser_move.runtime.service import BrowserService
+from openjiuwen.harness.tools.browser_move.runtime.config import RunGuardrails
 from openjiuwen.harness.tools.browser_move.surfaces import SURFACES
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import (
     BrowserInstanceConfig,
     build_playwright_mcp_config,
@@ -50,14 +50,14 @@ def _profile(instance: BrowserInstanceConfig | None) -> BrowserProfile:
     return _build_profile(SURFACES.create("browser", os.environ, instance).settings)
 
 
-def _make_service(instance: BrowserInstanceConfig | None) -> BrowserService:
-    return BrowserService(
+def _make_runtime(instance: BrowserInstanceConfig | None) -> BrowserAgentRuntime:
+    return BrowserAgentRuntime(
         provider="openai",
         api_key="mock-api-key",
         api_base="https://example.invalid/v1",
         model_name="mock-model",
         mcp_cfg=build_playwright_mcp_config(instance),
-        guardrails=BrowserRunGuardrails(),
+        guardrails=RunGuardrails(),
         instance=instance,
     )
 
@@ -73,12 +73,12 @@ def _isolated_env():
 
 def test_distinct_keys_get_distinct_profiles_and_ports() -> None:
     with _isolated_env(), patch(_ALLOCATE_FREE_PORT, side_effect=[40001, 40002]):
-        a = _make_service(BrowserInstanceConfig(key="A", driver_mode="managed"))
-        b = _make_service(BrowserInstanceConfig(key="B", driver_mode="managed"))
+        a = _make_runtime(BrowserInstanceConfig(key="A", driver_mode="managed"))
+        b = _make_runtime(BrowserInstanceConfig(key="B", driver_mode="managed"))
 
-        assert a._profile_name == "A"
-        assert b._profile_name == "B"
-        assert a._driver_mode == "managed"
+        assert a.lifecycle_identity.profile_name == "A"
+        assert b.lifecycle_identity.profile_name == "B"
+        assert a.lifecycle_identity.driver_mode == "managed"
 
         pa = _profile(BrowserInstanceConfig(key="A", driver_mode="managed"))
         pb = _profile(BrowserInstanceConfig(key="B", driver_mode="managed"))
@@ -101,8 +101,8 @@ def test_explicit_port_is_honored_without_allocation() -> None:
 
 def test_instance_profile_name_overrides_key() -> None:
     with _isolated_env(), patch(_ALLOCATE_FREE_PORT, return_value=40010):
-        svc = _make_service(BrowserInstanceConfig(key="raw", driver_mode="managed", profile_name="custom-profile"))
-        assert svc._profile_name == "custom-profile"
+        svc = _make_runtime(BrowserInstanceConfig(key="raw", driver_mode="managed", profile_name="custom-profile"))
+        assert svc.lifecycle_identity.profile_name == "custom-profile"
 
 
 def test_instance_driver_mode_overrides_env() -> None:
@@ -111,14 +111,14 @@ def test_instance_driver_mode_overrides_env() -> None:
         {"BROWSER_DRIVER": "remote", "BROWSER_PROFILE_STORE_PATH": tempfile.mktemp(suffix=".json")},
         clear=True,
     ):
-        svc = _make_service(BrowserInstanceConfig(key="x", driver_mode="managed"))
-        assert svc._driver_mode == "managed"
+        svc = _make_runtime(BrowserInstanceConfig(key="x", driver_mode="managed"))
+        assert svc.lifecycle_identity.driver_mode == "managed"
 
 
 def test_legacy_no_instance_preserves_env_defaults() -> None:
     with _isolated_env():
-        svc = _make_service(None)
-        assert svc._profile_name == "jiuwenclaw"
+        svc = _make_runtime(None)
+        assert svc.lifecycle_identity.profile_name == "jiuwenclaw"
         profile = _profile(None)
 
     assert profile.debug_port == 9333

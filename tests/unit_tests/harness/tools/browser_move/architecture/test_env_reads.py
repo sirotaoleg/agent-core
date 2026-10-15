@@ -19,7 +19,7 @@ KNOWN_ENV_READS: dict[str, dict[str, int]] = {
     "drivers/browser_use/sidecar/session_adapter.py": {
         "os.environ.get(BROWSER_UPLOAD_ROOT)": 1,
     },
-    "runtime/service.py": {
+    "surfaces/browser/runner/facade.py": {
         "env_map.get(PLAYWRIGHT_MCP_CDP_ENDPOINT)": 1,
     },
 }

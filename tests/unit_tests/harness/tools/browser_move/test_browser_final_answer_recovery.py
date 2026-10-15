@@ -19,14 +19,15 @@ from openjiuwen.harness.tools.browser_move.contract import Observation, Observe
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.runtime.agents import build_browser_worker_agent
-from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings, RunGuardrails
 from openjiuwen.harness.tools.browser_move.runtime.rails.final_answer_recovery import (
     RECOVERY_MESSAGE,
     RESTATE_MESSAGE,
     STEP_LIMIT_SENTENCE,
     FinalAnswerRecoveryRail,
 )
-from openjiuwen.harness.tools.browser_move.runtime.service import BrowserService
+from openjiuwen.harness.tools.browser_move.runtime.service import AgentService
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.tools import build_browser_worker_system_prompt
 
 from .command_tools import HOME, command_tools
@@ -102,7 +103,7 @@ class _ScriptedLLM:
 
 def _service(
     respond: Respond, *, max_steps: int = 10, driver: _SnapshotDriver | None = None
-) -> tuple[BrowserService, _ScriptedLLM, _SnapshotDriver]:
+) -> tuple[AgentService, _ScriptedLLM, _SnapshotDriver]:
     worker = build_browser_worker_agent(
         provider="openai",
         api_key="mock-api-key",
@@ -117,31 +118,31 @@ def _service(
     driver = driver or _SnapshotDriver()
     snapshot = command_tools(driver)["browser_snapshot"]
     worker.ability_manager.add_ability(snapshot.card, snapshot)
-    service = BrowserService(
+    service = BrowserAgentRuntime(
         provider="openai",
         api_key="mock-api-key",
         api_base="https://example.invalid/v1",
         model_name="mock-model",
         mcp_cfg=_mcp_cfg(),
-        guardrails=BrowserRunGuardrails(max_steps=max_steps, max_failures=1, timeout_s=30),
-    )
+        guardrails=RunGuardrails(max_steps=max_steps, max_failures=1, timeout_s=30),
+    ).service
     with patch.object(assembly_module, "assemble_driver", AsyncMock(return_value=fake_assembly(driver))):
         asyncio.run(service.ensure_runtime_ready())
-    service.browser_agent = worker
+    service.agent = worker
     return service, llm, driver
 
 
-def _worker_of(service: BrowserService) -> Callable[[], Awaitable[Any]]:
+def _worker_of(service: AgentService) -> Callable[[], Awaitable[Any]]:
     async def worker() -> Any:
-        return service.browser_agent
+        return service.agent
 
     return worker
 
 
-def _run(service: BrowserService, rail: bool = True, request_id: str = "r-1") -> dict[str, Any]:
+def _run(service: AgentService, rail: bool = True, request_id: str = "r-1") -> dict[str, Any]:
     async def scenario() -> dict[str, Any]:
         if rail:
-            await service.browser_agent.register_rail(FinalAnswerRecoveryRail())
+            await service.agent.register_rail(FinalAnswerRecoveryRail())
         return await service.run_task_once(
             task="Find a vegetarian lasagna",
             session_id="s-records-1",
@@ -262,7 +263,7 @@ class TestRecoveryFails:
             "partial",
             PROSE,
         )
-        assert BrowserService._is_max_iteration_result(result)
+        assert AgentService._is_max_iteration_result(result)
         assert len(llm.requests) == 3
 
 
@@ -335,7 +336,7 @@ class TestIsolation:
         async def scenario() -> tuple[dict[str, Any], dict[str, Any]]:
             events["a_recovering"] = asyncio.Event()
             events["b_second_request"] = asyncio.Event()
-            await service.browser_agent.register_rail(FinalAnswerRecoveryRail())
+            await service.agent.register_rail(FinalAnswerRecoveryRail())
             worker = _worker_of(service)
             return await asyncio.gather(
                 service.run_task_once(task="Task A", session_id="s-records-a", request_id="run-a", worker=worker),

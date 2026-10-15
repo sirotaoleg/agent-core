@@ -8,8 +8,8 @@ import asyncio
 from unittest.mock import AsyncMock
 
 from openjiuwen.core.foundation.tool import McpServerConfig
-from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.runtime.config import RunGuardrails
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.tools import (
     BrowserCustomActionTool,
     BrowserListActionsTool,
@@ -34,7 +34,7 @@ def _make_runtime() -> BrowserAgentRuntime:
         api_base="https://example.invalid/v1",
         model_name="test-model",
         mcp_cfg=mcp_cfg,
-        guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
+        guardrails=RunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
     )
 
 

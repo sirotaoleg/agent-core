@@ -27,17 +27,17 @@ from openjiuwen.harness.tools.browser_move.runtime.agents import (
 )
 from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
 from openjiuwen.harness.tools.browser_move.runtime.config import (
-    BrowserRunGuardrails,
     CoreSettings,
+    RunGuardrails,
     RuntimeServerSettings,
     runtime_server_child_env,
     runtime_server_environ,
 )
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser import site_profiles
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner import main as main_module
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.server_config import (
     build_browser_runtime_mcp_config,
 )
@@ -61,8 +61,8 @@ def _mcp_cfg() -> McpServerConfig:
     )
 
 
-def _guardrails() -> BrowserRunGuardrails:
-    return BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False)
+def _guardrails() -> RunGuardrails:
+    return RunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False)
 
 
 class TestRuntimeServerSettings:
@@ -186,9 +186,9 @@ class TestEntryPoints:
             core_settings=core,
             browser_settings=browser,
         )
-        assert runtime.core_settings is core
-        assert runtime.service._settings is browser
-        assert runtime.service._core_settings is core
+        assert runtime.core_settings is core and runtime.service.core is core
+        assert runtime.surface.settings.upload_root == browser.upload_root
+        assert runtime.surface.settings.mcp_server is runtime.mcp_cfg
 
     def test_runtime_registers_builtin_actions_with_the_settings_upload_root(self) -> None:
         runtime = BrowserAgentRuntime(

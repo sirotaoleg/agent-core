@@ -30,8 +30,8 @@ from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.tools import D
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
-from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
-from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime, ToolKind
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings, RunGuardrails
+from openjiuwen.harness.tools.browser_move.runtime.session import ToolKind
 from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     Back,
     Drop,
@@ -46,6 +46,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade import BrowserAgentRuntime
 from tests.unit_tests.harness.tools.browser_move.snapshots import builder
 
 MCP_PREFIX = "mcp_playwright-official_"
@@ -172,7 +173,7 @@ def make_runtime(
             client_type="stdio",
             params={"cwd": str(Path.cwd())},
         ),
-        guardrails=BrowserRunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
+        guardrails=RunGuardrails(max_steps=3, max_failures=1, timeout_s=30, retry_once=False),
         allowed_tool_names=allowed_tool_names,
         language=language,
         workspace=workspace,
