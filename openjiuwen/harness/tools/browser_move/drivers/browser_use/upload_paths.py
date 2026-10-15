@@ -7,12 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Sequence
 
-
-def _strip_path_text(raw: str) -> str:
-    text = str(raw or "").strip()
-    if len(text) >= 2 and text[0] == text[-1] and text[0] in "'\"":
-        text = text[1:-1].strip()
-    return text
+from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import upload_paths
 
 
 def _try_open(path: Path) -> bool:
@@ -24,52 +19,22 @@ def _try_open(path: Path) -> bool:
         return False
 
 
-def _candidates_for(text: str, upload_root: Path | None) -> list[Path]:
-    """Build resolve candidates: expanduser path, then the upload root fallback."""
-    primary = Path(text).expanduser()
-    out: list[Path] = [primary]
-    if primary.is_absolute():
-        return out
-    if upload_root is not None:
-        out.append(upload_root / text)
-        out.append(upload_root / primary.name)
-    return out
-
-
 def resolve_upload_file_paths(paths: Sequence[str], *, upload_root: Path | None = None) -> tuple[list[str], str | None]:
-    """Return ``(absolute_existing_paths, error_or_none)``; relative names also try ``upload_root``."""
+    """Return ``(absolute_existing_paths, error_or_none)``; relative names resolve under ``upload_root`` only."""
+    try:
+        resolved = upload_paths(tuple(str(raw) for raw in paths or ()), upload_root)
+    except ValueError as exc:
+        return [], str(exc)
     existing: list[str] = []
     missing: list[str] = []
     unreadable: list[str] = []
-    seen: set[str] = set()
-
-    for raw in paths or []:
-        text = _strip_path_text(str(raw))
-        if not text:
-            continue
-        resolved_ok: str | None = None
-        last_resolved = text
-        for candidate in _candidates_for(text, upload_root):
-            try:
-                resolved = candidate.resolve()
-            except OSError:
-                continue
-            last_resolved = str(resolved)
-            if not resolved.is_file():
-                continue
-            if not _try_open(resolved):
-                unreadable.append(str(resolved))
-                resolved_ok = None
-                break
-            resolved_ok = str(resolved)
-            break
-        if resolved_ok is None:
-            if last_resolved not in unreadable:
-                missing.append(last_resolved)
-            continue
-        if resolved_ok not in seen:
-            seen.add(resolved_ok)
-            existing.append(resolved_ok)
+    for path in resolved:
+        if not path.is_file():
+            missing.append(str(path))
+        elif not _try_open(path):
+            unreadable.append(str(path))
+        elif str(path) not in existing:
+            existing.append(str(path))
 
     if not existing and not missing and not unreadable:
         return [], "'paths' must contain at least one file path"

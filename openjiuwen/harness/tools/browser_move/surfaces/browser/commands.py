@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import ClassVar
 
 from openjiuwen.harness.tools.browser_move.contract import Action, Effect, Ref
@@ -51,6 +52,33 @@ class UploadFile(Action):
 
     target: Ref | None
     paths: tuple[str, ...] = ()
+
+
+def upload_paths(paths: tuple[str, ...], upload_root: Path | None) -> tuple[Path, ...]:
+    """The resolved absolute path of every entry; a relative name is a file under ``upload_root`` and stays in it."""
+    root = Path(upload_root).expanduser().resolve() if upload_root is not None else None
+    resolved = []
+    for raw in paths:
+        text = raw.strip()
+        if len(text) >= 2 and text[0] == text[-1] and text[0] in "'\"":
+            text = text[1:-1].strip()
+        path = Path(text).expanduser()
+        if path.is_absolute():
+            resolved.append(path.resolve())
+            continue
+        if root is None:
+            raise ValueError(
+                f"{raw!r} is a relative path and no upload folder is configured: give an absolute path, or set "
+                "BROWSER_UPLOAD_ROOT and name a file under it (list_upload_files)"
+            )
+        candidate = (root / path).resolve()
+        if candidate != root and root not in candidate.parents:
+            raise ValueError(
+                f"{raw!r} resolves to {candidate}, outside the upload folder {root}: name a file under it "
+                "(list_upload_files)"
+            )
+        resolved.append(candidate)
+    return tuple(resolved)
 
 
 class FieldKind(str, Enum):

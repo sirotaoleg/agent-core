@@ -12,7 +12,6 @@ import json
 import re
 import shutil
 import uuid
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -75,6 +74,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.commands import (
     OpenContext,
     SelectOption,
     UploadFile,
+    upload_paths,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.context import BrowserContext
 
@@ -109,9 +109,10 @@ _UNBACKED_TOOLS = frozenset({"browser_find"})
 
 @dataclass(frozen=True)
 class PlaywrightMcpConfig:
-    """What ``start()`` needs: the server's command line, environment and working directory."""
+    """What ``start()`` needs: the server's command line, environment and working directory; the upload folder."""
 
     server: McpServerConfig
+    upload_root: Path | None = None
 
     @property
     def output_dir(self) -> Path:
@@ -156,14 +157,13 @@ def _point(ref: PointRef) -> dict[str, int]:
     return {"x": ref.x, "y": ref.y}
 
 
-def _staged(paths: Iterable[str], root: Path) -> tuple[list[str], list[Path]]:
+def _staged(paths: tuple[str, ...], upload_root: Path | None, root: Path) -> tuple[list[str], list[Path]]:
     root = root.resolve()
     staged = []
     created = []
-    for path in paths:
-        source = (root / path).resolve()
+    for source in upload_paths(paths, upload_root):
         if source.is_relative_to(root) or not source.is_file():
-            staged.append(path)
+            staged.append(str(source))
             continue
         target = root / "uploads" / uuid.uuid4().hex[:12] / source.name
         target.parent.mkdir(parents=True)
@@ -373,15 +373,23 @@ class PlaywrightMcpDriver(HandlerDriver):
     async def _drop(self, action: Drop) -> ActionResult:
         args = _aim(action.target, "drop on")
         if action.paths:
-            args["paths"] = await self._stage(action.paths)
+            try:
+                args["paths"] = await self._stage(action.paths)
+            except ValueError as exc:
+                return ActionResult(ok=False, detail=str(exc))
         if action.data:
             args["data"] = dict(action.data)
         return await self._run("browser_drop", args)
 
     @handles(UploadFile)
     async def _upload_file(self, action: UploadFile) -> ActionResult:
-        args = {"paths": await self._stage(action.paths)} if action.paths else {}
-        return await self._run("browser_file_upload", args)
+        if not action.paths:
+            return await self._run("browser_file_upload", {})
+        try:
+            paths = await self._stage(action.paths)
+        except ValueError as exc:
+            return ActionResult(ok=False, detail=str(exc))
+        return await self._run("browser_file_upload", {"paths": paths})
 
     @handles(HandleDialog)
     async def _handle_dialog(self, action: HandleDialog) -> ActionResult:
@@ -480,8 +488,9 @@ class PlaywrightMcpDriver(HandlerDriver):
             self._context = result.surface
         return result
 
-    async def _stage(self, paths: Iterable[str]) -> list[str]:
-        staged, created = await asyncio.to_thread(_staged, paths, self._output_dir())
+    async def _stage(self, paths: tuple[str, ...]) -> list[str]:
+        upload_root = self._config.upload_root if self._config is not None else None
+        staged, created = await asyncio.to_thread(_staged, paths, upload_root, self._output_dir())
         self._staged_dirs.extend(created)
         return staged
 
@@ -504,7 +513,7 @@ def create_playwright_mcp_driver(device: ProvisionedDevice, surface_settings: An
             client_type=given.client_type,
             params={**given.params, "env": env},
         )
-    return PlaywrightMcpDriver(PlaywrightMcpConfig(server))
+    return PlaywrightMcpDriver(PlaywrightMcpConfig(server, upload_root=getattr(surface_settings, "upload_root", None)))
 
 
 __all__ = ["PlaywrightMcpConfig", "PlaywrightMcpDriver", "create_playwright_mcp_driver"]

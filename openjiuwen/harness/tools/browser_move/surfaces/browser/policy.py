@@ -12,7 +12,7 @@ from typing import Any
 
 from ...contract import Action, PolicyRule, PressKey, RunScript
 from ...contract.surface import SurfaceContext
-from .commands import Drop, UploadFile
+from .commands import Drop, UploadFile, upload_paths
 
 CLIPBOARD_DENIED = (
     "Blocked: the clipboard belongs to the host machine, not to this task, so pasting or reading it is not allowed. "
@@ -42,26 +42,22 @@ def _inside(path: Path, root: Path) -> bool:
     return path == root or root in path.parents
 
 
-def _confined(raw: str, roots: tuple[Path, ...]) -> bool:
-    text = raw.strip()
-    if len(text) >= 2 and text[0] == text[-1] and text[0] in "'\"":
-        text = text[1:-1].strip()
-    path = Path(text).expanduser()
-    if path.is_absolute():
-        return any(_inside(path.resolve(), root) for root in roots)
-    return any(_inside((root / path).resolve(), root) for root in roots)
-
-
 def upload_rules(upload_root: Path | None, workspace_root: Path | None) -> tuple[PolicyRule, ...]:
-    """Deny upload and drop paths outside the upload root and the workspace; with neither, outside the process cwd."""
+    """Deny upload and drop paths outside the upload root and the workspace; with neither configured, every path."""
 
     def deny(action: Action, context: SurfaceContext | None) -> str | None:
-        configured = tuple(Path(root).expanduser().resolve() for root in (upload_root, workspace_root) if root)
-        roots = configured or (Path.cwd().resolve(),)
-        outside = [str(raw) for raw in getattr(action, "paths", ()) if not _confined(str(raw), roots)]
+        paths = tuple(str(raw) for raw in getattr(action, "paths", ()))
+        if not paths:
+            return None
+        try:
+            resolved = upload_paths(paths, upload_root)
+        except ValueError as exc:
+            return f"Blocked: {exc}"
+        roots = tuple(Path(root).expanduser().resolve() for root in (upload_root, workspace_root) if root)
+        outside = [raw for raw, path in zip(paths, resolved) if not any(_inside(path, root) for root in roots)]
         if not outside:
             return None
-        allowed = ", ".join(str(root) for root in roots)
+        allowed = ", ".join(str(root) for root in roots) or "none configured"
         return (
             f"Blocked: {', '.join(repr(raw) for raw in outside)} is outside the folders files may be uploaded from "
             f"({allowed}). Upload files from BROWSER_UPLOAD_ROOT (list_upload_files) or the workspace."
