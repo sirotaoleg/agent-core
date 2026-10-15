@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 MASK = "***"
 
@@ -19,7 +19,7 @@ def is_sensitive(command: Any) -> bool:
 def masked(value: _T) -> _T:
     """``value`` with the ``__sensitive_fields__`` of every sensitive command, or part of one, set to ``MASK``."""
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        hidden = value.__sensitive_fields__ if is_sensitive(value) else ()
+        hidden = getattr(value, "__sensitive_fields__", ()) if is_sensitive(value) else ()
         changes = {
             item.name: MASK if item.name in hidden else masked(getattr(value, item.name))
             for item in dataclasses.fields(value)
@@ -27,7 +27,7 @@ def masked(value: _T) -> _T:
         }
         return dataclasses.replace(value, **changes)
     if isinstance(value, (tuple, list)):
-        return type(value)(masked(item) for item in value)
+        return cast(_T, type(value)(masked(item) for item in value))
     if isinstance(value, Mapping):
-        return {key: masked(item) for key, item in value.items()}
+        return cast(_T, {key: masked(item) for key, item in value.items()})
     return value
