@@ -278,6 +278,7 @@ class _TerminalMixin:
                     "runtime_blocked",
                     "semantic_replan_denial_budget_exhausted",
                     "task_invocation_slice_exhausted",
+                    "browser_connection_lost",
                 }
             )
         )

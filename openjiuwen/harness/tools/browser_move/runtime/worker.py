@@ -620,7 +620,7 @@ class _WorkerLoop:
             _ctx_observer_session_id.reset(token_session)
             _ctx_observer_request_id.reset(token_request)
         output_text = result.get("output") if isinstance(result, dict) else result
-        parsed = extract_json_object(output_text)
+        parsed = extract_json_object(output_text) or self._ended_by_runtime(result)
         if parsed:
             self._update_progress_from_worker_result(
                 session_id=session_id,
@@ -682,6 +682,16 @@ class _WorkerLoop:
             parsed=parsed,
         )
         return parsed
+
+    @staticmethod
+    def _ended_by_runtime(result: Any) -> Optional[Dict[str, Any]]:
+        """The answer of a run a rail ended with an error of its own (no JSON to recover): the task is blocked."""
+        if not isinstance(result, dict) or result.get("result_type") != "error":
+            return None
+        error = str(result.get("error") or "").strip()
+        if not error:
+            return None
+        return {"ok": False, "final": str(result.get("output") or error), "error": error, "status": "blocked"}
 
     async def _recover_final_answer(
         self, agent: ReActAgent, worker_conversation_id: str, request_id: str, reason: str

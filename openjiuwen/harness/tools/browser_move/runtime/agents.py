@@ -270,7 +270,7 @@ async def build_worker(
         worker_prompt=bundle.profile.worker_prompt or default_worker_prompt,
         driver_name=worker_driver_name(session.assembly.stack.info),
     )
-    rails = core_rails(bundle.profile, parts.builders, session.page_state)
+    rails = core_rails(bundle.profile, parts.builders, session.page_state, lambda: session)
     for rail in (*rails, *parts.rails, FinalAnswerRecoveryRail()):
         await worker.register_rail(rail)
     return worker

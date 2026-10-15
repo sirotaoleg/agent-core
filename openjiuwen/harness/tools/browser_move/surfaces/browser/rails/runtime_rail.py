@@ -843,7 +843,11 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
 
             progress_state = self._load_progress_state(session)
             if str(result.get("result_type") or "").lower() == "error":
-                self._terminalize_invoke_failure(session, "browser_execution_error")
+                driver_session = self._runtime.session
+                if driver_session is not None and driver_session.lost is not None:
+                    self._terminalize_invoke_failure(session, "browser_connection_lost", blocked=True)
+                else:
+                    self._terminalize_invoke_failure(session, "browser_execution_error")
             if self._finalize_terminal_invoke(session, result, clean_output):
                 return
             exported = progress_state.to_dict() if not progress_state.is_empty() else None
@@ -1152,14 +1156,14 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
         return True
 
     @staticmethod
-    def _terminalize_invoke_failure(session: Any, reason: str) -> bool:
+    def _terminalize_invoke_failure(session: Any, reason: str, *, blocked: bool = False) -> bool:
         state = session.get_state(_BROWSER_PHASE_STATE_KEY) if session is not None else None
         if not isinstance(state, dict) or not state:
             return False
         status = str(state.get("status") or "in_progress").strip().lower()
         if status not in _BROWSER_TERMINAL_STATUSES:
             evidence_available = BrowserRuntimeRail._has_task_evidence(state)
-            state["status"] = "partial" if evidence_available else "blocked"
+            state["status"] = "partial" if evidence_available and not blocked else "blocked"
             state["next_action_class"] = "finish"
             state["terminal_reason"] = reason
             blockers = list(state.get("blockers") or [])
@@ -1201,6 +1205,7 @@ class BrowserRuntimeRail(_TerminalMixin, _ResultsMixin, _ProbeResultsMixin, _Pha
             "model_provider_unavailable",
             "model_tool_protocol_error",
             "task_invocation_slice_exhausted",
+            "browser_connection_lost",
         )
         state["blockers"] = [
             blocker

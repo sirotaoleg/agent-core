@@ -26,6 +26,7 @@ from .config import CoreSettings
 from .driver_session import DriverSession
 from .page_state import PageState
 from .rails.action_policy import ActionPolicy
+from .rails.connection_lost import ConnectionLostRail
 from .rails.intercepted_action import InterceptedActionHintRail
 from .rails.repeated_call_guard import RepeatedCallGuardRail
 from .tool_factory import Builder, ToolContext, ToolFactory
@@ -143,13 +144,20 @@ def new_page_state(profile: SurfaceProfile) -> PageState:
 
 
 def core_rails(
-    profile: SurfaceProfile, builders: Mapping[str, Builder], page_state: PageState
+    profile: SurfaceProfile,
+    builders: Mapping[str, Builder],
+    page_state: PageState,
+    session_of: Callable[[], DriverSession | None],
 ) -> tuple[AgentRail, ...]:
-    """The policy, the repeated-call guard and the intercepted-action hint, over the live ``builders`` mapping."""
+    """The policy, the repeated-call guard, the intercepted-action hint and the lost-connection stop.
+
+    ``builders`` is the live mapping and ``session_of`` the live lookup: both may fill after the rails are built.
+    """
     return (
         ActionPolicy(builders, profile.policy_rules, page_state),
         RepeatedCallGuardRail(),
         InterceptedActionHintRail(profile.messages["retry"]),
+        ConnectionLostRail(session_of),
     )
 
 
@@ -232,7 +240,7 @@ async def build_agent(
         )
         agent = agent_over(
             parts,
-            core_rails(assembly.surface.profile, parts.builders, session.page_state),
+            core_rails(assembly.surface.profile, parts.builders, session.page_state, lambda: session),
             model,
             language=language,
             workspace=workspace,

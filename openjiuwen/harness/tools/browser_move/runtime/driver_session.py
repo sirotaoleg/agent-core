@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, NoReturn
 
 from openjiuwen.core.common.exception.codes import StatusCode
-from openjiuwen.core.common.exception.errors import build_error
+from openjiuwen.core.common.exception.errors import BaseError, build_error
 
 from ..contract import Action, ActionResult, ConnectionLost, DriverError, Health, Observation, Observe
 from .page_state import PageState
@@ -30,13 +30,20 @@ class DriverSession:
         self._restarted = messages["driver_restarted"]
         self._lost = messages["driver_lost"]
         self._losses = 0
+        self._ended = False
 
     @property
     def page_state(self) -> PageState:
         return self._page_state
 
+    @property
+    def lost(self) -> str | None:
+        """The ``driver_lost`` message once a loss ended the task, ``None`` while the stack can still serve it."""
+        return self._lost if self._ended else None
+
     def begin_task(self) -> None:
         self._losses = 0
+        self._ended = False
 
     async def execute(self, action: Action) -> ActionResult:
         try:
@@ -86,7 +93,7 @@ class DriverSession:
     async def _recover(self, error: ConnectionLost) -> NoReturn:
         self._losses += 1
         if self._losses > 1:
-            raise build_error(StatusCode.DEEPAGENT_RUNTIME_ERROR, error_msg=self._lost, cause=error) from error
+            raise self._end(error) from error
         await self._restart(error)
         raise ConnectionLost(self._restarted, dispatched=error.dispatched) from error
 
@@ -96,8 +103,12 @@ class DriverSession:
                 await self.assembly.stack.stop()
             await self._start()
         except Exception as restart_error:
-            raise build_error(StatusCode.DEEPAGENT_RUNTIME_ERROR, error_msg=self._lost, cause=restart_error) from error
+            raise self._end(restart_error) from error
         self._page_state.reset()
+
+    def _end(self, cause: Exception) -> BaseError:
+        self._ended = True
+        return build_error(StatusCode.DEEPAGENT_RUNTIME_ERROR, error_msg=self._lost, cause=cause)
 
 
 __all__ = ["DriverSession"]

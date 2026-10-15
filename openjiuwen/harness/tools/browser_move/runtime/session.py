@@ -152,7 +152,7 @@ class AgentRuntime:
         return self._builders
 
     def core_rails(self) -> tuple[AgentRail, ...]:
-        return core_rails(self._surface.profile, self._builders, self.page_state)
+        return core_rails(self._surface.profile, self._builders, self.page_state, lambda: self._session)
 
     @property
     def page_state(self) -> PageState:
