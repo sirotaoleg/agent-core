@@ -13,11 +13,8 @@ from . import _scan
 BROWSER_WORD_RE = re.compile(r"\b(?:browser|page|tab|url)\b", re.IGNORECASE)
 
 KNOWN_BROWSER_WORDS: dict[str, int] = {
-    "runtime/agents.py": 1,
-    "runtime/config.py": 1,
-    "runtime/rails/final_answer_recovery.py": 1,
-    "runtime/rails/repeated_call_guard.py": 4,
-    "runtime/worker.py": 48,
+    "runtime/rails/repeated_call_guard.py": 1,
+    "runtime/worker.py": 37,
 }
 
 

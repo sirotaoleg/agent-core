@@ -232,7 +232,7 @@ class TestRecoveryFails:
             "final": PROSE,
             "page": {"url": "", "title": ""},
             "screenshot": None,
-            "error": "Browser worker did not return valid JSON output",
+            "error": "Worker did not return valid JSON output",
             "status": "failed",
         }
         assert len(llm.requests) == 2, "exactly one recovery request"
@@ -245,7 +245,7 @@ class TestRecoveryFails:
         assert (result["ok"], result["final"], result["error"]) == (
             False,
             PROSE,
-            "Browser worker did not return valid JSON output",
+            "Worker did not return valid JSON output",
         )
         assert len(llm.requests) == 2
 
@@ -388,7 +388,7 @@ class TestRecoveryCallFails:
             "final": PROSE,
             "page": {"url": "", "title": ""},
             "screenshot": None,
-            "error": "Browser worker did not return valid JSON output",
+            "error": "Worker did not return valid JSON output",
             "status": "failed",
         }
         assert [_is_recovery(request) for request in llm.requests] == [False, True], "one recovery call, no retry"

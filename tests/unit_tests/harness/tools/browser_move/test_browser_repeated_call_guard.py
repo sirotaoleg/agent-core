@@ -38,7 +38,7 @@ from .command_tools import HOME, command_tools, fake_driver, result, tool_messag
 from .runtime_fixtures import make_runtime
 
 NOTE = "### Repeated call"
-NOOP_WORDING = "only returned constants or the page title/URL"
+NOOP_WORDING = "only returned constants or the document's title or address"
 FINAL_JSON = {
     "ok": True,
     "final": "Easy Vegetarian Spinach Lasagna: 4.6 stars, 117 ratings, serves 6.",

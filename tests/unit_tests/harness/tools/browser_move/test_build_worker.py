@@ -77,7 +77,7 @@ def test_the_worker_gets_the_core_tools_the_probes_the_batch_and_find_but_no_rec
 def test_the_worker_card_names_the_session_driver() -> None:
     worker = _build(_session("Playwright MCP"))
 
-    assert worker.card.description == "Browser worker that executes web tasks using Playwright MCP tools."
+    assert worker.card.description == "Worker that executes tasks using Playwright MCP tools."
 
 
 def test_the_worker_is_built_with_the_model_identity_the_core_settings_and_the_observer() -> None:
