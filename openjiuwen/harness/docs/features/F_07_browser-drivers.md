@@ -5048,3 +5048,20 @@ IME input; `insertText` types what the text says.
 Verification: the driver sends `slowly` on the wire (true and false); the sidecar inserts `A`, `d`, `a` one at a
 time with `slowly` and `Ada` at once without; the unsupported list no longer holds the variant; live
 `slow_typing_case` on both drivers (same observed value, the form title).
+
+## Review 1: the recall tool reads the literal session folder too
+
+`BrowserOffloadRecallTool` resolved the offload folder through `offload_session_dir_name` only, so a session stored
+under its literal id before ids were made path-safe could not be recalled, the same gap the message buffer had.
+It now tries the path-safe folder first and the literal id's folder after it, under the same condition (the names
+differ, the id holds no path separator and is not `.` or `..`); every candidate keeps the workspace, symlink and
+parent checks. Verification: an artifact written under `user@host_context` is recalled for session `user@host`;
+the existing colon-id test covers the path-safe name.
+
+## Review 1: the sidecar takes absolute upload paths only
+
+The driver resolves upload paths through `commands.upload_paths` and sends absolute paths, so the sidecar's own
+resolution (the process working directory first, then `BROWSER_UPLOAD_ROOT`) was dead and read the environment
+for nothing. `_normalize_upload_paths` now refuses a relative path and checks existence and readability of the
+absolute ones; the environment read and its allowlist entry are gone. Verification: the sidecar, driver and upload
+tests, 235 passed.
