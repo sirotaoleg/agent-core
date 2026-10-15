@@ -5027,7 +5027,9 @@ read with exactly `CLIPBOARD_DENIED`, answers `false` to `paste` and leaves `cop
 starts its server with `--init-script <path of clipboard_guard.js>` (the stdio client's parameters recorded); the
 browser-use driver's `connect` carries the script text; the sidecar installs it once per session and evaluates it
 on the current document, nothing without a script. Live: `clipboard_read_case` and `paste_command_case` on both
-drivers (see the live run at the end of this document's review sections).
+drivers. The first live run failed every browser-use case at `connect` (`SyntaxError: Unexpected token ';'`): the
+sidecar evaluates the guard through its expression wrapper, so the script is one expression without a trailing
+semicolon. Live after that: Playwright MCP 54 passed; browser-use 48 passed (`BROWSER_MANAGED_PORT=9343`).
 
 ## Review 1: `TypeText(slowly=True)` on browser-use
 
