@@ -4873,8 +4873,9 @@ as constants) and the worker loop's data: the worker's JSON `page` / `url` keys 
 restart and retry markers ("target page, context or browser has been closed", "page crashed", …) and the progress
 record's `last_page` export. None is a name: each is browser knowledge the core applies, and moving it out needs
 either a surface-provided definition (a contract member the task did not allow) or a behaviour change (dropping
-the marker-driven retry, taking the location from the page state's identity instead of the worker's claim). Open
-question for the owner; see the task report.
+the marker-driven retry, taking the location from the page state's identity instead of the worker's claim).
+Decision (Aleh, 2026-10-15): they stay allowlisted; the allowlist may only shrink, and a later step that gives the
+surface a way to provide them takes them out.
 
 Verification: unit suite `2537 passed, 123 skipped` (the suite of `browser_move` and the terminal-stream test);
 architecture tests 24 passed; goldens unchanged.
@@ -4908,5 +4909,5 @@ except findings present before it (`ASYNC250` in the demo CLI, `ASYNC240` in `he
 
 ### Known leftovers
 
-1. `runtime/worker.py` keeps its browser words: the worker's JSON `page` / `url` keys, the Playwright restart and
+1. By decision (above), `runtime/worker.py` keeps its browser words: the worker's JSON `page` / `url` keys, the Playwright restart and
    retry markers and the progress record's `last_page` export; the repeated-call guard its no-op script atoms.
