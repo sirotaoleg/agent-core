@@ -4969,3 +4969,19 @@ Verification: a fixture written under the old name is found; with both folders p
 with a separator, `../x`, `.` or `..` yields the safe path only; a path-safe id is looked up once. Context-engine
 suite: 525 passed, 1 failed (`test_recall_rejects_chunk_symlink_escape`, WinError 1314: the account cannot create
 symlinks; it fails the same way before this change).
+
+## Review 1: provisioning default and the Windows-only test
+
+The reviewer read the provisioning default as `managed`; the code gives `remote` (`_provisioning`: `implied` is
+`remote` unless `PLAYWRIGHT_MCP_EXTENSION` is true), the behaviour before the driver work. The repository's
+documents were checked for the claim: S_20 ("Settings", the `BROWSER_DRIVER` table), this document's settings
+inventory and the `docs/en` and `docs/zh` browser-agent pages all state `remote`; no document names `managed` as
+the default. S_20 "Provisioning" now states the default and the one implied override as an invariant, so the next
+reader finds it where the provisioners are described and not only in a table row. (`.env.template` in the package
+was not checked.)
+
+The test `test_default_chrome_user_data_dir_uses_the_given_local_app_data` (`test_settings_passing.py`) set
+`os.name` to `nt` to simulate Windows; on macOS and Linux `pathlib` then tries to build a `WindowsPath` and fails.
+The test now skips outside Windows (`platform.system() != "Windows"`, the file's existing pattern) and no longer
+patches `os.name`: the helper reads the real `os.name`, so the simulation added nothing on Windows and broke
+elsewhere. Rejected: rewriting with `PureWindowsPath`, which would test a path join the helper does not make.

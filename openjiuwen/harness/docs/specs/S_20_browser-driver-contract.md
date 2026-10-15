@@ -628,6 +628,10 @@ handles a CDP url or a Chrome process itself.
 - `provisioning/__init__.py` registers `managed`, `remote` and `extension` on `PROVISIONERS` as lazy import
   strings. The registry name is the value of `BrowserSettings.provisioning`; `PROVISIONERS.create(name, **kwargs)`
   returns a new provisioner.
+- Invariant: the provisioning default is `remote` (`BrowserSettings.provisioning`, `_provisioning` in
+  `surfaces/browser/config.py`). The only implied override is `PLAYWRIGHT_MCP_EXTENSION` true → `extension`;
+  `managed` is never implied, it is chosen with `BROWSER_PROVISIONING=managed` (or the legacy `BROWSER_DRIVER`
+  value, or `BrowserInstanceConfig.provisioning`).
 
 ### `ManagedBrowserProvisioner` (`provisioning/managed_browser.py`)
 
