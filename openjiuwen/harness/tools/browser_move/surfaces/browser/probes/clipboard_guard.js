@@ -1,5 +1,6 @@
 // Runs in every document before the page's own scripts: the managed Chrome shares the host clipboard,
 // so a read is refused however it is spelled, not only when a script's text names it.
+// One expression without a trailing semicolon: the browser-use sidecar evaluates it through its expression wrapper.
 (() => {
   const denied =
     "Blocked: the clipboard belongs to the host machine, not to this task, so pasting or reading it is not allowed. " +
@@ -48,4 +49,4 @@
       // already frozen by an earlier install on this document
     }
   }
-})();
+})()
