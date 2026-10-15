@@ -4911,3 +4911,39 @@ except findings present before it (`ASYNC250` in the demo CLI, `ASYNC240` in `he
 
 1. By decision (above), `runtime/worker.py` keeps its browser words: the worker's JSON `page` / `url` keys, the Playwright restart and
    retry markers and the progress record's `last_page` export; the repeated-call guard its no-op script atoms.
+## Review 1: upload authorization checks the path the driver sends
+
+The upload rule approved a relative name when `<root>/<name>` lay inside a root, but the drivers resolved the same
+name elsewhere: browser-use tried the process working directory before the upload root, Playwright MCP joined it to
+its own output directory. With `allowed/report.txt` and `outside/report.txt` and the process in `outside`,
+authorizing `report.txt` dispatched `outside/report.txt`.
+
+Decisions:
+1. **One resolution rule in the command module**, `commands.upload_paths(paths, upload_root)`: an absolute path as
+   given, a relative name only as `upload_root / name`, resolved with symlinks followed, and only while it stays
+   inside the upload root; a relative name without an upload root, or one that leaves the root, is a `ValueError`
+   whose message tells the model what to do. The policy rule calls it first and then judges every resolved path
+   against the upload root and the workspace. Both drivers call it with the `upload_root` of their surface settings
+   (`BrowserUseConfig.upload_root`; `PlaywrightMcpConfig` gained `upload_root`, filled by the factory) and never
+   consult the working directory or the output directory; a `ValueError` in a driver is `ActionResult(ok=False)`.
+2. **The process directory is no longer a root for anything.** With neither upload root nor workspace configured
+   the rule denies every upload; the old fallback to the process cwd let a model upload whatever the process could
+   read from where it happened to run.
+3. **The batch and the custom actions are untouched**: they keep calling `policy_denial`, which applies the rule.
+
+Rejected options:
+- Keeping a per-driver resolver and only aligning the policy with browser-use: the Playwright MCP driver would
+  still resolve against its output directory, and two drivers would judge the same name differently.
+- Resolving in the policy rail and rewriting the command's paths: the rail returns a verdict, not a command, and the
+  helpers that run commands without the rail would send the raw name again.
+
+Known effect: the sidecar's own `_normalize_upload_paths` still lists the process directory among its candidates
+for a relative name, but the driver sends it absolute paths only, so that branch no longer runs.
+
+Verification: `upload_paths` alone (absolute, relative under the root with the cwd elsewhere, no root, climbing out,
+quotes and `~`, a relative symlink out of the root); the policy rule and the rail on both dialects with the
+reviewer's two files; the browser-use handler with a mocked transport (the sidecar receives `allowed/report.txt`;
+without a root nothing is sent); the Playwright MCP handler with a fake session (the staged copy has the allowed
+file's bytes; without a root nothing is sent, for upload and drop); `set_input_files` with the relative name and
+with the climbing one. The batch has no upload or drop step, so it has no case. Unit suite: 2546 passed, 124
+skipped. Goldens unchanged.

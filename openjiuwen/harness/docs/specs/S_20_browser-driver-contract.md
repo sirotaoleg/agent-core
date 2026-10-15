@@ -841,7 +841,7 @@ drivers.
 
 | Field | Value |
 |---|---|
-| `commands` | `Navigate`, `Back`, `OpenContext`, `SelectOption`, `UploadFile`, `FillForm`, `Drop`, `GetPdf`, `GetConsole`, `GetNetwork` |
+| `commands` | `Navigate`, `Back`, `OpenContext`, `SelectOption`, `UploadFile`, `FillForm`, `Drop`, `GetPdf`, `GetConsole`, `GetNetwork`; the function `upload_paths(paths, upload_root)`, the one resolution rule for upload and drop paths (see "Policy rail") |
 | `renderer` | `BrowserRenderer` |
 | `tool_specs` | `BROWSER_TOOL_SPECS` (`tools.py`) |
 | `capability_catalog`, `capability_tools` | `capabilities.py` |
@@ -1148,17 +1148,21 @@ reads the clipboard (`clipboard.read`/`readText`, dotted or bracketed, or `execC
 reason is `CLIPBOARD_DENIED`, which tells the model to read the value from the page and type it. `TypeText` has no
 rule: both drivers insert its text literally.
 
-`upload_rules(upload_root, workspace_root)` confine the files a page receives: an `UploadFile` or a `Drop` with any
-path outside `BrowserSettings.upload_root` (`BROWSER_UPLOAD_ROOT`) and `BrowserSettings.workspace_root` is denied;
-with neither set, any path outside the process cwd is. Wrapping quotes are stripped and `~` expanded; an absolute
-path is resolved (symlinks followed) and must lie inside a root; a relative name passes when, joined to some root
-and resolved, it lies inside that same root, so `..` cannot climb out of one root into another. A `Drop` without paths passes. The reason names the paths and
-the allowed folders and points the model at `list_upload_files`. `workspace_root` is the agent's workspace: the
-runtime facade sets it on its settings (`dataclasses.replace`) when it has a workspace and the settings have the
-field, so the main agent, the worker, the batch and the custom actions judge with the same folders; an agent built
-through `build_agent` alone has none. `policy_rules(settings)` is `POLICY_RULES` plus these two. Relative names are
-resolved under the upload root by the browser-use driver only; Playwright MCP resolves them against its own working
-directory, and its staging copy only ever sees paths the rule allowed.
+`upload_rules(upload_root, workspace_root)` confine the files a page receives. One resolution rule,
+`surfaces/browser/commands.upload_paths(paths, upload_root)`, is applied by the rule and by both drivers, so the
+path the rule judges is the path the driver sends. Invariants of `upload_paths`: wrapping quotes are stripped and
+`~` expanded; an absolute path is resolved (symlinks followed) and returned as it is; a relative name is
+`upload_root / name`, resolved, and must still lie inside the upload root (a `..` or a symlink that leaves it is
+`ValueError`); a relative name without an upload root is `ValueError`; the process working directory and a
+driver's own directory are never a root. The `ValueError` message tells the model what to do (give an absolute
+path, or set `BROWSER_UPLOAD_ROOT` and name a file under it; `list_upload_files`). The rule denies with that
+message, else checks every resolved path against the allowed roots, `BrowserSettings.upload_root`
+(`BROWSER_UPLOAD_ROOT`) and `BrowserSettings.workspace_root`: a path outside both is denied; with neither
+configured every path is. A `Drop` without paths passes. The reason names the paths and the allowed folders and
+points the model at `list_upload_files`. `workspace_root` is the agent's workspace: the runtime facade sets it on
+its settings (`dataclasses.replace`) when it has a workspace and the settings have the field, so the main agent,
+the worker, the batch and the custom actions judge with the same folders; an agent built through `build_agent`
+alone has none. `policy_rules(settings)` is `POLICY_RULES` plus these two.
 
 Helpers that execute commands without the rail check the same rules: the batch calls
 `policy_denial(action, page_state.surface_context, policy_rules(context.settings))` before every command and fails
@@ -1623,10 +1627,12 @@ no elements, no screenshot) instead of raising. Outside a dialog `dialog` is `No
 - Factory: `create_browser_use_driver(device, surface_settings)` builds `BrowserUseConfig(cdp_url=device.endpoint,
   sidecar_python=..., upload_root=...)`, the last two from the `BrowserSettings` (`None` settings: neither);
   `start(config=None)` spawns the sidecar with that interpreter (`None`: `.venvs/browser-use` in the repo) and
-  attaches to that CDP endpoint (an explicit config overrides). `UploadFile` and `Drop` resolve relative paths
-  against `upload_root` with `drivers/browser_use/upload_paths.resolve_upload_file_paths`; the Playwright MCP
-  driver does not (its server resolves against its own roots), so relative upload names resolve on browser-use
-  only. No surface code rewrites upload paths; confining them is a surface policy rule's job.
+  attaches to that CDP endpoint (an explicit config overrides). `UploadFile` and `Drop` resolve their paths with
+  `drivers/browser_use/upload_paths.resolve_upload_file_paths`, which applies `commands.upload_paths` with
+  `upload_root` (a relative name is a file under the upload root, never under the process directory) and then
+  reports missing or unreadable files; a `ValueError` of the rule is `ActionResult(ok=False, detail=<message>)`
+  and nothing is sent. The sidecar receives absolute paths only. No surface code rewrites upload paths; confining
+  them is a surface policy rule's job.
 - Handlers with `refs={DriverRef, Locator}`: `Click`, `TypeText` (target required, no `slowly`), `Hover`, `Drag`,
   `SelectOption` (exactly one value), `UploadFile` (target required), `Drop`, `FillForm` (each field's
   `sensitive` goes to the sidecar's `type_text`). With `refs={DriverRef}`: `Scroll` (one axis per command),
@@ -1812,13 +1818,16 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
   field are decoded with `sensitive=True`, so their `detail` has no echoed code; the error message of a failed
   sensitive call can still quote it, and `Tracing` does not record that message.
 - **Files.** The server reads upload and drop files only under its working directory and its output directory.
-  `UploadFile` and `Drop` stage each path that is an existing file outside the working directory (`output_dir`,
-  relative paths resolved against it): it is copied to `output_dir/uploads/<12 hex>/<file name>` (the page sees the
-  original name) and the copy's path is sent. Paths inside the working directory, missing files and directories go
-  as given; the server refuses those outside with `File access denied: … is outside allowed roots` (decoded as
-  `DriverError(dispatched=False)`). `stop()` removes the `uploads/<12 hex>/` folders this driver created, then
-  `uploads/` itself only when nothing else is left in it: the working directory defaults to the process directory,
-  which may hold a user's own `uploads/` folder.
+  `UploadFile` and `Drop` first resolve their paths with `commands.upload_paths` and
+  `PlaywrightMcpConfig.upload_root` (the factory fills it from `surface_settings.upload_root`; a relative name is
+  a file under the upload root, never under the working directory); a `ValueError` of the rule is
+  `ActionResult(ok=False, detail=<message>)` and nothing is sent. Each resolved path that is an existing file
+  outside the working directory (`output_dir`) is staged: copied to `output_dir/uploads/<12 hex>/<file name>` (the
+  page sees the original name) and the copy's path is sent. Paths inside the working directory, missing files and
+  directories go as resolved; the server refuses those outside with `File access denied: … is outside allowed
+  roots` (decoded as `DriverError(dispatched=False)`). `stop()` removes the `uploads/<12 hex>/` folders this
+  driver created, then `uploads/` itself only when nothing else is left in it: the working directory defaults to
+  the process directory, which may hold a user's own `uploads/` folder.
 - Every handler sends one tool call and decodes it with `decode(..., before=<last BrowserContext>)` in a worker
   thread (the decoder may read the linked snapshot file). Commands and tools: Click → `browser_click` /
   `browser_mouse_click_xy`; TypeText → `browser_type`; PressKey → `browser_press_key`; Hover → `browser_hover` /
