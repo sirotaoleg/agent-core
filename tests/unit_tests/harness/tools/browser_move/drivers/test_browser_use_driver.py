@@ -181,7 +181,12 @@ WIRE_CASES = [
     (
         TypeText(E1, "hello", submit=True, sensitive=True, clear=False),
         "type_text",
-        {"ref": WIRE_E1, "text": "hello", "clear": False, "press_enter": True, "sensitive": True},
+        {"ref": WIRE_E1, "text": "hello", "clear": False, "press_enter": True, "sensitive": True, "slowly": False},
+    ),
+    (
+        TypeText(E1, "Ada", slowly=True),
+        "type_text",
+        {"ref": WIRE_E1, "text": "Ada", "clear": True, "press_enter": False, "sensitive": False, "slowly": True},
     ),
     (PressKey("Control+A"), "press_key", {"keys": "Control+A"}),
     (Scroll(dy=300), "scroll", {"direction": "down", "amount": 300, "ref": None}),
@@ -238,7 +243,7 @@ def test_a_dialog_the_loaded_page_opened_is_in_the_navigation_result(action):
         (
             TypeText(CSS, "hi"),
             "type_text",
-            {"ref": WIRE_CSS, "text": "hi", "clear": True, "press_enter": False, "sensitive": False},
+            {"ref": WIRE_CSS, "text": "hi", "clear": True, "press_enter": False, "sensitive": False, "slowly": False},
         ),
         (Hover(CSS), "hover", {"ref": WIRE_CSS}),
         (Drag(CSS, CSS_2), "drag", {"source": WIRE_CSS, "target": WIRE_CSS_2, "steps": 10, "delay_ms": 0}),
@@ -455,7 +460,6 @@ def test_wait_until_text_uses_seconds_as_its_deadline(monkeypatch):
         SelectOption(E1, ("a", "b")),
         SelectOption(E1, ()),
         TypeText(None, "x"),
-        TypeText(E1, "x", slowly=True),
         Scroll(dx=10, dy=10),
         Scroll(),
         UploadFile(None, ("a.txt",)),

@@ -731,3 +731,16 @@ def test_without_an_init_script_nothing_is_installed():
     asyncio.run(adapter._ensure_cdp_session())
 
     assert _guard_calls(client) == ([], [])
+
+
+@pytest.mark.parametrize(("slowly", "inserted"), [(False, ["Ada"]), (True, ["A", "d", "a"])])
+def test_slow_typing_inserts_one_character_at_a_time(monkeypatch, slowly: bool, inserted: list[str]):
+    monkeypatch.setattr(session_adapter, "_SLOW_TYPING_DELAY_S", 0)
+    client = FakeCdp()
+    Page(client)
+    adapter = _adapter(client)
+
+    reply = asyncio.run(_quick(adapter.type_text(BUTTON, "Ada", slowly=slowly)))
+
+    assert reply["ok"] is True
+    assert [params["text"] for params in client.sent("Input.insertText")] == inserted

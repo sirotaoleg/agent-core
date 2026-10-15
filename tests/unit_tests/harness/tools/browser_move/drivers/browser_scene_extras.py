@@ -15,7 +15,11 @@ from openjiuwen.harness.tools.browser_move.contract.testing.conformance import (
     _session,
     _skip_if_reason,
 )
-from openjiuwen.harness.tools.browser_move.surfaces.browser.scene import clipboard_read_case, paste_command_case
+from openjiuwen.harness.tools.browser_move.surfaces.browser.scene import (
+    clipboard_read_case,
+    paste_command_case,
+    slow_typing_case,
+)
 
 
 async def _check(factory: DriverFactory, scene: Scene, case_of: Callable) -> None:
@@ -38,3 +42,6 @@ class BrowserSceneExtras:
 
     def test_the_paste_command_is_refused_in_the_page(self, conformance_scene, conformance_driver_factory):
         asyncio.run(_check(conformance_driver_factory, conformance_scene, paste_command_case))
+
+    def test_slow_typing_leaves_the_value_plain_typing_leaves(self, conformance_scene, conformance_driver_factory):
+        asyncio.run(_check(conformance_driver_factory, conformance_scene, slow_typing_case))
