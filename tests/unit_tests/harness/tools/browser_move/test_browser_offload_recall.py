@@ -185,3 +185,15 @@ async def test_recalls_what_the_window_processor_offloaded_for_a_session_id_with
     assert offloaded.offload_type == "filesystem"
     assert result.success is True, result.error
     assert result.data["content"].endswith("UNIQUE TARGET")
+
+
+@pytest.mark.asyncio
+async def test_recalls_an_artifact_stored_under_the_literal_session_folder(tmp_path):
+    content = "legacy " * 40
+    _write_offload(tmp_path, "user@host", content)
+    tool = BrowserOffloadRecallTool(str(tmp_path), language="en")
+
+    result = await tool.invoke({"handle": _HANDLE, "offset": 0, "limit": 20}, session=_session("user@host"))
+
+    assert result.success is True, result.error
+    assert result.data["content"] == content[:20]
