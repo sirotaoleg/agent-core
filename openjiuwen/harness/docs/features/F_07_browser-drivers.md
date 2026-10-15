@@ -5028,3 +5028,21 @@ starts its server with `--init-script <path of clipboard_guard.js>` (the stdio c
 browser-use driver's `connect` carries the script text; the sidecar installs it once per session and evaluates it
 on the current document, nothing without a script. Live: `clipboard_read_case` and `paste_command_case` on both
 drivers (see the live run at the end of this document's review sections).
+
+## Review 1: `TypeText(slowly=True)` on browser-use
+
+The driver declared `TypeText` but raised `Unsupported` for `slowly=True`, so the two drivers were not
+interchangeable on that variant (the batch worked around it by retrying without `slowly`).
+
+Decision: the sidecar's `type_text` takes `slowly` and, when set, sends one `Input.insertText` per character with
+a 30 ms pause (`_SLOW_TYPING_DELAY_S`); the driver passes the flag and no longer refuses it. `clear` stays
+independent of `slowly` on this driver (clear first when asked, then type), whereas Playwright MCP's `browser_type`
+never clears when it types slowly; the batch sends `clear=False` with `slowly=True`, so it sees the same behaviour
+on both. Six lines in the sidecar.
+
+Rejected: `Input.dispatchKeyEvent` per character, which needs a key layout for every character and differs for
+IME input; `insertText` types what the text says.
+
+Verification: the driver sends `slowly` on the wire (true and false); the sidecar inserts `A`, `d`, `a` one at a
+time with `slowly` and `Ada` at once without; the unsupported list no longer holds the variant; live
+`slow_typing_case` on both drivers (same observed value, the form title).

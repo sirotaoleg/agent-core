@@ -410,7 +410,9 @@ scaled to the screenshot. An `IndexRef` cannot be built (skipped).
 - Beyond the `Scene` fields, the module exports case builders the two live suites run through the suite's session
   helpers: `clipboard_read_case` (a `RunScript` of `CLIPBOARD_ALIAS_SCRIPT`, `const c = navigator.clipboard;
   c.readText()`, which the driver must report as an error carrying the `CLIPBOARD_DENIED` text) and
-  `paste_command_case` (a `RunScript` of `document.execCommand('paste')` whose value must be `False`).
+  `paste_command_case` (a `RunScript` of `document.execCommand('paste')` whose value must be `False`), and
+  `slow_typing_case` (`TypeText(text="Ada", slowly=True)` into the empty "Full name" field; the title must read
+  `form:3:false`, what plain typing leaves).
 - Context changes: `navigate`, `same-url-reload` (`Navigate` to the current address), `link-click`, `open-tab`,
   `popup-click` (`window.open`), `switch-tab`, `close-tab`, `dialog` (a `confirm()`; its check wants
   `BrowserContext.dialog == "confirm: Proceed?"` in the click's result and in an `observe()` while the dialog is
@@ -1660,7 +1662,9 @@ no elements, no screenshot) instead of raising. Outside a dialog `dialog` is `No
   reports missing or unreadable files; a `ValueError` of the rule is `ActionResult(ok=False, detail=<message>)`
   and nothing is sent. The sidecar receives absolute paths only. No surface code rewrites upload paths; confining
   them is a surface policy rule's job.
-- Handlers with `refs={DriverRef, Locator}`: `Click`, `TypeText` (target required, no `slowly`), `Hover`, `Drag`,
+- Handlers with `refs={DriverRef, Locator}`: `Click`, `TypeText` (target required; `slowly` inserts one character
+  per `Input.insertText` with a 30 ms pause, after the `clear` when asked, so `clear` and `slowly` are independent
+  here while `browser_type` on Playwright MCP never clears when it types slowly), `Hover`, `Drag`,
   `SelectOption` (exactly one value), `UploadFile` (target required), `Drop`, `FillForm` (each field's
   `sensitive` goes to the sidecar's `type_text`). With `refs={DriverRef}`: `Scroll` (one axis per command),
   `RunScript` (page JS; with a target the element is stamped and passed as the first argument). Without refs:
