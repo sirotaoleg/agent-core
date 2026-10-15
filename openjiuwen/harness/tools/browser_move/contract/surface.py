@@ -116,6 +116,21 @@ class Activate(Protocol):
     def __call__(self, context: Any, address: str, /) -> Awaitable[bool]: ...
 
 
+class MainAgentFactory(Protocol):
+    """The surface's main agent over a started runtime; without it the runtime builds one from the profile's parts."""
+
+    def __call__(
+        self,
+        runtime: Any,
+        model: Any,
+        *,
+        language: str,
+        max_iterations: int,
+        workspace: Any,
+        capabilities: tuple[str, ...],
+    ) -> Any: ...
+
+
 class WorkerPrompt(Protocol):
     def __call__(
         self,
@@ -164,6 +179,7 @@ class SurfaceProfile:
     semantic_tracker: Callable[[], Any] | None = None
     worker_prompt: WorkerPrompt | None = None
     page_state: Callable[[], Any] | None = None
+    main_agent: MainAgentFactory | None = None
 
 
 @dataclass(frozen=True)

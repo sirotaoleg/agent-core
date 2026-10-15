@@ -182,6 +182,28 @@ def build_agent_parts(
     return AgentParts(tools.tools, tools.prompt_sections, rails, tools.builders)
 
 
+def agent_over(
+    parts: AgentParts,
+    rails: Iterable[AgentRail],
+    model: Model,
+    *,
+    language: str,
+    workspace: Any = None,
+    system_prompt: str = "",
+    **agent_options: Any,
+) -> DeepAgent:
+    """A deep agent with the parts' tools and prompt sections; ``rails`` go before the profile's own."""
+    return create_deep_agent(
+        model,
+        system_prompt="\n\n".join(text for text in (system_prompt, *parts.prompt_sections) if text),
+        tools=list(parts.tools),
+        rails=[*rails, *parts.rails],
+        workspace=workspace,
+        language=language,
+        **agent_options,
+    )
+
+
 async def build_agent(
     core: CoreSettings,
     environ: Mapping[str, str],
@@ -208,13 +230,13 @@ async def build_agent(
             language=language,
             workspace=workspace,
         )
-        agent = create_deep_agent(
+        agent = agent_over(
+            parts,
+            core_rails(assembly.surface.profile, parts.builders, session.page_state),
             model,
-            system_prompt="\n\n".join(text for text in (system_prompt, *parts.prompt_sections) if text),
-            tools=list(parts.tools),
-            rails=[*core_rails(assembly.surface.profile, parts.builders, session.page_state), *parts.rails],
-            workspace=workspace,
             language=language,
+            workspace=workspace,
+            system_prompt=system_prompt,
             **agent_options,
         )
     except BaseException:
@@ -227,6 +249,7 @@ __all__ = [
     "AgentParts",
     "DriverAssembly",
     "Registries",
+    "agent_over",
     "assemble_driver",
     "assemble_surface",
     "build_agent",

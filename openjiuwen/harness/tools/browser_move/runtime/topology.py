@@ -15,6 +15,7 @@ from openjiuwen.harness.image_modality_probe import probe_image_support
 
 from ..contract.registry import default_topology
 from .agents import WORKER_LANGUAGE, build_worker
+from .assembly import agent_over
 from .config import CoreSettings
 
 if TYPE_CHECKING:
@@ -59,21 +60,22 @@ class Direct:
         self._agent: Any = None
 
     async def start(self, runtime: AgentRuntime) -> None:
+        """The profile's main agent once; a profile without one gets the session now and the agent after the probe."""
         if self._agent is not None:
             return
-        from openjiuwen.harness.subagents.browser_agent import create_browser_agent
-
         runtime.dedicated_log = False
+        main_agent = runtime.surface.profile.main_agent
+        if main_agent is None:
+            await runtime.ensure_runtime_ready()
+            return
         service = runtime.service
-        core = service.core
-        self._agent = create_browser_agent(
+        self._agent = main_agent(
+            runtime,
             _model(service),
             language=WORKER_LANGUAGE,
-            temperature=core.worker_temperature,
             max_iterations=service.guardrails.max_steps,
             workspace=runtime.workspace,
-            browser_capabilities=list(runtime.capabilities),
-            runtime=runtime,
+            capabilities=runtime.capabilities,
         )
 
     async def run(
@@ -89,7 +91,18 @@ class Direct:
         rid = (request_id or "").strip() or uuid.uuid4().hex
         timeout = int(timeout_s) if timeout_s else service.guardrails.timeout_s
         inputs = {"query": task, "conversation_id": f"{sid}.direct.{rid}.{uuid.uuid4().hex}", "request_id": rid}
-        await probe_image_support(_model(service))
+        images = await probe_image_support(_model(service))
+        if self._agent is None:
+            parts = runtime.agent_parts(image_support=bool(images), language=WORKER_LANGUAGE)
+            self._agent = agent_over(
+                parts,
+                runtime.core_rails(),
+                _model(service),
+                language=WORKER_LANGUAGE,
+                workspace=runtime.workspace,
+                max_iterations=service.guardrails.max_steps,
+                enable_read_image_multimodal=bool(images),
+            )
         try:
             result = await asyncio.wait_for(Runner.run_agent(self._agent, inputs), timeout=float(timeout))
         except TimeoutError:
