@@ -47,10 +47,11 @@ from openjiuwen.harness.tools.browser_move.runtime.assembly import (
     assemble_surface,
     open_session,
 )
-from openjiuwen.harness.tools.browser_move.runtime.config import BrowserInstanceConfig, CoreSettings
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
 from openjiuwen.harness.tools.browser_move.surfaces import SURFACES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import BrowserInstanceConfig
 
 ENVIRON = {"FAKE_SURFACE_FLAG": "on"}
 CORE = CoreSettings(driver="fake_driver", surface="fake")

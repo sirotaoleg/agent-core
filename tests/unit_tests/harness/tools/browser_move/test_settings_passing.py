@@ -21,19 +21,15 @@ from openjiuwen.harness.tools.browser_move.drivers.browser_use.upload_paths impo
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import _default_chrome_user_data_dir
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
-from openjiuwen.harness.tools.browser_move.runtime import main as main_module
 from openjiuwen.harness.tools.browser_move.runtime.agents import (
     build_browser_worker_agent,
     ensure_execute_signature_compat,
 )
 from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
-from openjiuwen.harness.tools.browser_move.runtime.browser_tools import build_browser_runtime_mcp_config
 from openjiuwen.harness.tools.browser_move.runtime.config import (
     BrowserRunGuardrails,
     CoreSettings,
     RuntimeServerSettings,
-    build_runtime_settings,
-    read_demo_inputs,
     runtime_server_child_env,
     runtime_server_environ,
 )
@@ -41,6 +37,14 @@ from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRu
 from openjiuwen.harness.tools.browser_move.surfaces.browser import site_profiles
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner import main as main_module
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.server_config import (
+    build_browser_runtime_mcp_config,
+)
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import (
+    build_runtime_settings,
+    read_demo_inputs,
+)
 from openjiuwen.harness.tools.browser_move.surfaces.browser.status_logging import (
     is_browser_subagent_status_log_enabled,
 )

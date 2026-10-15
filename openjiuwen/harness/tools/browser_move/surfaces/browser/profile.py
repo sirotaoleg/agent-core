@@ -32,7 +32,7 @@ from .semantic.state import SemanticStateTracker
 from .tools import BROWSER_TOOL_SPECS, build_browser_worker_system_prompt
 
 if TYPE_CHECKING:
-    from ...runtime.config import BrowserInstanceConfig
+    from .runner.settings import BrowserInstanceConfig
 
 _COMMANDS = (Navigate, Back, OpenContext, SelectOption, UploadFile, FillForm, Drop, GetPdf, GetConsole, GetNetwork)
 _EFFECT_TIMEOUT_S = 240.0

@@ -11,13 +11,13 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from openjiuwen.core.foundation.tool import McpServerConfig
-
-from .config import (
+from openjiuwen.harness.tools.browser_move.runtime.config import (
     RuntimeServerSettings,
     process_environ,
-    resolve_playwright_mcp_cwd,
     runtime_server_child_env,
 )
+
+from .settings import resolve_playwright_mcp_cwd
 
 _SUPPORTED_CLIENT_TYPES = {"stdio", "sse", "streamable-http", "streamable_http", "http"}
 
@@ -46,7 +46,7 @@ def _runtime_cwd() -> Path:
 
 
 def _server_script() -> Path:
-    return Path(__file__).resolve().parent.parent / "playwright_runtime_mcp_server.py"
+    return Path(__file__).resolve().parents[3] / "playwright_runtime_mcp_server.py"
 
 
 def _normalize_client_type(client_type: str) -> str:

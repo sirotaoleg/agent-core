@@ -23,7 +23,7 @@ from ...runtime.utils.env import (
 )
 
 if TYPE_CHECKING:
-    from ...runtime.config import BrowserInstanceConfig
+    from .runner.settings import BrowserInstanceConfig
 
 ENV_PREFIXES = ("BROWSER_", "PLAYWRIGHT_")
 PROVISIONINGS = ("remote", "managed", "extension")

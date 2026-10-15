@@ -16,13 +16,10 @@ from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.contract.registry import default_topology
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
-from openjiuwen.harness.tools.browser_move.runtime.config import (
-    BrowserInstanceConfig,
-    BrowserRunGuardrails,
-    CoreSettings,
-)
+from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
 from openjiuwen.harness.tools.browser_move.runtime.service import BrowserService
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import BrowserInstanceConfig
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     DEVICE,
     FakeProvisioner,

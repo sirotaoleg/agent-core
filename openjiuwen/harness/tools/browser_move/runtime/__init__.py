@@ -15,8 +15,6 @@ REPO_ROOT = SRC_ROOT.parent.parent.parent.parent
 __all__ = [
     "REPO_ROOT",
     "SRC_ROOT",
-    "build_browser_runtime_mcp_config",
-    "browser_tools",
     "reset_active_browser_runtimes",
     "reset_managed_browser_runtime",
     "service",
@@ -24,14 +22,9 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
-    if name == "browser_tools":
-        return import_module("openjiuwen.harness.tools.browser_move.runtime.browser_tools")
     if name == "service":
         return import_module("openjiuwen.harness.tools.browser_move.runtime.service")
     if name in {"reset_active_browser_runtimes", "reset_managed_browser_runtime"}:
         module = import_module("openjiuwen.harness.tools.browser_move.runtime.session")
-        return getattr(module, name)
-    if name == "build_browser_runtime_mcp_config":
-        module = import_module("openjiuwen.harness.tools.browser_move.runtime.browser_tools")
         return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

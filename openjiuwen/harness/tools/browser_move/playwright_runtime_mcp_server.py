@@ -13,13 +13,11 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from fastmcp import Context, FastMCP
 
+from openjiuwen.harness.tools.browser_move.contract import SurfaceSettings
 from openjiuwen.harness.tools.browser_move.runtime.config import (
     MISSING_API_KEY_MESSAGE,
     CoreSettings,
     RuntimeServerSettings,
-    SurfaceSettings,
-    browser_surface_settings,
-    build_runtime_settings,
     load_repo_dotenv,
     process_environ,
     runtime_server_environ,
@@ -32,6 +30,10 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.actions impor
     list_actions,
     register_builtin_actions,
     run_action,
+)
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import (
+    browser_surface_settings,
+    build_runtime_settings,
 )
 
 if TYPE_CHECKING:

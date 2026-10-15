@@ -40,14 +40,6 @@ from openjiuwen.harness.subagent_lifecycle import (
 )
 from openjiuwen.harness.tools.base_tool import ToolOutput
 
-try:
-    from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.logging import (
-        browser_agent_log_info,
-    )
-except Exception:  # pragma: no cover - browser runtime is optional here
-    browser_agent_log_info = None
-
-
 # Keep one delegation above the browser runtime's 540-second complex-task
 # slice so startup, state reconciliation, and final result assembly can finish.
 DEFAULT_SUBAGENT_TASK_TIMEOUT_S = 720.0
@@ -979,7 +971,9 @@ class TaskTool(Tool):
             "[TaskTool] Invoking subagent with isolated session: %s, "
             "subagent_type=%s, query_summary=%s"
         )
-        if normalized_type == "browser_agent" and browser_agent_log_info is not None:
+        if normalized_type == "browser_agent":
+            from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.logging import browser_agent_log_info
+
             browser_agent_log_info(invoke_log, sub_session_id, normalized_type, query_summary)
         else:
             logger.info(invoke_log, sub_session_id, normalized_type, query_summary)

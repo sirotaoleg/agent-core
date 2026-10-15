@@ -18,11 +18,7 @@ import pytest
 from openjiuwen.core.foundation.llm import AssistantMessage, Model, ModelClientConfig, ModelRequestConfig, ToolCall
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
 from openjiuwen.harness.tools.browser_move.runtime.assembly import build_agent
-from openjiuwen.harness.tools.browser_move.runtime.config import (
-    BrowserRunGuardrails,
-    CoreSettings,
-    playwright_mcp_config,
-)
+from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
 from openjiuwen.harness.tools.browser_move.runtime.rails.final_answer_recovery import (
     NON_JSON_OUTPUT,
     RESTATE_MESSAGE,
@@ -32,6 +28,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import 
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
 from openjiuwen.harness.tools.browser_move.surfaces.browser.page_state import BrowserPageState
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import MESSAGES
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import playwright_mcp_config
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene import PAGES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene.server import SceneServer
 from tests.unit_tests.harness.tools.browser_move.drivers.playwright_mcp.test_conformance_playwright_mcp_live import (

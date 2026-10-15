@@ -19,15 +19,10 @@ from openjiuwen.core.foundation.store.kv.in_memory_kv_store import InMemoryKVSto
 from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.single_agent.agents.react_agent import ReActAgent
 
+from ..contract import SurfaceSettings
+from ..surfaces.browser.runner.settings import BrowserInstanceConfig, browser_surface_settings
 from .assembly import assemble_surface, new_page_state, open_session
-from .config import (
-    BrowserInstanceConfig,
-    BrowserRunGuardrails,
-    CoreSettings,
-    SurfaceSettings,
-    browser_surface_settings,
-    process_environ,
-)
+from .config import BrowserRunGuardrails, CoreSettings, process_environ
 from .driver_session import DriverSession
 from .page_state import PageState
 from .service_registry import BROWSER_SERVICE_REGISTRY, BrowserServiceIdentity

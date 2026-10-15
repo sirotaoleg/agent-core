@@ -20,14 +20,11 @@ from openjiuwen.core.foundation.llm.schema.message_chunk import AssistantMessage
 from openjiuwen.harness import deep_agent as deep_agent_module
 from openjiuwen.harness.subagents import browser_agent  # noqa: F401
 from openjiuwen.harness.tools.browser_move.provisioning import ProvisionedDevice
-from openjiuwen.harness.tools.browser_move.runtime.config import (
-    BrowserRunGuardrails,
-    CoreSettings,
-    playwright_mcp_config,
-)
+from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
 from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import CORE_BROWSER_TOOL_NAMES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import playwright_mcp_config
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene import PAGES
 from openjiuwen.harness.tools.browser_move.surfaces.browser.scene.server import SceneServer
 from tests.unit_tests.harness.tools.browser_move.drivers.playwright_mcp.test_conformance_playwright_mcp_live import (

@@ -20,22 +20,24 @@ from openjiuwen.harness.tools.browser_move.drivers.playwright_mcp.clients.stream
 from openjiuwen.harness.tools.browser_move.runtime.agents import (
     ensure_execute_signature_compat,
 )
-from openjiuwen.harness.tools.browser_move.runtime.browser_tools import (
-    build_browser_runtime_mcp_config,
-)
 from openjiuwen.harness.tools.browser_move.runtime.config import (
     DEFAULT_BROWSER_TIMEOUT_S,
     DEFAULT_GUARDRAIL_MAX_FAILURES,
     DEFAULT_GUARDRAIL_MAX_STEPS,
     DEFAULT_MODEL_NAME,
+)
+from openjiuwen.harness.tools.browser_move.runtime.utils.env import parse_command_args
+from openjiuwen.harness.tools.browser_move.runtime.utils.parsing import extract_json_object
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.server_config import (
+    build_browser_runtime_mcp_config,
+)
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import (
     BrowserInstanceConfig,
     browser_surface_settings,
     build_playwright_mcp_config,
     build_runtime_settings,
-    parse_command_args,
     playwright_mcp_config,
 )
-from openjiuwen.harness.tools.browser_move.runtime.utils.parsing import extract_json_object
 
 
 def _run(coro: Any) -> Any:

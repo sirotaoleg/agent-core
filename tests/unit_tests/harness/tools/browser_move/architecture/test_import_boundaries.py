@@ -21,6 +21,8 @@ KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES: dict[tuple[str, str], int] = {
     ("runtime/agents.py", "surfaces.browser.runner.logging"): 1,
     ("runtime/session.py", "surfaces.browser.runner.actions"): 2,
     ("runtime/session.py", "surfaces.browser.runner.logging"): 1,
+    ("runtime/session.py", "surfaces.browser.runner.settings"): 2,
+    ("runtime/service.py", "surfaces.browser.runner.settings"): 2,
     ("runtime/session.py", "surfaces.browser.runner.tools"): 2,
 }
 
@@ -42,7 +44,7 @@ KNOWN_CORE_TO_HARNESS_IMPORTS: dict[tuple[str, str], int] = {
 
 KNOWN_DRIVER_IMPORTS_OUTSIDE_THEIR_LAYER: dict[tuple[str, str], int] = {}
 DRIVER_LAYER_IMPORTERS = frozenset({"runtime/assembly.py"})
-LAZY_DRIVER_LAYER_IMPORTERS = frozenset({"runtime/config.py"})
+LAZY_DRIVER_LAYER_IMPORTERS = _scan.SETTINGS_FACADE_MODULES
 ROOT_MODULES = frozenset({"__init__.py", "playwright_runtime_mcp_server.py"})
 SURFACE_MODULES_A_DRIVER_MAY_IMPORT = frozenset({"commands", "context"})
 
@@ -104,8 +106,10 @@ def _collect_core_imports_of_registries() -> list[str]:
 def _collect_surface_imports_of_drivers_or_provisioners() -> list[str]:
     bad = []
     for relpath in _scan.files_where(_scan.is_surface):
-        for node, _lazy in _scan.iter_imports(_scan.parse(relpath)):
+        for node, lazy in _scan.iter_imports(_scan.parse(relpath)):
             for target in _import_targets(relpath, node):
+                if lazy and relpath in _scan.SETTINGS_FACADE_MODULES:
+                    continue
                 if _concrete_kind(target) in ("driver", "provisioning"):
                     bad.append(f"{relpath}:{node.lineno} imports {'.'.join(target)}")
     return bad
@@ -281,7 +285,10 @@ class TestImportBoundaries:
 
     def test_surfaces_never_import_a_driver_or_provisioner(self):
         bad = _collect_surface_imports_of_drivers_or_provisioners()
-        assert not bad, "surfaces/ may import contract/ and runtime/ only:\n" + "\n".join(bad)
+        assert not bad, (
+            "surfaces/ may import contract/ and runtime/ only (the settings facade a driver config, lazily):\n"
+            + "\n".join(bad)
+        )
 
     def test_openjiuwen_core_never_imports_harness(self):
         problems = _scan.compare_with_allowlist(
@@ -305,7 +312,7 @@ class TestImportBoundaries:
 
     def test_runtime_and_surfaces_reach_drivers_from_the_composition_root_only(self):
         bad = _collect_imports_of_the_driver_layer()
-        message = "only runtime/assembly.py imports drivers/ (runtime/config.py lazily, for the settings facade):\n"
+        message = "only runtime/assembly.py imports drivers/ (the settings facade lazily, for the driver config):\n"
         assert not bad, message + "\n".join(bad)
 
     def test_every_module_at_the_package_root_is_known(self):

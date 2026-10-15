@@ -91,10 +91,10 @@ MCP_TOOL_NAME_RE = re.compile(
 )
 
 KNOWN_DRIVER_NAMES: dict[str, int] = {
-    "runtime/browser_tools.py": 3,
     "runtime/service.py": 1,
     "surfaces/browser/capabilities.py": 1,
     "surfaces/browser/helpers/batch_steps.py": 1,
+    "surfaces/browser/runner/server_config.py": 3,
 }
 
 KNOWN_MCP_TOOL_NAMES: dict[str, int] = {}

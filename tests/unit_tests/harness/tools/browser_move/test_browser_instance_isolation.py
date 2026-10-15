@@ -16,13 +16,13 @@ from openjiuwen.harness.tools.browser_move.provisioning.managed_browser import (
     _build_profile,
 )
 from openjiuwen.harness.tools.browser_move.provisioning.profiles import BrowserProfile, BrowserProfileStore
-from openjiuwen.harness.tools.browser_move.runtime.config import (
-    BrowserInstanceConfig,
-    BrowserRunGuardrails,
-    build_playwright_mcp_config,
-)
+from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.runtime.service import BrowserService
 from openjiuwen.harness.tools.browser_move.surfaces import SURFACES
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import (
+    BrowserInstanceConfig,
+    build_playwright_mcp_config,
+)
 
 _ALLOCATE_FREE_PORT = "openjiuwen.harness.tools.browser_move.provisioning.managed_browser._allocate_free_port"
 

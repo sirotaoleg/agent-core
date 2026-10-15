@@ -8,18 +8,16 @@ import asyncio
 import json
 
 from openjiuwen.core.common.logging import logger
-
-from .config import (
+from openjiuwen.harness.tools.browser_move.runtime.config import (
     MISSING_API_KEY_MESSAGE,
     CoreSettings,
-    browser_surface_settings,
-    build_runtime_settings,
     load_repo_dotenv,
     process_environ,
-    read_demo_inputs,
 )
-from .session import BrowserAgentRuntime
-from .topology import WORKER_LANGUAGE
+from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.runtime.topology import WORKER_LANGUAGE
+
+from .settings import browser_surface_settings, build_runtime_settings, read_demo_inputs
 
 
 async def main() -> None:

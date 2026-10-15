@@ -21,9 +21,9 @@ CORE_FOLDERS = ("runtime",)
 CORE_MODULES = frozenset({"drivers/middleware.py"})
 CONTRACT_FOLDER = "contract"
 SURFACES_FOLDER = "surfaces"
-CONFIG_MODULE_RE = re.compile(r"^(?:runtime/config\.py|surfaces/[^/]+/config\.py)$")
+CONFIG_MODULE_RE = re.compile(r"^(?:runtime/config\.py|surfaces/[^/]+/(?:runner/settings|config)\.py)$")
 ASSEMBLY_MODULES = frozenset({"runtime/assembly.py"})
-SETTINGS_FACADE_MODULES = frozenset({"runtime/config.py"})
+SETTINGS_FACADE_MODULES = frozenset({"surfaces/browser/runner/settings.py"})
 
 
 def rel(path: Path) -> str:

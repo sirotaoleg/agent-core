@@ -24,10 +24,7 @@ from openjiuwen.harness.subagents.browser_agent import (
     build_browser_agent_config,
     create_browser_agent,
 )
-from openjiuwen.harness.tools.browser_move.runtime.config import (
-    BrowserRunGuardrails,
-    RuntimeSettings,
-)
+from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
 from openjiuwen.harness.tools.browser_move.surfaces.browser.capabilities import (
     CORE_BROWSER_TOOL_NAMES,
@@ -36,6 +33,7 @@ from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail i
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.working_context import (
     BrowserWorkingContextRail,
 )
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import RuntimeSettings
 
 
 def _fake_model() -> MagicMock:

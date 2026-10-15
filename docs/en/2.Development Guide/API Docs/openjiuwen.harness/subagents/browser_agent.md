@@ -258,7 +258,7 @@ The runtime resolves a working directory (`PLAYWRIGHT_RUNTIME_MCP_CWD`, default:
 
 ---
 
-## class openjiuwen.harness.tools.browser_move.runtime.config.BrowserInstanceConfig
+## class openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings.BrowserInstanceConfig
 
 ```python
 @dataclass(frozen=True)
@@ -286,7 +286,7 @@ Per-instance browser identity, used to isolate one browser per agent. All fields
 
 ---
 
-## class openjiuwen.harness.tools.browser_move.runtime.config.RuntimeSettings
+## class openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings.RuntimeSettings
 
 ```python
 @dataclass(frozen=True)

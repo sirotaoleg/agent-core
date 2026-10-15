@@ -25,6 +25,6 @@ def __getattr__(name: str) -> Any:
         module = import_module("openjiuwen.harness.tools.browser_move.runtime.session")
         return getattr(module, name)
     if name == "build_browser_runtime_mcp_config":
-        module = import_module("openjiuwen.harness.tools.browser_move.runtime.browser_tools")
+        module = import_module("openjiuwen.harness.tools.browser_move.surfaces.browser.runner.server_config")
         return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

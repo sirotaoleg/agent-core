@@ -20,18 +20,12 @@ from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.core.runner import Runner
 from openjiuwen.core.single_agent.rail.base import AgentRail
 
-from ..contract import Action, DriverError, Effect, Health, Observe, SurfaceBundle
+from ..contract import Action, DriverError, Effect, Health, Observe, SurfaceBundle, SurfaceSettings
 from ..surfaces.browser.runner.actions import ActionController, BaseController
 from ..surfaces.browser.runner.logging import write_browser_agent_audit_artifact
+from ..surfaces.browser.runner.settings import BrowserInstanceConfig, browser_surface_settings
 from .assembly import AgentParts, assemble_surface, build_agent_parts, core_rails
-from .config import (
-    BrowserInstanceConfig,
-    BrowserRunGuardrails,
-    CoreSettings,
-    SurfaceSettings,
-    browser_surface_settings,
-    process_environ,
-)
+from .config import BrowserRunGuardrails, CoreSettings, process_environ
 from .driver_session import DriverSession
 from .page_state import PageState, Target
 from .service import BrowserService

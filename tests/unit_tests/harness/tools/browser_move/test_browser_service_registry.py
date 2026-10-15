@@ -15,10 +15,7 @@ from openjiuwen.core.foundation.tool import McpServerConfig
 from openjiuwen.harness.tools.browser_move.contract.testing import FakeDriver
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.runtime.assembly import DriverAssembly
-from openjiuwen.harness.tools.browser_move.runtime.config import (
-    BrowserInstanceConfig,
-    BrowserRunGuardrails,
-)
+from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails
 from openjiuwen.harness.tools.browser_move.runtime.service import BrowserService
 from openjiuwen.harness.tools.browser_move.runtime.service_registry import (
     BROWSER_SERVICE_REGISTRY,
@@ -30,6 +27,7 @@ from openjiuwen.harness.tools.browser_move.runtime.session import (
     reset_managed_browser_runtime,
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import BrowserInstanceConfig
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import DEVICE, mcp_fake_driver
 
 

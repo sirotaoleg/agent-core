@@ -11,12 +11,9 @@ from typing import Any, Dict
 
 import pytest
 
-from openjiuwen.harness.tools.browser_move.runtime.config import (
-    MISSING_API_KEY_MESSAGE,
-    build_runtime_settings,
-    load_repo_dotenv,
-)
+from openjiuwen.harness.tools.browser_move.runtime.config import MISSING_API_KEY_MESSAGE, load_repo_dotenv
 from openjiuwen.harness.tools.browser_move.runtime.session import BrowserAgentRuntime
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import build_runtime_settings
 
 
 def _system_tests_enabled() -> bool:

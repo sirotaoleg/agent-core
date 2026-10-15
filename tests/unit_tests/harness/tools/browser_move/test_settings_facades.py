@@ -15,18 +15,18 @@ from unittest.mock import patch
 import pytest
 
 from openjiuwen.harness.tools.browser_move.contract import Registry, SurfaceBundle
-from openjiuwen.harness.tools.browser_move.runtime import config as config_module
 from openjiuwen.harness.tools.browser_move.runtime.assembly import assemble_driver
-from openjiuwen.harness.tools.browser_move.runtime.config import (
+from openjiuwen.harness.tools.browser_move.runtime.config import CoreSettings
+from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
+from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner import settings as settings_module
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import (
     BrowserInstanceConfig,
-    CoreSettings,
     build_browser_guardrails,
     build_playwright_mcp_config,
     build_runtime_settings,
     resolve_playwright_mcp_cwd,
 )
-from openjiuwen.harness.tools.browser_move.surfaces.browser.config import BrowserSettings
-from openjiuwen.harness.tools.browser_move.surfaces.browser.profile import create_browser_surface
 
 
 def test_browser_instance_config_keeps_its_positional_fields_and_adds_provisioning_and_driver() -> None:
@@ -150,7 +150,7 @@ def test_the_facades_take_the_browser_settings_from_the_surface_registry(
 
     surfaces: Registry[SurfaceBundle] = Registry("surface")
     surfaces.register("browser", browser_surface)
-    monkeypatch.setattr(config_module, "SURFACES", surfaces)
+    monkeypatch.setattr(settings_module, "SURFACES", surfaces)
 
     with patch.dict(os.environ, {"PLAYWRIGHT_MCP_COMMAND": "from-env"}, clear=True):
         assert resolve_playwright_mcp_cwd() == str(tmp_path)

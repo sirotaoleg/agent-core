@@ -28,11 +28,7 @@ from openjiuwen.harness.tools.browser_move.runtime import agents as agents_modul
 from openjiuwen.harness.tools.browser_move.runtime import assembly as assembly_module
 from openjiuwen.harness.tools.browser_move.runtime import session as runtime_module
 from openjiuwen.harness.tools.browser_move.runtime import topology as topology_module
-from openjiuwen.harness.tools.browser_move.runtime.config import (
-    BrowserInstanceConfig,
-    BrowserRunGuardrails,
-    CoreSettings,
-)
+from openjiuwen.harness.tools.browser_move.runtime.config import BrowserRunGuardrails, CoreSettings
 from openjiuwen.harness.tools.browser_move.runtime.rails.action_policy import ActionPolicy
 from openjiuwen.harness.tools.browser_move.runtime.rails.final_answer_recovery import FinalAnswerRecoveryRail
 from openjiuwen.harness.tools.browser_move.runtime.rails.intercepted_action import InterceptedActionHintRail
@@ -46,6 +42,7 @@ from openjiuwen.harness.tools.browser_move.runtime.topology import (
 )
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails import runtime_rail as rail_module
 from openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail import BrowserRuntimeRail
+from openjiuwen.harness.tools.browser_move.surfaces.browser.runner.settings import BrowserInstanceConfig
 from tests.unit_tests.harness.tools.browser_move.runtime_fixtures import (
     MCP_PREFIX,
     fake_assembly,
