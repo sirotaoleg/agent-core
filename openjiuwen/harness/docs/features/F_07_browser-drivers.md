@@ -4947,3 +4947,25 @@ without a root nothing is sent); the Playwright MCP handler with a fake session 
 file's bytes; without a root nothing is sent, for upload and drop); `set_input_files` with the relative name and
 with the climbing one. The batch has no upload or drop step, so it has no case. Unit suite: 2546 passed, 124
 skipped. Goldens unchanged.
+
+## Review 1: stored sessions under the old folder name
+
+`offload_session_dir_name` renamed the offload folder of an id with unsafe characters (readable part plus digest),
+and `OffloadMessageBuffer` read the new name only; on Linux and macOS the old literal folder could exist from before
+the renaming, and those messages were no longer found.
+
+Decision: a bounded legacy lookup in `OffloadMessageBuffer._filesystem_reload_paths`. When the safe name differs
+from the id, the buffer also lists the old folder `<session id>_context/offload`, after the new one, but only for an
+id without `/` or `\\` that is not `.` or `..`; any other id is looked up under the safe name only. Glob patterns
+are escaped, so a literal id with glob characters never widens the search. New writes keep the new name.
+
+Rejected options:
+- Migrating old folders on first read: a rename at read time is a side effect in a read path, and a concurrent
+  writer could be using the folder.
+- Looking up the literal id unconditionally: an id with a separator would name a path outside the session's
+  folder, which is why the renaming exists.
+
+Verification: a fixture written under the old name is found; with both folders present the safe one wins; an id
+with a separator, `../x`, `.` or `..` yields the safe path only; a path-safe id is looked up once. Context-engine
+suite: 525 passed, 1 failed (`test_recall_rejects_chunk_symlink_escape`, WinError 1314: the account cannot create
+symlinks; it fails the same way before this change).
