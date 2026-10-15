@@ -85,8 +85,8 @@ def _repeat_note(repeat_count: int) -> str:
 def _noop_note(noop_count: int) -> str:
     return (
         f"{_NOTE_HEADER}\n"
-        f"The last {noop_count} calls only returned constants or the page title/URL; "
-        "they do not change the page or give new information.\n"
+        f"The last {noop_count} calls only returned constants or the document's title or address; "
+        "they do not change anything or give new information.\n"
         "If you already have what the task needs, return the final JSON answer now. "
         "Otherwise take a different action."
     )

@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
 
+from ..surfaces import DEFAULT_SURFACE
 from . import REPO_ROOT
 from .utils.env import (
     DEFAULT_BROWSER_TIMEOUT_S,
@@ -269,7 +270,7 @@ class CoreSettings:
     """Settings of the agent core: driver, surface, model, guardrails and logging; nothing surface-specific."""
 
     driver: str = DEFAULT_DRIVER
-    surface: str = "browser"
+    surface: str = DEFAULT_SURFACE
     topology: str = ""
     provider: str = "openai"
     api_key: str = ""

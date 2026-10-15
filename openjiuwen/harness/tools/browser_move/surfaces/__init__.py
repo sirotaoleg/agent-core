@@ -5,6 +5,8 @@
 
 from ..contract.registry import SURFACES, register_surface
 
-register_surface("browser", f"{__name__}.browser.profile:create_browser_surface")
+DEFAULT_SURFACE = "browser"
 
-__all__ = ["SURFACES"]
+register_surface(DEFAULT_SURFACE, f"{__name__}.browser.profile:create_browser_surface")
+
+__all__ = ["DEFAULT_SURFACE", "SURFACES"]

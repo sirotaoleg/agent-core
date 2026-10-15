@@ -16,10 +16,7 @@ NON_JSON_OUTPUT = "non_json_output"
 MAX_ITERATIONS_REACHED = "max_iterations_reached"
 
 STEP_LIMIT_SENTENCE = "The step limit has been reached."
-_JSON_REPLY = (
-    "the final JSON object required by your instructions (ok, final, page, screenshot, error, and the progress "
-    "fields) and nothing else.\n"
-)
+_JSON_REPLY = "the final JSON object required by your instructions and nothing else.\n"
 RECOVERY_MESSAGE = (
     "Tools are disabled now. Using only what you have already seen in this conversation, reply with "
     f"{_JSON_REPLY}"

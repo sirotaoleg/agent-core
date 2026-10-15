@@ -202,7 +202,7 @@ def build_browser_worker_agent(
     card = AgentCard(
         id="agent.playwright.browser_worker",
         name="playwright_browser_worker",
-        description=f"Browser worker that executes web tasks using {driver_name} tools.",
+        description=f"Worker that executes tasks using {driver_name} tools.",
         input_params={},
     )
     config = (

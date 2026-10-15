@@ -252,7 +252,7 @@ class _WorkerLoop:
 
     @staticmethod
     def _build_worker_conversation_id(session_id: str, request_id: str) -> str:
-        sid = (session_id or "").strip() or "browser-session"
+        sid = (session_id or "").strip() or "session"
         rid = (request_id or "").strip() or "request"
         return f"{sid}:worker:{rid}:{uuid.uuid4().hex}"
 
@@ -512,7 +512,7 @@ class _WorkerLoop:
         if progress_state.missing_requirements:
             lines.append(f"- Missing requirements / blockers: {' | '.join(progress_state.missing_requirements)}")
         if progress_state.recent_tool_steps:
-            lines.append("- Recent browser tool activity:")
+            lines.append("- Recent tool activity:")
             lines.extend(f"  - {step}" for step in progress_state.recent_tool_steps[-6:])
         if not lines:
             return ""
@@ -598,7 +598,7 @@ class _WorkerLoop:
             f"Max steps: {self.guardrails.max_steps}\n"
             f"Max failures: {self.guardrails.max_failures}\n\n"
             f"Task:\n{task}\n\n"
-            "Perform the task in the current logical browser session/tab for this session id."
+            "Perform the task in the current logical session for this session id."
         )
         if isinstance(agent, ReActAgent):
             await refresh_browser_worker_system_prompt(
@@ -673,7 +673,7 @@ class _WorkerLoop:
             "final": output_str,
             "page": {"url": "", "title": ""},
             "screenshot": None,
-            "error": "Browser worker did not return valid JSON output",
+            "error": "Worker did not return valid JSON output",
             "status": "failed",
         }
         self._update_progress_from_worker_result(
@@ -732,7 +732,7 @@ class _WorkerLoop:
         context_parts: list[str] = [
             "Continuation context:",
             "- The previous run reached max iterations before completion.",
-            "- Continue from the current browser state in this same session.",
+            "- Continue from the current state in this same session.",
             "- Avoid repeating already completed steps unless needed for recovery.",
         ]
         if progress_context:
@@ -774,7 +774,7 @@ class _WorkerLoop:
         ]
         if page_url or page_title:
             lines.append(
-                f"- Last page: url={cls._trim_text(page_url, 240) or '(unknown)'}, "
+                f"- Last location: {cls._trim_text(page_url, 240) or '(unknown)'}, "
                 f"title={cls._trim_text(page_title, 120) or '(unknown)'}"
             )
         screenshot_text = cls._trim_text(screenshot, 200)
@@ -800,7 +800,7 @@ class _WorkerLoop:
             "Previous failed attempt context:\n"
             f"{summary}\n\n"
             "Continuation instructions:\n"
-            "- Continue from the current browser state in this same session.\n"
+            "- Continue from the current state in this same session.\n"
             "- Do not repeat completed steps unless required for recovery.\n"
             "- Prioritize resolving the listed failure."
         )
@@ -997,7 +997,7 @@ class _WorkerLoop:
                 page_title = str(last_failure_page.get("title", "")) if isinstance(last_failure_page, dict) else ""
                 failure_summary = self._build_failure_summary(
                     task=base_task,
-                    error=last_error or "unknown browser execution error",
+                    error=last_error or "unknown execution error",
                     page_url=page_url,
                     page_title=page_title,
                     final=last_failure_final,
@@ -1013,7 +1013,7 @@ class _WorkerLoop:
                     "final": "",
                     "page": {"url": "", "title": ""},
                     "screenshot": None,
-                    "error": last_error or "unknown browser execution error",
+                    "error": last_error or "unknown execution error",
                     "attempt": min(attempt_idx, max_attempts),
                     "failure_summary": failure_summary,
                     "progress_state": self._export_progress_state(sid),
