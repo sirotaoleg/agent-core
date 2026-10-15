@@ -17,7 +17,7 @@ The tools available to the sub-agent — both the Playwright MCP primitives and 
 | [Browser instance isolation](#class-openjiuwenharnesstoolsbrowser_moveruntimeconfigbrowserinstanceconfig) | `BrowserInstanceConfig` gives each agent its own browser (own MCP server, Chrome profile, and CDP port); agents sharing a key intentionally share one browser. |
 | [Driver modes](#driver-modes) | `managed` (launch a dedicated local Chrome), `remote` (attach to an existing CDP endpoint), or `extension` (drive a running browser through the Playwright MCP extension bridge). |
 | [Progress and resumability](#class-openjiuwenharnesstoolsbrowser_moveruntimeruntimebrowserruntimerail) | `BrowserRuntimeRail` persists task progress into the session, injects it back as continuation context on the next invocation, and converts incomplete runs into structured failure summaries. |
-| [Guardrails](#class-openjiuwenharnesstoolsbrowser_moveruntimeconfigbrowserrunguardrails) | Step, failure, and timeout limits with automatic retry and optional resume after a max-iterations stop. |
+| [Guardrails](#class-openjiuwenharnesstoolsbrowser_moveruntimeconfigrunguardrails) | Step, failure, and timeout limits with automatic retry and optional resume after a max-iterations stop. |
 | [Observability](#observability) | A dedicated `logs/browser_agent.log` file and redacted structured status telemetry (`[BROWSER_SUBAGENT]` records). |
 
 ---
@@ -249,7 +249,7 @@ Headed operation is the safer default for sites with bot detection and for debug
 ### Timeouts
 
 - **Per tool call**: `PLAYWRIGHT_MCP_TIMEOUT_S` / `BROWSER_TIMEOUT_S` (default `180`) bounds each MCP tool invocation.
-- **Per task attempt**: `BrowserRunGuardrails.timeout_s` (default `180`) bounds a whole delegated browser task; see [Guardrails](#class-openjiuwenharnesstoolsbrowser_moveruntimeconfigbrowserrunguardrails).
+- **Per task attempt**: `RunGuardrails.timeout_s` (default `180`) bounds a whole delegated browser task; see [Guardrails](#class-openjiuwenharnesstoolsbrowser_moveruntimeconfigrunguardrails).
 - **Per batch step**: `browser_batch_interact` clamps step timeouts to 250–30000 ms with a global batch cap of 90 s.
 
 ### Output directories
@@ -302,18 +302,18 @@ Resolved browser runtime settings, stored in `SubAgentConfig.factory_kwargs` and
 - **api_base** (str): Model API base URL.
 - **model_name** (str): Model name for the nested browser worker.
 - **mcp_cfg** (McpServerConfig): Playwright MCP server configuration (stdio; command defaults to `npx -y @playwright/mcp@0.0.78` with the full capability list enabled via `--caps=`).
-- **guardrails** ([BrowserRunGuardrails](#class-openjiuwenharnesstoolsbrowser_moveruntimeconfigbrowserrunguardrails)): Run guardrails.
+- **guardrails** ([RunGuardrails](#class-openjiuwenharnesstoolsbrowser_moveruntimeconfigrunguardrails)): Run guardrails.
 - **instance** ([BrowserInstanceConfig](#class-openjiuwenharnesstoolsbrowser_moveruntimeconfigbrowserinstanceconfig), optional): Per-instance browser identity.
 
 Use `build_runtime_settings(instance)` to resolve everything from environment variables, or let `create_browser_agent` derive provider/key/base/model from the `Model` object's client config.
 
 ---
 
-## class openjiuwen.harness.tools.browser_move.runtime.config.BrowserRunGuardrails
+## class openjiuwen.harness.tools.browser_move.runtime.config.RunGuardrails
 
 ```python
 @dataclass
-class BrowserRunGuardrails
+class RunGuardrails
 ```
 
 Limits applied to browser task runs. Built from environment variables by `build_browser_guardrails()`.
@@ -330,7 +330,7 @@ Retryable transport failures (detached frame, target closed, page crash, `net::E
 
 ---
 
-## class openjiuwen.harness.tools.browser_move.runtime.session.BrowserAgentRuntime
+## class openjiuwen.harness.tools.browser_move.surfaces.browser.runner.facade.BrowserAgentRuntime
 
 ```python
 class BrowserAgentRuntime(
@@ -339,7 +339,7 @@ class BrowserAgentRuntime(
     api_base: str,
     model_name: str,
     mcp_cfg: McpServerConfig,
-    guardrails: BrowserRunGuardrails,
+    guardrails: RunGuardrails,
     instance: BrowserInstanceConfig | None = None,
     allowed_tool_names: Iterable[str] | None = None,
 )
@@ -360,7 +360,7 @@ Runtime kernel shared by all browser helper tools. Owns the underlying `BrowserS
 
 ---
 
-## class openjiuwen.harness.tools.browser_move.runtime.session.BrowserRuntimeRail
+## class openjiuwen.harness.tools.browser_move.surfaces.browser.rails.runtime_rail.BrowserRuntimeRail
 
 ```python
 class BrowserRuntimeRail(runtime: BrowserAgentRuntime)

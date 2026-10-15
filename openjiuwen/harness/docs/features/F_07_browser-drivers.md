@@ -5,8 +5,8 @@
 | Item | Value |
 |---|---|
 | Type | feature |
-| Date | 2026-10-13 |
-| Scope | `openjiuwen/harness/tools/browser_move/` (`contract/`, `drivers/`, `provisioning/`, `surfaces/browser/`, `runtime/`, `runtime/controllers/action.py`, `runtime/utils/`, `playwright_runtime_mcp_server.py`), `openjiuwen/harness/subagents/browser_agent.py`, `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/single_agent/agents/react_agent.py`, `openjiuwen/core/context_engine/` (offload directory name), `tests/unit_tests/harness/tools/browser_move/` |
+| Date | 2026-10-15 |
+| Scope | `openjiuwen/harness/tools/browser_move/` (`contract/`, `drivers/`, `provisioning/`, `surfaces/browser/`, `surfaces/browser/runner/`, `runtime/`, `runtime/utils/`, `playwright_runtime_mcp_server.py`), `openjiuwen/harness/subagents/browser_agent.py`, `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/single_agent/agents/react_agent.py`, `openjiuwen/core/context_engine/` (offload directory name), `tests/unit_tests/harness/tools/browser_move/` |
 | Test baseline | see "Verification" in each section |
 | Related spec | [[S_20_browser-driver-contract]] |
 | Refs | #driver-architecture |
@@ -4738,3 +4738,93 @@ Verification: the shim tests and the offload alias test are removed; the root-mo
 The deprecated module attribute `ManagedBrowserDriver`, an alias of `ManagedBrowserProvisioner` with a
 deprecation warning, is removed together with its tests; no module in the repository used it. Provisioning
 tests: 2532 unit tests pass.
+
+## A surface-neutral runner
+
+### Background
+
+`runtime/` held two things: the surface-neutral core (the composition root, the driver session, the page state,
+the tool factory, the rails, the topologies) and the browser runner: the facade `BrowserAgentRuntime`,
+`BrowserService` with the worker loop, the service registry keyed by browser fields, the custom-action tools and
+controller, the browser agent log, the runtime server's client config, the browser-only settings facades and the
+demo CLI. The runner required a Playwright MCP server config, defaulted its settings to the browser's, read
+`mcp_cwd`, `profile_name` and `managed_args` from them and called `replace` on them, so a phone or desktop surface
+could only call `assembly.build_agent`: no sessions, no cancellation, no restart, no worker loop, no output folders.
+This reverses the "surface-neutral service is out of scope" decision of the optional-hooks step (option c).
+
+### Decisions
+
+1. **Moves first, then the split.** Three `refactor` commits move the browser modules into
+   `surfaces/browser/runner/` (`tools.py`, `actions.py` with the base contract folded in, `logging.py`,
+   `server_config.py`, `settings.py` with the browser-only half of `runtime/config.py`, `main.py`); the core still
+   imported them until the split, and those edges were allowlisted for the duration of the move and removed by it.
+   The task tool imports the browser agent log at its call site, so importing the harness tools no longer loads the
+   browser surface (the import-isolation test holds this).
+2. **The settings facade is a config module.** `playwright_mcp_config` reaches the driver's config builder lazily;
+   the architecture rules treat `surfaces/<name>/runner/settings.py` as a config module (process-environment reads
+   allowed, driver names not counted) and move the lazy driver-import exception from `runtime/config.py` to it.
+   `runtime_server_environ` / `runtime_server_child_env` stay in the core: they read env names by literal, which
+   the env-read rule allows in config modules only, and name no browser word.
+3. **`AgentRuntime` and `AgentService` take neutral inputs only**: the core settings, the complete surface bundle,
+   the model client fields, `RunGuardrails` (renamed; the runner package keeps `BrowserRunGuardrails` as a plain
+   alias), the allowlist, the workspace, the language, `output_dir` and a plain identity string. No `mcp_cfg`, no
+   instance, no browser default, no `replace` on the settings, no `getattr` for browser fields.
+4. **The facade subclasses the core runtime** instead of wrapping it. The topology and the main-agent builder
+   receive one object: `Direct.start` passes `runtime` to the agent builder, and the browser rails need the facade's
+   captures on that same object. A wrapper would need a back-reference from the core runtime to the facade; a
+   subclass needs none, and every neutral member is reachable under its own name.
+5. **The registry key is a string.** `BrowserServiceIdentity` moves to the facade with a `key` (the JSON of its
+   fields) and `from_key`; `reset_managed_browser_runtime` matches the browser fields of the live facades and of
+   every registry identity with a preserved driver through `from_key`; `find_managed_driver_identities` becomes
+   `managed_driver_identities()`.
+6. **The answer's context.** `AgentRuntime.run_task` adds `context: {"identity", "metadata"}` to the answer of
+   either topology after the run: the metadata hook needs the tool context, which the runtime owns, so the worker
+   loop cannot add it. The metadata is captured for a successful answer only (a cancelled or failed agent task
+   must not be followed by a driver call); the identity is read after the capture. The core's `main_agent_answer`
+   has no `page`; the facade's override adds it from the browser context, so the WebVoyager answer keeps its keys.
+7. **The worker slot is `agent`.** The runner's helper removal reads `runtime._service.agent` now
+   (`browser_agent` before); the removal itself is unchanged.
+8. **The browser agent log is configured by the facade** (`BrowserAgentRuntime.__init__`, with its resolved core
+   settings) instead of the worker builder, which is core; `create_browser_agent` keeps its own call.
+9. **The custom-action tools are registered by the facade** after `ensure_started` on the delegated topology, so
+   the topology no longer calls a browser method; `profile.custom_actions` is called by the facade too (its
+   argument is the browser runner's controller).
+10. **The demo CLI moves with the settings** (`runner/main.py`): it builds a `BrowserAgentRuntime`, which is a
+    surface module now.
+
+### Rejected options
+
+- Composition (the facade holds an `AgentRuntime`): the topology would receive the neutral runtime and the
+  browser `main_agent` hook would need to find the facade from it (a module-level map or a back-reference).
+- A registry keyed by any hashable identity object: the core would carry the browser identity type's shape in its
+  tests and docs; a string keeps it ignorant.
+- Capturing the metadata on every answer: after `asyncio.wait_for` cancels the agent, a driver call could block up
+  to the effect timeout.
+- Keeping `browser_agent` on the neutral service for the runner: a browser name on a core member.
+
+### Behaviour changes to know
+
+- The core settings are read at the facade's construction (`CoreSettings.from_process_env()` when not given), not
+  at the service's first use; a bad unrelated variable fails earlier.
+- A generated session id is `session-<uuid>` (`browser-<uuid>` before).
+- The browser agent log is configured when the facade is built, not when the worker is built.
+- A successful answer costs one metadata probe (one driver script execution) on either topology.
+- The `Direct` answer and the worker loop's answer carry `context`.
+
+### Verification
+
+- Step 2 (moves): unit suite `2532 passed, 123 skipped`; architecture tests 24 passed with the move allowlist;
+  goldens unchanged.
+- Step 3 (the split): the facade tests pin the core answer without `page`, the browser answer with it and the
+  context the run adds (identity, metadata after a successful run only); the registry test pins that the identity
+  string round-trips; the service and registry tests build their service through the facade. Unit suite
+  `2573 passed, 123 skipped`; architecture tests 24 passed with `KNOWN_CORE_IMPORTS_OF_CONCRETE_MODULES` empty and
+  no `runtime/session.py` / `runtime/service.py` entry in the browser-word and driver-name allowlists; goldens
+  unchanged.
+
+### Known leftovers
+
+1. `Direct.start` still builds the main agent through `create_browser_agent` (the allowlisted detour).
+2. `runtime/worker.py` keeps its browser words: the worker's JSON `page` / `url` keys, the Playwright restart and
+   retry markers, the progress record's `last_page` export and the model-facing text.
+3. `runtime/config.py` names the default surface (`surface: str = "browser"`).

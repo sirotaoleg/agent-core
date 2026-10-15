@@ -5,8 +5,8 @@
 | Item | Value |
 |---|---|
 | Type | spec |
-| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `device.py` / `masking.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/config.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/runtime/session.py`, `openjiuwen/harness/tools/browser_move/runtime/topology.py`, `openjiuwen/harness/tools/browser_move/runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/action_policy.py`, `openjiuwen/harness/tools/browser_move/runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/final_answer_recovery.py`, `openjiuwen/harness/tools/browser_move/runtime/config.py`, `openjiuwen/harness/tools/browser_move/runtime/browser_logging.py`, `openjiuwen/harness/tools/browser_move/runtime/service.py`, `openjiuwen/harness/tools/browser_move/runtime/worker.py`, `openjiuwen/harness/tools/browser_move/runtime/utils/env.py`, `openjiuwen/harness/tools/browser_move/surfaces/browser/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py` / `profiles.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `policy.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `site_profiles.py` / `state_processor.py` / `status_logging.py` / `helpers/` / `probes/` / `semantic/` / `working_context/` / `rails/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/context_engine/context/context_utils.py` (`offload_session_dir_name`) |
-| Last revised | 2026-10-13 |
+| Modules | `openjiuwen/harness/tools/browser_move/contract/` (`observation.py` / `refs.py` / `actions.py` / `results.py` / `errors.py` / `driver.py` / `registry.py` / `surface.py` / `device.py` / `masking.py` / `testing/`), `openjiuwen/harness/tools/browser_move/drivers/` (`__init__.py` / `middleware.py` / `playwright_mcp/snapshot.py` / `playwright_mcp/result.py` / `playwright_mcp/driver.py` / `playwright_mcp/config.py` / `playwright_mcp/tools.py` / `playwright_mcp/clients/`), `openjiuwen/harness/tools/browser_move/runtime/assembly.py`, `openjiuwen/harness/tools/browser_move/runtime/session.py`, `openjiuwen/harness/tools/browser_move/runtime/topology.py`, `openjiuwen/harness/tools/browser_move/runtime/page_state.py`, `openjiuwen/harness/tools/browser_move/runtime/driver_session.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/action_policy.py`, `openjiuwen/harness/tools/browser_move/runtime/tool_factory.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/repeated_call_guard.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/intercepted_action.py`, `openjiuwen/harness/tools/browser_move/runtime/rails/final_answer_recovery.py`, `openjiuwen/harness/tools/browser_move/runtime/config.py`, `openjiuwen/harness/tools/browser_move/runtime/service.py`, `openjiuwen/harness/tools/browser_move/runtime/service_registry.py`, `openjiuwen/harness/tools/browser_move/runtime/worker.py`, `openjiuwen/harness/tools/browser_move/runtime/utils/env.py`, `openjiuwen/harness/tools/browser_move/surfaces/browser/runner/` (`facade.py` / `settings.py` / `tools.py` / `actions.py` / `logging.py` / `server_config.py` / `main.py`), `openjiuwen/harness/tools/browser_move/surfaces/browser/offload_recall.py`, `openjiuwen/harness/tools/browser_move/provisioning/` (`__init__.py` / `managed_browser.py` / `profiles.py`), `openjiuwen/harness/tools/browser_move/surfaces/` (`__init__.py`; `browser/`: `commands.py` / `context.py` / `config.py` / `policy.py` / `profile.py` / `tools.py` / `renderer.py` / `capabilities.py` / `site_profiles.py` / `state_processor.py` / `status_logging.py` / `helpers/` / `probes/` / `semantic/` / `working_context/` / `rails/` / `scene/`), `openjiuwen/core/common/logging/tool_call.py`, `openjiuwen/core/context_engine/context/context_utils.py` (`offload_session_dir_name`) |
+| Last revised | 2026-10-15 |
 | Related feature | [[F_07_browser-drivers]] |
 
 ## Scope
@@ -18,32 +18,38 @@ live, the middleware wraps any driver and the composition root builds a started 
 it, by name; the browser agent (`create_browser_agent`) runs on it: its runtime facade starts the driver
 session and builds the factory tools at the first invoke. The WebVoyager worker still runs the old path.
 
-The runtime package is `runtime/`, with `controllers/`, `rails/` (the record rails: the policy rail, the repeated-call
-guard, the intercepted-action hint, the final-answer recovery) and `utils/` under it; `playwright_runtime_mcp_server.py`
-keeps its name as the entry point and imports the package by its full name (`python -m …playwright_runtime_mcp_server`).
+The core runtime package is `runtime/`, with `rails/` (the record rails: the policy rail, the repeated-call guard,
+the intercepted-action hint, the final-answer recovery) and `utils/` under it; the browser runner is
+`surfaces/browser/runner/`: the facade `BrowserAgentRuntime` (`facade.py`), the browser settings and the
+`RuntimeSettings` facade (`settings.py`), the two custom-action tools (`tools.py`) and their controller
+(`actions.py`), the browser agent log (`logging.py`), the runtime server's client config (`server_config.py`) and
+the demo CLI (`main.py`). `playwright_runtime_mcp_server.py` keeps its name as the entry point and imports the
+package by its full name (`python -m …playwright_runtime_mcp_server`).
 Everything that reads pages, tabs or URLs lives under `surfaces/browser/`: the capability catalog, the site profiles,
 the probe scripts (`probes/`), the semantic state (`semantic/`), the working context (`working_context/`), the state
 context processor, the status log and the browser-only rails (`rails/`): the main agent's rail is
 `rails/runtime_rail.py`, its mixins beside it (`rails/terminal.py`, `rails/results.py`, `probes/results.py`,
 `semantic/phases.py`, `semantic/evidence.py`, the shared keys in `rails/keys.py`), and the prompt text (the
-worker prompt, the image, date-picker and task-rules sections) is in `tools.py`; the facade stays in `runtime/session.py`, the
-worker loop and its progress state are `runtime/worker.py`, the service's lifecycle `runtime/service.py`. The probe
+worker prompt, the image, date-picker and task-rules sections) is in `tools.py`; the core runtime is
+`runtime/session.py` (`AgentRuntime`), the worker loop and its progress state `runtime/worker.py`, the service's
+lifecycle `runtime/service.py` (`AgentService`) and the identity registry `runtime/service_registry.py`. The probe
 scripts are one module each (`probes/metadata.py`, `probes/interactives.py`, `probes/cards.py` with its template in
 the resource file `probes/cards.js`); the browser action specs and the upload listing are `helpers/custom.py`.
 The architecture tests hold this layout: no module under `runtime/` or `surfaces/` over 1,500 lines; no
-Playwright MCP tool name in the core; driver names in the core only in `runtime/browser_tools.py` (the runtime
-server's client config) and `runtime/service.py` (the CDP endpoint of the given server config); `contract/`
+Playwright MCP tool name in the core; no driver name in the core (the runtime server's client config,
+`surfaces/browser/runner/server_config.py`, and the facade's identity, which reads the CDP endpoint of the given
+server config, name one); `contract/`
 imports the standard library and itself; `surfaces/` imports no driver package and no provisioner; the core
-reaches the registries (`DRIVERS`, `PROVISIONERS`, `SURFACES`) from `runtime/assembly.py` only, `SURFACES` also
-from `runtime/config.py` (the surface settings); the core imports no module of `drivers/<name>/`,
-`surfaces/<name>/` or `provisioning/`: the facade, the service, the config and the agent builders read the
-hooks, the worker prompt and the capability catalog from the surface profile, and the registry is the only way
-from the core to a surface. The browser words left in the core are data keys and attributes (`page`, `url`), the
+reaches the registries (`DRIVERS`, `PROVISIONERS`, `SURFACES`) from `runtime/assembly.py` only; the core imports
+no module of `drivers/<name>/`, `surfaces/<name>/` or `provisioning/`: the runtime, the service, the config and
+the agent builders read the hooks, the worker prompt and the capability catalog from the surface profile, and the
+registry is the only way from the core to a surface. The browser words left in the core are data keys and attributes (`page`, `url`), the
 surface name, identifiers and text the model reads, listed one by one in F_07.
 The browser profile store is `provisioning/profiles.py`. The old `playwright_runtime` package and the root module
 `offload_recall.py` are removed; callers import `runtime.<module>`, `surfaces.browser.<module>` or
-`provisioning.profiles`. The WebVoyager runner uses `runtime.config.build_runtime_settings`,
-`runtime.session.BrowserAgentRuntime` and `surfaces.browser.capabilities.CORE_BROWSER_TOOL_NAMES`.
+`provisioning.profiles`. The WebVoyager runner uses `surfaces.browser.runner.settings.build_runtime_settings`,
+`surfaces.browser.runner.facade.BrowserAgentRuntime` and `surfaces.browser.capabilities.CORE_BROWSER_TOOL_NAMES`,
+and reads `runtime._service.agent` for its helper removal.
 
 The browser surface profile (tool specs, renderer, capability catalog) is specified under "Browser surface
 profile"; the tool factory that turns it and the driver's native tools into model-facing tools under "Tool
@@ -67,9 +73,10 @@ every rule with an allowlist that may only shrink:
 - `provisioning/` imports the contract only (plus the standard library, third-party packages and
   `openjiuwen.core`); a provisioner types the settings it reads with its own `Protocol`.
 - `runtime/` and `surfaces/` import nothing under `drivers/`, except the composition root `runtime/assembly.py`
-  (it wraps the built driver with the middleware) and, inside function bodies only, `runtime/config.py`, whose
-  public `playwright_mcp_config` / `build_playwright_mcp_config` / `RuntimeSettings.mcp_cfg` call the driver's
-  config builder.
+  (it wraps the built driver with the middleware) and, inside function bodies only, the browser runner's settings
+  facade `surfaces/browser/runner/settings.py`, whose public `playwright_mcp_config` /
+  `build_playwright_mcp_config` / `RuntimeSettings.mcp_cfg` call the driver's config builder (the architecture
+  rules treat that module as a config module: it reads the process environment for the facades).
 - The core does not reach a concrete driver, surface or provisioner through a module outside the package either:
   a core import of an `openjiuwen` module that itself imports one of them is a finding. One is allowlisted:
   `runtime/topology.py` imports `openjiuwen.harness.subagents.browser_agent` (inside `Direct.start`), whose
@@ -427,7 +434,7 @@ finally produced, and the re-observe of `RetryOnStale` runs under the READ bound
   `FillForm` included); other values are copied unchanged. It is the one masking rule: `Tracing` traces its
   output and `CommandTool` stores it as `CommandRecord.action`.
 
-## Settings (`runtime/config.py`, `surfaces/browser/config.py`)
+## Settings (`runtime/config.py`, `surfaces/browser/config.py`, `surfaces/browser/runner/settings.py`)
 
 Environment variables are parsed into two frozen dataclasses, split by owner. Each has
 `from_env(environ: Mapping[str, str])`, which reads only the mapping it is given, and `from_process_env()`, which
@@ -439,11 +446,11 @@ listed in [[F_07_browser-drivers]] ("Settings", inventory).
   `delegated_worker`, or `""` = the driver's registered default; see `BROWSER_TOPOLOGY` below), `provider`, `api_key`,
   `api_base`, `model_name`, `worker_temperature`, `worker_top_p`, `tool_timeout_s` (caps the driver stack's
   per-effect timeouts, "Composition root" step 5), `guardrails`
-  (`BrowserRunGuardrails`), `log_file` (`None` = no dedicated file), `log_level`, `log_mirror_common`,
+  (`RunGuardrails`), `log_file` (`None` = no dedicated file), `log_level`, `log_mirror_common`,
   `log_audit_raw`, `status_log`, `runtime_server` (`RuntimeServerSettings`, client side). It has no field that only
   a browser has.
 - **`RuntimeServerSettings`** (core): the runtime MCP server, i.e. `browser_move` served over MCP
-  (`playwright_runtime_mcp_server.py`); `build_browser_runtime_mcp_config` (`browser_tools.py`) turns the client
+  (`playwright_runtime_mcp_server.py`); `build_browser_runtime_mcp_config` (`surfaces/browser/runner/server_config.py`) turns the client
   fields into the `McpServerConfig` a host registers through the core (`Runner.resource_mgr.add_mcp_server` and the
   agent's ability manager). `browser_move` patches none of the core's MCP client classes and starts no local copy of
   the server for a host: a host that wants the server running starts the entry point itself. Client fields: `enabled`, `server_id`,
@@ -548,9 +555,11 @@ value from one.
   `drivers/browser_use/transport.py`, built from OS and `BROWSER_USE_*` names of `BrowserSettings.process_env` (the
   mapping the settings were parsed from, hidden from `repr` and equality) plus `BrowserSettings.upload_root`; the
   driver factory passes both through `BrowserUseConfig`.
-- Entry points build settings once: `runtime/main.py` from `process_environ()` (its own inputs through
-  `read_demo_inputs(environ)`), `playwright_runtime_mcp_server.py` from `runtime_server_environ(process_environ())`.
-  They pass `core_settings` / `browser_settings` to `BrowserAgentRuntime`, which hands them to `BrowserService` and
+- Entry points build settings once: `surfaces/browser/runner/main.py` from `process_environ()` (its own inputs
+  through `read_demo_inputs(environ)`), `playwright_runtime_mcp_server.py` from
+  `runtime_server_environ(process_environ())`. They pass `core_settings` / `browser_settings` to
+  `BrowserAgentRuntime`, which completes the browser settings, hands the core settings and the surface bundle to
+  `AgentService` and
   takes `selector_cache_path` for its selector cache; the custom actions read `upload_root` from the context's
   settings.
 - Public functions keep their signatures and gain keyword-only settings or values. Where a caller passes none, the
@@ -575,11 +584,11 @@ value from one.
   it routes to: agents are built by callers that never see the harness.
 - `ReActAgent` writes one line per tool call, `Executing tool: %s with args: %s` (name, redacted arguments), to
   `tool_call_logger(name)` when one is registered and to the core logger otherwise.
-- `configure_browser_agent_logging(settings: CoreSettings)` (`runtime/browser_logging.py`) applies
+- `configure_browser_agent_logging(settings: CoreSettings)` (`surfaces/browser/runner/logging.py`) applies
   `log_file`, `log_level`, `log_mirror_common` and `log_audit_raw` to the stdlib logger `openjiuwen.browser_agent`
   and registers browser tool names with the hook: `browser_` anywhere in the name or a `mcp_playwright` prefix,
-  case-insensitive. It is called where a browser agent is built: `create_browser_agent` and
-  `build_browser_worker_agent`. Without a call, no tool-call line goes to the browser log.
+  case-insensitive. It is called where a browser runtime is built: `BrowserAgentRuntime.__init__` (with its
+  resolved core settings) and `create_browser_agent`. Without a call, no tool-call line goes to the browser log.
 - The logger keeps what it was configured with (it is process-wide): the file handler, level, propagation and the
   audit flag. Until the first `configure_browser_agent_logging`, the first use of the logger configures it from
   `CoreSettings.from_process_env()`, so modules that fetch it at import time keep `./logs/browser_agent.log`.
@@ -648,48 +657,53 @@ with a `webSocketDebuggerUrl` or `Browser` field (1.5 s timeout, the same check 
 without one (extension, or remote without `cdp_url`, where the driver launches its own browser) is always alive:
 there is nothing to probe or to provision again.
 
-### The browser service (`runtime/service.py`, `runtime/worker.py`)
+### The service (`runtime/service.py`, `runtime/worker.py`, `runtime/service_registry.py`)
 
-`BrowserService` is `BrowserService(_WorkerLoop)`: `service.py` holds the lifecycle (construction, the lifecycle
-identity and the registry lease, the task binding, cancellation, the session, screenshots, `shutdown`);
-`worker.py` holds `_WorkerLoop`, a plain mixin with the worker loop (`run_task`, `run_task_once`, the retry and
-restart predicates, the resume task, the failure summary, the progress recording), and `BrowserTaskProgressState`,
-`MAX_ITERATION_MESSAGE` and the observer context variables; the rail imports the two names from `worker.py`, and
-`worker.py` imports nothing from `service.py`. The progress state is reached through `set_progress_state`,
+`AgentService` is `AgentService(_WorkerLoop)`: `service.py` holds the lifecycle (construction, the identity's
+registry lease, the task binding, cancellation, the session, screenshots, `shutdown`); `worker.py` holds
+`_WorkerLoop`, a plain mixin with the worker loop (`run_task`, `run_task_once`, the retry and restart predicates,
+the resume task, the failure summary, the progress recording), and `TaskProgressState`, `MAX_ITERATION_MESSAGE`
+and the observer context variables; the browser rail imports the two names from `worker.py`, and `worker.py`
+imports nothing from `service.py`. The progress state is reached through `set_progress_state`,
 `clear_progress_state`, `should_treat_as_completed`, `build_failure_summary` and `observe_worker_tool_result`;
 there are no other public progress methods.
 
-`BrowserService` takes the keywords `browser_settings: SurfaceSettings | None` (`None` means
-`browser_surface_settings()`, read once at construction), `core_settings: CoreSettings | None` and
-`page_state: BrowserPageState | None` (the facade's; `None` makes one). The service reads no environment variable
-itself; `service.core` is the core settings (`None`: `CoreSettings.from_process_env()`, read at first use) with the
-instance's `driver`, when set, in place of `core.driver`.
+`AgentService(core, surface, *, provider, api_key, api_base, model_name, guardrails, allowed_tool_names=None,
+output_dir, identity, cancel_store=None, page_state=None)` takes neutral inputs only: the core settings (complete;
+a per-instance driver is already applied), the surface bundle whose settings are complete (for the browser the
+facade fills the server config, the working folder and the workspace root before), the model client fields,
+`RunGuardrails`, the allowlist, the folder the screenshots and artifacts go to (`output_dir/screenshots`,
+`output_dir/artifacts`), the identity string the registry keys on, and the page state (`None`:
+`new_page_state(surface.profile)` at construction). The service reads no environment variable and never calls
+`replace` on the settings; `service.core` and `service.surface` are the given objects.
 
 The service holds the `DriverSession` the worker runs on and provisions nothing itself:
 
 - `ensure_runtime_ready()`: without a session, `open_session(service.core, process_environ(), page_state=,
-  instance=, settings=)` ("Composition root") with the service settings carrying `mcp_server` (the given `mcp_cfg`)
-  and `mcp_cwd` (the config's `cwd`, else the settings'); the session's provisioner is registered with the process
-  registry as the identity's managed driver (the lifecycle identity is a service concept, so the registration stays
-  here). With a session whose stack was stopped by a task release, `session.start()`. Then `begin_task()`.
-  `started` is "the stack runs".
+  settings=surface.settings)` ("Composition root"); the session's provisioner is registered with the process
+  registry under the identity. With a session whose stack was stopped by a task release, `session.start()`. Then
+  `begin_task()`. `started` is "the stack runs".
 - `run_task(task, session_id=, request_id=, timeout_s=, *, worker)` runs the worker loop (the per-session lock,
   the cancel check, the attempts, the max-iteration resume, the failure context, the JSON contract and the
   final-answer recovery) on the agent `worker()` returns: `run_task_once(..., worker=)` awaits it once per attempt,
-  and the recovery call reuses that agent. `_restart` is `reset()` alone (the session closed, the `browser_agent`
-  slot cleared), so the next attempt's `worker()` rebuilds the worker where it is built (`DelegatedWorker.start`,
-  "Topology"). The service builds no agent and starts none (there is no `ensure_started`); the `browser_agent`
-  slot and its setter stay for the runner's helper removal. `observe_worker_tool_result` is the progress recorder a
-  worker's builder takes as `tool_result_observer`; `screenshot_subdir` and `artifacts_subdir` are readable.
+  and the recovery call reuses that agent. `_restart` is `reset()` alone (the session closed, the `agent` slot
+  cleared), so the next attempt's `worker()` rebuilds the worker where it is built (`DelegatedWorker.start`,
+  "Topology"). The service builds no agent and starts none (there is no `ensure_started`); the `agent` slot is a
+  plain attribute the delegated topology fills and the runner's helper removal reads. `observe_worker_tool_result`
+  is the progress recorder a worker's builder takes as `tool_result_observer`; `screenshot_subdir` and
+  `artifacts_subdir` are readable. `session_new(session_id=None)` returns the given id, else `session-<uuid>`.
 - `acquire_task_binding()` counts a task and calls `session.begin_task()`; `release_task_binding()` on the last
-  binding stops the stack (`session.stop()`, the device and its Chrome stay), forgets the worker and the task
-  state. `reset()` closes the session (stop, release) and stops the identity's registered provisioners;
-  `detach_lifecycle_resources()` is the per-service part of that. `shutdown()` is `reset()` plus the release.
+  binding stops the stack (`session.stop()`, the device stays), forgets the worker and the task state. `reset()`
+  closes the session (stop, release) and stops the identity's registered provisioners through
+  `reset_lifecycle_resources(identity, fallback_service=None)`, a classmethod the browser facade also calls for an
+  identity whose service is gone; `detach_lifecycle_resources()` is the per-service part of that. `shutdown()` is
+  `reset()` plus the release.
 
-An instance `provisioning` / `driver_mode` other than `remote`, `managed` or `extension` raises `ValueError` naming
-`BrowserInstanceConfig.provisioning` and `BROWSER_PROVISIONING` (the lifecycle identity needs it before a session
-exists). A live Chrome is adopted only by the provisioner, through the profile with the settings' name; the
-store's selected profile and the legacy store path are not consulted any more.
+`ServiceRegistry` (`runtime/service_registry.py`, the process instance `SERVICE_REGISTRY`) is keyed by the
+identity string and knows nothing of what it encodes: `acquire`, `activate_binding`, `release`,
+`register_managed_driver`, `unregister_managed_driver`, `begin_reset` (a `ServiceResetSnapshot` of the services
+and preserved drivers of one identity), `discard_idle`, `managed_driver_identities()` (the identities holding a
+preserved driver) and `clear()` (tests).
 
 ## Composition root (`runtime/assembly.py`)
 
@@ -920,7 +934,7 @@ upload_root=context.settings.upload_root)` (the
 specs of the three actions and the `list_upload_files` action with its spec over the upload root, `None` = not
 configured), then the three handlers bound to the context. The server entry registers the specs on its default
 controller the same way, with no upload root, after the builtin actions. The builtin actions (`ping`, `echo`,
-`browser_task`, `run_browser_task`) stay in `runtime/controllers/action.py`, which names no browser spec.
+`browser_task`, `run_browser_task`) stay in `surfaces/browser/runner/actions.py`, which names no browser spec.
 
 Each helper tool declares `flags: ToolFlags` (class attribute): the probes `ToolFlags(requires=(RunScript,))` (`READ`,
 not exempt from budgets, progress, offered to a worker), find `ToolFlags()` (it only observes), the batch
@@ -1021,7 +1035,7 @@ the main agent.
 The core's `PageState` is the surface-neutral generation and target registry; it names no browser field. Generations
 keep the `g<n>` format and one counter. A surface that keeps more state subclasses it and hands the class to the
 core as `SurfaceProfile.page_state`; `assembly.new_page_state(profile)` builds the profile's (the core's own when
-`None`), for `build_agent` and, at first use, for `BrowserService.page_state`, which the facade reads. No core
+`None`), for `build_agent` and, at construction, for `AgentService.page_state`, which the runtime reads. No core
 module imports a surface's page state.
 
 The core keeps: `page_id` (prefix `state-`), `generation` / `generation_id`, `identity`, `last_observation` /
@@ -1298,82 +1312,124 @@ message, it replaces the message with `explain_blocked_command(record, retry)`:
 the sentence given at construction. The tool
 output (`tool_result`) keeps the driver's own error. Other records and messages without a record are left alone.
 
-## The browser agent runtime (`runtime/session.py`)
+## The core runtime (`runtime/session.py`, `AgentRuntime`)
 
-`BrowserAgentRuntime` is the facade `create_browser_agent` builds and the WebVoyager runner constructs the same way
-(`provider, api_key, api_base, model_name, mcp_cfg, guardrails, instance=None, allowed_tool_names=None, *,
-core_settings=None, browser_settings=None, workspace=None, language="cn"`). It owns one `BrowserPageState` for its
-lifetime, hands it to its `BrowserService`, and from `ensure_runtime_ready()` on works on the service's
-`DriverSession`: one session for the main agent and the worker. `mcp_cfg` reaches the session through the service
-(`BrowserSettings.mcp_server`); `browser_settings` reach it as the surface settings override.
+`AgentRuntime(core, surface, *, provider, api_key, api_base, model_name, guardrails, allowed_tool_names=None,
+workspace=None, language="cn", output_dir, identity, cancel_store=None, page_state=None)` is the surface-neutral
+runner: it owns one `AgentService` built from the same inputs, works on the service's `DriverSession` from
+`ensure_runtime_ready()` on (one session for the main agent and the worker) and runs each task through a topology.
+It names no surface: what it needs from one it reads from `surface.profile`.
 
+- Plain views: `service`, `core`, `surface`, `workspace`, `language`, `page_state` (the service's), `session`,
+  `context` (the `ToolContext` of the started session, for the runtime's own calls), `topology` (`None` before
+  `ensure_started`), `builders` (the decoders of every factory tool built so far, one live mapping updated by
+  `agent_parts`; `ActionPolicy` reads it per call, "Policy rail", `tool_kind` too) and `dedicated_log`, settable:
+  `Direct.start` sets it `False` so the runner's agent writes to the process log, where the runner reads model
+  usage; agents from `create_browser_agent` keep `True`.
 - `ensure_runtime_ready()`: `service.ensure_runtime_ready()`; when the service's session is a new one, a
-  `ToolContext` for the runtime's own calls (no image support, the given workspace and language), the controller's
-  builtin actions registered, the profile's `custom_actions(controller, context)` called, and the cached parts
-  dropped.
-- `ensure_started()` and `run_browser_task(task, session_id=, request_id=, timeout_s=)`, the runner's entry points,
-  delegate to the topology: `ensure_started()` picks it once, `topology_for(service.core)` ("Topology",
-  `BROWSER_TOPOLOGY`), and calls its `start(self)`; `run_browser_task` is `ensure_started()` then
-  `topology.run(self, task, session_id, request_id, timeout_s)`. The facade holds no agent: `DelegatedWorker` puts
-  the worker in `service.browser_agent`, `Direct` keeps the main agent itself.
-- `surface -> SurfaceBundle`: `assemble_surface(service.core, process_environ(), instance=, settings=<the browser
-  settings>)`, built once at first use, before any driver, so the rails' profile constants exist at the main agent's
-  construction. Invariant: it agrees with the session's bundle on `messages` and on what `policy_rules` decide
-  (both come from the surface factory and the same settings, the workspace included); the session's bundle, which also carries the MCP config, is what the worker and the
-  parts are built from.
-- `builders -> Mapping[str, Builder]`: the decoders of every factory tool built so far, one live mapping updated by
-  `agent_parts`; `ActionPolicy` reads it per call ("Policy rail"), `tool_kind` too.
+  `ToolContext` for the runtime's own calls (no image support, the given workspace and language) and the cached
+  parts dropped.
 - `core_rails() -> (ActionPolicy, RepeatedCallGuardRail, InterceptedActionHintRail)`: `assembly.core_rails(surface.profile,
-  builders, page_state)` ("Agent construction"); `create_browser_agent` queues them at construction. A policy built
-  before the session exists enforces the tools built after it, through the live mapping.
-- `register_runtime_tools()`: `browser_custom_action` and `browser_list_custom_actions` in `Runner.resource_mgr`
-  (tag `agent.playwright.runtime`), once; a tool that already exists there is accepted. `DelegatedWorker.start`
-  calls it; the main agent never holds these tools. They are the only `Tool` wrappers of the facade
-  (`runtime_tools.py`); cancellation and health are reached through the facade's methods, as the server entry point
-  does. Neither card names a driver; the worker's `AgentCard` renders the session driver's display name.
-- `main_agent_answer(session_id, request_id, *, result=None, error=None)`: the runner's answer dict from a main-agent
-  run, for `Direct.run`: `ok` (no error, `result_type` not `"error"`), `final` (the output), `page` from
-  `page_state.surface_context`, `screenshot=None`, `error`, and `status` / `progress` from the rail's
-  `authoritative_browser_result` / `progress_state` when present. It lives on the facade because the answer's
-  keys are the facade's run contract and its `page` comes from the facade's page state.
-- `dedicated_log` is settable: `Direct.start` sets it `False` so the runner's agent writes to the process log, where
-  the runner reads model usage; agents from `create_browser_agent` keep `True`.
-- `runtime_health()`: `session.health()` when the stack runs, else `ok=False, detail="not started"`, with
-  `started` and the model settings.
-- `shutdown()`: `service.shutdown()`, the facade's session view dropped, the topology dropped (`drop()`, so a
-  `Direct` agent is forgotten and the next `ensure_started` picks and starts a topology again), then
-  `OpenAIModelClient.aclose()` so the next event loop (the runner runs one per task) gets fresh clients.
+  builders, page_state)` ("Agent construction"). A policy built before the session exists enforces the tools built
+  after it, through the live mapping.
 - Capabilities are derived from `allowed_tool_names` on first read: the entries of the profile's catalog whose tool
-  names are all allowed (the inverse of `resolve_browser_capabilities`); with no allowlist, the default entry's
-  tools, and the service then holds `allowed_tool_names=None`. The semantic-state tracker is the profile's
-  `semantic_tracker()`, made on first use; the three captures call `observe(state, action_group_id=..., changed=)`
-  with `changed` true when the generation or the last observation moved since the previous call. The browser
-  tracker scores a repeated state as `progress` when `changed` (a dialog or a cart has no semantic field), and a
-  revisit of an earlier state as a revisit whatever `changed` says.
+  names are all allowed; with no allowlist, the default entry's tools, and the service then holds
+  `allowed_tool_names=None`.
 - `agent_parts(*, image_support, language)`: `build_agent_parts(session, assembly.surface, ..., language=)`, built
   once per `(image_support, language)`; the receiving agent decides the language ("one language per agent": the
-  rail passes the agent's own, `build_worker` passes `WORKER_LANGUAGE`), and the facade's constructor `language`
-  (default `cn`) serves only its own tool context (custom actions, the policy probes). The parts hold no core
-  rails. The facade merges the parts' `builders` into its live mapping and keeps each extra tool's `flags` to
-  answer `tool_kind`.
+  browser rail passes the agent's own, `build_worker` passes `WORKER_LANGUAGE`), and the constructor `language`
+  (default `cn`) serves only the runtime's own tool context. The parts hold no core rails. The runtime merges the
+  parts' `builders` into its live mapping and keeps each extra tool's `flags` to answer `tool_kind`.
 - `tool_kind(tool_name, tool_args) -> ToolKind`: for a factory command tool, the command decoded from the arguments
   with the page state as resolver (`action`, `effect = action.effect`, `fields` = the schema's property names;
   arguments that do not decode leave `action` `None`, `effect` `ACT`); for an extra tool its `ToolFlags`
   (`helper=True`); for an unknown tool `ToolKind()` (`known=False`, `ACT`). `command` and `read_only` are derived.
   `progress` is `True` for every factory tool and as declared for a helper.
+- `metadata() -> (mapping, error)`: the profile's `page_metadata(context)`; `({}, None)` for a surface without
+  the hook.
+- `ensure_started()` picks the topology once, `topology_for(core)` ("Topology", `BROWSER_TOPOLOGY`), and calls its
+  `start(self)`; `run_task(task, session_id=, request_id=, timeout_s=)` is `ensure_started()`, the topology's
+  `run(self, task, session_id, request_id, timeout_s)`, then `answer["context"] = {"identity": <the current
+  context's identity, "" without one>, "metadata": <the profile's metadata, {} without the hook>}`. The metadata is
+  captured only for an answer with `ok` and a started session (no driver call after a failed, timed-out or
+  cancelled agent task); the identity is read after the capture.
+- `main_agent_answer(session_id, request_id, *, result=None, error=None)`: the answer dict of a main-agent run,
+  for `Direct.run`: `ok` (no error, `result_type` not `"error"`), `session_id`, `request_id`, `final` (the
+  output), `screenshot=None`, `error`, and `status` / `progress` from the rail's `authoritative_browser_result` /
+  `progress_state` when present. No `page`: a surface's location is the surface's.
+- `cancel_run`, `clear_cancel`, `runtime_health()` (`session.health()` when the stack runs, else `ok=False,
+  detail="not started"`, with `started` and the model settings), `shutdown()` (`service.shutdown()`, the session
+  view dropped, the topology dropped, then `OpenAIModelClient.aclose()` so the next event loop gets fresh
+  clients), `acquire_task_resources()` (the service binding), `release_task_resources() -> bool` (the service
+  release; the last binding stops the driver stack, keeps the device and resets the page state) and `reset()`
+  (closes the session through the service and resets the page state).
+
+The core never calls `profile.custom_actions`: its argument is the browser runner's action controller, so the
+browser facade calls it. Every other hook is read where the core needs it.
+
+## The browser facade (`surfaces/browser/runner/facade.py`, `BrowserAgentRuntime`)
+
+`BrowserAgentRuntime(AgentRuntime)` keeps the constructor `create_browser_agent` and the WebVoyager runner use
+(`provider, api_key, api_base, model_name, mcp_cfg, guardrails, instance=None, allowed_tool_names=None, *,
+core_settings=None, browser_settings=None, workspace=None, language="cn"`) and turns it into the core's inputs:
+
+1. the core settings: `core_settings`, else `CoreSettings.from_process_env()` at construction, with the instance's
+   `driver`, when set, in place of `core.driver`;
+2. the browser settings: `browser_settings`, else `browser_surface_settings()` (read once at construction); the
+   workspace root from `workspace`; the instance applied (`BrowserSettings.with_instance`); then `mcp_server=mcp_cfg`
+   and `mcp_cwd` (the config's `cwd`, else the settings'). The instance's `provisioning` / `driver_mode` is
+   checked first: a value other than `remote`, `managed`, `extension` raises `ValueError` naming
+   `BrowserInstanceConfig.provisioning` and `BROWSER_PROVISIONING`;
+3. the lifecycle identity, `BrowserServiceIdentity(browser_key, profile_name, driver_mode, display_mode,
+   managed_args, browser_binary, user_data_dir, cdp_endpoint, server_id)` from the complete settings and the server
+   config (`display_mode` is `headless` / `headed` for a managed device by `--headless` in `managed_args`, else the
+   driver mode; `cdp_endpoint` is the config's `PLAYWRIGHT_MCP_CDP_ENDPOINT`); its `key`, the JSON of its fields,
+   is the registry string, and `from_key` rebuilds it;
+4. `configure_browser_agent_logging(core)`;
+5. the surface bundle: `assemble_surface(core, process_environ(), settings=<the complete settings>)`, built once,
+   before any driver, so the rails' profile constants exist at the main agent's construction. Invariant: the
+   session's bundle is built from the same settings, so the two agree on `messages` and on what `policy_rules`
+   decide;
+6. `AgentRuntime.__init__` with those, `output_dir=mcp_cwd` and `identity=key`.
+
+On top of the core it adds:
+
+- `core_settings` (the resolved core), `lifecycle_identity`, `mcp_cfg`, `controller`, `page_id`, `generation_id`,
+  `export_page_state`, and the browser page-state views the rail reads: `set_task_requested_fields`,
+  `resolve_model_target_id`, `target_recovery_state`, `resolve_primary_link`.
+- `ensure_runtime_ready()`: the core's, then, for a new session, the controller's builtin actions and the
+  profile's `custom_actions(controller, context)`.
+- `ensure_started()`: the core's, then `register_runtime_tools()` when the topology is `DelegatedWorker`:
+  `browser_custom_action` and `browser_list_custom_actions` in `Runner.resource_mgr` (tag
+  `agent.playwright.runtime`), once; a tool that already exists there is accepted. The main agent never holds
+  these tools. They are the only `Tool` wrappers of the facade (`runner/tools.py`); cancellation and health are
+  reached through the runtime's methods, as the server entry point does. Neither card names a driver; the worker's
+  `AgentCard` renders the session driver's display name.
+- `run_browser_task(task, session_id=, request_id=, timeout_s=)` is the core's `run_task`.
+- `main_agent_answer(...)`: the core's answer plus `page: {"url", "title"}` from the browser context of the page
+  state. The answer the runner reads thus keeps its keys: `ok`, `session_id`, `request_id`, `final`, `page`,
+  `screenshot`, `error`, `status` / `progress` when reported, `context` from the core and, on the delegated
+  topology, the worker loop's `attempt`, `failure_summary`, `progress_state`.
 - `capture_browser_state(action_group_id="")`, the browser state processor's provider: `page_state.fresh_observation`,
   else one `Observe()` through the context (a `DriverError` becomes `dom_error`, `page observation failed: …`);
-  `observations_reused` counts the reuses; then the profile's `page_metadata(context)`. The result keeps its keys (`ok`, `error`,
+  `observations_reused` counts the reuses; then the runtime's `metadata()`. The result keeps its keys (`ok`, `error`,
   `url`, `title`, `tabs`, `page_position`, `semantic_state`, `semantic_progress`, `field_coverage`, `page_state`,
-  `dom=""`, `dom_error`, `audit`). `capture_reconciliation_browser_state` runs `page_metadata` only;
-  `capture_compact_browser_state` sends nothing. A task failure from the session propagates.
+  `dom=""`, `dom_error`, `audit`). `capture_reconciliation_browser_state` runs the metadata hook only;
+  `capture_compact_browser_state` sends nothing. A task failure from the session propagates. The semantic-state
+  tracker is the profile's `semantic_tracker()`, made on first use (a null tracker without the hook); the three
+  captures call `observe(state, action_group_id=..., changed=)` with `changed` true when the generation or the
+  last observation moved since the previous call. `semantic_progress`, `acknowledge_semantic_replan` and
+  `reset_semantic_task` read and reset it; `release_task_resources` (on the last binding) and `reset` reset it too.
 - `probe_for_policy(source, params)` and `activate_page(url)`, the `DecisionPolicyModel` hooks, call the profile's
-  `policy_probe` and `activate` on the context; `run_custom_action` binds the runtime to the controller and dispatches.
-- `resolve_model_target_id`, `target_recovery_state`, `resolve_primary_link`, `export_page_state`,
-  `set_task_requested_fields`: the page-state views the rail reads.
-- `acquire_task_resources`: the service binding (which calls `session.begin_task()`); `release_task_resources`:
-  the service release (the last binding stops the driver stack and keeps the device) and `page_state.reset()`;
-  `reset()` closes the session through the service and resets the page state.
+  `policy_probe` and `activate` on the context; `run_custom_action` binds the runtime to the controller and
+  dispatches; `list_actions` lists the controller's actions.
+- `shutdown()`: the core's, then the facade leaves the process-wide set of live facades.
+
+The module also holds that set and the process-wide resets: `reset_active_browser_runtimes()` resets every live
+facade; `reset_managed_browser_runtime(*, browser_key, profile_name, display_mode, browser_binary)` resets the live
+facades whose identity matches those browser fields (managed only), then `reset_registered_managed_browser(...)`,
+which rebuilds the identity of every registry entry with a preserved driver (`BrowserServiceIdentity.from_key`)
+and stops the matching ones through `AgentService.reset_lifecycle_resources`.
 
 Timing: the driver starts and the tools are added at the first invoke, in `BrowserRuntimeRail.before_invoke`,
 where the MCP tools were added before; the deep agent is built with no browser tools and gets both the command
@@ -1383,12 +1439,12 @@ repeated-call guard included, sees the first invoke's `before_invoke`.
 
 ### Topology (`runtime/topology.py`)
 
-Who runs a task behind the facade's entry points. `Topology` is a `Protocol`: `name`, `async start(runtime)`,
+Who runs a task behind the runtime's entry points. `Topology` is a `Protocol`: `name`, `async start(runtime)`,
 `async run(runtime, task, session_id, request_id, timeout_s) -> dict`, `drop()`. `topology_for(core)` maps
 `core.topology or default_topology(core.driver)` to a strategy and raises `ValueError` naming the driver and the
 name for a registered default no strategy implements. Neither strategy names a driver; the module carries no
-browser word (it is a core module under the browser-word ratchet), which is why the answer mapping stays on the
-facade (`main_agent_answer`).
+browser word (it is a core module under the browser-word ratchet); the `runtime` it receives is an
+`AgentRuntime`, the facade on the browser surface.
 
 - `Direct` (`name="direct"`, the browser-use default): `start` builds the main agent once, through
   `create_browser_agent(model, language=WORKER_LANGUAGE, temperature=core.worker_temperature,
@@ -1406,17 +1462,18 @@ facade (`main_agent_answer`).
   `drop` forgets the agent. Invariant: the conversation id is the context engine's session id and names the offload
   directory, so its separators are path-legal on every OS (`:` is not on Windows).
 - `DelegatedWorker` (`name="delegated_worker"`, the Playwright MCP default): `start` is
-  `runtime.ensure_runtime_ready()` (the session opens here), then, when `service.browser_agent` is `None`,
-  `service.browser_agent = await build_worker(session, session.assembly.surface, provider=, api_key=, api_base=,
+  `runtime.ensure_runtime_ready()` (the session opens here), then, when `service.agent` is `None`,
+  `service.agent = await build_worker(session, session.assembly.surface, provider=, api_key=, api_base=,
   model_name=, max_steps=guardrails.max_steps, core=service.core, capabilities=runtime.capabilities,
   tool_result_observer=service.observe_worker_tool_result, screenshot_subdir=, artifacts_subdir=,
   image_support=<the strategy's verdict, False until a probe said yes>)`, records the tool names the worker was built
-  with, then `runtime.register_runtime_tools()`. `run` first awaits `probe_image_support` (as `Direct.run` does);
+  with (the browser facade registers its two custom-action tools after `ensure_started` on this topology). `run`
+  first awaits `probe_image_support` (as `Direct.run` does);
   on the first yes it sets image support and empties the slot, remembering the tools the caller removed from the
   started worker (the runner drops the helpers between `ensure_started()` and the task), so the worker is rebuilt
   with the screenshot tool and image results and without those tools. Then `service.run_task(task=, session_id=,
   request_id=, timeout_s=, worker=)` with `worker` an async callable that runs `start(runtime)` and returns
-  `service.browser_agent`: after a `reset()` the slot is empty and the next attempt rebuilds the worker on a fresh
+  `service.agent`: after a `reset()` the slot is empty and the next attempt rebuilds the worker on a fresh
   session. `drop` does nothing:
   the worker lives in the service's slot, which the service clears on reset and shutdown.
 
@@ -1434,9 +1491,9 @@ runs one `asyncio.run` per task. A conclusive verdict is cached per `(api_base, 
 tasks pay nothing; an inconclusive probe (`None`: timeout, call failure, empty answer) is not cached, counts as no
 image support, and is tried again at the next run.
 
-The runner reads `runtime._service.browser_agent` between `ensure_started()` and `run_browser_task` to remove the
+The runner reads `runtime._service.agent` between `ensure_started()` and `run_browser_task` to remove the
 helpers; on `Direct` the slot is `None` and its guard skips the removal, so the main agent keeps the helpers it is
-built with. `create_browser_agent` outside the facade's entry points is not governed by the setting: that agent
+built with. `create_browser_agent` outside the runtime's entry points is not governed by the setting: that agent
 always calls the tools itself.
 
 ### `BrowserRuntimeRail` (`surfaces/browser/rails/runtime_rail.py`)
@@ -1700,7 +1757,7 @@ one tool result; they were written against `@playwright/mcp@0.0.78` and its reco
 #### The driver (`drivers/playwright_mcp/driver.py`)
 
 - `create_playwright_mcp_driver(device, surface_settings)` builds the `@playwright/mcp` server config with
-  `drivers/playwright_mcp/config.playwright_mcp_config` (the builder `runtime/config.py`'s public functions call),
+  `drivers/playwright_mcp/config.playwright_mcp_config` (the builder the runner's `settings.py` public functions call),
   with `device.endpoint` as the CDP endpoint. A config in `surface_settings.mcp_server` keeps its `params` (command,
   args, cwd, timeout, env) and `client_type`; the factory's server name and id win, so the tool prefix never depends
   on the caller. In the given env `PLAYWRIGHT_MCP_DEVICE` is dropped (no device emulation over CDP) and, when the
